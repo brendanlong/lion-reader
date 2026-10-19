@@ -53,9 +53,8 @@ export interface ListEntriesParams {
   // time (index-backed); "readChanged" = read-state-change time (the recently-read
   // view, which also excludes never-read entries); "archived" = read-state-change
   // time WITHOUT the recently-read exclusion (Wallabag sort=archived). All three
-  // are served by an existing index; there is deliberately no "updated"
-  // (GREATEST(entry, user_entry)) sort — it can't be index-served (see #1070), so
-  // the Wallabag route approximates sort=updated as the default published sort.
+  // are served by an existing index. There is no "updated" sort: the Wallabag
+  // route approximates sort=updated as the default published sort.
   sortBy?: "published" | "readChanged" | "archived";
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
@@ -63,7 +62,7 @@ export interface ListEntriesParams {
   maxLimit?: number; // Override MAX_ENTRIES_PAGE_SIZE (e.g., for Google Reader API which needs larger batches)
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
-  updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
+  updatedAfter?: Date; // Only entries modified at/after this timestamp (user_entries.changed_at; powers Wallabag `since` delta sync)
   collectionIdGroups?: string[][]; // See EntryConditionParams.collectionIdGroups
   showSpam: boolean;
 }

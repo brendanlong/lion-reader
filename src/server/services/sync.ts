@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, inArray, isNull, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { Temporal } from "temporal-polyfill";
 
 import { ENTRY_TOMBSTONE_RETENTION_MS } from "@/server/services/entry-tombstones";
@@ -56,12 +56,11 @@ export const MAX_SYNC_PAGE_ENTRIES = 500;
 /**
  * Sync cursor schema.
  *
- * Uses a single cursor per entity type based on max(updated_at).
- * For entries, this combines entry metadata changes with read/starred state changes.
+ * Uses a single cursor per entity type based on its newest change.
  * For subscriptions, this combines new subscriptions with unsubscribes (both update updated_at).
  */
 export const syncCursorsSchema = z.object({
-  /** Cursor for entries - max of GREATEST(entries.updated_at, user_entries.updated_at) */
+  /** Cursor for entries - max(user_entries.changed_at): content, state and membership changes */
   entries: z.string().datetime().nullable(),
   /**
    * Id tiebreaker for the entries cursor. Together `(entries, entriesAfterId)`
@@ -84,132 +83,16 @@ export async function currentSyncCursors(
   db: Database,
   userId: string
 ): Promise<z.infer<typeof syncCursorsSchema>> {
-  // Run all max queries in parallel for efficiency.
-  // The pool returns Postgres's raw microsecond string for timestamptz, which
-  // parseTimestamptzOrNull / mapWith decodes to a full-precision
-  // Temporal.Instant — avoiding the JavaScript Date truncation that caused
-  // cursor comparison bugs (#680, #683).
+  // Each is read as a full-precision Temporal.Instant: a JavaScript Date's
+  // millisecond truncation broke cursor comparisons (#680, #683).
   const [entriesResult, subscriptionsResult, tagsResult] = await Promise.all([
-    // ── Entries cursor: argmax of GREATEST(entries.updated_at,
-    //    user_entries.updated_at) over the user's entries, plus the id
-    //    achieving it — the `(entries, entriesAfterId)` keyset. ─────────────
-    //
-    // GREATEST(e, ue) spans two tables, so no index can serve an ORDER BY on
-    // it: the naive `user_entries ⨝ entries ORDER BY GREATEST(...) DESC LIMIT
-    // 1` had to materialize the value for EVERY one of the user's entries
-    // (nested-loop PK lookup into entries per row) and top-N sort the lot —
-    // O(user's entire history), on every SSR and every SSE (re)connect. For a
-    // heavy user that measured ~125 ms / ~200k buffers. This is the same class
-    // of problem #1105 fixed for the sibling sync.events delta; the argmax was
-    // left on the old shape.
-    //
-    // The fix uses the identity  max_i GREATEST(a_i, b_i) = GREATEST(max_i a_i,
-    // max_i b_i)  to split into index-served arms, each returning its own
-    // top (ts, id); the outer `ORDER BY ts DESC, id DESC LIMIT 1` then picks
-    // the overall argmax:
-    //   arm_ue  — max user_entries.updated_at (state changes + new entries, since
-    //             fanout stamps ue.updated_at = now()), via
-    //             idx_user_entries_updated_at.
-    //   arm_sub — max entries.updated_at (content refetches that bump the entry
-    //             but not the ue row) over the user's web feeds, driven from
-    //             subscriptions into idx_entries_owner_feed_updated_at per feed.
-    //   arm_email — same, for emails, driven from the email subscriptions
-    //             that own them (idx_entries_owner_subscription_updated_at).
-    //   arm_saved — same, for saved articles, which the user owns
-    //             (idx_entries_owner_user_updated_at).
-    //   arm_collections — same, for active collections' members (a few
-    //             hundred at most), whose feed may be unsubscribed.
-    // The entry arms are bounded to updated_at >= arm_ue's max: an entry only
-    // changes the answer when its content update is at least as new as the
-    // newest state change, so this keeps the per-feed index seeks near-empty in
-    // the common case (user activity is newest) while still catching — and
-    // correctly id-tiebreaking, `>=` includes the tied boundary — the rare case
-    // where a content update is the most recent change. A user with no
-    // user_entries row has nothing in any arm (subscription_entries has a
-    // foreign key to user_entries): arm_ue is empty, so the bound is NULL and
-    // every arm's seek ends at once.
-    // Only entries the user has a user_entries row for count: the owner arms
-    // join it, and collection memberships imply it. Driving arm_sub from ALL
-    // subscriptions (active and unsubscribed) covers starred orphans, whose
-    // subscription row survives unsubscribe.
-    //
-    // arm_sub and arm_email take each subscription's newest entry in a LATERAL
-    // `LIMIT 1`, which Postgres can't flatten, so it runs per subscription as an
-    // index seek. Don't make it a plain join: the planner can't see the bound
-    // (the query computes it), guesses a third of entries pass it, and for a
-    // user with hundreds of feeds can pick a seq scan of all entries (#1863).
-    db.execute<{ ts: string | null; id: string | null }>(sql`
-      WITH arm_ue AS (
-        SELECT ue.updated_at AS ts, ue.entry_id AS id
-        FROM user_entries ue
-        WHERE ue.user_id = ${userId}::uuid
-        ORDER BY ue.updated_at DESC, ue.entry_id DESC
-        LIMIT 1
-      ),
-      arm_sub AS (
-        SELECT newest.ts, newest.id
-        FROM subscriptions s
-        CROSS JOIN LATERAL (
-          SELECT e.updated_at AS ts, e.id
-          FROM entries e
-          JOIN user_entries ue2
-            ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
-          WHERE e.owner_feed_id = s.feed_id
-            AND e.updated_at >= (SELECT ts FROM arm_ue)
-          ORDER BY e.updated_at DESC, e.id DESC
-          LIMIT 1
-        ) newest
-        WHERE s.user_id = ${userId}::uuid AND s.type = 'web'
-        ORDER BY newest.ts DESC, newest.id DESC
-        LIMIT 1
-      ),
-      arm_email AS (
-        SELECT newest.ts, newest.id
-        FROM subscriptions s
-        CROSS JOIN LATERAL (
-          SELECT e.updated_at AS ts, e.id
-          FROM entries e
-          JOIN user_entries ue2
-            ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
-          WHERE e.owner_subscription_id = s.id
-            AND e.updated_at >= (SELECT ts FROM arm_ue)
-          ORDER BY e.updated_at DESC, e.id DESC
-          LIMIT 1
-        ) newest
-        WHERE s.user_id = ${userId}::uuid AND s.type = 'email'
-        ORDER BY newest.ts DESC, newest.id DESC
-        LIMIT 1
-      ),
-      arm_saved AS (
-        SELECT e.updated_at AS ts, e.id FROM entries e
-        JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
-        WHERE e.owner_user_id = ${userId}::uuid
-          AND e.updated_at >= (SELECT ts FROM arm_ue)
-        ORDER BY e.updated_at DESC, e.id DESC
-        LIMIT 1
-      ),
-      arm_collections AS (
-        SELECT e.updated_at AS ts, e.id
-        FROM subscriptions s
-        JOIN subscription_entries se ON se.subscription_id = s.id
-        JOIN entries e
-          ON e.id = se.entry_id
-          AND e.updated_at >= (SELECT ts FROM arm_ue)
-        WHERE s.user_id = ${userId}::uuid AND s.type = 'collection' AND s.unsubscribed_at IS NULL
-        ORDER BY e.updated_at DESC, e.id DESC
-        LIMIT 1
-      )
-      SELECT ts, id FROM (
-        SELECT ts, id FROM arm_ue
-        UNION ALL SELECT ts, id FROM arm_sub
-        UNION ALL SELECT ts, id FROM arm_email
-        UNION ALL SELECT ts, id FROM arm_saved
-        UNION ALL SELECT ts, id FROM arm_collections
-      ) c
-      WHERE ts IS NOT NULL
-      ORDER BY ts DESC, id DESC
-      LIMIT 1
-    `),
+    // The `(entries, entriesAfterId)` keyset of the newest change.
+    db
+      .select({ ts: userEntries.changedAt, id: userEntries.entryId })
+      .from(userEntries)
+      .where(eq(userEntries.userId, userId))
+      .orderBy(desc(userEntries.changedAt), desc(userEntries.entryId))
+      .limit(1),
 
     // Subscriptions: max(updated_at) from ALL subscriptions (active and
     // removed) but Saved; updated_at is set when unsubscribing, so this covers
@@ -230,10 +113,10 @@ export async function currentSyncCursors(
       .where(eq(tags.userId, userId)),
   ]);
 
-  const entriesRow = entriesResult.rows[0];
+  const entriesRow = entriesResult[0];
 
   return {
-    entries: parseTimestamptzOrNull(entriesRow?.ts)?.toString() ?? null,
+    entries: entriesRow?.ts.toString() ?? null,
     entriesAfterId: entriesRow?.id ?? null,
     subscriptions: subscriptionsResult[0]?.max?.toString() ?? null,
     tags: tagsResult[0]?.max?.toString() ?? null,
@@ -288,10 +171,6 @@ async function listCollectionMemberships(
   return [...byEntry].map(([entryId, subscriptionIds]) => ({ entryId, subscriptionIds }));
 }
 
-/** A `user_entries` row, for the origin and membership lookups. */
-const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
-const USER_MEMBERSHIPS = entryMemberships(USER_ROW);
-
 /** Sorts below every entry id: the keyset tiebreaker of a cursor before any entry. */
 const NO_ENTRY_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -326,6 +205,236 @@ export const syncCursorsInputSchema = z.object({
   tags: z.string().datetime().optional(),
 });
 
+type SyncEvent = z.infer<typeof serverSyncEventSchema>;
+/** An event with its full-precision sort time (a Date would collapse µs ties). */
+type TimedEvent = SyncEvent & { _sortTime: Temporal.Instant };
+
+/** `(col, id)` is past the keyset `(ts, afterId)`. */
+function afterKeyset(col: SQLWrapper, id: SQLWrapper, ts: string, afterId: string): SQL {
+  return sql`(${col}, ${id}) > (${ts}::timestamptz, ${afterId}::uuid)`;
+}
+
+/**
+ * One page of the user's entries changed past the entries cursor, as events,
+ * in `(changed_at, entry_id)` order: a range scan of
+ * `idx_user_entries_changed_at` picks the page, and only its rows are
+ * decorated. Which events a row gets (new, updated, state changed) is
+ * classified in SQL, at µs precision, against the catch-up's start
+ * (`entriesSince`, #1663).
+ */
+async function collectEntryEvents(
+  db: Database,
+  userId: string,
+  cursors: SyncCursorsInput & { entries: string },
+  reportHidden: boolean
+) {
+  // Selection pages on the cursor; classification is against the catch-up's
+  // start. OR-ing in the cursor keeps every selected row eventful even if a
+  // client sends a start past it.
+  // `id` is the entry id column of the query the comparison is in.
+  const afterCursor = (col: SQLWrapper, id: SQLWrapper = userEntries.entryId): SQL =>
+    afterKeyset(col, id, cursors.entries, cursors.entriesAfterId ?? NO_ENTRY_ID);
+  const afterSince = (col: SQLWrapper, id: SQLWrapper = userEntries.entryId): SQL =>
+    cursors.entriesSince
+      ? sql`(${afterCursor(col, id)} OR ${afterKeyset(col, id, cursors.entriesSince, cursors.entriesSinceAfterId ?? NO_ENTRY_ID)})`
+      : afterCursor(col, id);
+
+  const page = db.$with("page").as(
+    db
+      .select({
+        userId: userEntries.userId,
+        entryId: userEntries.entryId,
+        changedAt: userEntries.changedAt,
+        read: userEntries.read,
+        starred: userEntries.starred,
+        readChangedAt: userEntries.readChangedAt,
+        visible: sql<boolean>`${visibleUserEntrySql()}`.as("visible"),
+        stateChanged: sql<boolean>`${afterSince(userEntries.updatedAt)}`.as("state_changed"),
+        stateUpdatedAt: sql<string>`${userEntries.updatedAt}`.as("state_updated_at"),
+      })
+      .from(userEntries)
+      .where(
+        and(
+          eq(userEntries.userId, userId),
+          afterCursor(userEntries.changedAt),
+          // A row a state change took out of view is a deletion, paged with
+          // the rest so none is lost past a page's end.
+          reportHidden
+            ? sql`(${visibleUserEntrySql()} OR ${afterSince(userEntries.updatedAt)})`
+            : visibleUserEntrySql()
+        )
+      )
+      .orderBy(userEntries.changedAt, userEntries.entryId)
+      .limit(MAX_SYNC_PAGE_ENTRIES + 1)
+  );
+
+  const PAGE_ROW = { userId: page.userId, entryId: page.entryId };
+  const memberships = entryMemberships(PAGE_ROW);
+  const rows = await db
+    .with(page)
+    .select({
+      id: entries.id,
+      title: entries.title,
+      author: entries.author,
+      summary: entries.summary,
+      url: entries.url,
+      publishedAt: entries.publishedAt,
+      fetchedAt: entries.fetchedAt,
+      siteName: entries.siteName,
+      entryUpdatedAt: entries.updatedAt,
+      isSpam: entries.isSpam,
+      isBackfill: entries.isBackfill,
+      read: page.read,
+      starred: page.starred,
+      readChangedAt: page.readChangedAt,
+      subscriptionId: subscriptions.id,
+      subscriptionIds: memberships.subscriptionIds,
+      type: entries.type,
+      feedTitle: entryFeedTitleSql(),
+      visible: page.visible,
+      metadataChanged: sql<boolean>`${afterSince(entries.updatedAt, entries.id)}`,
+      stateChanged: page.stateChanged,
+      isNew: sql<boolean>`${afterSince(entries.createdAt, entries.id)}`,
+      changedAt: page.changedAt,
+      stateUpdatedAt: sql`${page.stateUpdatedAt}`.mapWith(parseTimestamptz),
+    })
+    .from(page)
+    .innerJoin(entries, eq(entries.id, page.entryId))
+    .leftJoin(feeds, eq(feeds.id, entries.ownerFeedId))
+    .leftJoinLateral(memberships, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(memberships, PAGE_ROW))
+    .orderBy(page.changedAt, page.entryId);
+
+  const hasMore = rows.length > MAX_SYNC_PAGE_ENTRIES;
+  if (hasMore) rows.pop();
+
+  const visibleRows = rows.filter((row) => row.visible);
+  const hidden = rows
+    .filter((row) => !row.visible)
+    .map((row) => ({ entryId: row.id, deletedAt: row.stateUpdatedAt.toString() }));
+  const stateChangedIds = visibleRows.filter((row) => row.stateChanged).map((row) => row.id);
+
+  // One absolute-count snapshot for every count-bearing event (new_entry and
+  // entry_state_changed): the client sets counts rather than applying deltas,
+  // so the events stay idempotent across the live-SSE / catch-up overlap.
+  const counted = visibleRows.filter(
+    (row) => row.stateChanged || (row.metadataChanged && row.isNew)
+  );
+  const counts =
+    counted.length > 0
+      ? await getBulkEntryRelatedCounts(
+          db,
+          userId,
+          counted.map((row) => ({ id: row.id, subscriptionId: row.subscriptionId }))
+        )
+      : undefined;
+
+  const events: TimedEvent[] = visibleRows.flatMap((row) =>
+    entryRowToSyncEvents(
+      { ...row, updatedAt: row.changedAt.toString() },
+      { newEntry: counts, stateChanged: counts }
+    ).map((event) => ({ ...event, _sortTime: row.changedAt }))
+  );
+
+  const last = rows.at(-1);
+  return {
+    events,
+    hasMore,
+    next: last ? { entries: last.changedAt.toString(), entriesAfterId: last.id } : null,
+    hidden,
+    stateChangedIds,
+  };
+}
+
+/** Subscriptions changed past the cursor, as events (never paged). */
+async function collectSubscriptionEvents(db: Database, userId: string, cursor: string) {
+  const subscriptionResults = await db
+    .select({
+      id: subscriptions.id,
+      subscribedAt: subscriptions.subscribedAt,
+      unsubscribedAt: subscriptions.unsubscribedAt,
+      updatedAtInstant: sql`${subscriptions.updatedAt}`.mapWith(parseTimestamptz),
+    })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        // Saved is never announced, live or here: a first save creates it,
+        // and clients learn it from subscriptions.list.
+        isUserManagedSubscription(),
+        sql`${subscriptions.updatedAt} > ${cursor}::timestamptz`
+      )
+    )
+    .orderBy(subscriptions.updatedAt);
+
+  const activeRows = new Map(
+    (
+      await getSubscriptionsByIds(
+        db,
+        userId,
+        subscriptionResults.flatMap((row) => (row.unsubscribedAt === null ? [row.id] : []))
+      )
+    ).map((row) => [row.id, row])
+  );
+
+  const cursorDate = new Date(cursor);
+  const events = subscriptionResults.flatMap(
+    ({ id, subscribedAt, unsubscribedAt, updatedAtInstant }): TimedEvent[] => {
+      const stamps = {
+        timestamp: updatedAtInstant.toString(),
+        updatedAt: updatedAtInstant.toString(),
+        _sortTime: updatedAtInstant,
+      };
+      if (unsubscribedAt !== null) {
+        return [{ type: "subscription_deleted", subscriptionId: id, ...stamps }];
+      }
+      // Missing when unsubscribed since the first read: that unsubscribe moved
+      // its updated_at past this page's cursor, so the next sync deletes it.
+      const row = activeRows.get(id);
+      if (!row) return [];
+      // Subscribed after the cursor: new. Otherwise its properties changed.
+      return subscribedAt > cursorDate
+        ? [{ ...subscriptionCreatedEvent(row), ...stamps }]
+        : [{ ...subscriptionUpdatedEvent(row), ...stamps }];
+    }
+  );
+  return { events, next: subscriptionResults.at(-1)?.updatedAtInstant.toString() };
+}
+
+/** Tags changed past the cursor, as events (never paged). */
+async function collectTagEvents(db: Database, userId: string, cursor: string) {
+  const tagResults = await db
+    .select({
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+      createdAt: tags.createdAt,
+      deletedAt: tags.deletedAt,
+      updatedAtInstant: sql`${tags.updatedAt}`.mapWith(parseTimestamptz),
+    })
+    .from(tags)
+    .where(and(eq(tags.userId, userId), sql`${tags.updatedAt} > ${cursor}::timestamptz`))
+    .orderBy(tags.updatedAt);
+
+  // The query keeps the string cursor for µs precision (#680); telling created
+  // from updated only needs a Date.
+  const cursorDate = new Date(cursor);
+  const events = tagResults.map((row): TimedEvent => {
+    const stamps = {
+      timestamp: row.updatedAtInstant.toString(),
+      updatedAt: row.updatedAtInstant.toString(),
+      _sortTime: row.updatedAtInstant,
+    };
+    if (row.deletedAt !== null) return { type: "tag_deleted", tagId: row.id, ...stamps };
+    return {
+      type: row.createdAt > cursorDate ? "tag_created" : "tag_updated",
+      tag: toSyncTag(row),
+      ...stamps,
+    };
+  });
+  return { events, next: tagResults.at(-1)?.updatedAtInstant.toString() };
+}
+
 /**
  * Changes since the given cursors as individual events (SSE-compatible format),
  * sorted by timestamp, plus the cursors to send next time.
@@ -348,428 +457,50 @@ export async function collectSyncEvents(
   cursors: SyncCursorsInput,
   options: { reportHidden?: boolean } = {}
 ): Promise<{
-  events: z.infer<typeof serverSyncEventSchema>[];
+  events: SyncEvent[];
   hasMore: boolean;
   next: SyncCursorsInput;
   hidden: Array<{ entryId: string; deletedAt: string }>;
   /** Visible entries whose per-user state (collection membership included) changed. */
   stateChangedIds: string[];
 }> {
-  // Keep cursors as strings to preserve Postgres µs precision (#680)
-  const entriesCursor = cursors.entries ?? null;
-  const subscriptionsCursor = cursors.subscriptions ?? null;
-  const tagsCursor = cursors.tags ?? null;
-
-  // If no cursors provided, return empty events (initial cursor establishment
-  // is handled by sync.cursors endpoint)
-  const next: SyncCursorsInput = {
-    entries: cursors.entries,
-    entriesAfterId: cursors.entriesAfterId,
-    subscriptions: cursors.subscriptions,
-    tags: cursors.tags,
-  };
-  const hidden: Array<{ entryId: string; deletedAt: string }> = [];
-  if (!entriesCursor && !subscriptionsCursor && !tagsCursor) {
-    return { events: [], hasMore: false, next, hidden, stateChangedIds: [] };
-  }
-
-  // Collect all events with their timestamps for sorting. _sortTime is a
-  // full-precision Temporal.Instant so tied-timestamp events sort correctly
-  // (a JS Date would collapse sub-millisecond differences).
-  const allEvents: Array<z.infer<typeof serverSyncEventSchema> & { _sortTime: Temporal.Instant }> =
-    [];
-
-  // Track if we hit any limits
-  let hasMore = false;
-  let stateChangedIds: string[] = [];
-
-  // ========================================================================
-  // Entry changes (metadata and/or state) - combined query using GREATEST
-  // Uses GREATEST(entries.updated_at, user_entries.updated_at) > cursor
-  // to catch all changes with a single cursor, avoiding missed updates
-  // when one timestamp advances past the other (see #738).
-  //
-  // Keyset pagination on (GREATEST(...), entry_id): markAllEntriesRead (and
-  // the subscribe-time insert) stamp one identical timestamp onto hundreds
-  // of rows, so a strict timestamp `>` cursor would drop every tied row past
-  // the MAX_SYNC_PAGE_ENTRIES boundary permanently. Carrying the entry id as a
-  // tiebreaker (same pattern as listEntries) lets the client page within a
-  // tied-timestamp group. See #1080.
-  //
-  // The metadata/state/new booleans are computed in SQL against (ts, id)
-  // keysets — not with JavaScript Date math —
-  // because new Date() truncates Postgres µs to ms, which could select a row
-  // by µs precision yet then emit no event (leaving the cursor stuck). #1080
-  // ========================================================================
-  if (entriesCursor) {
-    const entriesAfterId = cursors.entriesAfterId ?? NO_ENTRY_ID;
-
-    // `col` is "after" the keyset cursor when it is past the timestamp, or at
-    // the timestamp with a larger entry id.
-    const afterKeyset = (col: SQLWrapper, ts: string, afterId: string): SQL =>
-      sql`(${col} > ${ts}::timestamptz OR (${col} = ${ts}::timestamptz AND ${entries.id} > ${afterId}::uuid))`;
-    const afterCursor = (col: SQLWrapper): SQL => afterKeyset(col, entriesCursor, entriesAfterId);
-    // Selection pages on the cursor; categorization is against the catch-up's
-    // start (see SyncCursorsInput.entriesSince). OR-ing in the cursor keeps
-    // every selected row eventful even if a client sends a start past it.
-    const afterSince = (col: SQLWrapper): SQL =>
-      cursors.entriesSince
-        ? sql`(${afterCursor(col)} OR ${afterKeyset(col, cursors.entriesSince, cursors.entriesSinceAfterId ?? NO_ENTRY_ID)})`
-        : afterCursor(col);
-
-    const greatest = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
-
-    // ── Index-driven candidate set (issue #1105) ──────────────────────────
-    // The delta filters and sorts on GREATEST(entries.updated_at,
-    // user_entries.updated_at). That value spans two tables, so no index can
-    // serve it: the old query scanned + sorted the user's ENTIRE history on
-    // every call (LIMIT gave no help — the sort must see every row first).
-    // This is the SSE-down polling fallback, so a Redis outage turned every
-    // open tab into a repeating full-timeline scan.
-    //
-    // Since GREATEST(e, ue) > cursor  ⟺  e.updated_at > cursor OR
-    // ue.updated_at > cursor, generate candidates from index-driven arms,
-    // UNION them, then decorate + keyset the (now bounded) result:
-    //
-    //   Arm A  — user_entries.updated_at (idx_user_entries_updated_at). Covers
-    //            every state change (read/star flips, mark-all-read) AND new
-    //            entries: the feed fanout inserts user_entries rows with
-    //            updated_at = now(), so new entries ride this arm too.
-    //   Arm B1 — entries.updated_at for the user's SUBSCRIBED web feeds. Catches
-    //            content refetches that bump entries.updated_at WITHOUT
-    //            touching the user_entries row (updateEntryContent) — the case
-    //            Arm A misses. Drives from the user's subscriptions
-    //            (uq_subscriptions_user_feed) into idx_entries_owner_feed_updated_at
-    //            per feed, seeking (owner_feed_id, updated_at >= cursor) directly.
-    //            NOTE: we deliberately do NOT pre-filter on
-    //            feeds.last_entries_updated_at. It is stamped from the poll's
-    //            start-time `now`, while each changed entry's updated_at is a
-    //            later wall-clock read (createEntry/updateEntryContent write
-    //            after the fetch+parse), so entry.updated_at > the feed's
-    //            last_entries_updated_at by the fetch duration. A
-    //            `last_entries_updated_at >= cursor` pre-filter would then
-    //            wrongly prune a feed once the cursor advances past
-    //            last_entries_updated_at but not past the entries — silently
-    //            and permanently dropping the tail of a >MAX_SYNC_PAGE_ENTRIES same-poll
-    //            content burst from the delta. The per-feed index seek already
-    //            bounds the work; no pre-filter is needed.
-    //   Arm B2 — same, for emails, driven from the email subscriptions that
-    //            own them into idx_entries_owner_subscription_updated_at, and
-    //            for saved articles, which the user owns
-    //            (idx_entries_owner_user_updated_at) (#1846).
-    //   Arm B3 — same, for active collections' members (a few hundred at
-    //            most), whose feed may be unsubscribed.
-    //
-    // Arms compare with `>=` so a tied-timestamp boundary row is still a
-    // candidate; the outer query re-applies the exact `(GREATEST, id)` keyset
-    // (afterCursor) so pagination within a tied group stays correct (#1080).
-    // Driving Arm B1 from subscriptions can surface an entry from an
-    // unsubscribed feed, but the outer visibility predicate drops it unless
-    // it is starred — matching visible_entries.
-    const cursorTs = sql`${entriesCursor}::timestamptz`;
-
-    const stateChangedCandidates = db
-      .select({ entryId: userEntries.entryId })
-      .from(userEntries)
-      .where(and(eq(userEntries.userId, userId), sql`${userEntries.updatedAt} >= ${cursorTs}`));
-
-    const subscribedEntryCandidates = db
-      .select({ entryId: userEntries.entryId })
-      .from(subscriptions)
-      .innerJoin(
-        entries,
-        and(eq(entries.ownerFeedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
-      )
-      .innerJoin(
-        userEntries,
-        and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
-      )
-      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "web")));
-
-    const emailEntryCandidates = db
-      .select({ entryId: userEntries.entryId })
-      .from(subscriptions)
-      .innerJoin(
-        entries,
-        and(
-          eq(entries.ownerSubscriptionId, subscriptions.id),
-          sql`${entries.updatedAt} >= ${cursorTs}`
-        )
-      )
-      .innerJoin(
-        userEntries,
-        and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
-      )
-      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "email")));
-
-    const savedEntryCandidates = db
-      .select({ entryId: userEntries.entryId })
-      .from(userEntries)
-      .innerJoin(
-        entries,
-        and(
-          eq(entries.id, userEntries.entryId),
-          eq(entries.ownerUserId, userId),
-          sql`${entries.updatedAt} >= ${cursorTs}`
-        )
-      )
-      .where(eq(userEntries.userId, userId));
-
-    const collectionEntryCandidates = db
-      .select({ entryId: subscriptionEntries.entryId })
-      .from(subscriptions)
-      .innerJoin(subscriptionEntries, eq(subscriptionEntries.subscriptionId, subscriptions.id))
-      .innerJoin(
-        entries,
-        and(eq(entries.id, subscriptionEntries.entryId), sql`${entries.updatedAt} >= ${cursorTs}`)
-      )
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          isCollectionSubscription(),
-          isNull(subscriptions.unsubscribedAt)
-        )
-      );
-
-    const candidates = stateChangedCandidates
-      .union(subscribedEntryCandidates)
-      .union(emailEntryCandidates)
-      .union(savedEntryCandidates)
-      .union(collectionEntryCandidates);
-
-    const changed = db.$with("changed_entries").as(candidates);
-
-    const changedEntryResults = await db
-      .with(changed)
-      .select({
-        id: entries.id,
-        title: entries.title,
-        author: entries.author,
-        summary: entries.summary,
-        url: entries.url,
-        publishedAt: entries.publishedAt,
-        fetchedAt: entries.fetchedAt,
-        siteName: entries.siteName,
-        entryUpdatedAt: entries.updatedAt,
-        isSpam: entries.isSpam,
-        isBackfill: entries.isBackfill,
-        read: userEntries.read,
-        starred: userEntries.starred,
-        readChangedAt: userEntries.readChangedAt,
-        subscriptionId: subscriptions.id,
-        subscriptionIds: USER_MEMBERSHIPS.subscriptionIds,
-        type: entries.type,
-        feedTitle: entryFeedTitleSql(),
-        visible: sql<boolean>`${visibleUserEntrySql()}`,
-        // Categorization booleans, computed in SQL at µs precision so a row
-        // selected past the cursor always gets at least one event.
-        metadataChanged: sql<boolean>`${afterSince(entries.updatedAt)}`,
-        stateChanged: sql<boolean>`${afterSince(userEntries.updatedAt)}`,
-        isNew: sql<boolean>`${afterSince(entries.createdAt)}`,
-        // Full-precision Temporal.Instant for cursor/timestamp output (both
-        // updatedAt columns are NOT NULL, so GREATEST is never null here).
-        maxUpdatedAt: sql`${greatest}`.mapWith(parseTimestamptz),
-        stateUpdatedAt: sql`${userEntries.updatedAt}`.mapWith(parseTimestamptz),
-      })
-      .from(changed)
-      .innerJoin(
-        userEntries,
-        and(eq(userEntries.userId, userId), eq(userEntries.entryId, changed.entryId))
-      )
-      .innerJoin(entries, eq(entries.id, userEntries.entryId))
-      .leftJoin(feeds, eq(feeds.id, entries.ownerFeedId))
-      .leftJoinLateral(USER_MEMBERSHIPS, sql`true`)
-      .leftJoin(subscriptions, entryOriginOn(USER_MEMBERSHIPS, USER_ROW))
-      .where(
-        and(
-          afterCursor(greatest),
-          // A row a state change took out of view is a deletion, paged with
-          // the rest so none is lost past a page's end.
-          options.reportHidden
-            ? sql`(${visibleUserEntrySql()} OR ${afterSince(userEntries.updatedAt)})`
-            : visibleUserEntrySql()
-        )
-      )
-      // The origin join yields at most one subscription per row.
-      .orderBy(greatest, entries.id)
-      .limit(MAX_SYNC_PAGE_ENTRIES + 1);
-
-    if (changedEntryResults.length > MAX_SYNC_PAGE_ENTRIES) {
-      hasMore = true;
-      changedEntryResults.pop();
-    }
-
-    const lastEntry = changedEntryResults.at(-1);
-    if (lastEntry) {
-      next.entries = lastEntry.maxUpdatedAt.toString();
-      next.entriesAfterId = lastEntry.id;
-    }
-
-    const visibleRows = changedEntryResults.filter((row) => row.visible);
-    for (const row of changedEntryResults) {
-      if (!row.visible) {
-        hidden.push({ entryId: row.id, deletedAt: row.stateUpdatedAt.toString() });
-      }
-    }
-
-    // Collect entries with state changes for batch count computation
-    const stateChangedEntries = visibleRows.filter((row) => row.stateChanged);
-    stateChangedIds = stateChangedEntries.map((row) => row.id);
-
-    // Entries created after the catch-up's start emit new_entry events. Compute one
-    // absolute-count snapshot covering all of them so each new_entry event
-    // carries server-authoritative counts (the client sets them directly
-    // rather than applying a +1 delta, making the events idempotent across
-    // the live-SSE / catch-up-sync overlap).
-    const newEntries = visibleRows.filter((row) => row.metadataChanged && row.isNew);
-    const newEntryCounts =
-      newEntries.length > 0
-        ? await getBulkEntryRelatedCounts(
-            db,
-            userId,
-            newEntries.map((row) => ({ id: row.id, subscriptionId: row.subscriptionId }))
-          )
-        : undefined;
-
-    // Compute absolute unread counts once for all state-changed entries.
-    // All entry_state_changed events share the same counts snapshot since
-    // they reflect the current server state at query time.
-    const stateChangedCounts =
-      stateChangedEntries.length > 0
-        ? await getBulkEntryRelatedCounts(
-            db,
-            userId,
-            stateChangedEntries.map((row) => ({ id: row.id, subscriptionId: row.subscriptionId }))
-          )
-        : undefined;
-
-    for (const row of visibleRows) {
-      const events = entryRowToSyncEvents(
-        { ...row, updatedAt: row.maxUpdatedAt.toString() },
-        { newEntry: newEntryCounts, stateChanged: stateChangedCounts }
-      );
-      for (const event of events) {
-        allEvents.push({ ...event, _sortTime: row.maxUpdatedAt });
-      }
-    }
-  }
-
-  // ========================================================================
-  // Subscription changes
-  // ========================================================================
-  if (subscriptionsCursor) {
-    const subscriptionResults = await db
-      .select({
-        id: subscriptions.id,
-        subscribedAt: subscriptions.subscribedAt,
-        unsubscribedAt: subscriptions.unsubscribedAt,
-        updatedAtInstant: sql`${subscriptions.updatedAt}`.mapWith(parseTimestamptz),
-      })
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          // Saved is never announced, live or here: a first save creates it,
-          // and clients learn it from subscriptions.list.
-          isUserManagedSubscription(),
-          sql`${subscriptions.updatedAt} > ${subscriptionsCursor}::timestamptz`
-        )
-      )
-      .orderBy(subscriptions.updatedAt);
-
-    const activeRows = new Map(
-      (
-        await getSubscriptionsByIds(
+  // Cursors stay strings to keep Postgres µs precision (#680). A type without
+  // one has nothing to diff against (sync.cursors establishes them).
+  const { entries: entriesCursor, subscriptions: subscriptionsCursor, tags: tagsCursor } = cursors;
+  const [entryResult, subscriptionResult, tagResult] = await Promise.all([
+    entriesCursor
+      ? collectEntryEvents(
           db,
           userId,
-          subscriptionResults.flatMap((row) => (row.unsubscribedAt === null ? [row.id] : []))
+          { ...cursors, entries: entriesCursor },
+          options.reportHidden ?? false
         )
-      ).map((row) => [row.id, row])
-    );
+      : null,
+    subscriptionsCursor ? collectSubscriptionEvents(db, userId, subscriptionsCursor) : null,
+    tagsCursor ? collectTagEvents(db, userId, tagsCursor) : null,
+  ]);
 
-    const lastSubscription = subscriptionResults.at(-1);
-    if (lastSubscription) {
-      next.subscriptions = lastSubscription.updatedAtInstant.toString();
-    }
+  const events = [
+    ...(entryResult?.events ?? []),
+    ...(subscriptionResult?.events ?? []),
+    ...(tagResult?.events ?? []),
+  ]
+    .sort((a, b) => Temporal.Instant.compare(a._sortTime, b._sortTime))
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    .map(({ _sortTime, ...event }) => event as SyncEvent);
 
-    const subscriptionsCursorDate = new Date(subscriptionsCursor);
-    for (const { id, subscribedAt, unsubscribedAt, updatedAtInstant } of subscriptionResults) {
-      const updatedAtIso = updatedAtInstant.toString();
-      const stamps = {
-        timestamp: updatedAtIso,
-        updatedAt: updatedAtIso,
-        _sortTime: updatedAtInstant,
-      };
-      // Missing when unsubscribed since the first read: that unsubscribe moved
-      // its updated_at past this page's cursor, so the next sync deletes it.
-      const row = activeRows.get(id);
-      if (unsubscribedAt !== null) {
-        allEvents.push({ type: "subscription_deleted" as const, subscriptionId: id, ...stamps });
-      } else if (!row) {
-        continue;
-      } else if (subscribedAt > subscriptionsCursorDate) {
-        // Subscribed since the cursor: new, not changed.
-        allEvents.push({ ...subscriptionCreatedEvent(row), ...stamps });
-      } else {
-        allEvents.push({ ...subscriptionUpdatedEvent(row), ...stamps });
-      }
-    }
-  }
-
-  // ========================================================================
-  // Tag changes
-  // ========================================================================
-  if (tagsCursor) {
-    // Date version for the JavaScript created-vs-updated comparison below;
-    // the query itself keeps the string cursor for µs precision (#680).
-    const tagsCursorDate = new Date(tagsCursor);
-    const tagResults = await db
-      .select({
-        id: tags.id,
-        name: tags.name,
-        color: tags.color,
-        createdAt: tags.createdAt,
-        deletedAt: tags.deletedAt,
-        updatedAtInstant: sql`${tags.updatedAt}`.mapWith(parseTimestamptz),
-      })
-      .from(tags)
-      .where(and(eq(tags.userId, userId), sql`${tags.updatedAt} > ${tagsCursor}::timestamptz`))
-      .orderBy(tags.updatedAt);
-
-    const lastTag = tagResults.at(-1);
-    if (lastTag) {
-      next.tags = lastTag.updatedAtInstant.toString();
-    }
-
-    for (const row of tagResults) {
-      const updatedAtIso = row.updatedAtInstant.toString();
-      const stamps = {
-        timestamp: updatedAtIso,
-        updatedAt: updatedAtIso,
-        _sortTime: row.updatedAtInstant,
-      };
-      if (row.deletedAt !== null) {
-        allEvents.push({ type: "tag_deleted" as const, tagId: row.id, ...stamps });
-      } else {
-        allEvents.push({
-          type: row.createdAt > tagsCursorDate ? "tag_created" : "tag_updated",
-          tag: toSyncTag(row),
-          ...stamps,
-        });
-      }
-    }
-  }
-
-  // Sort all events by timestamp (µs-precise via Temporal.Instant.compare)
-  allEvents.sort((a, b) => Temporal.Instant.compare(a._sortTime, b._sortTime));
-
-  // Remove _sortTime from events before returning
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const events = allEvents.map(({ _sortTime, ...event }) => event) as z.infer<
-    typeof serverSyncEventSchema
-  >[];
-
-  return { events, hasMore, next, hidden, stateChangedIds };
+  return {
+    events,
+    hasMore: entryResult?.hasMore ?? false,
+    next: {
+      entries: entryResult?.next?.entries ?? cursors.entries,
+      entriesAfterId: entryResult?.next?.entriesAfterId ?? cursors.entriesAfterId,
+      subscriptions: subscriptionResult?.next ?? cursors.subscriptions,
+      tags: tagResult?.next ?? cursors.tags,
+    },
+    hidden: entryResult?.hidden ?? [],
+    stateChangedIds: entryResult?.stateChangedIds ?? [],
+  };
 }
 
 export const syncChangesInputSchema = syncCursorsInputSchema.extend({
@@ -809,11 +540,11 @@ export async function collectSyncChanges(
   // now(), which is also their transaction's start), so the deletions
   // cursor is read from it too, backed off by a margin that covers a
   // delete transaction still in flight. Re-reporting a deletion is harmless.
-  const dbNow = await databaseNow(db);
-  const safeDeletionsCursor = dbNow.subtract({ milliseconds: DELETIONS_CURSOR_MARGIN_MS });
+  const safeDeletionsCursorFrom = (now: Temporal.Instant) =>
+    now.subtract({ milliseconds: DELETIONS_CURSOR_MARGIN_MS });
 
   if (!deletionsCursor && !cursors.entries && !cursors.subscriptions && !cursors.tags) {
-    const current = await currentSyncCursors(db, userId);
+    const [dbNow, current] = await Promise.all([databaseNow(db), currentSyncCursors(db, userId)]);
     // A null cursor means "nothing yet"; start from the epoch so the first
     // change still sorts after it.
     const epoch = new Date(0).toISOString();
@@ -825,13 +556,37 @@ export async function collectSyncChanges(
         entriesAfterId: current.entriesAfterId ?? NO_ENTRY_ID,
         subscriptions: current.subscriptions ?? epoch,
         tags: current.tags ?? epoch,
-        deletions: safeDeletionsCursor.toString(),
+        deletions: safeDeletionsCursorFrom(dbNow).toString(),
       },
       deletions: [],
       collectionMemberships: [],
       resyncRequired: false,
     };
   }
+
+  // Independent reads, so in parallel; a deletions cursor past the retention
+  // horizon discards the rest.
+  const [dbNow, changes, tombstones] = await Promise.all([
+    databaseNow(db),
+    collectSyncEvents(db, userId, cursors, { reportHidden: true }),
+    deletionsCursor
+      ? db
+          .select({
+            entryId: entryTombstones.entryId,
+            deletedAt: entryTombstones.deletedAt,
+          })
+          .from(entryTombstones)
+          .where(
+            and(
+              eq(entryTombstones.userId, userId),
+              sql`${entryTombstones.deletedAt} > ${deletionsCursor}::timestamptz`
+            )
+          )
+          .orderBy(entryTombstones.deletedAt)
+          .limit(MAX_SYNC_PAGE_ENTRIES + 1)
+      : [],
+  ]);
+  const safeDeletionsCursor = safeDeletionsCursorFrom(dbNow);
 
   const horizon = dbNow.subtract({ milliseconds: ENTRY_TOMBSTONE_RETENTION_MS });
   if (
@@ -848,30 +603,9 @@ export async function collectSyncChanges(
     };
   }
 
-  const { events, hasMore, next, hidden, stateChangedIds } = await collectSyncEvents(
-    db,
-    userId,
-    cursors,
-    { reportHidden: true }
-  );
+  const { events, hasMore, next, hidden, stateChangedIds } = changes;
   const collectionMemberships = await listCollectionMemberships(db, userId, stateChangedIds);
 
-  const tombstones = deletionsCursor
-    ? await db
-        .select({
-          entryId: entryTombstones.entryId,
-          deletedAt: entryTombstones.deletedAt,
-        })
-        .from(entryTombstones)
-        .where(
-          and(
-            eq(entryTombstones.userId, userId),
-            sql`${entryTombstones.deletedAt} > ${deletionsCursor}::timestamptz`
-          )
-        )
-        .orderBy(entryTombstones.deletedAt)
-        .limit(MAX_SYNC_PAGE_ENTRIES + 1)
-    : [];
   const moreTombstones = tombstones.length > MAX_SYNC_PAGE_ENTRIES;
   if (moreTombstones) {
     tombstones.pop();

@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, inArray } from "drizzle-orm";
+import { Temporal } from "temporal-polyfill";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -344,9 +345,10 @@ describe("Entries", () => {
       const past = new Date("2026-01-01T00:00:00Z");
       const allIds = [stateChangedId, contentChangedId, untouchedId];
       await db.update(entries).set({ updatedAt: past }).where(inArray(entries.id, allIds));
+      // changed_at only moves forward by itself, so it's backdated explicitly.
       await db
         .update(userEntries)
-        .set({ updatedAt: past })
+        .set({ updatedAt: past, changedAt: Temporal.Instant.from(past.toISOString()) })
         .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, allIds)));
 
       // Client's last sync happened after `past`; nothing has changed since, so a
@@ -357,7 +359,7 @@ describe("Entries", () => {
 
       // A read-state change bumps user_entries.updated_at (a Wallabag archive), and
       // a content refetch bumps entries.updated_at — both must surface via the
-      // GREATEST(entry.updated_at, user_entries.updated_at) that updatedAfter filters.
+      // user_entries.changed_at that updatedAfter filters.
       await markEntriesRead(db, userId, [{ id: stateChangedId }], true);
       await db
         .update(entries)

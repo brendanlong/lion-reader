@@ -98,7 +98,7 @@ const USER_MEMBERSHIPS = entryMemberships(USER_ROW);
  * The two roles are carried by two columns (issue #1118 Part 2): `read_changed_at`
  * is the last-writer-wins watermark and advances on every accepted write, while
  * `updated_at` is the "meaningful change" timestamp that drives delta sync
- * (`sync.events`, Wallabag `since`, both through `visible_entries.updated_at`) and
+ * (`sync.events`, Wallabag `since`, both through `user_entries.changed_at`) and
  * moves ONLY on a real flip. So a same-value re-assert advances the watermark but
  * leaves `updated_at` alone, and offline/polling clients don't re-fetch it.
  *
@@ -182,9 +182,8 @@ export async function writeEntriesRead(
   );
 
   // `updated_at` is the "meaningful change" timestamp that drives delta sync
-  // (`sync.events` and Wallabag `since`, both via `visible_entries.updated_at =
-  // GREATEST(entry, user_entry)`), so it moves ONLY when the read value actually
-  // flips — a same-value re-assert must not re-deliver the entry to offline
+  // (`sync.events` and Wallabag `since`, both via `user_entries.changed_at`),
+  // so it moves ONLY when the read value actually flips — a same-value re-assert must not re-deliver the entry to offline
   // clients (issue #1118 Part 2). The last-writer-wins watermark
   // (`read_changed_at`) is a SEPARATE column and still advances on every
   // accepted write, so cross-device conflict resolution is unchanged.
@@ -415,8 +414,7 @@ export async function markAllEntriesRead(
  * still matches no row.
  *
  * The projected columns are what a read through the view gives: the view
- * emits `GREATEST(entries.updated_at, user_entries.updated_at)` as
- * `updated_at`, and the origin and memberships are looked up the same way.
+ * emits `user_entries.changed_at` as `updated_at`, and the origin and memberships are looked up the same way.
  */
 async function selectStarredEntryStates(
   db: DbOrTx,
@@ -431,9 +429,7 @@ async function selectStarredEntryStates(
       read: userEntries.read,
       starred: userEntries.starred,
       type: entries.type,
-      updatedAt: sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`.mapWith(
-        userEntries.updatedAt
-      ),
+      updatedAt: sql`${userEntries.changedAt}`.mapWith(userEntries.updatedAt),
       readChangedAt: userEntries.readChangedAt,
     })
     .from(userEntries)

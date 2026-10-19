@@ -835,8 +835,14 @@ export const userEntries = pgTable(
       .notNull()
       .defaultNow(),
 
-    // Timestamp for tracking state changes (for sync endpoint)
+    // When the user's state (read, starred, memberships) last really changed.
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // GREATEST(updated_at, entries.updated_at): when anything delta sync
+    // reports about the entry last changed, so one index serves its keyset.
+    // Trigger-maintained (migration 0150); never written by app code.
+    changedAt: temporalTimestamp("changed_at")
+      .notNull()
+      .default(sql`now()`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 
     // Denormalized timeline sort key: COALESCE(entries.published_at, entries.fetched_at).
@@ -869,6 +875,8 @@ export const userEntries = pgTable(
       table.publishedOrFetchedAt.desc(),
       table.entryId.desc()
     ),
+    // Delta sync's keyset.
+    index("idx_user_entries_changed_at").on(table.userId, table.changedAt, table.entryId),
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
   ]
 );

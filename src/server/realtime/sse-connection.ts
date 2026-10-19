@@ -206,6 +206,13 @@ export function startSseConnection({
   }
 
   /**
+   * The new_entry events queued and not yet sent, and the subscriptions
+   * they're in: see sendNewEntry.
+   */
+  let queuedNewEntries = 0;
+  const queuedNewEntrySubscriptionIds = new Set<string>();
+
+  /**
    * Sends a new_entry event, whether it came from a web feed's channel or
    * (email, saved) the user's channel.
    */
@@ -213,26 +220,35 @@ export function startSseConnection({
     // `feedType` only decides the counts; clients get the payload's `type`.
     event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
   ): void {
-    // Compute this user's absolute unread counts and send them with the
-    // event so the client sets counts directly instead of applying a +1
-    // delta. That makes new_entry idempotent: a reconnect catch-up sync
-    // can re-deliver the same entry without double-counting. All write
-    // paths publish new_entry only after the user_entries fanout, so
-    // the entry is in visible_entries by the time this query runs.
-    // This is a per-subscriber query on the feed fan-out path, the same
-    // order as the per-subscriber user_entries inserts the worker
-    // already does for each new entry.
+    // The user's absolute unread counts go with the event so the client
+    // sets counts directly instead of applying a +1 delta. That makes
+    // new_entry idempotent: a reconnect catch-up sync can re-deliver the
+    // same entry without double-counting. All write paths publish
+    // new_entry only after the user_entries fanout, so the entry is
+    // counted by the time this query runs. A fetch's new entries arrive
+    // as a burst, and one snapshot after the last covers them all, so
+    // only the last new_entry queued carries counts, for every
+    // subscription the queued ones are in.
     const { subscriptionId } = event;
+    queuedNewEntries++;
+    // Saved's count is the global `saved` one (it's in no tag or Uncategorized).
+    if (subscriptionId && event.feedType !== "saved") {
+      queuedNewEntrySubscriptionIds.add(subscriptionId);
+    }
     enqueueSend(async () => {
       await customTitlesLoaded;
+      queuedNewEntries--;
       let counts: BulkUnreadCounts | undefined;
       try {
-        // Saved's count is the global `saved` one (it's in no tag or Uncategorized).
-        counts = await getBulkEntryRelatedCounts(
-          db,
-          userId,
-          event.feedType === "saved" ? [] : [{ subscriptionId }]
-        );
+        if (queuedNewEntries === 0) {
+          const subscriptionIds = [...queuedNewEntrySubscriptionIds];
+          queuedNewEntrySubscriptionIds.clear();
+          counts = await getBulkEntryRelatedCounts(
+            db,
+            userId,
+            subscriptionIds.map((id) => ({ subscriptionId: id }))
+          );
+        }
       } catch (err) {
         // Leave counts off; the client skips the count update and it
         // self-heals on the next count-bearing event or refetch.

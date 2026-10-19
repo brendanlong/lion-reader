@@ -77,6 +77,7 @@ Canonical `feeds`/`entries` rows are shared across users; `subscriptions` and `u
 - **Every entry has one owner** (#1846): a web entry its shared feed, an email its subscription, a saved article its user. The owner is for duplicate detection and cascade delete only; membership, not ownership, decides who sees and counts an article.
 - **Unread counts are denormalized** onto trigger-maintained counters, so badges are arithmetic over subscriptions, never entry scans; a daily job repairs (and loudly reports) drift.
 - **Conflicting updates resolve to the newest user intent**: read/star carry per-field last-writer-wins watermarks, and `updated_at` moves only on a real change so re-asserts don't churn delta sync.
+- **Delta sync reads one per-user change time** (`user_entries.changed_at`): a content change to a shared entry is copied onto every holder's row by a trigger, so a user's changes are one index range scan instead of a per-feed search of shared entries.
 - **Soft deletes** for subscriptions (`unsubscribed_at`), so resubscribing restores read state.
 - **Changed content overwrites** the previous version, detected by `content_hash`.
 
