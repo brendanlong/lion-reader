@@ -90,13 +90,6 @@ export interface ProcessEntriesOptions {
    * pushed entries were current (`currentEntryIdsSql`).
    */
   previousLastFetchedAt?: Date | null;
-  /**
-   * Treat no first sighting as a backfill, as on a feed's first fetch. The
-   * subscribe-time forced refresh sets it: it hands a brand-new subscriber the
-   * current feed, and that subscriber has no history to judge "already old when
-   * we last looked" against.
-   */
-  skipBackfillGuard?: boolean;
   /** The URL of the feed (for feed-specific content cleaning) */
   feedUrl?: string;
   /** The feed's title (feeds.title), carried on new_entry events for list display */
@@ -662,13 +655,11 @@ export async function processEntries(
     fetchedAt = new Date(),
     previousLastEntriesUpdatedAt,
     previousLastFetchedAt,
-    skipBackfillGuard = false,
     feedUrl,
     feedTitle,
     alwaysUpdateVisibility = false,
     pushed = false,
   } = options;
-  const backfillReference = skipBackfillGuard ? null : previousLastFetchedAt;
 
   // Derive GUIDs from all items first, so we only query for entries we need.
   // Matching is http/https-insensitive (#1535), so look up every spelling a
@@ -723,7 +714,7 @@ export async function processEntries(
         fetchedAt,
         existingEntriesMap,
         feedUrl,
-        backfillReference,
+        previousLastFetchedAt,
         pushed
       );
       results.push(result);

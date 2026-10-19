@@ -266,8 +266,7 @@ async function processSuccessfulFetch(
     // when we've never seen the feed before. A forced subscribe-time refresh
     // skips the guard too, so the fresh-feed and stale-feed subscribe paths
     // agree on what they deliver unread.
-    previousLastFetchedAt: feed.lastFetchedAt,
-    skipBackfillGuard: forceReprocess,
+    previousLastFetchedAt: forceReprocess ? null : feed.lastFetchedAt,
     feedUrl: feed.url ?? undefined,
     feedTitle: resolvedFeedTitle,
     // A forced (subscribe-time) refresh re-stamps all current entries' visibility
