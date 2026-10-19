@@ -228,8 +228,8 @@ export async function createTokens(
 }
 
 /**
- * Takes a share lock on a user's row for the rest of `tx`, so that token
- * issuance and a credential change (which updates the row first, then revokes
+ * Takes a share lock on a user's row for the rest of `tx`, so that refresh-token
+ * rotation and a credential change (which updates the row first, then revokes
  * the user's tokens) serialize: see {@link rotateRefreshToken}. Always lock the
  * user row before touching token rows, as credential changes do, so the two
  * can't deadlock.

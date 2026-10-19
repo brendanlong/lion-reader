@@ -420,7 +420,7 @@ describe("token issue racing a password change", () => {
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     });
 
-    const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
+    const change = await heldPasswordChange(user.id, "new-hash");
     const rotation = rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID);
     await waitForUserLockWaiter();
     change.release();

@@ -82,8 +82,8 @@ export async function passwordGrant(
 /**
  * Signs out every Wallabag app for a user (Settings → Wallabag).
  *
- * Takes the same user-row lock a password change does, so anything racing it
- * serializes: a refresh either finishes first and has its successor swept, or
+ * Takes the same user-row lock a password change does, so a refresh racing it
+ * serializes: it either finishes first and has its successor swept, or
  * waits and finds its token revoked (see `rotateRefreshToken`).
  */
 export async function revokeWallabagTokens(userId: string): Promise<void> {
