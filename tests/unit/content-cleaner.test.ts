@@ -3,7 +3,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { cleanContent, absolutizeUrls, extractBaseHref } from "@/server/feed/content-cleaner";
+import {
+  cleanContent,
+  absolutizeUrls,
+  absolutizeUrlsAsync,
+  extractBaseHref,
+} from "@/server/feed/content-cleaner";
 
 describe("cleanContent", () => {
   describe("basic functionality", () => {
@@ -317,400 +322,37 @@ describe("cleanContent", () => {
   });
 });
 
+// The rewriting rules are tested in native/sanitizer/core/src/absolutize.rs;
+// these cover the wrapper and the binding.
 describe("absolutizeUrls", () => {
   const baseUrl = "https://example.com/articles/test-article";
 
-  describe("image src attributes", () => {
-    it("should convert relative image src to absolute", () => {
-      const html = '<img src="/images/photo.jpg" alt="Test">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('src="https://example.com/images/photo.jpg"');
+  it("passes the root and media bases through", () => {
+    const html = '<img src="/i/p.jpg"><a href="/d/o.md">x</a>';
+    const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
+      rootBaseUrl: "https://example.com/tree/main/",
+      media: {
+        baseUrl: "https://cdn.example.com/main/page.md",
+        rootBaseUrl: "https://cdn.example.com/main/",
+      },
     });
-
-    it("should convert same-directory relative image src to absolute", () => {
-      const html = '<img src="photo.jpg" alt="Test">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('src="https://example.com/articles/photo.jpg"');
-    });
-
-    it("should leave absolute image src unchanged", () => {
-      const html = '<img src="https://cdn.example.com/image.jpg" alt="Test">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('src="https://cdn.example.com/image.jpg"');
-    });
-
-    it("should preserve data: URLs", () => {
-      const html = '<img src="data:image/png;base64,abc123" alt="Test">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('src="data:image/png;base64,abc123"');
-    });
+    expect(result).toBe(
+      '<img src="https://cdn.example.com/main/i/p.jpg"><a href="https://example.com/tree/main/d/o.md">x</a>'
+    );
   });
 
-  describe("link href attributes", () => {
-    it("should convert relative href to absolute", () => {
-      const html = '<a href="/page">Link</a>';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('href="https://example.com/page"');
-    });
-
-    it("should leave absolute href unchanged", () => {
-      const html = '<a href="https://other.com/page">Link</a>';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('href="https://other.com/page"');
-    });
-
-    it("should preserve javascript: URLs", () => {
-      const html = '<a href="javascript:void(0)">Click</a>';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('href="javascript:void(0)"');
-    });
+  it("returns input the parser rejects unchanged", async () => {
+    const rejected = '<select><xmp><img src="a.png"></xmp></select>';
+    expect(absolutizeUrls(rejected, baseUrl)).toBe(rejected);
+    const large = rejected + "<p>filler</p>".repeat(2000);
+    await expect(absolutizeUrlsAsync(large, baseUrl)).resolves.toBe(large);
   });
 
-  describe("srcset attributes", () => {
-    it("should convert relative URLs in srcset", () => {
-      const html =
-        '<img srcset="/images/small.jpg 1x, /images/large.jpg 2x" src="/images/default.jpg">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain("https://example.com/images/small.jpg 1x");
-      expect(result).toContain("https://example.com/images/large.jpg 2x");
-    });
-
-    it("should leave absolute URLs in srcset unchanged", () => {
-      const html = '<img srcset="https://cdn.example.com/small.jpg 1x">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain("https://cdn.example.com/small.jpg 1x");
-    });
-
-    it("should handle URLs with commas (like Cloudinary URLs)", () => {
-      // Cloudinary uses commas in URL paths for transformations: f_auto,q_auto
-      const html =
-        '<img srcset="https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/foo/bar">';
-      const result = absolutizeUrls(html, baseUrl);
-      // The URL should NOT be split on the comma - it should remain intact
-      expect(result).toContain(
-        "https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/foo/bar"
-      );
-    });
-
-    it("should handle URLs with commas AND descriptors", () => {
-      // Cloudinary URL with a descriptor
-      const html =
-        '<img srcset="https://res.cloudinary.com/example/f_auto,q_auto/image.jpg 1x, https://res.cloudinary.com/example/f_auto,q_auto/image@2x.jpg 2x">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/image.jpg 1x");
-      expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/image@2x.jpg 2x");
-    });
-
-    it("should handle mixed Cloudinary URLs with absolute paths", () => {
-      // Mix of Cloudinary URL (with commas) and absolute paths
-      const html =
-        '<img srcset="https://res.cloudinary.com/example/f_auto,q_auto/img.jpg 1x, /images/fallback.jpg 2x">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/img.jpg 1x");
-      expect(result).toContain("https://example.com/images/fallback.jpg 2x");
-    });
-
-    it.each([
-      ["many commas", "a,".repeat(100000)],
-      ["a long whitespace run", `a${" ".repeat(50000)}a,b`],
-    ])("stays linear on a srcset with %s", (_case, srcset) => {
-      // Re-testing each growing entry, and an unanchored leading `\s+`, took
-      // ~6.5s and ~2s on these (quadratic).
-      const started = performance.now();
-      absolutizeUrls(`<img srcset="${srcset}">`, baseUrl);
-      expect(performance.now() - started).toBeLessThan(200);
-    });
-  });
-
-  describe("video poster attributes", () => {
-    it("should convert relative poster URL to absolute", () => {
-      const html = '<video poster="/images/poster.jpg"></video>';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('poster="https://example.com/images/poster.jpg"');
-    });
-  });
-
-  describe("multiple elements", () => {
-    it("should absolutize URLs in all elements", () => {
-      const html = `
-        <article>
-          <img src="/image1.jpg">
-          <a href="/link1">Link 1</a>
-          <img src="/image2.jpg">
-          <a href="/link2">Link 2</a>
-        </article>
-      `;
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('src="https://example.com/image1.jpg"');
-      expect(result).toContain('src="https://example.com/image2.jpg"');
-      expect(result).toContain('href="https://example.com/link1"');
-      expect(result).toContain('href="https://example.com/link2"');
-    });
-  });
-
-  describe("directory-like URLs (trailing slash)", () => {
-    it("should resolve relative URLs correctly when base URL has trailing slash", () => {
-      // When a server redirects /html/2601.04480v1 → /html/2601.04480v1/,
-      // the trailing slash means the path is a directory, so relative URLs
-      // resolve against it rather than its parent.
-      const dirBaseUrl = "https://arxiv.org/html/2601.04480v1/";
-      const html = '<img src="figures/fig_004_gdoc.png" alt="Figure">';
-      const result = absolutizeUrls(html, dirBaseUrl);
-      expect(result).toContain(
-        'src="https://arxiv.org/html/2601.04480v1/figures/fig_004_gdoc.png"'
-      );
-    });
-
-    it("should resolve relative URLs against parent when base URL has no trailing slash", () => {
-      // Without trailing slash, the last segment is treated as a filename,
-      // so relative URLs resolve against the parent directory.
-      // This is standard URL resolution behavior per RFC 3986.
-      const fileBaseUrl = "https://arxiv.org/html/2601.04480v1";
-      const html = '<img src="figures/fig_004_gdoc.png" alt="Figure">';
-      const result = absolutizeUrls(html, fileBaseUrl);
-      // This resolves against /html/ (parent), NOT /html/2601.04480v1/
-      expect(result).toContain('src="https://arxiv.org/html/figures/fig_004_gdoc.png"');
-    });
-  });
-
-  describe("HTML <base> tag support", () => {
-    it("should use <base href> as the base URL for resolving relative URLs", () => {
-      const html =
-        '<html><head><base href="https://cdn.example.com/assets/"></head><body><img src="photo.jpg"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/page");
-      expect(result).toContain('src="https://cdn.example.com/assets/photo.jpg"');
-    });
-
-    it("should resolve <base href> against the provided baseUrl when relative", () => {
-      const html =
-        '<html><head><base href="/assets/"></head><body><img src="photo.jpg"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/page");
-      expect(result).toContain('src="https://example.com/assets/photo.jpg"');
-    });
-
-    it("should apply <base href> to all URL attribute types", () => {
-      const html = `<html><head><base href="https://cdn.example.com/"></head><body>
-        <img src="image.jpg">
-        <a href="page.html">Link</a>
-        <video poster="poster.jpg"></video>
-      </body></html>`;
-      const result = absolutizeUrls(html, "https://example.com/");
-      expect(result).toContain('src="https://cdn.example.com/image.jpg"');
-      expect(result).toContain('href="https://cdn.example.com/page.html"');
-      expect(result).toContain('poster="https://cdn.example.com/poster.jpg"');
-    });
-
-    it("should apply <base href> to srcset attributes", () => {
-      const html =
-        '<html><head><base href="https://cdn.example.com/img/"></head><body><img srcset="small.jpg 1x, large.jpg 2x"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/");
-      expect(result).toContain("https://cdn.example.com/img/small.jpg 1x");
-      expect(result).toContain("https://cdn.example.com/img/large.jpg 2x");
-    });
-
-    it("should not rewrite the <base> tag's own href", () => {
-      const html =
-        '<html><head><base href="https://cdn.example.com/"></head><body><img src="photo.jpg"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/");
-      expect(result).toContain('href="https://cdn.example.com/"');
-    });
-
-    it("should only use the first <base> tag per the HTML spec", () => {
-      const html =
-        '<html><head><base href="https://first.example.com/"><base href="https://second.example.com/"></head><body><img src="photo.jpg"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/");
-      expect(result).toContain('src="https://first.example.com/photo.jpg"');
-    });
-  });
-
-  describe("same-document fragment links (#1425)", () => {
-    it("should leave fragment-only hrefs relative", () => {
-      // arXiv citations / LessWrong footnotes / Markdown TOCs point at an id in
-      // the same entry, which survives sanitization — absolutizing them sends
-      // the reader off-site instead of scrolling.
-      const html = '<a href="#bib.bib19">[19]</a><a href="#footnote-1">1</a>';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('href="#bib.bib19"');
-      expect(result).toContain('href="#footnote-1"');
-    });
-
-    it("should leave a bare # href relative", () => {
-      const result = absolutizeUrls('<a href="#">top</a>', baseUrl);
-      expect(result).toContain('href="#"');
-    });
-
-    it("should still absolutize a path that carries a fragment", () => {
-      const result = absolutizeUrls('<a href="/other#section">x</a>', baseUrl);
-      expect(result).toContain('href="https://example.com/other#section"');
-    });
-
-    it("should not let a fragment-only <base href> become the base", () => {
-      // Per spec it means "this document", so resolution must be unaffected.
-      const html = '<html><head><base href="#x"></head><body><img src="a.png"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/docs/page.html");
-      expect(result).toContain('src="https://example.com/docs/a.png"');
-    });
-  });
-
-  describe("media option", () => {
-    it("should resolve media attributes against the media base and links against baseUrl", () => {
-      const html = `<img src="images/photo.jpg">
-        <a href="other.html">Link</a>
-        <video poster="images/poster.jpg"></video>
-        <img srcset="images/small.jpg 1x, images/large.jpg 2x">`;
-      const result = absolutizeUrls(html, "https://example.com/docs/page.html", {
-        media: { baseUrl: "https://cdn.example.com/docs/page.html" },
-      });
-      expect(result).toContain('src="https://cdn.example.com/docs/images/photo.jpg"');
-      expect(result).toContain('poster="https://cdn.example.com/docs/images/poster.jpg"');
-      expect(result).toContain("https://cdn.example.com/docs/images/small.jpg 1x");
-      expect(result).toContain("https://cdn.example.com/docs/images/large.jpg 2x");
-      expect(result).toContain('href="https://example.com/docs/other.html"');
-    });
-
-    it("should default the media base to baseUrl", () => {
-      const html = '<img src="photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/docs/page.html", {});
-      expect(result).toContain('src="https://example.com/docs/photo.jpg"');
-    });
-
-    it("should keep honoring <base href> when no media base is given", () => {
-      // The arXiv shape: a <base href> directory plus bare relative figure
-      // names. Media and page share an origin there, so it must keep resolving
-      // off <base> and not off the (unset) media base.
-      const html =
-        '<html><head><base href="/html/2503.09516v5/"></head><body><img src="x1.png"></body></html>';
-      const result = absolutizeUrls(html, "https://arxiv.org/html/2503.09516");
-      expect(result).toContain('src="https://arxiv.org/html/2503.09516v5/x1.png"');
-    });
-
-    it("should let an explicit <base href> override the media base", () => {
-      const html =
-        '<html><head><base href="https://base.example.com/"></head><body><img src="photo.jpg"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/page", {
-        media: { baseUrl: "https://cdn.example.com/" },
-      });
-      expect(result).toContain('src="https://base.example.com/photo.jpg"');
-    });
-  });
-
-  describe("rootBaseUrl option", () => {
-    it("should resolve root-relative paths against rootBaseUrl, not the origin root", () => {
-      const html = `<img src="/images/photo.jpg">
-        <a href="/docs/other.md">Link</a>
-        <video poster="/images/poster.jpg"></video>
-        <img srcset="/images/small.jpg 1x, /images/large.jpg 2x">`;
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-        media: {
-          baseUrl: "https://cdn.example.com/main/page.md",
-          rootBaseUrl: "https://cdn.example.com/main/",
-        },
-      });
-      expect(result).toContain('src="https://cdn.example.com/main/images/photo.jpg"');
-      expect(result).toContain('href="https://example.com/tree/main/docs/other.md"');
-      expect(result).toContain('poster="https://cdn.example.com/main/images/poster.jpg"');
-      expect(result).toContain("https://cdn.example.com/main/images/small.jpg 1x");
-      expect(result).toContain("https://cdn.example.com/main/images/large.jpg 2x");
-    });
-
-    it("should still resolve directory-relative paths against the ordinary bases", () => {
-      const html = '<img src="images/photo.jpg"><a href="other.md">Link</a>';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/docs/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-      });
-      expect(result).toContain('src="https://example.com/tree/main/docs/images/photo.jpg"');
-      expect(result).toContain('href="https://example.com/tree/main/docs/other.md"');
-    });
-
-    it("should default the whole media pair to the document's", () => {
-      const html = '<img src="/images/photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-      });
-      expect(result).toContain('src="https://example.com/tree/main/images/photo.jpg"');
-    });
-
-    it("should not leak the document root base onto a cross-origin media base", () => {
-      // The pair travels together: a media base without its own root base must
-      // not fall back to the document's, or images land on the document origin —
-      // the bug the media option exists to prevent (#1422).
-      const html = '<img src="/images/photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-        media: { baseUrl: "https://cdn.example.com/main/page.md" },
-      });
-      expect(result).toContain('src="https://cdn.example.com/images/photo.jpg"');
-    });
-
-    it("should treat leading whitespace the way the URL parser does", () => {
-      const html = '<img src="  /images/photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-      });
-      expect(result).toContain('src="https://example.com/tree/main/images/photo.jpg"');
-    });
-
-    it("should treat a rootBaseUrl without a trailing slash as a directory", () => {
-      const html = '<img src="/images/photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main",
-      });
-      expect(result).toContain('src="https://example.com/tree/main/images/photo.jpg"');
-    });
-
-    it("should leave protocol-relative URLs alone", () => {
-      const html = '<img src="//cdn.other.com/photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-      });
-      expect(result).toContain('src="https://cdn.other.com/photo.jpg"');
-    });
-
-    it("should let an explicit <base href> restore origin-root semantics", () => {
-      const html =
-        '<html><head><base href="https://base.example.com/docs/"></head><body><img src="/images/photo.jpg"></body></html>';
-      const result = absolutizeUrls(html, "https://example.com/tree/main/page.md", {
-        rootBaseUrl: "https://example.com/tree/main/",
-      });
-      expect(result).toContain('src="https://base.example.com/images/photo.jpg"');
-    });
-  });
-
-  describe("edge cases", () => {
-    it("should handle empty HTML", () => {
-      const html = "";
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toBe("");
-    });
-
-    it("should handle HTML with no URL attributes", () => {
-      const html = "<p>Just some text</p>";
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain("Just some text");
-    });
-
-    it("should handle invalid base URL gracefully", () => {
-      const html = '<img src="/image.jpg">';
-      // Should not throw, returns original
-      expect(() => absolutizeUrls(html, "not-a-valid-url")).not.toThrow();
-    });
-
-    it("should leave tags whose URLs are already absolute byte-identical", () => {
-      const html =
-        "<img src='https://cdn.example.com/a.png' srcset=\"https://cdn.example.com/b.png 2x\"/>" +
-        "<a href=rel>x</a>";
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toBe(html.replace("href=rel", 'href="https://example.com/articles/rel"'));
-    });
-
-    it("should return input the parser rejects unchanged, and keep working after", () => {
-      const rejected = '<select><xmp><img src="a.png"></xmp></select>';
-      expect(absolutizeUrls(rejected, baseUrl)).toBe(rejected);
-      expect(absolutizeUrls('<img src="a.png">', baseUrl)).toBe(
-        '<img src="https://example.com/articles/a.png">'
-      );
-    });
+  it("gives the same result from the async form on large input", async () => {
+    const html = '<p><img src="a.png"><a href="/b">x</a></p>'.repeat(1000);
+    const expected = absolutizeUrls(html, baseUrl);
+    expect(expected).toContain('src="https://example.com/articles/a.png"');
+    await expect(absolutizeUrlsAsync(html, baseUrl)).resolves.toBe(expected);
   });
 
   describe("integration with cleanContent", () => {

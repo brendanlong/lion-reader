@@ -49,16 +49,25 @@ export interface NormalizedEmbed {
  */
 export function normalizeEmbed(src: string): NormalizedEmbed | null;
 
+/** See `Bases` in `core/src/absolutize.rs`. */
+export interface AbsolutizeOptions {
+  /** The document's root base. */
+  rootBaseUrl?: string;
+  /** Bases for `src`, `poster` and `srcset`; defaults to the document's pair. */
+  media?: { baseUrl: string; rootBaseUrl?: string };
+}
+
 /**
- * Calls `rewrite(tagName, name, value)` for each of `names` present on each
- * element, in document order, and writes back a returned string that
- * differs; `null`/`undefined` leaves the value alone. Values are raw (not
- * entity-decoded), and markup outside rewritten start tags passes through
- * byte-identical. Runs on lol_html (not part of the sanitizer pipeline).
- * Throws if `rewrite` throws or lol_html rejects the input.
+ * Absolutizes relative URLs in `src`, `href`, `poster` and `srcset`, honoring
+ * the first `<base href>` and leaving same-document `#fragment` links
+ * relative. Markup outside rewritten start tags passes through byte-identical.
+ * Not part of the sanitizer pipeline. Throws when lol_html rejects the input.
  */
-export function rewriteAttributes(
+export function absolutizeUrls(html: string, baseUrl: string, options?: AbsolutizeOptions): string;
+
+/** Async form of `absolutizeUrls`, on the libuv thread pool. */
+export function absolutizeUrlsAsync(
   html: string,
-  names: string[],
-  rewrite: (tagName: string, name: string, value: string) => string | null | undefined
-): string;
+  baseUrl: string,
+  options?: AbsolutizeOptions
+): Promise<string>;

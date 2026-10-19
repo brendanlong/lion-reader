@@ -2,7 +2,7 @@
   "name": "@lion-reader/sanitizer",
   "version": "1.0.0",
   "private": true,
-  "description": "Native (Rust) entry-HTML sanitizer: MathJax CHTML->MathML, inline-SVG sanitization, and the lol_html allow-list pass, behind one N-API call, plus lol_html attribute rewriting for absolutizeUrls.",
+  "description": "Native (Rust) entry-HTML sanitizer: MathJax CHTML->MathML, inline-SVG sanitization, and the lol_html allow-list pass, behind one N-API call, plus absolutizeUrls.",
   "main": "index.js",
   "type": "commonjs",
   "types": "index.d.ts",

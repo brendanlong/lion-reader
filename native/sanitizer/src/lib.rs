@@ -6,7 +6,7 @@
 extern crate napi_derive;
 
 use napi::bindgen_prelude::AsyncTask;
-use napi::{Env, Error, JsFunction, Result, Status, Task, ValueType};
+use napi::{Env, Error, Result, Status, Task};
 
 use lion_reader_sanitizer_core as core;
 
@@ -96,40 +96,87 @@ pub fn normalize_embed(src: String) -> Option<NormalizedEmbed> {
     })
 }
 
-/// Calls `rewrite(tagName, name, value)` for each of `names` present on each
-/// element, in document order, and writes back a returned string that
-/// differs; `null`/`undefined` leaves the value alone. Values are raw (not
-/// entity-decoded). Throws if `rewrite` throws or lol_html rejects the input.
-#[napi(
-    ts_args_type = "html: string, names: string[], rewrite: (tagName: string, name: string, value: string) => string | null | undefined"
-)]
-pub fn rewrite_attributes(
-    env: Env,
-    html: String,
-    names: Vec<String>,
-    rewrite: JsFunction,
+#[napi(object)]
+pub struct MediaBases {
+    pub base_url: String,
+    pub root_base_url: Option<String>,
+}
+
+#[napi(object)]
+pub struct AbsolutizeOptions {
+    pub root_base_url: Option<String>,
+    pub media: Option<MediaBases>,
+}
+
+fn run_absolutize(
+    html: &str,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
 ) -> Result<String> {
-    core::attributes::rewrite_attributes(&html, &names, |tag, name, value| {
-        let args = [
-            env.create_string(tag)?,
-            env.create_string(name)?,
-            env.create_string(value)?,
-        ];
-        let result = rewrite.call(None, &args)?;
-        match result.get_type()? {
-            ValueType::String => Ok(Some(result.coerce_to_string()?.into_utf8()?.into_owned()?)),
-            ValueType::Null | ValueType::Undefined => Ok(None),
-            _ => Err(Error::new(
-                Status::InvalidArg,
-                "rewriteAttributes callback must return a string, null or undefined".to_string(),
-            )),
-        }
-    })
-    .map_err(|e| match e {
-        core::attributes::RewriteError::Callback(e) => e,
-        core::attributes::RewriteError::Rewriter(message) => Error::new(
+    let options = options.unwrap_or(AbsolutizeOptions {
+        root_base_url: None,
+        media: None,
+    });
+    let document = core::absolutize::Bases {
+        url: base_url,
+        root: options.root_base_url,
+    };
+    let media = options.media.map(|media| core::absolutize::Bases {
+        url: media.base_url,
+        root: media.root_base_url,
+    });
+    core::absolutize::absolutize_urls(html, &document, media.as_ref()).map_err(|message| {
+        Error::new(
             Status::GenericFailure,
-            format!("rewriteAttributes failed: {message}"),
-        ),
+            format!("absolutizeUrls failed: {message}"),
+        )
+    })
+}
+
+/// Absolutizes relative URLs in `src`/`href`/`poster`/`srcset` (see
+/// `core/src/absolutize.rs`). Throws when lol_html rejects the input.
+#[napi]
+pub fn absolutize_urls(
+    html: String,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+) -> Result<String> {
+    run_absolutize(&html, base_url, options)
+}
+
+pub struct AbsolutizeJob {
+    html: String,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+}
+
+impl Task for AbsolutizeJob {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        run_absolutize(
+            &self.html,
+            std::mem::take(&mut self.base_url),
+            self.options.take(),
+        )
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Async form of `absolutizeUrls`, on the libuv thread pool.
+#[napi(ts_return_type = "Promise<string>")]
+pub fn absolutize_urls_async(
+    html: String,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+) -> AsyncTask<AbsolutizeJob> {
+    AsyncTask::new(AbsolutizeJob {
+        html,
+        base_url,
+        options,
     })
 }

@@ -51,7 +51,8 @@ exports.sanitizeEntryHtml = nativeBinding.sanitizeEntryHtml;
 exports.sanitizeEntryHtmlAsync = nativeBinding.sanitizeEntryHtmlAsync;
 exports.embedCanonicalHostnames = nativeBinding.embedCanonicalHostnames;
 exports.normalizeEmbed = nativeBinding.normalizeEmbed;
-exports.rewriteAttributes = nativeBinding.rewriteAttributes;
+exports.absolutizeUrls = nativeBinding.absolutizeUrls;
+exports.absolutizeUrlsAsync = nativeBinding.absolutizeUrlsAsync;
 
 // Drift guard: every name re-exported above must resolve to a real symbol in
 // the binary. A re-export that comes out `undefined` means sanitizer.node has
