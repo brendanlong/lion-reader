@@ -37,9 +37,10 @@
  */
 
 import { parseHTML } from "linkedom";
-import { defaultTreeAdapter, parse, serialize, type DefaultTreeAdapterMap } from "parse5";
+import { defaultTreeAdapter, Parser, serialize, type DefaultTreeAdapterMap } from "parse5";
 
 type Parse5Node = DefaultTreeAdapterMap["node"];
+type Parse5ParentNode = DefaultTreeAdapterMap["parentNode"];
 
 /**
  * Deepest element the normalizing parse builds, counting `<html>` as 1. Blink
@@ -50,15 +51,30 @@ type Parse5Node = DefaultTreeAdapterMap["node"];
 export const MAX_TREE_DEPTH = 512;
 
 /**
+ * Most elements the parse builds per element read from a start tag of its
+ * own, beyond {@link EXTRA_ELEMENT_ALLOWANCE}. The rest are implied
+ * (`<tbody>`) or re-created: each new paragraph reopens the formatting
+ * elements left open before it, up to three copies of each, so an unclosed
+ * `<b>` per paragraph builds about 2.5 per start tag. Re-creation is otherwise
+ * unbounded: hundreds of distinct unclosed tags reopen in every paragraph.
+ *
+ * @testonly
+ */
+export const MAX_ELEMENTS_PER_START_TAG = 3;
+
+/** Implied and re-created elements allowed before the ratio applies. */
+const EXTRA_ELEMENT_ALLOWANCE = 1000;
+
+/**
  * Parses entry HTML into a `<body>` element holding the tree a browser builds
  * from the same string.
  *
- * Markup past the point where the tree would nest deeper than
- * {@link MAX_TREE_DEPTH} is left out (#2039): parse5 searches its open
- * elements for many tags, and the sanitizer keeps feed-controlled nesting, so
- * an entry nested tens of thousands deep took about a minute to parse. Where
- * the browser's tree differs past that point (a foster-parented element moves
- * before a table), numbering can differ from there on.
+ * The tree ends where it would nest deeper than {@link MAX_TREE_DEPTH} or hold
+ * more elements than {@link MAX_ELEMENTS_PER_START_TAG} allows (#2039): parse5
+ * searches its open elements for many tags, and the sanitizer keeps
+ * feed-controlled markup, so a deeply nested entry took up to a minute to
+ * parse. Where the browser's tree differs past the cut (a foster-parented
+ * element moves before a table), numbering can differ from there on.
  *
  * @param html - The (already sanitized) entry HTML
  * @returns The body element of the parsed document
@@ -66,33 +82,34 @@ export const MAX_TREE_DEPTH = 512;
 export function parseBodyAsBrowser(html: string): Element {
   // Wrapped in a document so the content parses in "in body" insertion mode —
   // the mode the client's `DOMParser` call uses for the same string.
-  return parseHTML(serialize(parseDepthCapped(`<!DOCTYPE html><html><body>${html}</body></html>`)))
+  return parseHTML(serialize(parseBounded(`<!DOCTYPE html><html><body>${html}</body></html>`)))
     .document.body;
 }
 
-/** Where to cut the markup so the tree stays within {@link MAX_TREE_DEPTH}. */
-class TooDeep extends Error {
+/** Where to cut the markup so the tree stays within bounds. */
+class TreeTooBig extends Error {
   constructor(readonly offset: number) {
-    super("Markup nests too deep");
+    super("Markup builds too big a tree");
   }
 }
 
 /**
  * parse5's tree of the longest prefix of `markup` that stays within
- * {@link MAX_TREE_DEPTH}, cut at a start tag.
+ * {@link MAX_TREE_DEPTH} and {@link MAX_ELEMENTS_PER_START_TAG}, cut at a start
+ * tag.
  *
- * The depth is measured on the tree parse5 builds, not on the markup: a
- * browser ignores `</span>` across an open `<div>`, so `<span><div></span>`
- * nests two levels per repeat while closing every element it opens, and
- * `<p><b>` closes the `<b>` a SAX count would leave open. The over-deep
- * element's start tag (or, for an implied element, the last one the parse
- * placed) is where the cut goes. Everything before it parsed without reaching
- * the limit, so the second parse of the prefix stays within it.
+ * Both are measured on the tree parse5 builds, not on the markup: a browser
+ * ignores `</span>` across an open `<div>`, so `<span><div></span>` nests two
+ * levels per repeat while closing every element it opens, and `<p><b>` closes
+ * the `<b>` a SAX count would leave open. The cut goes at the latest start tag
+ * the parse had placed when it went over (a re-created element carries an
+ * earlier tag's position). The parse got that far within bounds, so the
+ * second parse, of the markup before it, stays within them.
  */
-function parseDepthCapped(markup: string): DefaultTreeAdapterMap["document"] {
+function parseBounded(markup: string): DefaultTreeAdapterMap["document"] {
   for (;;) {
     try {
-      return parse(markup, {
+      return BoundedParser.parse(markup, {
         // `scriptingEnabled: false` matches `DOMParser`, whose documents have
         // scripting disabled (it decides how `<noscript>` content is parsed).
         scriptingEnabled: false,
@@ -100,38 +117,70 @@ function parseDepthCapped(markup: string): DefaultTreeAdapterMap["document"] {
         treeAdapter: boundedTreeAdapter(),
       });
     } catch (error) {
-      if (!(error instanceof TooDeep)) throw error;
+      if (!(error instanceof TreeTooBig)) throw error;
       markup = markup.slice(0, error.offset);
     }
   }
 }
 
+class BoundedParser extends Parser<DefaultTreeAdapterMap> {
+  /**
+   * The adoption agency moves a block's children into a new element. parse5
+   * detaches them from the front one at a time, shifting the rest each time,
+   * which took a minute on a block of a few hundred thousand `<br>`s; this
+   * moves the list at once.
+   */
+  override _adoptNodes(donor: Parse5ParentNode, recipient: Parse5ParentNode): void {
+    const children = donor.childNodes;
+    donor.childNodes = [];
+    for (const child of children) {
+      child.parentNode = null;
+      this.treeAdapter.appendChild(recipient, child);
+    }
+  }
+}
+
 /**
- * parse5's default tree, built within {@link MAX_TREE_DEPTH} (throwing
- * {@link TooDeep}). The parse also inserts and detaches at a table's position
- * (foster parenting, the adoption agency), which is at or near the end of its
- * parent's children; the default adapter finds it searching from the start,
- * which took seconds on a megabyte of `<table><div>`, so this searches from
- * the end.
+ * parse5's default tree, built within bounds (throwing {@link TreeTooBig}).
+ * Foster parenting inserts before the open table and the adoption agency
+ * detaches an open element, each the last or nearly the last of its parent's
+ * children (the agency's moves from the front are {@link BoundedParser}'s).
+ * The default adapter finds them searching from the start, which took seconds
+ * on a megabyte of `<table><div>`, so this searches from the end.
  */
 function boundedTreeAdapter(): typeof defaultTreeAdapter {
   // A template's content is a fragment with no parent; nesting goes on there.
   const templateHosts = new WeakMap<Parse5Node, Parse5Node>();
-  let lastPlaced = 0;
+  let lastPlaced = -1;
+  let elements = 0;
+  let fromStartTags = 0;
 
   const check = (parent: Parse5Node, node: Parse5Node) => {
     if (!defaultTreeAdapter.isElementNode(node)) return;
-    const start = node.sourceCodeLocation?.startOffset;
-    if (start !== undefined) lastPlaced = start;
+    // Re-created and moved elements carry an earlier tag's position, implied
+    // ones none.
+    const start = node.sourceCodeLocation?.startOffset ?? -1;
+    if (start > lastPlaced) {
+      lastPlaced = start;
+      fromStartTags++;
+    }
+    const cut = Math.max(lastPlaced, 0);
+    if (elements > fromStartTags * MAX_ELEMENTS_PER_START_TAG + EXTRA_ELEMENT_ALLOWANCE) {
+      throw new TreeTooBig(cut);
+    }
     let depth = 0;
     for (let n: Parse5Node | null | undefined = parent; n;) {
-      if (++depth > MAX_TREE_DEPTH) throw new TooDeep(start ?? lastPlaced);
+      if (++depth > MAX_TREE_DEPTH) throw new TreeTooBig(cut);
       n = ("parentNode" in n ? n.parentNode : null) ?? templateHosts.get(n);
     }
   };
 
   return {
     ...defaultTreeAdapter,
+    createElement(tagName, namespaceURI, attrs) {
+      elements++;
+      return defaultTreeAdapter.createElement(tagName, namespaceURI, attrs);
+    },
     appendChild(parent, node) {
       check(parent, node);
       defaultTreeAdapter.appendChild(parent, node);

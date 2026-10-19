@@ -11,7 +11,7 @@ import {
   htmlToNarrationInput,
   type HtmlToNarrationInputResult,
 } from "../../src/lib/narration/html-to-narration-input";
-import { MAX_TREE_DEPTH } from "../../src/lib/narration/parse-html";
+import { MAX_ELEMENTS_PER_START_TAG, MAX_TREE_DEPTH } from "../../src/lib/narration/parse-html";
 import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
@@ -891,6 +891,27 @@ describe("htmlToNarrationInput", () => {
       time(40_000);
       // Linear is 4x; the default adapter's scan made it 8-16x.
       expect(time(160_000)).toBeLessThan(6 * time(40_000));
+    });
+
+    it("moves a misnested block's children at once", () => {
+      // The adoption agency moves every <br> into a new <b>; one at a time
+      // from the front, each move shifted all the rest.
+      const html = `<p>before</p><b><div>${"<br>".repeat(120_000)}</b>after</div>`;
+      const start = performance.now();
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["before", "after"]);
+      expect(performance.now() - start).toBeLessThan(1000);
+    });
+
+    it("stops re-creating formatting elements past the element budget", () => {
+      // Every paragraph reopens all the unclosed tags (distinct, so none is
+      // dropped as a duplicate).
+      const unclosed = 10 * MAX_ELEMENTS_PER_START_TAG;
+      const open = Array.from({ length: unclosed }, (_, i) => `<b title="t${i}">`).join("");
+      const paragraphs = 5000;
+      const read = narrated(htmlToNarrationInput(`<p>${open}</p>${"<p>x</p>".repeat(paragraphs)}`));
+
+      expect(read.length).toBeGreaterThan(0);
+      expect(read.length).toBeLessThan(paragraphs);
     });
 
     it("doesn't count inline elements a new paragraph closes", () => {
