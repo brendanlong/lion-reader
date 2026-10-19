@@ -17,6 +17,7 @@ import { UserEmail } from "@/components/layout/UserEmail";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { LayoutShell } from "@/components/layout/LayoutShell";
+import { FeedbackDialog } from "@/components/layout/FeedbackDialog";
 import {
   ScrollContainerProvider,
   MainScrollContainer,
@@ -33,6 +34,7 @@ interface AppLayoutContentProps {
 
 export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
@@ -62,6 +64,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
         <KeyboardShortcutsProvider>
           <ScrollContainerProvider>
             <Toaster position="bottom-right" richColors closeButton />
+            <FeedbackDialog isOpen={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
             <LayoutShell
               headerRight={
                 <div className="flex items-center gap-2">
@@ -118,6 +121,15 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                           >
                             Sessions
                           </ClientLink>
+                          <button
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              setFeedbackOpen(true);
+                            }}
+                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 dark:active:bg-zinc-700"
+                          >
+                            Send feedback
+                          </button>
                           <hr className="border-edge-strong my-1" />
                           <button
                             onClick={() => {
