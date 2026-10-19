@@ -11,7 +11,11 @@ import {
   htmlToNarrationInput,
   type HtmlToNarrationInputResult,
 } from "../../src/lib/narration/html-to-narration-input";
-import { MAX_ELEMENTS_PER_TOKEN, MAX_TREE_DEPTH } from "../../src/lib/narration/parse-html";
+import {
+  EXTRA_ELEMENT_ALLOWANCE,
+  MAX_ELEMENTS,
+  MAX_TREE_DEPTH,
+} from "../../src/lib/narration/parse-html";
 import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
@@ -904,18 +908,25 @@ describe("htmlToNarrationInput", () => {
 
     it("stops re-creating formatting elements past the element budget", () => {
       // Every paragraph reopens all the unclosed tags (distinct, so none is
-      // dropped as a duplicate).
-      const unclosed = 10 * MAX_ELEMENTS_PER_TOKEN;
+      // dropped as a duplicate), far more elements per character than the
+      // budget allows.
+      const unclosed = 30;
       const open = Array.from({ length: unclosed }, (_, i) => `<b title="t${i}">`).join("");
-      const paragraphs = 5000;
-      const read = narrated(htmlToNarrationInput(`<p>${open}</p>${"<p>x</p>".repeat(paragraphs)}`));
+      const html = `<p>${open}</p>${"<p>x</p>".repeat(5000)}`;
+      const budget = html.length * MAX_ELEMENTS.perChar + EXTRA_ELEMENT_ALLOWANCE;
+      const read = narrated(htmlToNarrationInput(html)).length;
 
-      expect(read.length).toBeGreaterThan(0);
-      expect(read.length).toBeLessThan(paragraphs);
+      expect(Math.abs(read - budget / (unclosed + 1))).toBeLessThan(3);
     });
 
-    it("cuts at the markup that went too deep, not at a re-created tag", () => {
-      // The element past the limit re-creates the <b> from the first line.
+    it("reads a long article after a few unclosed formatting tags", () => {
+      const paragraphs = Array.from({ length: 3000 }, (_, i) => `<p>Paragraph ${i}.</p>`);
+      const html = `<p><b><i><u><s><strong>Intro</p>${paragraphs.join("")}`;
+      expect(narrated(htmlToNarrationInput(html))).toHaveLength(3001);
+    });
+
+    it("keeps what came before the element that went too deep", () => {
+      // The element past the limit is a re-created <b> from the first line.
       const html =
         "<p><b>intro</p>" + "<p>more</p>".repeat(100) + "<div>".repeat(MAX_TREE_DEPTH - 2) + "x";
       expect(narrated(htmlToNarrationInput(html))).toHaveLength(101);
