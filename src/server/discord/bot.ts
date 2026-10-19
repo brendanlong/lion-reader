@@ -28,15 +28,15 @@ import {
   type User,
   type PartialUser,
 } from "discord.js";
-import { eq, and } from "drizzle-orm";
 import { db } from "@/server/db";
-import { oauthAccounts } from "@/server/db/schema";
+import { appUrl } from "@/server/config/env";
 import { saveArticle } from "@/server/services/saved";
 import { validateApiToken, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import {
   linkDiscordApiToken,
-  resolveDiscordApiTokenUserId,
+  resolveDiscordUser,
   unlinkDiscordApiToken,
+  type DiscordUser,
 } from "@/server/services/discord-links";
 import { getMaintenance } from "@/server/services/site-status";
 import { logger } from "@/lib/logger";
@@ -61,6 +61,11 @@ const MAINTENANCE_REPLY =
 async function isUnderMaintenance(): Promise<boolean> {
   return (await getMaintenance()).enabled;
 }
+
+/** Shown to a linked user who hasn't accepted the Terms yet (`DiscordUser.confirmed`). */
+const UNCONFIRMED_REPLY =
+  "Your Lion Reader account isn't set up yet. Finish signing up at " +
+  `${appUrl}/complete-signup, then try again.`;
 
 // How long after login() to wait for the gateway `clientReady` event before
 // warning that the bot connected but isn't receiving events.
@@ -127,43 +132,6 @@ function extractUrls(content: string): string[] {
   // Dedupe: the same URL commonly appears in both the message text and its
   // embed/forward snapshot, and we don't want to save it twice.
   return [...new Set(urls)];
-}
-
-// ============================================================================
-// User Lookup
-// ============================================================================
-
-interface ResolvedUser {
-  userId: string;
-  method: "oauth" | "token";
-}
-
-/**
- * Look up a Lion Reader user by Discord ID.
- * Tries OAuth first, then falls back to a durable Postgres API-token link.
- */
-async function resolveUser(discordId: string): Promise<ResolvedUser | null> {
-  // First, check OAuth linking
-  const oauthResult = await db
-    .select({ userId: oauthAccounts.userId })
-    .from(oauthAccounts)
-    .where(
-      and(eq(oauthAccounts.provider, "discord"), eq(oauthAccounts.providerAccountId, discordId))
-    )
-    .limit(1);
-
-  if (oauthResult[0]) {
-    return { userId: oauthResult[0].userId, method: "oauth" };
-  }
-
-  // Fall back to the API-token link (Postgres). A revoked/expired token
-  // resolves to null, exactly as an unlinked user would.
-  const userId = await resolveDiscordApiTokenUserId(db, discordId);
-  if (userId) {
-    return { userId, method: "token" };
-  }
-
-  return null;
 }
 
 // ============================================================================
@@ -282,7 +250,7 @@ export async function startDiscordBot(): Promise<void> {
       await handleSaveReaction(reaction.message, user);
     } catch (error) {
       // Same rationale as interactionCreate: a rejection here (e.g. the
-      // resolveUser DB lookup) would otherwise crash the whole bot process.
+      // resolveDiscordUser DB lookup) would otherwise crash the whole bot process.
       Sentry.captureException(error);
       logger.error("Discord save-reaction handler failed", {
         messageId: reaction.message.id,
@@ -483,15 +451,8 @@ async function handleUnlinkCommand(
   user: User
 ): Promise<void> {
   const hadToken = await unlinkDiscordApiToken(db, user.id);
-
-  // Check if they still have OAuth
-  const oauthResult = await db
-    .select({ userId: oauthAccounts.userId })
-    .from(oauthAccounts)
-    .where(and(eq(oauthAccounts.provider, "discord"), eq(oauthAccounts.providerAccountId, user.id)))
-    .limit(1);
-
-  const hasOAuth = oauthResult.length > 0;
+  // With the token link gone, any remaining link is the OAuth one.
+  const hasOAuth = (await resolveDiscordUser(db, user.id)) !== null;
 
   if (hadToken) {
     await interaction.reply({
@@ -514,9 +475,11 @@ async function handleStatusCommand(
   interaction: ChatInputCommandInteraction,
   user: User
 ): Promise<void> {
-  const resolved = await resolveUser(user.id);
+  const resolved = await resolveDiscordUser(db, user.id);
 
-  if (resolved) {
+  if (resolved && !resolved.confirmed) {
+    await interaction.reply({ content: UNCONFIRMED_REPLY, flags: MessageFlags.Ephemeral });
+  } else if (resolved) {
     const methodText = resolved.method === "oauth" ? "Discord OAuth" : "API token";
     await interaction.reply({
       content: `Your account is linked via ${methodText}. React to messages with ${DISCORD_SAVE_EMOJI}, or send/forward a link to me in a DM, to save articles.`,
@@ -549,9 +512,13 @@ async function handleSaveReaction(
   }
 
   // Look up Lion Reader user
-  const resolved = await resolveUser(user.id);
+  const resolved = await resolveDiscordUser(db, user.id);
   if (!resolved) {
     logger.info("Ignoring save reaction from unlinked Discord user", { discordId: user.id });
+    return;
+  }
+  if (!resolved.confirmed) {
+    logger.info("Ignoring save reaction from unconfirmed user", { discordId: user.id });
     return;
   }
 
@@ -611,7 +578,7 @@ async function handleDirectMessage(message: Message): Promise<void> {
   }
 
   // Look up Lion Reader user
-  const resolved = await resolveUser(message.author.id);
+  const resolved = await resolveDiscordUser(db, message.author.id);
   if (!resolved) {
     logger.info("Ignoring direct message from unlinked Discord user", {
       discordId: message.author.id,
@@ -625,6 +592,17 @@ async function handleDirectMessage(message: Message): Promise<void> {
       );
     } catch (error) {
       logger.warn("Failed to reply to unlinked DM", { error });
+    }
+    return;
+  }
+  if (!resolved.confirmed) {
+    logger.info("Ignoring direct message from unconfirmed user", {
+      discordId: message.author.id,
+    });
+    try {
+      await message.reply(UNCONFIRMED_REPLY);
+    } catch (error) {
+      logger.warn("Failed to reply to unconfirmed DM", { error });
     }
     return;
   }
@@ -669,7 +647,7 @@ async function recoverUncachedDirectMessage(
 async function saveUrlsAndReact(
   message: Message,
   urls: string[],
-  resolved: ResolvedUser,
+  resolved: DiscordUser,
   user: User | PartialUser
 ): Promise<void> {
   let hasSuccess = false;

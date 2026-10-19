@@ -6,13 +6,13 @@
  * Redis data loss, unlike the old Redis-only `discord:token:*` storage
  * (#1370) — stored as a reference to the api_tokens row rather than the raw
  * token, so no secret is kept at rest and the link auto-invalidates when the
- * token is deleted. OAuth-based links live in `oauthAccounts` and are resolved
- * directly by the bot; this module only covers the API-token path.
+ * token is deleted. OAuth-based links live in `oauthAccounts`.
  */
 
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { Database } from "@/server/db";
-import { apiTokens, discordApiTokenLinks } from "@/server/db/schema";
+import { apiTokens, discordApiTokenLinks, oauthAccounts, users } from "@/server/db/schema";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 
 /**
  * Link a Discord user to an API token (by token-row id). Upserts, so re-running
@@ -30,20 +30,56 @@ export async function linkDiscordApiToken(
   });
 }
 
+export interface DiscordUser {
+  userId: string;
+  method: "oauth" | "token";
+  /**
+   * Whether the user finished signup confirmation (`isSignupConfirmed`). The
+   * bot must not save for an unconfirmed user, like every other companion
+   * surface (SECURITY.md §8): a first Discord sign-in creates the account before
+   * its owner accepts the Terms.
+   */
+  confirmed: boolean;
+}
+
+const userConsentColumns = {
+  userId: users.id,
+  tosAgreedAt: users.tosAgreedAt,
+  privacyPolicyAgreedAt: users.privacyPolicyAgreedAt,
+  notEuAgreedAt: users.notEuAgreedAt,
+};
+
 /**
- * Resolve the Lion Reader user id linked to a Discord user via API token, or
- * `null` if there is no link or the linked token is revoked/expired. Does not
- * fall back to OAuth — the caller checks that separately. Because api_tokens is
- * `ON DELETE CASCADE` from users, a live token implies a live user.
+ * Resolve the Lion Reader user linked to a Discord user: the Discord OAuth link
+ * first, then the API-token link, except that a confirmed user beats an
+ * unconfirmed one: an abandoned "Sign in with Discord" (an account that never
+ * accepted the Terms) must not shadow a later `/link` to a real account.
+ * Returns `null` if neither exists or the linked token is revoked/expired.
  */
-export async function resolveDiscordApiTokenUserId(
+export async function resolveDiscordUser(
   db: Database,
   discordId: string
-): Promise<string | null> {
-  const result = await db
-    .select({ userId: apiTokens.userId })
+): Promise<DiscordUser | null> {
+  const [oauth] = await db
+    .select(userConsentColumns)
+    .from(oauthAccounts)
+    .innerJoin(users, eq(users.id, oauthAccounts.userId))
+    .where(
+      and(eq(oauthAccounts.provider, "discord"), eq(oauthAccounts.providerAccountId, discordId))
+    )
+    .limit(1);
+  const oauthUser: DiscordUser | null = oauth
+    ? { userId: oauth.userId, method: "oauth", confirmed: isSignupConfirmed(oauth) }
+    : null;
+  if (oauthUser?.confirmed) {
+    return oauthUser;
+  }
+
+  const [token] = await db
+    .select(userConsentColumns)
     .from(discordApiTokenLinks)
     .innerJoin(apiTokens, eq(apiTokens.id, discordApiTokenLinks.tokenId))
+    .innerJoin(users, eq(users.id, apiTokens.userId))
     .where(
       and(
         eq(discordApiTokenLinks.discordId, discordId),
@@ -53,8 +89,11 @@ export async function resolveDiscordApiTokenUserId(
       )
     )
     .limit(1);
+  const tokenUser: DiscordUser | null = token
+    ? { userId: token.userId, method: "token", confirmed: isSignupConfirmed(token) }
+    : null;
 
-  return result[0]?.userId ?? null;
+  return tokenUser?.confirmed ? tokenUser : (oauthUser ?? tokenUser);
 }
 
 /**

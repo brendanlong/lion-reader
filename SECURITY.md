@@ -178,16 +178,20 @@ fetches user-influenced URLs and must never be usable to reach internal services
   or model (`narrationFailureScope`, #1755) — and **a user-picked model's output is
   cached under a key bound to that user and model** (`narrationContentHash`).
 
-## 8. Companion APIs (Wallabag, Google Reader, MCP, save extensions)
+## 8. Companion APIs (Wallabag, Google Reader, MCP, save extensions, Discord bot)
 
 **Docs:** `src/server/CLAUDE.md` (Compat API Integer IDs) · **Code:**
 `src/app/api/wallabag/`, `src/app/api/greader.php/`, `src/server/wallabag/`,
-`src/server/google-reader/`, `src/server/mcp/`
+`src/server/google-reader/`, `src/server/mcp/`, `src/server/discord/`
 
-- These require `reader:full-access` (or MCP scope) plus signup confirmation, and
-  authenticate by hashed-token lookup. Each Wallabag and Google Reader handler
-  authenticates itself, so `compat-route-auth.test.ts` sends every one a request
-  without credentials; a handler that is public by design is listed there.
+- These require signup confirmation plus `reader:full-access` (or MCP scope), and
+  authenticate by hashed-token lookup. The Discord bot is the exception on scope:
+  `/link` accepts a token with any of `SAVE_ARTICLE_SCOPES` (a Discord OAuth link
+  needs none), and since it saves through the service layer rather than tRPC, it
+  checks confirmation itself (`resolveDiscordUser`). Each Wallabag and Google
+  Reader handler authenticates itself, so `compat-route-auth.test.ts` sends every
+  one a request without credentials; a handler that is public by design is listed
+  there.
 - **The secretless Wallabag token endpoint is pinned to the `wallabag` client_id**
   (`WALLABAG_CLIENT_ID`): it shares token tables with the OAuth server, so honoring a
   caller-supplied client_id would let it rotate or mint another client's tokens.
