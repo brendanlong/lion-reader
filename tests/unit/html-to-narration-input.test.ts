@@ -11,6 +11,13 @@ import {
   htmlToNarrationInput,
   type HtmlToNarrationInputResult,
 } from "../../src/lib/narration/html-to-narration-input";
+import {
+  EXTRA_ELEMENT_ALLOWANCE,
+  MAX_ELEMENTS,
+  MAX_TREE_DEPTH,
+  parseBodyAsBrowser,
+} from "../../src/lib/narration/parse-html";
+import { parse, serialize } from "parse5";
 import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
@@ -21,6 +28,15 @@ import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
  */
 function narrated(result: HtmlToNarrationInputResult): string[] {
   return result.paragraphs.map((paragraph) => paragraph.text);
+}
+
+/**
+ * What the walk says over a tree the server's parse didn't cut short, as the
+ * client's isn't: the walk's own depth cap is all that keeps it off the stack.
+ */
+function narratedUncut(html: string): string[] {
+  const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+  return narrationRuns(document.body, LLM_INPUT_VOICE).map((run) => run.text);
 }
 
 describe("htmlToNarrationInput", () => {
@@ -198,28 +214,16 @@ describe("htmlToNarrationInput", () => {
     });
 
     it("narrates absurdly nested quotes instead of overflowing the stack", () => {
-      // Feed HTML is not depth-limited and the content walk is recursive, so
-      // past a point it flattens what is left rather than descending further.
-      // Deep enough that an uncapped walk would overflow (measured: 2000 is
-      // fine, 5000 throws), so removing the cap fails this test.
+      // The content walk is recursive, so past a point it flattens what is
+      // left rather than descending further. Deep enough that an uncapped walk
+      // would overflow (measured: 2000 is fine, 5000 throws), so removing the
+      // cap fails this test.
       const depth = 5000;
       const html = `${"<blockquote>".repeat(depth)}<p>the text</p>${"</blockquote>".repeat(depth)}`;
-      const result = htmlToNarrationInput(html);
+      const runs = narratedUncut(html);
 
-      expect(result.paragraphs).toHaveLength(1);
-      expect(result.paragraphs[0].text).toContain("the text");
-    });
-
-    it("narrates nesting too deep for the spec parser to serialize", () => {
-      // parse5's serializer recurses per element, so past a few thousand levels
-      // the normalizing parse in `parse-html` throws where linkedom's own parse
-      // copes. Narration degrades to that parse rather than to a 500 (which on
-      // the LLM path would also suppress retries for an hour). The depth where
-      // parse5 gives out moves with the environment; 10 000 is past it here.
-      const depth = 10000;
-      const html = `${"<div>".repeat(depth)}<p>the text</p>${"</div>".repeat(depth)}`;
-
-      expect(narrated(htmlToNarrationInput(html))).toEqual(["the text"]);
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toContain("the text");
     });
 
     it("drops an empty quote instead of speaking bare markers", () => {
@@ -833,12 +837,11 @@ describe("htmlToNarrationInput", () => {
       const depth = 5000;
       const html = `<p>${"<code>".repeat(depth)}x${"</code>".repeat(depth)}</p>`;
 
-      expect(narrated(htmlToNarrationInput(html))).toEqual(["`x`"]);
+      expect(narratedUncut(html)).toEqual(["`x`"]);
     });
 
     it("stops descending into table structure nested inside itself", () => {
-      // Only a non-spec parse builds this (linkedom's, which narration falls
-      // back to when the spec parser gives out), so the tree is built directly.
+      // Only a non-spec parse builds this, so the tree is built directly.
       const { document } = parseHTML("<!DOCTYPE html><html><body></body></html>");
       let inner: Element = document.createElement("table");
       document.body.appendChild(inner);
@@ -850,6 +853,144 @@ describe("htmlToNarrationInput", () => {
 
       const runs = narrationRuns(document.body, LLM_INPUT_VOICE);
       expect(runs.map((run) => run.text)).toEqual(["x"]);
+    });
+  });
+
+  describe("markup nested too deep to parse", () => {
+    // `<html>` and `<body>` are the first two levels.
+    const divsAround = (count: number, html: string) =>
+      `${"<div>".repeat(count)}${html}${"</div>".repeat(count)}`;
+
+    it("reads up to the depth limit and stops past it", () => {
+      expect(narrated(htmlToNarrationInput(divsAround(MAX_TREE_DEPTH - 3, "<p>deep</p>")))).toEqual(
+        ["deep"]
+      );
+      expect(
+        narrated(
+          htmlToNarrationInput(`<p>before</p>${divsAround(MAX_TREE_DEPTH - 2, "<p>deep</p>")}`)
+        )
+      ).toEqual(["before"]);
+    });
+
+    // #2039: each took 20 s to a minute to parse. The last two close every
+    // element they open, so only the tree's depth (not the markup's) catches them.
+    it.each([
+      ["nested elements", divsAround(80_000, "<p>deep</p>")],
+      ["end tags a browser ignores", "<span><div></span>".repeat(55_000)],
+      ["misnested formatting", "<b><div></b>".repeat(80_000)],
+    ])("cuts %s off quickly", (_, deep) => {
+      const start = performance.now();
+      expect(narrated(htmlToNarrationInput(`<p>before</p>${deep}<p>after</p>`))).toEqual([
+        "before",
+      ]);
+      expect(performance.now() - start).toBeLessThan(1000);
+    });
+
+    it("parses content foster-parented out of a table in linear time", () => {
+      // Each <div> is inserted before the open table, which parse5's own tree
+      // adapter finds by scanning from its parent's first child.
+      const time = (count: number) => {
+        const start = performance.now();
+        htmlToNarrationInput("<table>" + "<div>x</div>".repeat(count));
+        return performance.now() - start;
+      };
+      time(40_000);
+      // Linear is 4x; the default adapter's scan made it 8-16x.
+      expect(time(160_000)).toBeLessThan(6 * time(40_000));
+    });
+
+    it("moves a misnested block's children at once", () => {
+      // The adoption agency moves every <br> into a new <b>; one at a time
+      // from the front, each move shifted all the rest.
+      const html = `<p>before</p><b><div>${"<br>".repeat(120_000)}</b>after</div>`;
+      const start = performance.now();
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["before", "after"]);
+      expect(performance.now() - start).toBeLessThan(1000);
+    });
+
+    it("stops re-creating formatting elements past the element budget", () => {
+      // Every paragraph reopens all the unclosed tags (distinct, so none is
+      // dropped as a duplicate), far more elements per character than the
+      // budget allows.
+      const unclosed = 30;
+      const open = Array.from({ length: unclosed }, (_, i) => `<b title="t${i}">`).join("");
+      const html = `<p>${open}</p>${"<p>x</p>".repeat(5000)}`;
+      const budget = html.length * MAX_ELEMENTS.perChar + EXTRA_ELEMENT_ALLOWANCE;
+      const read = narrated(htmlToNarrationInput(html)).length;
+
+      expect(Math.abs(read - budget / (unclosed + 1))).toBeLessThan(3);
+    });
+
+    it("budgets the attributes re-created elements copy", () => {
+      const title = "t".repeat(1000);
+      const open = [0, 1, 2].map((i) => `<b title="${i}${title}">`).join("");
+      const paragraph = `<p>${"Text of an ordinary paragraph. ".repeat(2)}</p>`;
+      const html = `<p>${open}</p>${paragraph.repeat(3000)}`;
+      const copied = 3 * (title.length + "title".length + 1);
+      const read = narrated(htmlToNarrationInput(html)).length;
+
+      expect(
+        Math.abs(read - (html.length * MAX_ELEMENTS.attributeCharsPerChar) / copied)
+      ).toBeLessThan(3);
+    });
+
+    it("reads a long post after a link left open", () => {
+      // Every block after the missing </a> reopens the link, copying its URL.
+      const href = `https://example.com/track?${"utm_x=campaign&".repeat(10)}id=1`;
+      const paragraphs = Array.from({ length: 3000 }, (_, i) => `<p>Short paragraph ${i}.</p>`);
+      const html = `<p><a href="${href}" rel="noopener" target="_blank">Link</p>${paragraphs.join("")}`;
+      expect(narrated(htmlToNarrationInput(html))).toHaveLength(3001);
+    });
+
+    it("stops only between tokens, keeping what a misnested tag moved", () => {
+      // The stop lands somewhere in the tail as `count` varies. The adoption
+      // agency's </a> moves the block holding SENTINEL; stopping partway
+      // through those moves dropped it, leaving a tree no prefix parses to.
+      const open =
+        "<p>" + "<b><i><u><s><em><strong><small><big><code><font><nobr><tt>".repeat(3) + "</p>";
+      const tail = '<object><a><div id="fb">SENTINEL</a><p>after</p>' + "trailing text";
+      const body = (markup: string) =>
+        parseHTML(serialize(parse(`<!DOCTYPE html><html><body>${markup}</body></html>`))).document
+          .body.innerHTML;
+      let stopsInTail = 0;
+      for (let count = 20; count < 60; count++) {
+        const head = open + "<p>x</p>".repeat(count);
+        const bounded = parseBodyAsBrowser(head + tail).innerHTML;
+        const stoppedInHead = bounded.split(">x<").length - 1 < count;
+        if (stoppedInHead || bounded === body(head + tail)) continue;
+        stopsInTail++;
+        const prefixes = Array.from({ length: tail.length }, (_, i) =>
+          body(head + tail.slice(0, i))
+        );
+        expect(prefixes).toContain(bounded);
+      }
+      expect(stopsInTail).toBeGreaterThan(0);
+    });
+
+    it("reads a long article after a few unclosed formatting tags", () => {
+      const paragraphs = Array.from({ length: 3000 }, (_, i) => `<p>Paragraph ${i}.</p>`);
+      const html = `<p><b><i><u><s><strong>Intro</p>${paragraphs.join("")}`;
+      expect(narrated(htmlToNarrationInput(html))).toHaveLength(3001);
+    });
+
+    it("finishes the token that goes too deep, and stops after it", () => {
+      // The text re-creates the <b> from the first line past the limit.
+      const html =
+        "<p><b>intro</p>" +
+        "<p>more</p>".repeat(100) +
+        "<div>".repeat(MAX_TREE_DEPTH - 2) +
+        "x<p>after</p>";
+      expect(narrated(htmlToNarrationInput(html)).slice(-2)).toEqual(["more", "x"]);
+    });
+
+    it.each(["</br>", "</p>"])("doesn't count what a stray %s implies against it", (tag) => {
+      const lines = Array.from({ length: 3000 }, (_, i) => `w${i}${tag}`).join("");
+      expect(narrated(htmlToNarrationInput(lines)).join(" ")).toContain("w2999");
+    });
+
+    it("doesn't count inline elements a new paragraph closes", () => {
+      const html = Array.from({ length: MAX_TREE_DEPTH * 2 }, (_, i) => `<p><b>w${i}`).join("");
+      expect(narrated(htmlToNarrationInput(html))).toHaveLength(MAX_TREE_DEPTH * 2);
     });
   });
 

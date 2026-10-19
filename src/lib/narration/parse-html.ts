@@ -37,12 +37,60 @@
  */
 
 import { parseHTML } from "linkedom";
-import { parse, serialize } from "parse5";
-import { logger } from "@/lib/logger";
+import {
+  defaultTreeAdapter,
+  Parser,
+  serialize,
+  type DefaultTreeAdapterMap,
+  type Token,
+} from "parse5";
+
+type Parse5Node = DefaultTreeAdapterMap["node"];
+type Parse5ParentNode = DefaultTreeAdapterMap["parentNode"];
+
+/**
+ * Deepest element the normalizing parse builds before it stops, counting
+ * `<html>` as 1 (the token that goes past it can go up to twice as deep). Blink
+ * flattens its tree beyond the same depth, and nothing real comes near it.
+ *
+ * @testonly
+ */
+export const MAX_TREE_DEPTH = 512;
+
+/**
+ * The parse builds at most this many elements per tag token that builds any,
+ * or per character of markup, whichever allows more, plus
+ * {@link EXTRA_ELEMENT_ALLOWANCE}. Beyond its own element, a token can imply
+ * some (`<tbody>`, or the `<p>` of a stray `</p>`), and text in a new
+ * paragraph re-creates each formatting element left open before it, up to
+ * three copies of each. Real markup stays well within either: an unclosed
+ * `<b>` per paragraph builds about 2.5 per token, and a few unclosed tags
+ * before a long run of plain paragraphs about one per 5 characters. Re-creation
+ * is otherwise unbounded: hundreds of distinct unclosed tags reopen in every
+ * paragraph.
+ *
+ * Each re-created element copies its attributes, so those are budgeted too:
+ * `attributeCharsPerChar` characters of them per character of markup, enough
+ * for a missing `</a>` around a tracking URL before short paragraphs, each of
+ * which reopens the link.
+ *
+ * @testonly
+ */
+export const MAX_ELEMENTS = { perToken: 3, perChar: 0.5, attributeCharsPerChar: 16 };
+
+/** @testonly */
+export const EXTRA_ELEMENT_ALLOWANCE = 1000;
 
 /**
  * Parses entry HTML into a `<body>` element holding the tree a browser builds
  * from the same string.
+ *
+ * The parse stops at the first token after the tree nests deeper than
+ * {@link MAX_TREE_DEPTH} or holds more than {@link MAX_ELEMENTS} allows
+ * (#2039): parse5 searches its open elements for many tags, and the sanitizer
+ * keeps feed-controlled markup, so a deeply nested entry took up to a minute
+ * to parse. Where the browser's tree differs past the stop (a foster-parented
+ * element moves before a table), numbering can differ from there on.
  *
  * @param html - The (already sanitized) entry HTML
  * @returns The body element of the parsed document
@@ -50,33 +98,180 @@ import { logger } from "@/lib/logger";
 export function parseBodyAsBrowser(html: string): Element {
   // Wrapped in a document so the content parses in "in body" insertion mode —
   // the mode the client's `DOMParser` call uses for the same string.
-  const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
+  return parseHTML(serialize(parseBounded(`<!DOCTYPE html><html><body>${html}</body></html>`)))
+    .document.body;
+}
 
-  return parseHTML(normalize(wrapped) ?? wrapped).document.body;
+class TreeTooBig extends Error {
+  constructor() {
+    super("Markup builds too big a tree");
+  }
 }
 
 /**
- * The markup in tree-construction normal form, or null if parse5 couldn't
- * produce it.
+ * parse5's tree of `markup`, up to the first token after it went past
+ * {@link MAX_TREE_DEPTH} or {@link MAX_ELEMENTS}.
  *
- * parse5's serializer recurses per element, so markup nested a few thousand
- * elements deep overflows the stack — and entry HTML is feed-controlled, which
- * is why the walk itself uses an explicit stack and a depth cap (`./runs`,
- * `./block-elements`). Falling back to linkedom's own parse costs the numbering
- * agreement for that one document, which is what narration did before any of
- * this; throwing would cost the whole request, and on the LLM path it would
- * also record an error that suppresses retries for an hour.
+ * Both are measured on the tree parse5 builds, not on the markup: a browser
+ * ignores `</span>` across an open `<div>`, so `<span><div></span>` nests two
+ * levels per repeat while closing every element it opens, and `<p><b>` closes
+ * the `<b>` a SAX count would leave open. The parse stops between tokens, never
+ * inside one, because one token's tree changes (the adoption agency's moves)
+ * leave content detached until they finish. One token's work stays within
+ * bounds anyway: it re-creates only formatting elements that were open
+ * together, so within the depth limit, at most doubling the tree's depth.
  */
-function normalize(wrapped: string): string | null {
+function parseBounded(markup: string): DefaultTreeAdapterMap["document"] {
+  const parser = new BoundedParser(new TreeBounds(markup.length));
   try {
-    // `scriptingEnabled: false` matches `DOMParser`, whose documents have
-    // scripting disabled (it decides how `<noscript>` content is parsed).
-    return serialize(parse(wrapped, { scriptingEnabled: false }));
+    parser.tokenizer.write(markup, true);
   } catch (error) {
-    logger.warn("Falling back to a non-spec parse of entry HTML for narration", {
-      bytes: wrapped.length,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
+    if (!(error instanceof TreeTooBig)) throw error;
   }
+  return parser.document;
+}
+
+/** What the parse has built so far, against what it may build. */
+class TreeBounds {
+  exceeded = false;
+  /** Incremented by the parser at each tag token. */
+  tagToken = 0;
+  private lastCountedToken = -1;
+  private buildingTokens = 0;
+  private elements = 0;
+  private attributeChars = 0;
+  private readonly maxElementsByLength: number;
+  private readonly maxAttributeChars: number;
+  // A template's content is a fragment with no parent; nesting goes on there.
+  private readonly templateHosts = new WeakMap<Parse5Node, Parse5Node>();
+
+  constructor(markupLength: number) {
+    this.maxElementsByLength = markupLength * MAX_ELEMENTS.perChar + EXTRA_ELEMENT_ALLOWANCE;
+    this.maxAttributeChars = markupLength * MAX_ELEMENTS.attributeCharsPerChar;
+  }
+
+  created(attrs: readonly { name: string; value: string }[]): void {
+    this.elements++;
+    for (const { name, value } of attrs) this.attributeChars += name.length + value.length;
+  }
+
+  placed(parent: Parse5Node, node: Parse5Node): void {
+    if (this.exceeded || !defaultTreeAdapter.isElementNode(node)) return;
+    if (this.tagToken !== this.lastCountedToken) {
+      this.lastCountedToken = this.tagToken;
+      this.buildingTokens++;
+    }
+    const maxElements = Math.max(
+      this.buildingTokens * MAX_ELEMENTS.perToken + EXTRA_ELEMENT_ALLOWANCE,
+      this.maxElementsByLength
+    );
+    let depth = 0;
+    for (let n: Parse5Node | null | undefined = parent; n && depth <= MAX_TREE_DEPTH; depth++) {
+      n = ("parentNode" in n ? n.parentNode : null) ?? this.templateHosts.get(n);
+    }
+    this.exceeded =
+      depth > MAX_TREE_DEPTH ||
+      this.elements > maxElements ||
+      this.attributeChars > this.maxAttributeChars;
+  }
+
+  setTemplateHost(content: Parse5Node, template: Parse5Node): void {
+    this.templateHosts.set(content, template);
+  }
+}
+
+class BoundedParser extends Parser<DefaultTreeAdapterMap> {
+  constructor(private readonly bounds: TreeBounds) {
+    super({
+      // `scriptingEnabled: false` matches `DOMParser`, whose documents have
+      // scripting disabled (it decides how `<noscript>` content is parsed).
+      scriptingEnabled: false,
+      treeAdapter: boundedTreeAdapter(bounds),
+    });
+  }
+
+  // The tokens that can build elements: tags, and text, which re-creates
+  // formatting elements.
+  override onStartTag(token: Token.TagToken): void {
+    this.nextToken();
+    super.onStartTag(token);
+  }
+  override onEndTag(token: Token.TagToken): void {
+    this.nextToken();
+    super.onEndTag(token);
+  }
+  override onCharacter(token: Token.CharacterToken): void {
+    this.stopIfExceeded();
+    super.onCharacter(token);
+  }
+  override onWhitespaceCharacter(token: Token.CharacterToken): void {
+    this.stopIfExceeded();
+    super.onWhitespaceCharacter(token);
+  }
+
+  private nextToken(): void {
+    this.stopIfExceeded();
+    this.bounds.tagToken++;
+  }
+
+  private stopIfExceeded(): void {
+    if (this.bounds.exceeded) throw new TreeTooBig();
+  }
+
+  /**
+   * The adoption agency moves a block's children into a new element. parse5
+   * detaches them from the front one at a time, shifting the rest each time,
+   * which took a minute on a block of a few hundred thousand `<br>`s; this
+   * moves the list at once.
+   */
+  override _adoptNodes(donor: Parse5ParentNode, recipient: Parse5ParentNode): void {
+    const children = donor.childNodes;
+    donor.childNodes = [];
+    for (const child of children) {
+      child.parentNode = null;
+      this.treeAdapter.appendChild(recipient, child);
+    }
+  }
+}
+
+/**
+ * parse5's default tree, reporting what it builds to `bounds`. Foster
+ * parenting inserts before the open table and the adoption agency detaches an
+ * open element, each the last or nearly the last of its parent's children (the
+ * agency's moves from the front are {@link BoundedParser}'s). The default
+ * adapter finds them searching from the start, which took seconds on a
+ * megabyte of `<table><div>`, so this searches from the end.
+ */
+function boundedTreeAdapter(bounds: TreeBounds): typeof defaultTreeAdapter {
+  return {
+    ...defaultTreeAdapter,
+    createElement(tagName, namespaceURI, attrs) {
+      bounds.created(attrs);
+      return defaultTreeAdapter.createElement(tagName, namespaceURI, attrs);
+    },
+    appendChild(parent, node) {
+      bounds.placed(parent, node);
+      defaultTreeAdapter.appendChild(parent, node);
+    },
+    insertBefore(parent, node, reference) {
+      bounds.placed(parent, node);
+      parent.childNodes.splice(parent.childNodes.lastIndexOf(reference), 0, node);
+      node.parentNode = parent;
+    },
+    insertTextBefore(parent, text, reference) {
+      const previous = parent.childNodes[parent.childNodes.lastIndexOf(reference) - 1];
+      if (previous && defaultTreeAdapter.isTextNode(previous)) previous.value += text;
+      else this.insertBefore(parent, defaultTreeAdapter.createTextNode(text), reference);
+    },
+    detachNode(node) {
+      if (!node.parentNode) return;
+      const siblings = node.parentNode.childNodes;
+      siblings.splice(siblings.lastIndexOf(node), 1);
+      node.parentNode = null;
+    },
+    setTemplateContent(template, content) {
+      bounds.setTemplateHost(content, template);
+      defaultTreeAdapter.setTemplateContent(template, content);
+    },
+  };
 }
