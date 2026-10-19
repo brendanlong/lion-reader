@@ -11,7 +11,7 @@ import {
   htmlToNarrationInput,
   type HtmlToNarrationInputResult,
 } from "../../src/lib/narration/html-to-narration-input";
-import { MAX_ELEMENTS_PER_START_TAG, MAX_TREE_DEPTH } from "../../src/lib/narration/parse-html";
+import { MAX_ELEMENTS_PER_TOKEN, MAX_TREE_DEPTH } from "../../src/lib/narration/parse-html";
 import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
@@ -905,13 +905,25 @@ describe("htmlToNarrationInput", () => {
     it("stops re-creating formatting elements past the element budget", () => {
       // Every paragraph reopens all the unclosed tags (distinct, so none is
       // dropped as a duplicate).
-      const unclosed = 10 * MAX_ELEMENTS_PER_START_TAG;
+      const unclosed = 10 * MAX_ELEMENTS_PER_TOKEN;
       const open = Array.from({ length: unclosed }, (_, i) => `<b title="t${i}">`).join("");
       const paragraphs = 5000;
       const read = narrated(htmlToNarrationInput(`<p>${open}</p>${"<p>x</p>".repeat(paragraphs)}`));
 
       expect(read.length).toBeGreaterThan(0);
       expect(read.length).toBeLessThan(paragraphs);
+    });
+
+    it("cuts at the markup that went too deep, not at a re-created tag", () => {
+      // The element past the limit re-creates the <b> from the first line.
+      const html =
+        "<p><b>intro</p>" + "<p>more</p>".repeat(100) + "<div>".repeat(MAX_TREE_DEPTH - 2) + "x";
+      expect(narrated(htmlToNarrationInput(html))).toHaveLength(101);
+    });
+
+    it.each(["</br>", "</p>"])("doesn't count what a stray %s implies against it", (tag) => {
+      const lines = Array.from({ length: 3000 }, (_, i) => `w${i}${tag}`).join("");
+      expect(narrated(htmlToNarrationInput(lines)).join(" ")).toContain("w2999");
     });
 
     it("doesn't count inline elements a new paragraph closes", () => {

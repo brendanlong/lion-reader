@@ -51,18 +51,19 @@ type Parse5ParentNode = DefaultTreeAdapterMap["parentNode"];
 export const MAX_TREE_DEPTH = 512;
 
 /**
- * Most elements the parse builds per element read from a start tag of its
- * own, beyond {@link EXTRA_ELEMENT_ALLOWANCE}. The rest are implied
- * (`<tbody>`) or re-created: each new paragraph reopens the formatting
- * elements left open before it, up to three copies of each, so an unclosed
- * `<b>` per paragraph builds about 2.5 per start tag. Re-creation is otherwise
- * unbounded: hundreds of distinct unclosed tags reopen in every paragraph.
+ * Most elements the parse builds per token that builds any, beyond
+ * {@link EXTRA_ELEMENT_ALLOWANCE}. A token builds one (`<p>`, or a stray
+ * `</p>` implying one) plus whatever it implies (`<tbody>`) or re-creates:
+ * text in a new paragraph reopens the formatting elements left open before
+ * it, up to three copies of each, so an unclosed `<b>` per paragraph builds
+ * about 2.5 per token. Re-creation is otherwise unbounded: hundreds of
+ * distinct unclosed tags reopen in every paragraph.
  *
  * @testonly
  */
-export const MAX_ELEMENTS_PER_START_TAG = 3;
+export const MAX_ELEMENTS_PER_TOKEN = 3;
 
-/** Implied and re-created elements allowed before the ratio applies. */
+/** Elements allowed before the ratio applies. */
 const EXTRA_ELEMENT_ALLOWANCE = 1000;
 
 /**
@@ -70,7 +71,7 @@ const EXTRA_ELEMENT_ALLOWANCE = 1000;
  * from the same string.
  *
  * The tree ends where it would nest deeper than {@link MAX_TREE_DEPTH} or hold
- * more elements than {@link MAX_ELEMENTS_PER_START_TAG} allows (#2039): parse5
+ * more elements than {@link MAX_ELEMENTS_PER_TOKEN} allows (#2039): parse5
  * searches its open elements for many tags, and the sanitizer keeps
  * feed-controlled markup, so a deeply nested entry took up to a minute to
  * parse. Where the browser's tree differs past the cut (a foster-parented
@@ -95,35 +96,44 @@ class TreeTooBig extends Error {
 
 /**
  * parse5's tree of the longest prefix of `markup` that stays within
- * {@link MAX_TREE_DEPTH} and {@link MAX_ELEMENTS_PER_START_TAG}, cut at a start
- * tag.
+ * {@link MAX_TREE_DEPTH} and {@link MAX_ELEMENTS_PER_TOKEN}, cut between
+ * tokens.
  *
  * Both are measured on the tree parse5 builds, not on the markup: a browser
  * ignores `</span>` across an open `<div>`, so `<span><div></span>` nests two
  * levels per repeat while closing every element it opens, and `<p><b>` closes
- * the `<b>` a SAX count would leave open. The cut goes at the latest start tag
- * the parse had placed when it went over (a re-created element carries an
- * earlier tag's position). The parse got that far within bounds, so the
- * second parse, of the markup before it, stays within them.
+ * the `<b>` a SAX count would leave open. The cut goes before the token the
+ * parse was processing when it went over. It processed everything before that
+ * within bounds, so the second parse, of the markup before it, stays within
+ * them.
  */
 function parseBounded(markup: string): DefaultTreeAdapterMap["document"] {
   for (;;) {
+    let parser: BoundedParser | undefined;
+    const treeAdapter = boundedTreeAdapter(() => parser?.currentTokenStart() ?? 0);
     try {
-      return BoundedParser.parse(markup, {
+      parser = new BoundedParser({
         // `scriptingEnabled: false` matches `DOMParser`, whose documents have
         // scripting disabled (it decides how `<noscript>` content is parsed).
         scriptingEnabled: false,
         sourceCodeLocationInfo: true,
-        treeAdapter: boundedTreeAdapter(),
+        treeAdapter,
       });
+      parser.tokenizer.write(markup, true);
+      return parser.document;
     } catch (error) {
       if (!(error instanceof TreeTooBig)) throw error;
-      markup = markup.slice(0, error.offset);
+      // Strictly shorter, should the end-of-input token build anything.
+      markup = markup.slice(0, Math.min(error.offset, markup.length - 1));
     }
   }
 }
 
 class BoundedParser extends Parser<DefaultTreeAdapterMap> {
+  currentTokenStart(): number {
+    return this.currentToken?.location?.startOffset ?? 0;
+  }
+
   /**
    * The adoption agency moves a block's children into a new element. parse5
    * detaches them from the front one at a time, shifting the rest each time,
@@ -148,24 +158,21 @@ class BoundedParser extends Parser<DefaultTreeAdapterMap> {
  * The default adapter finds them searching from the start, which took seconds
  * on a megabyte of `<table><div>`, so this searches from the end.
  */
-function boundedTreeAdapter(): typeof defaultTreeAdapter {
+function boundedTreeAdapter(tokenStart: () => number): typeof defaultTreeAdapter {
   // A template's content is a fragment with no parent; nesting goes on there.
   const templateHosts = new WeakMap<Parse5Node, Parse5Node>();
-  let lastPlaced = -1;
+  let lastToken = -1;
   let elements = 0;
-  let fromStartTags = 0;
+  let tokens = 0;
 
   const check = (parent: Parse5Node, node: Parse5Node) => {
     if (!defaultTreeAdapter.isElementNode(node)) return;
-    // Re-created and moved elements carry an earlier tag's position, implied
-    // ones none.
-    const start = node.sourceCodeLocation?.startOffset ?? -1;
-    if (start > lastPlaced) {
-      lastPlaced = start;
-      fromStartTags++;
+    const cut = tokenStart();
+    if (cut > lastToken) {
+      lastToken = cut;
+      tokens++;
     }
-    const cut = Math.max(lastPlaced, 0);
-    if (elements > fromStartTags * MAX_ELEMENTS_PER_START_TAG + EXTRA_ELEMENT_ALLOWANCE) {
+    if (elements > tokens * MAX_ELEMENTS_PER_TOKEN + EXTRA_ELEMENT_ALLOWANCE) {
       throw new TreeTooBig(cut);
     }
     let depth = 0;
