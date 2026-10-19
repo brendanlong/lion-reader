@@ -1,9 +1,8 @@
 /**
  * Users' own AI provider API keys (`user_api_keys`), stored encrypted.
  *
- * Keys are intentionally not cached in the Redis session cache, so a Redis
- * compromise can't expose them: read them here only when the key values are
- * needed (narration, summarization).
+ * Keys are intentionally not loaded with the session user: read them here
+ * only when the key values are needed (narration, summarization).
  */
 
 import * as Sentry from "@sentry/nextjs";

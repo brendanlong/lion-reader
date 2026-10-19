@@ -8,6 +8,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds, users } from "../../src/server/db/schema";
 import { deleteUser } from "../../src/server/services/users";
+import { createSession, validateSession } from "../../src/server/auth/session";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -59,5 +60,15 @@ describe("deleteUser", () => {
     expect(await db.select().from(entries).where(eq(entries.id, orphanEntry))).toEqual([]);
     expect(await feedExists(shared)).toBe(true);
     expect(await feedExists(stillRead)).toBe(true);
+  });
+
+  it("ends the user's sessions immediately (#2046)", async () => {
+    const userId = await user();
+    const { token } = await createSession(db, { userId });
+    expect(await validateSession(token)).not.toBeNull();
+
+    await deleteUser(db, userId);
+
+    expect(await validateSession(token)).toBeNull();
   });
 });

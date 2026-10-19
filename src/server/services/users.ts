@@ -7,8 +7,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
-import { users, feeds, entries, subscriptions, userEntries, sessions } from "@/server/db/schema";
-import { getRedisClient } from "@/server/redis";
+import { users, feeds, entries, subscriptions, userEntries } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
 
 /**
@@ -28,13 +27,6 @@ import { logger } from "@/lib/logger";
  * @param userId - The user ID to delete
  */
 export async function deleteUser(db: Database, userId: string): Promise<void> {
-  // Fetch session token hashes before deletion — CASCADE will remove sessions
-  // from the DB when the user is deleted, so we need these for Redis cleanup.
-  const sessionHashes = await db
-    .select({ tokenHash: sessions.tokenHash })
-    .from(sessions)
-    .where(eq(sessions.userId, userId));
-
   await db.transaction(async (tx) => {
     // Step 1: The web feeds the user subscribes to may become orphaned.
     const candidates = await tx
@@ -75,36 +67,6 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
       );
     }
   });
-
-  // Step 4: Invalidate Redis session caches using pre-fetched token hashes
-  const redis = getRedisClient();
-  if (redis && sessionHashes.length > 0) {
-    try {
-      const pipeline = redis.pipeline();
-      for (const session of sessionHashes) {
-        pipeline.del(`session:${session.tokenHash}`);
-      }
-      await pipeline.exec();
-    } catch (err) {
-      // Non-critical: sessions will fail validation anyway since user is deleted
-      logger.warn("Failed to invalidate session caches during account deletion", {
-        userId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  // Clean up user-specific Redis keys
-  if (redis) {
-    try {
-      await redis.del(`user:${userId}:events`);
-    } catch (err) {
-      logger.warn("Failed to clean up Redis keys during account deletion", {
-        userId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
 
   logger.info("User account deleted", { userId });
 }

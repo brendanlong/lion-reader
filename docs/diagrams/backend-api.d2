@@ -217,7 +217,6 @@ data: {
     style.fill: "#ef5350"
 
     uses: |md
-      - Session cache
       - Rate limiting
       - Pub/sub events
     |
@@ -304,11 +303,6 @@ api.trpc.middleware.rate_limit -> data.redis: "Check limits" {
   style.stroke: "#f44336"
 }
 
-api.trpc.middleware.auth -> data.redis: "Session cache" {
-  style.stroke: "#f44336"
-}
-
-api.trpc.middleware.auth -> data.postgres: "Session fallback" {
+api.trpc.middleware.auth -> data.postgres: "Session lookup" {
   style.stroke: "#4caf50"
-  style.stroke-dash: 3
 }

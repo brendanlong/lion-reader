@@ -2,10 +2,9 @@
  * Redis Client
  *
  * Provides a Redis client instance for caching and pub/sub.
- * Used for session caching, rate limiting, and real-time updates.
+ * Used for rate limiting and real-time updates.
  *
  * Redis is optional - the app can run without it, falling back to:
- * - Database-only session lookups (slower but functional)
  * - Permissive rate limiting (no rate limits applied)
  * - Pull-based sync instead of real-time SSE updates
  */

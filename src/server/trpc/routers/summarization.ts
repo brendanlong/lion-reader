@@ -162,7 +162,7 @@ export const summarizationRouter = createTRPCRouter({
       const userMaxWords = ctx.session.user.summarizationMaxWords;
       const userPrompt = ctx.session.user.summarizationPrompt;
 
-      // Fetch API keys from DB on demand (not cached in session for security)
+      // Fetch API keys from DB on demand (not loaded with the session user)
       const keys = await getUserApiKeys(userId);
 
       const currentModelId = await getSummarizationModelId(userSummarizationModel, keys);
@@ -402,7 +402,7 @@ export const summarizationRouter = createTRPCRouter({
     .input(z.void())
     .output(aiModelListSchema)
     .query(async ({ ctx }) => {
-      // Fetch API keys from DB on demand (not cached in session for security)
+      // Fetch API keys from DB on demand (not loaded with the session user)
       const keys = await getUserApiKeys(ctx.session.user.id);
       const models = (await listAllModels(keys)).filter((model) =>
         isModelAllowed(model.id, keys, model)

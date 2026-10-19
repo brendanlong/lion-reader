@@ -12,7 +12,7 @@
  * never write those keys here (we only skip them), so a maintenance/announcement
  * toggle made on the still-running old machines during the release is preserved
  * as-is — no read-then-restore race. Everything else swept here is cache /
- * ephemeral (sessions, SSE channels, OAuth state, rate limits) and safe to drop.
+ * ephemeral (SSE channels, OAuth state, rate limits) and safe to drop.
  */
 
 import type Redis from "ioredis";

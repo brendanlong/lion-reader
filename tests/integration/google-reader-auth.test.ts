@@ -17,11 +17,7 @@ import { inArray, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, sessions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import {
-  createSession,
-  invalidateUserSessionCaches,
-  validateSession,
-} from "../../src/server/auth/session";
+import { createSession, validateSession } from "../../src/server/auth/session";
 import { clientLogin, requireAuth } from "../../src/server/google-reader/auth";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { createTestUser } from "./helpers";
@@ -185,7 +181,7 @@ describe("last_active_at accounting for scoped vs full-access sessions", () => {
     const login = await clientLogin(user.email, PASSWORD);
     if (!login) throw new Error("unreachable");
 
-    // Resolve the session id (this first validation also fires a scoped bump).
+    // Resolve the session id.
     const scoped = await validateSession(login.auth, { allowScoped: true });
     const sessionId = scoped?.session.id;
     if (!sessionId) throw new Error("unreachable");
@@ -196,9 +192,7 @@ describe("last_active_at accounting for scoped vs full-access sessions", () => {
     await db.update(users).set({ lastActiveAt: null }).where(eq(users.id, user.id));
     await db.update(sessions).set({ lastActiveAt: marker }).where(eq(sessions.id, sessionId));
 
-    // Validate again from Postgres (activity is recorded on a cache fill) — the
-    // scoped branch must bump only the session row.
-    await invalidateUserSessionCaches(user.id);
+    // Validate again: the scoped branch must bump only the session row.
     await validateSession(login.auth, { allowScoped: true });
     const bumped = await waitForSessionActiveAfter(sessionId, marker);
     expect(bumped.getTime()).toBeGreaterThan(marker.getTime());

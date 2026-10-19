@@ -108,8 +108,8 @@ async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse 
   const sessionToken = getSessionCookie(request.cookies);
   if (sessionToken) {
     try {
-      // Lazy imports keep the DB/Redis clients out of the cookieless hot path
-      // (they initialize once, on the first request that carries a cookie).
+      // Lazy imports keep the DB client out of the cookieless hot path
+      // (it initializes once, on the first request that carries a cookie).
       const [{ validateSession }, { sessionHomePath }] = await Promise.all([
         import("@/server/auth/session"),
         import("@/server/auth/confirmation"),
