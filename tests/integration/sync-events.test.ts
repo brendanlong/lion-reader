@@ -242,7 +242,10 @@ describe("sync.events", () => {
         .where(eq(entries.id, entryId));
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: cursorResult.entries! },
+        cursors: {
+          entries: cursorResult.entries!,
+          entriesAfterId: cursorResult.entriesAfterId!,
+        },
       });
 
       const updatedEvents = result.events.filter((e) => e.type === "entry_updated");
@@ -276,7 +279,10 @@ describe("sync.events", () => {
         .where(eq(userEntries.entryId, entryId));
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: cursorResult.entries! },
+        cursors: {
+          entries: cursorResult.entries!,
+          entriesAfterId: cursorResult.entriesAfterId!,
+        },
       });
 
       const stateEvents = result.events.filter((e) => e.type === "entry_state_changed");
@@ -315,7 +321,10 @@ describe("sync.events", () => {
         .where(eq(userEntries.entryId, entryId));
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: cursorResult.entries! },
+        cursors: {
+          entries: cursorResult.entries!,
+          entriesAfterId: cursorResult.entriesAfterId!,
+        },
       });
 
       // The payload mirrors new_entry, so a client with the entry in no cached
@@ -360,7 +369,10 @@ describe("sync.events", () => {
         .where(eq(userEntries.entryId, entryId));
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: cursorResult.entries! },
+        cursors: {
+          entries: cursorResult.entries!,
+          entriesAfterId: cursorResult.entriesAfterId!,
+        },
       });
 
       const types = result.events.map((e) => e.type);
@@ -380,7 +392,10 @@ describe("sync.events", () => {
       const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: cursorResult.entries! },
+        cursors: {
+          entries: cursorResult.entries!,
+          entriesAfterId: cursorResult.entriesAfterId!,
+        },
       });
 
       expect(
@@ -877,6 +892,23 @@ describe("sync.events", () => {
         cursors: { entries: cursorTs, entriesAfterId: third },
       });
       expect(afterLast.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
+
+    // A cursor without an id (an app that started syncing before it had any
+    // entries) must not skip rows stamped at exactly its timestamp (#1100).
+    it("includes rows at the cursor's timestamp when no entriesAfterId is sent", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/tied-no-id.xml" });
+      await createTestSubscription(userId, feedId);
+      const tiedTime = new Date("2025-01-03T00:00:00.000Z");
+      const entryId = await createTestEntry(feedId, { createdAt: tiedTime, updatedAt: tiedTime });
+      await createUserEntry(userId, entryId, { updatedAt: tiedTime });
+
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
+        cursors: { entries: tiedTime.toISOString() },
+      });
+
+      expect(result.events.some((e) => e.type === "new_entry" && e.entryId === entryId)).toBe(true);
     });
 
     it("delivers every row of an oversized tied group across a full drain", async () => {
