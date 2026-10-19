@@ -10,7 +10,6 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
-import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
 import { formatModelRef, parseModelRef, type ModelRef } from "@/lib/ai/model-ref";
 import {
@@ -121,6 +120,11 @@ export async function isTextModelAllowed(
   return isModelAllowed(modelRef, keys, await openRouterTextModelPrice(model));
 }
 
+/** The providers the server has its own key for. */
+export function getServerKeyProviders(): AiProvider[] {
+  return AI_PROVIDERS.filter((provider) => !!process.env[AI_PROVIDER_ENV_KEYS[provider]]);
+}
+
 /**
  * Lists the text providers that can currently be used, in declaration order.
  */
@@ -175,7 +179,6 @@ function sdkClient<C>(
 }
 
 const anthropicClient = sdkClient((options) => new Anthropic(options));
-const groqClient = sdkClient((options) => new Groq(options));
 // Not warming: a client is created just before its first request, so that's a
 // wasted extra request (one per call on a user's key).
 const cerebrasClient = sdkClient(
@@ -209,8 +212,8 @@ export interface ChatCompletionOptions {
 
 /**
  * Whether a provider-native model ID gets the OpenAI-style `reasoning_effort`
- * low/medium/high parameter. Only the gpt-oss family does: on Groq and
- * Cerebras other models (Llama, Qwen, ...) return `400 reasoning_effort is not
+ * low/medium/high parameter. Only the gpt-oss family does: on Cerebras
+ * other models (Llama, Qwen, ...) return `400 reasoning_effort is not
  * supported with this model`, and on OpenRouter it would switch on (billed)
  * extended thinking for Claude, Gemini, etc.
  */
@@ -241,7 +244,7 @@ export class TextGenerationError extends Error {
   }
 }
 
-const SDKS = [Anthropic, Groq, Cerebras];
+const SDKS = [Anthropic, Cerebras];
 
 function isConnectionError(error: unknown): boolean {
   // OpenRouter is plain fetch.
@@ -263,7 +266,7 @@ function stringAt(value: unknown, ...path: string[]): string | undefined {
 /**
  * The provider's own explanation of a failure. An SDK error's message is its
  * status plus the JSON body; the explanation is in that body, at `error.message`
- * (Anthropic, and the OpenAI-shaped Groq and Cerebras) or `message`.
+ * (Anthropic, and the OpenAI-shaped Cerebras) or `message`.
  */
 function providerMessageOf(error: unknown): string | undefined {
   if (error instanceof OpenRouterChatError) return error.providerMessage;
@@ -365,8 +368,8 @@ interface TextProviderAdapter {
   listModels(call: ProviderCall, requirements: ModelRequirements): Promise<AiModel[]>;
 }
 
-/** A chat completion request to the OpenAI-compatible SDKs (Groq, Cerebras). */
-function openAiCompatibleRequest(model: string, options: ChatCompletionOptions) {
+/** A chat completion request to Cerebras' OpenAI-compatible SDK. */
+function cerebrasRequest(model: string, options: ChatCompletionOptions) {
   return {
     model,
     max_completion_tokens: options.maxTokens,
@@ -405,23 +408,12 @@ const TEXT_PROVIDER_ADAPTERS: Record<TextAiProvider, TextProviderAdapter> = {
       }));
     },
   },
-  // Groq's and Cerebras' listings don't say which models do JSON mode; every
-  // chat model they serve does.
-  groq: {
-    jsonObject: true,
-    complete: async (call, model, options) => {
-      const response = await groqClient(call).chat.completions.create(
-        openAiCompatibleRequest(model, options)
-      );
-      return response.choices[0]?.message?.content ?? "";
-    },
-    listModels: async (call) => toChatModels("groq", (await groqClient(call).models.list()).data),
-  },
+  // Every chat model Cerebras serves does JSON mode, and it lists nothing else.
   cerebras: {
     jsonObject: true,
     complete: async (call, model, options) => {
       const response = await cerebrasClient(call).chat.completions.create(
-        openAiCompatibleRequest(model, options)
+        cerebrasRequest(model, options)
       );
       // The SDK's non-streaming return type is a union that includes the error
       // and chunk shapes; narrow to the completed-response choice, which is the
@@ -430,7 +422,13 @@ const TEXT_PROVIDER_ADAPTERS: Record<TextAiProvider, TextProviderAdapter> = {
       return choice && "message" in choice ? (choice.message.content ?? "") : "";
     },
     listModels: async (call) =>
-      toChatModels("cerebras", (await cerebrasClient(call).models.list()).data),
+      (await cerebrasClient(call).models.list()).data
+        .map((model) => ({
+          id: formatModelRef("cerebras", model.id),
+          displayName: model.id,
+          provider: "cerebras" as const,
+        }))
+        .sort(byDisplayName),
   },
   openrouter: {
     jsonObject: true,
@@ -490,66 +488,12 @@ export function simplifyModelIds(
 }
 
 /**
- * Groq's model list includes audio (whisper/TTS) and moderation models that
- * can't do chat completions; hide them from the pickers. TTS families don't all
- * spell "tts" in their IDs (Groq exposes Orpheus TTS as `canopylabs/orpheus-*`),
- * so match those families by name too.
- */
-export function isChatModelId(id: string): boolean {
-  const lower = id.toLowerCase();
-  return (
-    !lower.includes("whisper") &&
-    !lower.includes("tts") &&
-    !lower.includes("guard") &&
-    !lower.includes("canopylabs") &&
-    !lower.includes("orpheus")
-  );
-}
-
-/**
  * Minimum context window (in tokens) for a model to appear in the summarization
  * and narration pickers. Summarization feeds up to ~12k tokens of article text
  * plus the prompt and reserves several thousand output/reasoning tokens, so
- * short-context models (e.g. Groq's 8k-context Gemma/older-Llama or small Qwen
- * builds) can't reasonably summarize a full article. Models whose context
- * window is unknown (Cerebras omits the field) are kept.
+ * short-context models can't reasonably summarize a full article.
  */
 const MIN_CONTEXT_WINDOW = 32768;
-
-/**
- * Reads the optional `context_window` field the Groq models API returns. The
- * provider SDK types don't expose it, so we read it defensively; Cerebras omits
- * it entirely (returns `undefined`).
- */
-function contextWindowOf(model: unknown): number | undefined {
-  const value = (model as { context_window?: unknown }).context_window;
-  return typeof value === "number" ? value : undefined;
-}
-
-/**
- * Whether a Groq/Cerebras model is usable for summarization/narration: it must
- * be a chat model and, when the provider reports a context window, have enough
- * room to summarize a full article.
- */
-function isUsableChatModel(model: { id: string }): boolean {
-  if (!isChatModelId(model.id)) {
-    return false;
-  }
-  const contextWindow = contextWindowOf(model);
-  return contextWindow === undefined || contextWindow >= MIN_CONTEXT_WINDOW;
-}
-
-/** A Groq or Cerebras model listing's usable chat models, named by id. */
-function toChatModels(provider: "groq" | "cerebras", models: { id: string }[]): AiModel[] {
-  return models
-    .filter(isUsableChatModel)
-    .map((model) => ({
-      id: formatModelRef(provider, model.id),
-      displayName: model.id,
-      provider,
-    }))
-    .sort(byDisplayName);
-}
 
 /**
  * Whether an OpenRouter model can serve summarization/narration: text-only

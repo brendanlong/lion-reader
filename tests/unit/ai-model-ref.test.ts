@@ -14,8 +14,8 @@ describe("parseModelRef", () => {
   });
 
   it("keeps slashes in the provider-native model ID", () => {
-    expect(parseModelRef("groq:openai/gpt-oss-20b")).toEqual({
-      provider: "groq",
+    expect(parseModelRef("openrouter:openai/gpt-oss-20b")).toEqual({
+      provider: "openrouter",
       model: "openai/gpt-oss-20b",
     });
   });
@@ -42,7 +42,7 @@ describe("parseModelRef", () => {
   });
 
   it("round-trips through formatModelRef", () => {
-    const ref = parseModelRef("groq:openai/gpt-oss-20b");
-    expect(formatModelRef(ref.provider, ref.model)).toBe("groq:openai/gpt-oss-20b");
+    const ref = parseModelRef("openrouter:openai/gpt-oss-20b");
+    expect(formatModelRef(ref.provider, ref.model)).toBe("openrouter:openai/gpt-oss-20b");
   });
 });

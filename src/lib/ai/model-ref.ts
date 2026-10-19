@@ -2,7 +2,7 @@
  * Provider-qualified AI model references.
  *
  * Models are stored and transmitted as `provider:model` strings (e.g.
- * `anthropic:claude-sonnet-5`, `groq:openai/gpt-oss-20b`,
+ * `anthropic:claude-sonnet-5`, `cerebras:gpt-oss-120b`,
  * `openrouter:openai/gpt-oss-120b`) so a single setting can select a model from any
  * configured provider. Legacy values without a provider prefix (bare Anthropic
  * model IDs like `claude-sonnet-4-5`, stored before multi-provider support)

@@ -32,14 +32,6 @@ export const AI_PROVIDER_INFO = {
     text: true,
     speech: false,
   },
-  groq: {
-    displayName: "Groq",
-    keyUrl: "https://console.groq.com/keys",
-    keyPlaceholder: "gsk_...",
-    privacyPolicyUrl: "https://groq.com/privacy-policy/",
-    text: true,
-    speech: false,
-  },
   cerebras: {
     displayName: "Cerebras",
     keyUrl: "https://cloud.cerebras.ai/",

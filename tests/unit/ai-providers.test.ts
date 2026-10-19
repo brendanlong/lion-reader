@@ -3,7 +3,6 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import Anthropic from "@anthropic-ai/sdk";
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
-import Groq from "groq-sdk";
 import {
   classifyTextGenerationError,
   TextGenerationError,
@@ -11,7 +10,6 @@ import {
   generateChatCompletion,
   getAvailableProviders,
   getProviderApiKey,
-  isChatModelId,
   isModelAllowed,
   isProviderAvailable,
   isUsableOpenRouterModel,
@@ -40,7 +38,6 @@ import { DEFAULT_NARRATION_MODELS, NARRATION_PROVIDERS } from "@/lib/narration/c
 
 const ENV_VARS = [
   "ANTHROPIC_API_KEY",
-  "GROQ_API_KEY",
   "CEREBRAS_API_KEY",
   "OPENROUTER_API_KEY",
   "DEEPINFRA_API_KEY",
@@ -51,7 +48,6 @@ const ENV_VARS = [
   "SERVER_KEY_MAX_OUTPUT_PRICE",
   "SERVER_KEY_MAX_SPEECH_PRICE",
   "ANTHROPIC_BASE_URL",
-  "GROQ_BASE_URL",
   "CEREBRAS_BASE_URL",
 ] as const;
 
@@ -89,18 +85,18 @@ describe("isProviderAvailable / getAvailableProviders", () => {
   it("uses per-user keys", () => {
     clearEnv();
     expect(isProviderAvailable("cerebras", { cerebras: "csk-test" })).toBe(true);
-    expect(isProviderAvailable("groq", { cerebras: "csk-test" })).toBe(false);
-    expect(getAvailableProviders({ groq: "gsk-test", anthropic: "sk-test" })).toEqual([
+    expect(isProviderAvailable("openrouter", { cerebras: "csk-test" })).toBe(false);
+    expect(getAvailableProviders({ openrouter: "sk-or-test", anthropic: "sk-test" })).toEqual([
       "anthropic",
-      "groq",
+      "openrouter",
     ]);
   });
 
   it("falls back to server env keys", () => {
     clearEnv();
-    process.env.GROQ_API_KEY = "gsk-server";
-    expect(isProviderAvailable("groq")).toBe(true);
-    expect(getAvailableProviders({})).toEqual(["groq"]);
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    expect(isProviderAvailable("cerebras")).toBe(true);
+    expect(getAvailableProviders({})).toEqual(["cerebras"]);
   });
 
   it("reports nothing available with no keys at all", () => {
@@ -119,39 +115,35 @@ describe("isProviderAvailable / getAvailableProviders", () => {
 describe("getSummarizationModelId", () => {
   it("prefers the user model", async () => {
     clearEnv();
-    process.env.SUMMARIZATION_MODEL = "groq:foo";
+    process.env.SUMMARIZATION_MODEL = "openrouter:foo";
     expect(await getSummarizationModelId("cerebras:bar", { cerebras: "c" })).toBe("cerebras:bar");
   });
 
   it("falls back to the env var", async () => {
     clearEnv();
-    process.env.GROQ_API_KEY = "gsk-server";
-    process.env.SUMMARIZATION_MODEL = "groq:foo";
-    expect(await getSummarizationModelId(null, {})).toBe("groq:foo");
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SUMMARIZATION_MODEL = "openrouter:foo";
+    expect(await getSummarizationModelId(null, {})).toBe("openrouter:foo");
   });
 
   it("skips an env model that can't be used", async () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
-    process.env.SUMMARIZATION_MODEL = "groq:foo";
+    process.env.SUMMARIZATION_MODEL = "openrouter:foo";
     expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
-    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MODELS = "cerebras:*";
     expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
   });
 
-  it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic > OpenRouter)", async () => {
+  it("defaults to the first configured provider by priority (Cerebras > Anthropic > OpenRouter)", async () => {
     clearEnv();
     // Cerebras wins over both others when configured.
-    expect(await getSummarizationModelId(null, { groq: "g", cerebras: "c" })).toBe(
+    expect(await getSummarizationModelId(null, { openrouter: "o", cerebras: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
     expect(await getSummarizationModelId(null, { anthropic: "a", cerebras: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
-    );
-    // Groq wins over Anthropic.
-    expect(await getSummarizationModelId(null, { anthropic: "a", groq: "g" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.groq
     );
     // A direct Anthropic key wins over the OpenRouter aggregator.
     expect(await getSummarizationModelId(null, { anthropic: "a", openrouter: "o" })).toBe(
@@ -182,14 +174,9 @@ describe("getNarrationModelRef", () => {
     );
   });
 
-  it("defaults to the first configured provider (Cerebras before Groq)", async () => {
+  it("defaults to the first configured provider (Cerebras before OpenRouter)", async () => {
     clearEnv();
-    // Only Groq configured → Groq default.
-    expect(await getNarrationModelRef(null, { groq: "g" })).toEqual(
-      parseModelRef(DEFAULT_NARRATION_MODELS.groq)
-    );
-    // Both configured → Cerebras wins (fastest, listed first).
-    expect(await getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual(
+    expect(await getNarrationModelRef(null, { openrouter: "o", cerebras: "c" })).toEqual(
       parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
     );
   });
@@ -213,9 +200,9 @@ describe("getNarrationModelRef", () => {
 
   it("uses the user model when set", async () => {
     clearEnv();
-    expect(await getNarrationModelRef("groq:openai/gpt-oss-20b", { groq: "g" })).toEqual({
-      provider: "groq",
-      model: "openai/gpt-oss-20b",
+    expect(await getNarrationModelRef("cerebras:qwen-3.8-27b", { cerebras: "c" })).toEqual({
+      provider: "cerebras",
+      model: "qwen-3.8-27b",
     });
   });
 
@@ -234,10 +221,10 @@ describe("getNarrationModelRef", () => {
     // Anthropic models can't do JSON-object responses, and a legacy bare ID
     // parses as Anthropic — both must fall back to the default model.
     process.env.ANTHROPIC_API_KEY = "sk-ant-server";
-    process.env.GROQ_API_KEY = "gsk-server";
-    const groqDefault = parseModelRef(DEFAULT_NARRATION_MODELS.groq);
-    expect(await getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(groqDefault);
-    expect(await getNarrationModelRef("some-bare-model")).toEqual(groqDefault);
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    const openRouterDefault = parseModelRef(DEFAULT_NARRATION_MODELS.openrouter);
+    expect(await getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(openRouterDefault);
+    expect(await getNarrationModelRef("some-bare-model")).toEqual(openRouterDefault);
   });
 });
 
@@ -245,31 +232,10 @@ describe("supportsReasoningEffort", () => {
   it("allows reasoning effort only for the gpt-oss family", () => {
     expect(supportsReasoningEffort("openai/gpt-oss-20b")).toBe(true);
     expect(supportsReasoningEffort("gpt-oss-120b")).toBe(true);
-    // Groq/Cerebras 400 on reasoning_effort for non-reasoning models
+    // Cerebras 400s on reasoning_effort for non-reasoning models
     expect(supportsReasoningEffort("meta-llama/llama-4-scout-17b-16e-instruct")).toBe(false);
     expect(supportsReasoningEffort("llama-3.3-70b-versatile")).toBe(false);
     expect(supportsReasoningEffort("qwen-3-32b")).toBe(false);
-  });
-});
-
-describe("isChatModelId", () => {
-  it("filters audio and moderation models", () => {
-    expect(isChatModelId("whisper-large-v3")).toBe(false);
-    expect(isChatModelId("distil-whisper-large-v3-en")).toBe(false);
-    expect(isChatModelId("playai-tts")).toBe(false);
-    expect(isChatModelId("meta-llama/llama-guard-4-12b")).toBe(false);
-  });
-
-  it("filters TTS families that don't spell out 'tts'", () => {
-    // Groq exposes Orpheus TTS under the canopylabs org.
-    expect(isChatModelId("canopylabs/orpheus-3b-0.1-ft")).toBe(false);
-    expect(isChatModelId("orpheus-3b")).toBe(false);
-  });
-
-  it("keeps chat models", () => {
-    expect(isChatModelId("openai/gpt-oss-20b")).toBe(true);
-    expect(isChatModelId("llama-3.3-70b-versatile")).toBe(true);
-    expect(isChatModelId("qwen-3-32b")).toBe(true);
   });
 });
 
@@ -454,11 +420,11 @@ describe("isModelAllowed", () => {
   it("skips a provider whose default isn't allowed when picking the default", async () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
-    process.env.GROQ_API_KEY = "gsk-server";
-    process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.groq;
-    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.groq);
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.openrouter;
+    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.openrouter);
     expect(await getNarrationModelRef(null, {})).toEqual(
-      parseModelRef(DEFAULT_NARRATION_MODELS.groq)
+      parseModelRef(DEFAULT_NARRATION_MODELS.openrouter)
     );
   });
 
@@ -470,7 +436,7 @@ describe("isModelAllowed", () => {
     expect(await getSummarizationModelId("anthropic:claude-opus-5", {})).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
-    expect(await getNarrationModelRef("groq:openai/gpt-oss-120b", {})).toEqual(
+    expect(await getNarrationModelRef("openrouter:openai/gpt-oss-120b", {})).toEqual(
       parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
     );
     expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a" })).toBe(true);
@@ -478,12 +444,12 @@ describe("isModelAllowed", () => {
 
   it("reports summarization unavailable when no model can be used", async () => {
     clearEnv();
-    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
     expect(await isSummarizationAvailable({})).toBe(true);
     process.env.SERVER_KEY_MODELS = "cerebras:*";
     expect(await isSummarizationAvailable({})).toBe(false);
     expect(await isNarrationLlmAvailable({})).toBe(false);
-    expect(await isSummarizationAvailable({ groq: "g" })).toBe(true);
+    expect(await isSummarizationAvailable({ openrouter: "o" })).toBe(true);
   });
 
   it("holds only price-allowed models to the price caps", () => {
@@ -501,9 +467,9 @@ describe("isModelAllowed", () => {
 
   it("never summarizes with a speech-only provider", async () => {
     clearEnv();
-    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.CEREBRAS_API_KEY = "csk-server";
     expect(await getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfra: "d" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.groq
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
   });
 });
@@ -511,18 +477,18 @@ describe("isModelAllowed", () => {
 describe("generateChatCompletion", () => {
   it("refuses a model the server's key doesn't allow, before calling the provider", async () => {
     clearEnv();
-    process.env.GROQ_API_KEY = "gsk-server";
-    process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.groq;
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.cerebras;
     await expect(
       generateChatCompletion(
-        parseModelRef("groq:qwen/qwen3-32b"),
+        parseModelRef("cerebras:qwen-3.8-27b"),
         {},
         {
           userPrompt: "hi",
           maxTokens: 10,
         }
       )
-    ).rejects.toThrow("isn't allowed on the server's Groq key");
+    ).rejects.toThrow("isn't allowed on the server's Cerebras key");
   });
 
   describe("against a stand-in provider", () => {
@@ -558,12 +524,12 @@ describe("generateChatCompletion", () => {
       clearEnv();
       requests.length = 0;
       const { port } = server.address() as AddressInfo;
-      for (const name of ["ANTHROPIC_BASE_URL", "GROQ_BASE_URL", "CEREBRAS_BASE_URL"] as const) {
+      for (const name of ["ANTHROPIC_BASE_URL", "CEREBRAS_BASE_URL"] as const) {
         process.env[name] = `http://127.0.0.1:${port}`;
       }
     }
 
-    it.each(["anthropic", "groq", "cerebras"] as const)(
+    it.each(["anthropic", "cerebras"] as const)(
       "calls %s with our User-Agent",
       async (provider) => {
         pointSdksAtServer();
@@ -577,7 +543,7 @@ describe("generateChatCompletion", () => {
       }
     );
 
-    it.each(["anthropic", "groq", "cerebras"] as const)(
+    it.each(["anthropic", "cerebras"] as const)(
       "calls %s with each request's own key, never a previous one",
       async (provider) => {
         pointSdksAtServer();
@@ -681,14 +647,11 @@ describe("classifyTextGenerationError", () => {
       classifyTextGenerationError(Anthropic.APIError.generate(529, undefined, "busy", headers))
     ).toBe("busy");
     expect(
-      classifyTextGenerationError(Groq.APIError.generate(503, undefined, "busy", headers))
+      classifyTextGenerationError(Cerebras.APIError.generate(503, undefined, "busy", {}))
     ).toBe("busy");
-    // A timeout, and Groq's flex tier out of capacity
+    // A timeout
     expect(
-      classifyTextGenerationError(Groq.APIError.generate(408, undefined, "slow", headers))
-    ).toBe("busy");
-    expect(
-      classifyTextGenerationError(Groq.APIError.generate(498, undefined, "full", headers))
+      classifyTextGenerationError(Cerebras.APIError.generate(408, undefined, "slow", {}))
     ).toBe("busy");
     expect(classifyTextGenerationError(new OpenRouterChatError(429, "slow down"))).toBe("busy");
   });
@@ -738,8 +701,8 @@ describe("classifyTextGenerationError", () => {
   });
 
   it("reads a status the way speech does", () => {
-    for (const status of [400, 401, 402, 408, 409, 429, 498, 500, 502, 503, 504, 529]) {
-      const sdkError = Groq.APIError.generate(status, undefined, "x", headers);
+    for (const status of [400, 401, 402, 408, 409, 429, 500, 502, 503, 504, 529]) {
+      const sdkError = Cerebras.APIError.generate(status, undefined, "x", {});
       expect(classifyTextGenerationError(sdkError)).toBe(classifyProviderStatus(status));
     }
   });
@@ -766,13 +729,13 @@ describe("TextGenerationError.providerMessage", () => {
       "invalid x-api-key"
     );
 
-    const groq = Groq.APIError.generate(
+    const cerebras = Cerebras.APIError.generate(
       400,
       { error: { message: "model not found", type: "invalid_request_error" } },
       undefined,
-      new Headers()
+      {}
     );
-    expect(new TextGenerationError("groq", "rejected", true, groq).providerMessage).toBe(
+    expect(new TextGenerationError("cerebras", "rejected", true, cerebras).providerMessage).toBe(
       "model not found"
     );
 
@@ -788,7 +751,8 @@ describe("TextGenerationError.providerMessage", () => {
 
   it("falls back to the error's message when there's no explanation", () => {
     expect(
-      new TextGenerationError("groq", "failed", true, new Error("socket hang up")).providerMessage
+      new TextGenerationError("cerebras", "failed", true, new Error("socket hang up"))
+        .providerMessage
     ).toBe("socket hang up");
   });
 });

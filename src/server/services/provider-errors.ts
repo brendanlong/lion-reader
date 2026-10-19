@@ -15,10 +15,9 @@ export type ProviderFailure = "busy" | "rejected" | "failed";
 
 /**
  * HTTP statuses meaning "not right now": a timeout, rate limiting, an
- * unavailable upstream, Groq's 498 (flex tier out of capacity), and
- * Anthropic's 529 (overloaded).
+ * unavailable upstream, and Anthropic's 529 (overloaded).
  */
-const BUSY_STATUSES: ReadonlySet<number> = new Set([408, 429, 498, 502, 503, 504, 529]);
+const BUSY_STATUSES: ReadonlySet<number> = new Set([408, 429, 502, 503, 504, 529]);
 
 /**
  * What a provider answering `status` means. A request made without a key (a

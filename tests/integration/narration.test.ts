@@ -246,7 +246,7 @@ describe("narration.generate narrates the displayed variant", () => {
     createdUserIds.push(userId);
   });
 
-  // No Groq key in the unit/integration env, so generate() takes the fallback
+  // No narration provider key in the integration env, so generate() takes the fallback
   // (plain-text) path — its narration text is exactly the selected variant's
   // text, which lets us assert *which* variant was narrated.
   it("narrates cleaned content by default and original content when showOriginal is set", async () => {
@@ -411,14 +411,14 @@ describe("narration.generate failure backoff", () => {
   let llmRequests = 0;
   let llmContent = "";
   let llmStatus = 200;
-  const previousBaseUrl = process.env.GROQ_BASE_URL;
+  const previousBaseUrl = process.env.CEREBRAS_BASE_URL;
   const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
-  const previousServerKey = process.env.GROQ_API_KEY;
+  const previousServerKey = process.env.CEREBRAS_API_KEY;
 
   beforeAll(async () => {
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
-    // A stand-in for Groq's OpenAI-compatible endpoint. The SDK reads
-    // GROQ_BASE_URL whenever a per-user client is constructed.
+    // A stand-in for Cerebras' OpenAI-compatible endpoint. The SDK reads
+    // CEREBRAS_BASE_URL whenever a per-user client is constructed.
     server = createServer((req, res) => {
       req.resume();
       req.on("end", () => {
@@ -448,13 +448,13 @@ describe("narration.generate failure backoff", () => {
       });
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    process.env.GROQ_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    process.env.CEREBRAS_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    if (previousBaseUrl === undefined) delete process.env.GROQ_BASE_URL;
-    else process.env.GROQ_BASE_URL = previousBaseUrl;
+    if (previousBaseUrl === undefined) delete process.env.CEREBRAS_BASE_URL;
+    else process.env.CEREBRAS_BASE_URL = previousBaseUrl;
     if (previousEncryptionKey === undefined) delete process.env.API_KEY_ENCRYPTION_KEY;
     else process.env.API_KEY_ENCRYPTION_KEY = previousEncryptionKey;
   });
@@ -465,30 +465,30 @@ describe("narration.generate failure backoff", () => {
   });
 
   afterEach(() => {
-    if (previousServerKey === undefined) delete process.env.GROQ_API_KEY;
-    else process.env.GROQ_API_KEY = previousServerKey;
+    if (previousServerKey === undefined) delete process.env.CEREBRAS_API_KEY;
+    else process.env.CEREBRAS_API_KEY = previousServerKey;
   });
 
-  /** A user without keys of their own, narrating on the server's Groq key. */
+  /** A user without keys of their own, narrating on the server's Cerebras key. */
   async function createServerKeyUser(): Promise<string> {
-    process.env.GROQ_API_KEY = "gsk-server-key";
+    process.env.CEREBRAS_API_KEY = "csk-server-key";
     const userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
     await db
       .update(users)
-      .set({ narrationModel: "groq:openai/gpt-oss-120b" })
+      .set({ narrationModel: "cerebras:gpt-oss-120b" })
       .where(eq(users.id, userId));
     return userId;
   }
 
-  /** A user with their own Groq key, narrating with Groq's default model unless told otherwise. */
-  async function createGroqUser(narrationModel = "groq:openai/gpt-oss-120b"): Promise<string> {
+  /** A user with their own Cerebras key, narrating with Cerebras' default model unless told otherwise. */
+  async function createCerebrasUser(narrationModel = "cerebras:gpt-oss-120b"): Promise<string> {
     const userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
     await db.update(users).set({ narrationModel }).where(eq(users.id, userId));
     await db
       .insert(userApiKeys)
-      .values({ userId, provider: "groq", encryptedKey: encryptApiKey("gsk-test-key") });
+      .values({ userId, provider: "cerebras", encryptedKey: encryptApiKey("csk-test-key") });
     return userId;
   }
 
@@ -554,7 +554,7 @@ describe("narration.generate failure backoff", () => {
     ["refusing the user's key", 401],
   ])("doesn't back everyone off when the provider is %s", async (_, status) => {
     llmStatus = status;
-    const { row, source } = await narrateOnce(await createGroqUser());
+    const { row, source } = await narrateOnce(await createCerebrasUser());
     expect(llmRequests).toBeGreaterThan(0);
     expect(source).toBe("fallback");
     expect(row.errorAt).toBeNull();
@@ -563,7 +563,7 @@ describe("narration.generate failure backoff", () => {
 
   it("doesn't back everyone off when the user's own key answers with nothing usable", async () => {
     llmContent = "this is not JSON";
-    const { row, source } = await narrateOnce(await createGroqUser());
+    const { row, source } = await narrateOnce(await createCerebrasUser());
     expect(llmRequests).toBe(1);
     expect(source).toBe("fallback");
     expect(row.errorAt).toBeNull();
@@ -571,15 +571,15 @@ describe("narration.generate failure backoff", () => {
 
   it("doesn't back everyone off when a model the user picked answers with nothing usable", async () => {
     llmContent = "this is not JSON";
-    const picked = "groq:llama-3.3-70b-versatile";
-    const { row, source } = await narrateOnce(await createGroqUser(picked), picked);
+    const picked = "cerebras:qwen-3.8-27b";
+    const { row, source } = await narrateOnce(await createCerebrasUser(picked), picked);
     expect(llmRequests).toBe(1);
     expect(source).toBe("fallback");
     expect(row.errorAt).toBeNull();
   });
 
   it("caches a usable response (the fake endpoint reaches the LLM path)", async () => {
-    const userId = await createGroqUser();
+    const userId = await createCerebrasUser();
     const contentCleaned = `<p>LLM success body ${generateUuidv7()}.</p>`;
     createdNarrationHashes.push(narrationHash(contentCleaned));
     llmContent = JSON.stringify({ paragraphs: [{ id: 0, text: "Rewritten by the model." }] });
@@ -595,9 +595,9 @@ describe("narration.generate failure backoff", () => {
   });
 
   it("keeps a model one user picked to that user, in both directions", async () => {
-    const picked = "groq:llama-3.3-70b-versatile";
-    const userA = await createGroqUser(picked);
-    const userB = await createGroqUser();
+    const picked = "cerebras:qwen-3.8-27b";
+    const userA = await createCerebrasUser(picked);
+    const userB = await createCerebrasUser();
     const contentCleaned = `<p>Shared article ${generateUuidv7()}.</p>`;
     createdNarrationHashes.push(
       narrationHash(contentCleaned),

@@ -22,10 +22,10 @@ export const NARRATION_FORMAT_VERSION = 5;
  * Providers selectable for narration preprocessing. Narration preprocessing
  * only supports the OpenAI-compatible providers — it relies on JSON-object
  * response formatting. This is also the preference order for the default model
- * when the user hasn't picked one: Cerebras first (fastest), then Groq, then
- * OpenRouter (an extra hop).
+ * when the user hasn't picked one: Cerebras first (fastest), then OpenRouter
+ * (an extra hop).
  */
-export const NARRATION_PROVIDERS = ["cerebras", "groq", "openrouter"] as const;
+export const NARRATION_PROVIDERS = ["cerebras", "openrouter"] as const;
 
 export type NarrationProvider = (typeof NARRATION_PROVIDERS)[number];
 
@@ -40,7 +40,6 @@ export function isNarrationProvider(provider: string): provider is NarrationProv
  */
 export const DEFAULT_NARRATION_MODELS: Record<NarrationProvider, string> = {
   cerebras: "cerebras:gpt-oss-120b",
-  groq: "groq:openai/gpt-oss-120b",
   openrouter: "openrouter:openai/gpt-oss-120b",
 };
 

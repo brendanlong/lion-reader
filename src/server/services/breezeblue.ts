@@ -15,7 +15,7 @@ import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
 import { CatalogCache } from "@/server/services/catalog-cache";
 
-/** Overridable for tests, like the SDKs' `GROQ_BASE_URL`. */
+/** Overridable for tests, like the SDKs' `CEREBRAS_BASE_URL`. */
 function apiUrl(): string {
   return process.env.BREEZEBLUE_BASE_URL ?? "https://api.breeze.blue/v1";
 }

@@ -13,22 +13,20 @@ import type { TextAiProvider } from "@/lib/ai/providers";
  */
 export const DEFAULT_SUMMARIZATION_MODELS: Record<TextAiProvider, string> = {
   anthropic: "anthropic:claude-sonnet-5",
-  groq: "groq:openai/gpt-oss-120b",
   cerebras: "cerebras:gpt-oss-120b",
   openrouter: "openrouter:openai/gpt-oss-120b",
 };
 
 /**
  * Provider preference order for the default summarization model when the user
- * hasn't picked one. Cerebras and Groq run gpt-oss far faster than Anthropic,
- * and most users prefer the fastest possible summaries over minor quality
- * gains, so the hosted OpenAI-compatible providers come first. OpenRouter is
+ * hasn't picked one. Cerebras runs gpt-oss far faster than Anthropic, and most
+ * users prefer the fastest possible summaries over minor quality gains, so it
+ * comes first. OpenRouter is
  * last: it can reach the others, so someone holding a direct key meant to use
  * it, and adding a server OpenRouter key doesn't change anyone's default.
  */
 export const SUMMARIZATION_PROVIDER_PRIORITY: TextAiProvider[] = [
   "cerebras",
-  "groq",
   "anthropic",
   "openrouter",
 ];

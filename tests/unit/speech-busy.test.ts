@@ -130,7 +130,7 @@ describe("providerError", () => {
   });
 
   it("is a busy error for a timeout, an overloaded or unavailable provider", async () => {
-    for (const status of [408, 498, 502, 503, 504, 529]) {
+    for (const status of [408, 502, 503, 504, 529]) {
       const error = await providerError("DeepInfra", new Response("oops", { status }));
       expect(error).toBeInstanceOf(ProviderBusyError);
       expect((error as ProviderBusyError).retryAfterSeconds).toBeNull();
@@ -151,7 +151,6 @@ describe("classifyProviderStatus", () => {
   it.each([
     [408, "busy"],
     [429, "busy"],
-    [498, "busy"],
     [502, "busy"],
     [503, "busy"],
     [504, "busy"],
