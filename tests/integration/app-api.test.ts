@@ -521,7 +521,7 @@ describe("sync.changes", () => {
     const articleId = await createTestEntry(userId, { type: "saved", userIds: [userId] });
 
     const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
-    expect(await deleteSavedArticle(db, userId, articleId)).toBe(true);
+    expect(await deleteSavedArticle(db, userId, articleId)).not.toBeNull();
 
     const params = new URLSearchParams(bootstrap.cursors);
     const delta = await (await rest(token, "GET", `/sync/changes?${params}`)).json();

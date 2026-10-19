@@ -482,8 +482,8 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(deleteSavedArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(deleteSavedArticleArgs, args);
-        const deleted = await savedService.deleteSavedArticle(db, userId, params.articleId);
-        return { deleted };
+        const counts = await savedService.deleteSavedArticle(db, userId, params.articleId);
+        return { deleted: counts !== null };
       },
     },
 

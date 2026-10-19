@@ -36,6 +36,7 @@ import { toEntryMetadata } from "@/server/services/entry-sync-events";
 import { toNewEntryListData, type NewEntryListItem } from "@/lib/events/schemas";
 import { errors } from "@/server/errors";
 import { finishEntriesRead, writeEntriesRead } from "@/server/services/entry-state";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { normalizeSavedArticleUrl, type UserAuthMode } from "@/server/plugins";
 import {
   acquireSavedArticleContent,
@@ -785,13 +786,14 @@ export async function savePlaceholderArticle(
 /**
  * Delete a saved article.
  *
- * @returns true if deleted, false if not found
+ * @returns the counts of the lists it left (the global ones and its
+ *   collections), or null if not found
  */
 export async function deleteSavedArticle(
   db: typeof dbType,
   userId: string,
   articleId: string
-): Promise<boolean> {
+): Promise<BulkUnreadCounts | null> {
   // Verify the article exists and is one the user saved (owns, #1846).
   const existing = await db
     .select({ id: entries.id })
@@ -807,7 +809,7 @@ export async function deleteSavedArticle(
     .limit(1);
 
   if (existing.length === 0) {
-    return false;
+    return null;
   }
 
   // Delete the entry (will cascade to user_entries). Scope the DELETE to the
@@ -822,9 +824,14 @@ export async function deleteSavedArticle(
     await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.ownerUserId, userId)));
     await recordEntryTombstone(tx, userId, articleId);
   });
-  await publishEntryLeftCollections(db, userId, articleId, collectionIds);
-
-  return true;
+  // The entry is gone, so its collections are named as subscriptions.
+  const counts = await getBulkEntryRelatedCounts(
+    db,
+    userId,
+    collectionIds.map((subscriptionId) => ({ subscriptionId }))
+  );
+  publishEntryLeftCollections(userId, articleId, collectionIds, counts);
+  return counts;
 }
 
 export interface UploadFileParams extends CollectionsParam {

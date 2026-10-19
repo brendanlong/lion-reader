@@ -364,20 +364,15 @@ async function touchUserEntries(
 /**
  * Tells the user's clients an entry left collections without a membership
  * call, e.g. because the entry itself was deleted (the trigger removed the
- * memberships), so their collection badges update.
+ * memberships), so their collection badges update. `counts` must cover the
+ * collections (`getBulkEntryRelatedCounts` of them as subscriptions).
  */
-export async function publishEntryLeftCollections(
-  db: typeof dbType,
+export function publishEntryLeftCollections(
   userId: string,
   entryId: string,
-  collectionIds: string[]
-): Promise<void> {
-  if (collectionIds.length === 0) return;
-  const counts = await getBulkEntryRelatedCounts(
-    db,
-    userId,
-    collectionIds.map((subscriptionId) => ({ subscriptionId }))
-  );
+  collectionIds: string[],
+  counts: BulkUnreadCounts
+): void {
   for (const subscriptionId of collectionIds) {
     publishUserEvent({
       type: "collection_entries_changed",

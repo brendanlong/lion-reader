@@ -147,7 +147,7 @@ export const savedRouter = createTRPCRouter({
    * Deleting the entry will cascade to user_entries.
    *
    * @param id - The saved article ID to delete
-   * @returns Empty object on success
+   * @returns The counts of the lists it left
    */
   delete: readerProcedure
     .meta({
@@ -163,13 +163,13 @@ export const savedRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({}))
+    .output(z.object({ counts: unreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
-      const deleted = await savedService.deleteSavedArticle(ctx.db, ctx.session.user.id, input.id);
-      if (!deleted) {
+      const counts = await savedService.deleteSavedArticle(ctx.db, ctx.session.user.id, input.id);
+      if (counts === null) {
         throw errors.savedArticleNotFound();
       }
-      return {};
+      return { counts };
     }),
 
   /**

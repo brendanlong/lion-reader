@@ -116,7 +116,7 @@ describe("createGettingStartedArticle", () => {
 
     const entryId = await createGettingStartedArticle(db, userId);
     expect(entryId).not.toBeNull();
-    expect(await deleteSavedArticle(db, userId, entryId!)).toBe(true);
+    expect(await deleteSavedArticle(db, userId, entryId!)).not.toBeNull();
 
     // Both the signup path and the backfill must leave it deleted.
     expect(await createGettingStartedArticle(db, userId)).toBeNull();

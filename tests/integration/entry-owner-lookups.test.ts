@@ -176,10 +176,10 @@ describe("email and saved lookups by owner (#1846)", () => {
     const greaderIds = await resolveGreaderIdsForEntries(db, userId, [saved.id]);
     expect(greaderIds.get(saved.id)?.originStreamId).toBe(streamId);
 
-    expect(await deleteSavedArticle(db, otherId, saved.id)).toBe(false);
-    expect(await deleteSavedArticle(db, userId, saved.id)).toBe(true);
+    expect(await deleteSavedArticle(db, otherId, saved.id)).toBeNull();
+    expect(await deleteSavedArticle(db, userId, saved.id)).not.toBeNull();
     expect(await entryRow(saved.id)).toBeUndefined();
-    expect(await deleteSavedArticle(db, userId, saved.id)).toBe(false);
+    expect(await deleteSavedArticle(db, userId, saved.id)).toBeNull();
   });
 
   it("sync delivers content updates to emails and saved articles through their owners", async () => {
