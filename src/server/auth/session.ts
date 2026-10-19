@@ -332,9 +332,10 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
 }
 
 /**
- * Revokes all of a user's active sessions except one. Used after a password change so a stolen/lingering session on another
- * device can't outlive the credential it was created under — the current session
- * (the one performing the change) is kept alive.
+ * Revokes all of a user's active sessions except one. Used after a password
+ * change so a stolen/lingering session on another device can't outlive the
+ * credential it was created under — the current session (the one performing
+ * the change) is kept alive.
  *
  * Deliberately not exported: `revokeOtherUserSessionsOrReport` below is the only
  * caller, so every credential change gets that failure handling.

@@ -181,7 +181,7 @@ describe("last_active_at accounting for scoped vs full-access sessions", () => {
     const login = await clientLogin(user.email, PASSWORD);
     if (!login) throw new Error("unreachable");
 
-    // Resolve the session id (this first validation also fires a scoped bump).
+    // Resolve the session id.
     const scoped = await validateSession(login.auth, { allowScoped: true });
     const sessionId = scoped?.session.id;
     if (!sessionId) throw new Error("unreachable");
