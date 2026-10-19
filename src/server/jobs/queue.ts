@@ -20,7 +20,6 @@
 import { eq, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
-import { isUniqueViolation } from "../db/errors";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { z } from "zod";
 
@@ -68,7 +67,7 @@ const emptyPayload = z.object({});
  * Where a job type is claimed (see `createWorkerClaimJob` in worker.ts):
  *
  * - `feed`: the data-driven fetch_feed claim (only feeds with subscribers).
- * - `singleton`: exactly one row, self-created on first run (see
+ * - `singleton`: exactly one row, seeded at worker start (see
  *   {@link SINGLETON_JOB_TYPES}).
  * - `one_time`: the generic due-job claim. Each row is a single task, deleted
  *   when its handler returns, whatever the outcome; only a throw keeps the row,
@@ -678,7 +677,7 @@ export async function claimFullContentJob(): Promise<Job | null> {
 }
 
 /**
- * Singleton job types that have exactly one instance and self-create on first run.
+ * Singleton job types: exactly one row each, created by {@link seedSingletonJobs}.
  *
  * The worker's claim loop tries these first-due-wins, in array order, so a
  * type that reschedules itself near-immediately under backlog would starve
@@ -695,10 +694,32 @@ function isFastRescheduler(type: JobType): boolean {
 }
 
 /**
- * Tries to claim a singleton job for processing.
- *
- * Singleton jobs (like renew_websub) have exactly one row. If no row exists,
- * that means "run now" - the row is created on first run and tracks next_run_at.
+ * Creates the row of every singleton job type that doesn't have one yet, due
+ * now. The worker runs this before its first claim; concurrent workers are
+ * safe, since `jobs_singleton_type_unique` keeps one row per type. A new
+ * singleton type must be added to that index (by migration), or every worker
+ * start inserts another row.
+ */
+export async function seedSingletonJobs(): Promise<void> {
+  const now = new Date();
+  await db
+    .insert(jobs)
+    .values(
+      SINGLETON_JOB_TYPES.map((type) => ({
+        id: generateUuidv7(),
+        type,
+        payload: {},
+        nextRunAt: now,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    )
+    .onConflictDoNothing();
+}
+
+/**
+ * Claims a singleton job if it's due. Its row comes from
+ * {@link seedSingletonJobs}.
  *
  * @param type - The singleton job type to claim
  * @returns The claimed job, or null if not due or already running
@@ -707,57 +728,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
   if (!SINGLETON_JOB_TYPES.includes(type)) {
     throw new Error(`${type} is not a singleton job type`);
   }
-
-  const tryClaim = () => claimDueJob(() => sql`j.type = ${type}`);
-
-  // First, try to claim an existing job
-  const claimed = await tryClaim();
-  if (claimed) {
-    return claimed;
-  }
-
-  // No claimable job - check if a job exists at all
-  const [existingJob] = await db.select().from(jobs).where(eq(jobs.type, type)).limit(1);
-
-  if (existingJob) {
-    // Job exists but isn't due or is currently running
-    return null;
-  }
-
-  // No job exists - create one and claim it immediately.
-  // The jobs_singleton_type_unique partial index makes this INSERT conflict if
-  // another worker creates the row first (two workers both see no row), so the
-  // catch below handles that race by claiming the row the winner created.
-  const now = new Date();
-  try {
-    const [newJob] = await db
-      .insert(jobs)
-      .values({
-        id: generateUuidv7(),
-        type,
-        payload: {},
-        nextRunAt: now,
-        runningSince: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    return newJob;
-  } catch (error) {
-    // Only the jobs_singleton_type_unique conflict (Postgres unique_violation,
-    // SQLSTATE 23505) means another worker won the race. Any other error is a
-    // genuine failure and must propagate rather than be masked as "lost race".
-    if (!isUniqueViolation(error)) {
-      throw error;
-    }
-
-    // Another worker created the job first - try to claim it. The claim
-    // keeps the next_run_at <= now check: if the winner already ran
-    // and rescheduled the job, we must not immediately re-run it.
-    // Null if the job is running or already rescheduled - that's fine
-    return tryClaim();
-  }
+  return claimDueJob(() => sql`j.type = ${type}`);
 }
 
 /**

@@ -1099,8 +1099,7 @@ export const jobs = pgTable(
     uniqueIndex("idx_jobs_feed_id")
       .on(sql`(${table.payload}->>'feedId')`)
       .where(sql`type = 'fetch_feed'`),
-    // Enforce one row per singleton job type so claimSingletonJob's
-    // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
+    // One row per singleton job type, which seedSingletonJobs relies on.
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
       .where(

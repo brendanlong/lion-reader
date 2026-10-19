@@ -14,7 +14,11 @@ import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { getFeedFetchHealthSnapshot } from "../../src/server/feed/health";
 import { handleMonitorFeedHealth } from "../../src/server/jobs/handlers/monitor-feed-health";
-import { claimSingletonJob, getJobIntervalMs } from "../../src/server/jobs/queue";
+import {
+  claimSingletonJob,
+  getJobIntervalMs,
+  seedSingletonJobs,
+} from "../../src/server/jobs/queue";
 import { runJobHandler } from "../../src/server/jobs/worker";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
@@ -124,6 +128,7 @@ describe("handleMonitorFeedHealth", () => {
   });
 
   it("is rescheduled by the worker one interval after the run started", async () => {
+    await seedSingletonJobs();
     const job = await claimSingletonJob("monitor_feed_health");
     expect(job).not.toBeNull();
     const startedAt = Date.now() - 1000;
