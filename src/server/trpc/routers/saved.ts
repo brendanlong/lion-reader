@@ -9,7 +9,7 @@
  * Most operations on saved articles use the unified entries.* endpoints:
  * - entries.list({ type: 'saved' }) for listing
  * - entries.get for fetching single articles
- * - entries.count({ type: 'saved' }) for counts
+ * - entries.countLists (the web sidebar) or entries.count({ type: 'saved' }) for counts
  * - entries.markRead, entries.setStarred for mutations
  *
  * This router only handles:

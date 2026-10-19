@@ -181,11 +181,8 @@ async function realSide(): Promise<Side> {
 async function counts(side: Side): Promise<unknown> {
   const subs = await side.call("subscriptions.list", {});
   const tagList = await side.call("tags.list", undefined);
-  const { all, starred, saved } = await side.call("entries.countLists", undefined);
   return {
-    all,
-    starred,
-    saved,
+    lists: await side.call("entries.countLists", undefined),
     subscriptions: subs.items.map((sub) => ({
       id: sub.id,
       unreadCount: sub.unreadCount,
