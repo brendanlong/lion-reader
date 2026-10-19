@@ -26,6 +26,7 @@ import JSZip from "jszip";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
+import { createConversionSlot, QueueTimeoutError } from "@/server/file/conversion-slot";
 
 /**
  * Inflated-size budgets, as multiples of the saved-article size limit (5MB by
@@ -60,11 +61,6 @@ function youngGenerationMb(maxHeapMb: number): number {
 /** Counted from when the conversion is queued, not from when it starts. */
 const CONVERSION_DEADLINE_MS = 20_000;
 
-/**
- * Conversions allowed to wait behind the running one. Each waiter holds its
- * upload (up to the saved-article limit) in memory, and one past this would
- * likely miss its deadline anyway.
- */
 const MAX_QUEUED_CONVERSIONS = 4;
 
 /**
@@ -180,14 +176,6 @@ class DeadlineExceededError extends Error {
   }
 }
 
-/** The deadline passed before the conversion got a worker: load, not the file. */
-class QueueTimeoutError extends Error {
-  constructor() {
-    super(".docx conversion timed out waiting for a worker");
-    this.name = "QueueTimeoutError";
-  }
-}
-
 /**
  * How long to wait for a terminated worker's thread to exit before giving up
  * on it and letting the next conversion start anyway.
@@ -228,46 +216,14 @@ interface DocxConverter {
  * limits.
  */
 export function createDocxConverter(options: DocxConverterOptions): DocxConverter {
-  let busy = false;
+  const slot = createConversionSlot(options.maxQueued, "document conversions");
   let live = 0;
-  const waiting: Array<() => void> = [];
-
-  /** Waits for the single slot, giving up at the deadline. */
-  function acquire(deadline: number): Promise<void> {
-    if (!busy) {
-      busy = true;
-      return Promise.resolve();
-    }
-    if (waiting.length >= options.maxQueued) {
-      return Promise.reject(errors.serverBusy("document conversions"));
-    }
-    return new Promise((resolve, reject) => {
-      const grant = (): void => {
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        waiting.splice(waiting.indexOf(grant), 1);
-        reject(new QueueTimeoutError());
-      }, deadline - Date.now());
-      waiting.push(grant);
-    });
-  }
-
-  function release(): void {
-    const next = waiting.shift();
-    if (next) {
-      next();
-    } else {
-      busy = false;
-    }
-  }
 
   /** Runs one worker to completion; resolves only once its thread has exited. */
   async function runWorker(buffer: Buffer, deadline: number): Promise<WorkerResult> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new QueueTimeoutError();
+      throw new QueueTimeoutError("document conversions");
     }
 
     const worker = new Worker(WORKER_SOURCE, {
@@ -348,11 +304,11 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
     const deadline = Date.now() + options.deadlineMs;
     let result: WorkerResult;
     try {
-      await acquire(deadline);
+      await slot.acquire(deadline);
       try {
         result = await runWorker(buffer, deadline);
       } finally {
-        release();
+        slot.release();
       }
     } catch (error) {
       if (error instanceof QueueTimeoutError) {
