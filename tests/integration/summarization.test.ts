@@ -91,7 +91,6 @@ async function createVisibleEntry(
 const createdUserIds: string[] = [];
 const PROVIDER_ENV = [
   "ANTHROPIC_API_KEY",
-  "GROQ_API_KEY",
   "CEREBRAS_API_KEY",
   "OPENROUTER_API_KEY",
   "SUMMARIZATION_MODEL",

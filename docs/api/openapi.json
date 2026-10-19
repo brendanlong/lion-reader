@@ -3232,7 +3232,6 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3246,7 +3245,6 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3374,7 +3372,6 @@
                       "type": "string",
                       "enum": [
                         "anthropic",
-                        "groq",
                         "cerebras",
                         "deepinfra",
                         "openrouter",
@@ -3440,7 +3437,6 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3454,7 +3450,6 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -10416,7 +10411,6 @@
                             "type": "string",
                             "enum": [
                               "anthropic",
-                              "groq",
                               "cerebras",
                               "openrouter"
                             ]
@@ -10869,7 +10863,6 @@
                             "type": "string",
                             "enum": [
                               "anthropic",
-                              "groq",
                               "cerebras",
                               "openrouter"
                             ]

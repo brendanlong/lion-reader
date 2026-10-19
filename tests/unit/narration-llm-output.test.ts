@@ -110,7 +110,7 @@ describe("buildFallbackNarration", () => {
 describe("narrationFailureScope", () => {
   const callFailure = (failure: "busy" | "rejected" | "failed", usedUserKey: boolean) => ({
     kind: "error" as const,
-    error: new TextGenerationError("groq", failure, usedUserKey, new Error("x")),
+    error: new TextGenerationError("cerebras", failure, usedUserKey, new Error("x")),
   });
 
   it.each<[string, NarrationFailure, ReturnType<typeof narrationFailureScope>]>([
@@ -129,7 +129,11 @@ describe("narrationFailureScope", () => {
     ["a busy provider, on the user's key", callFailure("busy", true), "transient"],
     ["a busy provider, on the server's key", callFailure("busy", false), "transient"],
     ["a provider error", callFailure("failed", false), "transient"],
-    ["an unreadable key", { kind: "error", error: new UnreadableApiKeyError("groq") }, "caller"],
+    [
+      "an unreadable key",
+      { kind: "error", error: new UnreadableApiKeyError("cerebras") },
+      "caller",
+    ],
     [
       "a model these keys can't use",
       { kind: "error", error: new Error("not configured") },
@@ -143,7 +147,7 @@ describe("narrationFailureScope", () => {
 describe("narrationContentHash", () => {
   const userA = "01900000-0000-7000-8000-00000000000a";
   const userB = "01900000-0000-7000-8000-00000000000b";
-  const picked = "groq:llama-3.3-70b-versatile";
+  const picked = "cerebras:qwen-3.8-27b";
 
   it("keeps everyone's slot where it always was", () => {
     expect(narrationContentHash("<p>Hi</p>", null)).toBe(
@@ -155,7 +159,7 @@ describe("narrationContentHash", () => {
     const shared = narrationContentHash("<p>Hi</p>", null);
     const a = narrationContentHash("<p>Hi</p>", { userId: userA, model: picked });
     const b = narrationContentHash("<p>Hi</p>", { userId: userB, model: picked });
-    const other = narrationContentHash("<p>Hi</p>", { userId: userA, model: "groq:other" });
+    const other = narrationContentHash("<p>Hi</p>", { userId: userA, model: "cerebras:other" });
     expect(new Set([shared, a, b, other]).size).toBe(4);
   });
 
@@ -175,8 +179,9 @@ describe("narrationCacheOwner", () => {
   });
 
   it("keeps a picked model's narration to the user who picked it", () => {
-    expect(
-      narrationCacheOwner({ provider: "groq", model: "llama-3.3-70b-versatile" }, "u")
-    ).toEqual({ userId: "u", model: "groq:llama-3.3-70b-versatile" });
+    expect(narrationCacheOwner({ provider: "cerebras", model: "qwen-3.8-27b" }, "u")).toEqual({
+      userId: "u",
+      model: "cerebras:qwen-3.8-27b",
+    });
   });
 });

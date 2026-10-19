@@ -1,8 +1,9 @@
 /**
  * Formats a model reference into a human-readable name for display.
  *
- * Accepts provider-qualified refs ("cerebras:gpt-oss-120b") as well as bare
- * model IDs ("claude-sonnet-4-6", legacy stored values). Only the model is
+ * Accepts provider-qualified refs ("cerebras:gpt-oss-120b"), including ones for
+ * providers we no longer support (stored summaries keep their model), as well
+ * as bare model IDs ("claude-sonnet-4-6", legacy stored values). Only the model is
  * displayed — the provider prefix and any org prefix ("openai/") are
  * dropped. Formatting:
  *
@@ -25,8 +26,6 @@
  * never worse than the raw ID.
  */
 
-import { parseModelRef } from "@/lib/ai/model-ref";
-
 /** Segments rendered fully uppercase. */
 const ACRONYMS = new Set(["gpt", "oss", "ai", "moe"]);
 
@@ -38,7 +37,7 @@ export function formatModelName(modelId: string): string {
   // Only display the model — drop the provider prefix ("cerebras:"), any
   // org prefix in the provider-native ID ("openai/gpt-oss-20b"), and an
   // OpenRouter variant suffix (":free").
-  const { model } = parseModelRef(modelId);
+  const model = modelId.slice(modelId.indexOf(":") + 1);
   const withoutOrg = model.slice(model.lastIndexOf("/") + 1).replace(/:[^:]*$/, "");
 
   // Drop a trailing 8-digit date suffix (e.g. "claude-sonnet-4-5-20250929").

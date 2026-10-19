@@ -38,7 +38,7 @@ describe("buildModelPickerSections", () => {
       suggestedModelIds: [
         "openrouter:google/gemini-3.8-flash",
         "cerebras:gpt-oss-120b",
-        "groq:openai/gpt-oss-120b", // provider not configured → not listed
+        "openrouter:x-ai/grok-5", // not available → not listed
       ],
     });
     expect(labels(sections)).toEqual([

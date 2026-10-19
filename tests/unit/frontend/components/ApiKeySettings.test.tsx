@@ -3,13 +3,14 @@
  */
 
 /**
- * The Change/Save/Cancel/Reset flow of `EditablePreferenceField`, driven
- * through the summarization settings that use it.
+ * The AI settings sections: what the provider keys section says a key is
+ * needed for, and the Change/Save/Cancel/Reset flow of
+ * `EditablePreferenceField`, driven through the summarization settings.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { SummarizationSettings } from "@/components/settings/ApiKeySettings";
+import { AiProviderKeySettings, SummarizationSettings } from "@/components/settings/ApiKeySettings";
 import { procedureError } from "@/lib/trpc/handler-link";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 
@@ -118,5 +119,41 @@ describe("EditablePreferenceField (summarization max words)", () => {
     });
     // Nothing left to reset.
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+  });
+});
+
+describe("AiProviderKeySettings", () => {
+  const ALL_FEATURES = { summaries: true, narrationTextProcessing: true, cloudVoices: true };
+  const renderWithServerFeatures = (features: Partial<typeof ALL_FEATURES>) =>
+    renderWithTrpc(<AiProviderKeySettings />, {
+      handlers: handlers({
+        "users.me.serverAiFeatures": () => ({ ...ALL_FEATURES, ...features }),
+      }),
+    });
+
+  it.each([
+    [
+      { summaries: false, narrationTextProcessing: false, cloudVoices: false },
+      "You need your own key for summaries, narration text processing, and cloud voices, or to use models that aren't available by default.",
+    ],
+    [
+      { cloudVoices: false },
+      "You need your own key for cloud voices, or to use models that aren't available by default.",
+    ],
+    [
+      {},
+      "AI features work without a key. Add your own to use models that aren't available by default.",
+    ],
+  ])("with server features %j, says: %s", async (features, text) => {
+    renderWithServerFeatures(features);
+    expect(await screen.findByText(`${text} Keys are stored encrypted.`)).toBeInTheDocument();
+  });
+
+  it("says what each provider is used for", async () => {
+    renderWithServerFeatures({});
+    expect(
+      await screen.findByText("(summaries, narration text processing, cloud voices)")
+    ).toBeInTheDocument();
+    expect(screen.getByText("(summaries)")).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Integration tests for per-user AI provider API keys: stored encrypted,
  * exposed to the client only as which providers have one, and decrypted on
- * demand.
+ * demand; and which AI features work on the server's keys alone.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
@@ -71,9 +71,11 @@ describe.each(["openrouter", "deepinfra"] as const)("%s API key", (provider) => 
 it("leaves other providers' keys alone", async () => {
   const userId = await createTestUser();
   const caller = createCaller(await createAuthContext(userId));
-  await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-a", openrouter: "sk-b" } });
+  await caller.users["me.updatePreferences"]({
+    apiKeys: { cerebras: "csk-a", openrouter: "sk-b" },
+  });
 
-  await caller.users["me.updatePreferences"]({ apiKeys: { groq: "" } });
+  await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "" } });
 
   expect(await getUserApiKeys(userId)).toEqual({ openrouter: "sk-b" });
 });
@@ -96,7 +98,7 @@ describe("without server keys", () => {
     expect((await caller.summarization.isAvailable()).available).toBe(false);
     expect((await caller.narration.isAiTextProcessingAvailable()).available).toBe(false);
 
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-a" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "csk-a" } });
 
     expect((await caller.summarization.isAvailable()).available).toBe(true);
     expect((await caller.narration.isAiTextProcessingAvailable()).available).toBe(true);
@@ -115,20 +117,20 @@ describe("key input", () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
 
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "  gsk-padded\n" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "  csk-padded\n" } });
 
-    expect((await getUserApiKeys(userId)).groq).toBe("gsk-padded");
+    expect((await getUserApiKeys(userId)).cerebras).toBe("csk-padded");
   });
 
   it("clears the key when given only whitespace", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-a" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "csk-a" } });
 
-    const cleared = await caller.users["me.updatePreferences"]({ apiKeys: { groq: "  \n" } });
+    const cleared = await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "  \n" } });
 
     expect(cleared.apiKeyProviders).toEqual([]);
-    expect((await getUserApiKeys(userId)).groq).toBeUndefined();
+    expect((await getUserApiKeys(userId)).cerebras).toBeUndefined();
   });
 });
 
@@ -145,7 +147,7 @@ describe("a saved key that no longer decrypts", () => {
   it("is marked unreadable, leaving the user's other keys working", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "csk-old" } });
 
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
     const updated = await caller.users["me.updatePreferences"]({
@@ -153,27 +155,29 @@ describe("a saved key that no longer decrypts", () => {
     });
 
     expect(await getUserApiKeys(userId)).toEqual({
-      groq: UNREADABLE_API_KEY,
+      cerebras: UNREADABLE_API_KEY,
       openrouter: "sk-new",
     });
     // Settings asks for it again, and the row is kept for a fixed encryption key.
-    expect(updated.apiKeyProviders).toEqual(["groq", "openrouter"]);
-    expect(updated.unreadableApiKeyProviders).toEqual(["groq"]);
+    expect(updated.apiKeyProviders).toEqual(["cerebras", "openrouter"]);
+    expect(updated.unreadableApiKeyProviders).toEqual(["cerebras"]);
 
     process.env.API_KEY_ENCRYPTION_KEY = savedUnder;
-    expect((await getUserApiKeys(userId)).groq).toBe("gsk-old");
+    expect((await getUserApiKeys(userId)).cerebras).toBe("csk-old");
   });
 
   it("is readable again once re-entered", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "csk-old" } });
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-    const updated = await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-new" } });
+    const updated = await caller.users["me.updatePreferences"]({
+      apiKeys: { cerebras: "csk-new" },
+    });
 
     expect(updated.unreadableApiKeyProviders).toEqual([]);
-    expect((await getUserApiKeys(userId)).groq).toBe("gsk-new");
+    expect((await getUserApiKeys(userId)).cerebras).toBe("csk-new");
   });
 
   it("doesn't stop preferences loading when the encryption key is missing or malformed", async () => {
@@ -181,12 +185,12 @@ describe("a saved key that no longer decrypts", () => {
     // must not take the app down with it.
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "csk-old" } });
 
     delete process.env.API_KEY_ENCRYPTION_KEY;
     const unset = await caller.users["me.preferences"]();
     expect(unset.canConfigureApiKeys).toBe(false);
-    expect(unset.apiKeyProviders).toEqual(["groq"]);
+    expect(unset.apiKeyProviders).toEqual(["cerebras"]);
     expect(unset.unreadableApiKeyProviders).toEqual([]);
 
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(16).toString("base64");
@@ -196,11 +200,46 @@ describe("a saved key that no longer decrypts", () => {
   it("is a loud failure when the encryption key itself is misconfigured", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
-    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+    await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "csk-old" } });
 
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(16).toString("base64");
     await expect(getUserApiKeys(userId)).rejects.toThrow("must be 32 bytes");
     delete process.env.API_KEY_ENCRYPTION_KEY;
     await expect(getUserApiKeys(userId)).rejects.toThrow("API_KEY_ENCRYPTION_KEY is required");
+  });
+});
+
+describe("users.me.serverAiFeatures", () => {
+  const envNames = [...Object.values(AI_PROVIDER_ENV_KEYS), "SERVER_KEY_MODELS"];
+  const previousEnv = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
+
+  beforeEach(() => {
+    for (const name of envNames) delete process.env[name];
+  });
+
+  afterEach(() => {
+    for (const name of envNames) {
+      const value = previousEnv[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it("counts a server key only for the features its allowed models serve", async () => {
+    const caller = createCaller(await createAuthContext(await createTestUser()));
+    process.env.CEREBRAS_API_KEY = "csk-server";
+
+    expect(await caller.users["me.serverAiFeatures"]()).toEqual({
+      summaries: true,
+      narrationTextProcessing: true,
+      cloudVoices: false,
+    });
+
+    process.env.SERVER_KEY_MODELS = "cerebras:some-other-model";
+    expect(await caller.users["me.serverAiFeatures"]()).toEqual({
+      summaries: false,
+      narrationTextProcessing: false,
+      cloudVoices: false,
+    });
   });
 });

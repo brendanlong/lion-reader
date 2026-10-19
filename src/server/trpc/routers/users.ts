@@ -26,6 +26,9 @@ import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/
 import { isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
+import { isSummarizationAvailable } from "@/server/services/summarization";
+import { isNarrationLlmAvailable } from "@/server/services/narration";
+import { listSpeechModels } from "@/server/services/speech";
 import {
   getApiKeyProviders,
   getUnreadableApiKeyProviders,
@@ -363,6 +366,27 @@ export const usersRouter = createTRPCRouter({
         summarizationPrompt: ctx.session.user.summarizationPrompt,
         narrationModel: ctx.session.user.narrationModel,
       };
+    }),
+
+  /**
+   * Which AI features work on the server's keys alone, for settings to say
+   * which ones need the user's own key.
+   */
+  "me.serverAiFeatures": protectedProcedure
+    .output(
+      z.object({
+        summaries: z.boolean(),
+        narrationTextProcessing: z.boolean(),
+        cloudVoices: z.boolean(),
+      })
+    )
+    .query(async () => {
+      const [summaries, narrationTextProcessing, speech] = await Promise.all([
+        isSummarizationAvailable({}),
+        isNarrationLlmAvailable({}),
+        listSpeechModels({}),
+      ]);
+      return { summaries, narrationTextProcessing, cloudVoices: speech.models.length > 0 };
     }),
 
   /**
