@@ -1037,6 +1037,13 @@
       "when": 1782956900000,
       "tag": "0148_drop_idx_entry_summaries_prompt_version",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1782957000000,
+      "tag": "0149_drop_entry_summaries_error",
+      "breakpoints": true
     }
   ]
 }

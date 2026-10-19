@@ -508,8 +508,6 @@ CREATE TABLE public.entry_summaries (
     prompt_version smallint DEFAULT 1 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     generated_at timestamp with time zone,
-    error text,
-    error_at timestamp with time zone,
     user_id uuid,
     max_words integer,
     prompt_hash text
