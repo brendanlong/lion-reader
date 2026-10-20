@@ -155,7 +155,9 @@ describe("createTokens", () => {
     });
     expect(isOAuthAccessTokenFormat(tokens.accessToken)).toBe(true);
   });
+});
 
+describe("oauth_token_grants", () => {
   it("refuses a grant without consent for any client but Wallabag", async () => {
     const userId = await createUser();
     await expect(
