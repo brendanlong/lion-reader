@@ -1,19 +1,15 @@
 package com.lionreader.app.share
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.links.uploadFilename
 import java.io.File
 import java.io.IOException
-import java.util.UUID
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
-
-/**
- * The most of a shared file the app reads. Only bounds the app's own memory (the upload is sent in
- * one request); the server's limit is lower and it says so when a file is over it.
- */
-private const val MAX_SHARED_FILE_BYTES = 32L * 1024 * 1024
 
 /** Copies older than this belong to saves that were cancelled, and are deleted. */
 private val ABANDONED_AFTER_MILLIS = TimeUnit.DAYS.toMillis(30)
@@ -28,11 +24,28 @@ sealed interface CopyResult {
 }
 
 /**
- * Copies a file another app shared. The read grant on [uri] lasts only as long as the share dialog,
- * and a save can wait days for a network, so the save job reads the copy instead. Blocking IO: call
- * it off the main thread.
+ * Where a shared file is copied: named after its URI, so the same share delivered again (the dialog
+ * recreated after process death) is recognized as the same save.
  */
-fun copySharedFile(context: Context, uri: Uri, mimeType: String?): CopyResult {
+fun sharedFileCopy(context: Context, uri: Uri): File {
+    val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray())
+    val name = digest.take(16).joinToString("") { "%02x".format(it) }
+    return File(File(context.filesDir, "shared-files").apply { mkdirs() }, name)
+}
+
+/**
+ * Copies a file another app shared to [sharedFileCopy]. The read grant on [uri] lasts only as long
+ * as the share dialog, and a save can wait days for a network, so the save job reads the copy
+ * instead. Blocking IO: call it off the main thread.
+ *
+ * Only another app's `content://` URI is read: the share target is exported, and a `file://` or our
+ * own provider's URI would read the app's private files (its tokens) with its own permissions and
+ * upload them.
+ */
+fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult {
+    if (!isAnotherAppsContent(context, uri)) {
+        return CopyResult.Failed("Lion Reader can only save files shared by another app.")
+    }
     val resolver = context.contentResolver
     val displayName =
         try {
@@ -43,15 +56,16 @@ fun copySharedFile(context: Context, uri: Uri, mimeType: String?): CopyResult {
         } catch (_: Exception) {
             null
         }
+    // The provider knows what the file is; the intent's type is the sender's guess (a link share
+    // with an image attached says text/plain).
     val filename =
-        uploadFilename(displayName, mimeType ?: resolver.getType(uri))
+        uploadFilename(displayName, resolver.getType(uri) ?: sharedType)
             ?: return CopyResult.Failed(
                 "Lion Reader can save PDFs, Word documents, and HTML, Markdown, and text files."
             )
 
-    val dir = sharedFilesDir(context)
-    deleteAbandoned(dir)
-    val copy = File(dir, UUID.randomUUID().toString())
+    val copy = sharedFileCopy(context, uri)
+    copy.parentFile?.let(::deleteAbandoned)
     return try {
         val input = resolver.openInputStream(uri) ?: throw IOException("No stream")
         var tooLarge = false
@@ -63,7 +77,7 @@ fun copySharedFile(context: Context, uri: Uri, mimeType: String?): CopyResult {
                     val read = source.read(buffer)
                     if (read < 0) break
                     total += read
-                    if (total > MAX_SHARED_FILE_BYTES) {
+                    if (total > ServerLimits.UPLOAD_BYTES) {
                         tooLarge = true
                         break
                     }
@@ -83,8 +97,12 @@ fun copySharedFile(context: Context, uri: Uri, mimeType: String?): CopyResult {
     }
 }
 
-private fun sharedFilesDir(context: Context): File =
-    File(context.filesDir, "shared-files").apply { mkdirs() }
+private fun isAnotherAppsContent(context: Context, uri: Uri): Boolean {
+    if (uri.scheme != ContentResolver.SCHEME_CONTENT) return false
+    val authority = uri.authority ?: return false
+    val provider = context.packageManager.resolveContentProvider(authority, 0)
+    return provider != null && provider.packageName != context.packageName
+}
 
 private fun deleteAbandoned(dir: File) {
     val cutoff = System.currentTimeMillis() - ABANDONED_AFTER_MILLIS

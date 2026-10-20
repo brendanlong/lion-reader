@@ -38,20 +38,22 @@ class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val send = intent.takeIf { it.action == Intent.ACTION_SEND }
-        val file = send?.let {
-            IntentCompat.getParcelableExtra(it, Intent.EXTRA_STREAM, Uri::class.java)
-        }
         // A CharSequence per the docs; some apps send styled text.
-        val link =
-            if (file != null) null
-            else send?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().let(::sharedLink)
+        val link = send?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().let(::sharedLink)
+        // A link wins: apps attach a preview image to the links they share.
+        val file =
+            if (link != null) null
+            else
+                send?.let {
+                    IntentCompat.getParcelableExtra(it, Intent.EXTRA_STREAM, Uri::class.java)
+                }
         val tooLong = link != null && link.length > MAX_LINK_LENGTH
         val signedIn = graph.accounts.connection.value.auth.signedIn.value
         // Only once: a recreated dialog (rotation) follows the same work.
         if (savedInstanceState == null && link != null && !tooLong && signedIn) {
             SaveWorker.enqueue(this, link)
         }
-        if (file != null && signedIn) fileShare.start(file, send.type)
+        if (file != null && signedIn) fileShare.start(file, send?.type)
         setContent {
             val settings by graph.currentSettings.collectAsStateWithLifecycle()
             LionReaderTheme(settings.theme) {

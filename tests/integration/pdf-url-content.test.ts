@@ -12,6 +12,7 @@ import { type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, users } from "../../src/server/db/schema";
+import { usageLimitsConfig } from "../../src/server/config/env";
 import { getAppErrorCode } from "../../src/server/errors";
 import { fetchFullContent } from "../../src/server/services/full-content";
 import { saveArticle } from "../../src/server/services/saved";
@@ -35,6 +36,16 @@ const ROUTES: Record<string, { type: string; body: Buffer }> = {
   "/download/archive.bin": {
     type: "application/octet-stream",
     body: Buffer.from("not a pdf at all"),
+  },
+  // Past the saved-article size limit, so only a check of its first bytes can
+  // tell it apart from an oversized PDF.
+  "/download/big.bin": {
+    type: "application/octet-stream",
+    body: Buffer.alloc(usageLimitsConfig.maxSavedArticleSizeBytes + 1024, "x"),
+  },
+  "/papers/legacy.pdf": {
+    type: "application/x-pdf",
+    body: buildPdf([BODY], { info: { Title: "A Legacy Type" } }),
   },
   "/papers/scan.pdf": { type: "application/pdf", body: buildPdf([Buffer.from("")]) },
 };
@@ -95,14 +106,25 @@ describe("saveArticle on a PDF URL", () => {
     expect(article.title).toBe("My Weekly Report");
   });
 
-  it("still rejects other octet-stream downloads", async () => {
+  it("accepts the legacy application/x-pdf type", async () => {
     const userId = await createUser();
-    const error = await saveArticle(db, userId, { url: `${baseUrl}/download/archive.bin` }).catch(
-      (e: unknown) => e
-    );
+    const article = await saveArticle(db, userId, { url: `${baseUrl}/papers/legacy.pdf` });
 
-    expect(getAppErrorCode(error)).toBe("SAVED_ARTICLE_FETCH_ERROR");
+    expect(article.title).toBe("A Legacy Type");
   });
+
+  it.each(["/download/archive.bin", "/download/big.bin"])(
+    "rejects another octet-stream download (%s) by its type, not its size",
+    async (path) => {
+      const userId = await createUser();
+      const error = await saveArticle(db, userId, { url: `${baseUrl}${path}` }).catch(
+        (e: unknown) => e
+      );
+
+      expect(getAppErrorCode(error)).toBe("SAVED_ARTICLE_FETCH_ERROR");
+      expect((error as Error).message).toMatch(/Invalid content type/);
+    }
+  );
 
   it("tells the user when the PDF has no text", async () => {
     const userId = await createUser();

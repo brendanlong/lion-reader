@@ -72,21 +72,44 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
          */
         fun workName(url: String) = "save:$url"
 
-        /** The unique work name for saving a [CopiedFile]; each shared file is its own save. */
-        fun workName(file: CopiedFile) = "save-file:${file.path}"
-
         /** Returns the job's id, to follow it by. */
         fun enqueue(context: Context, url: String): UUID =
-            enqueue(context, workName(url), workDataOf(URL to url))
+            enqueue(context, workName(url), workDataOf(URL to url), ExistingWorkPolicy.REPLACE)
 
-        fun enqueue(context: Context, file: CopiedFile): UUID =
+        /** The unique work name for saving the shared file copied to [copy] ([sharedFileCopy]). */
+        private fun workName(copy: File) = "save-file:${copy.path}"
+
+        /**
+         * The work name of a save of [copy] that hasn't finished, if there is one. Blocking: call
+         * it off the main thread.
+         */
+        fun pendingFileSave(context: Context, copy: File): String? {
+            val name = workName(copy)
+            val infos = WorkManager.getInstance(context).getWorkInfosForUniqueWork(name).get()
+            return name.takeIf { infos.any { !it.state.isFinished } }
+        }
+
+        /**
+         * Queues the upload of [file] and returns its work name. A save of the same copy that's
+         * already queued is kept: unlike a URL's, an upload isn't idempotent.
+         */
+        fun enqueue(context: Context, file: CopiedFile): String {
+            val name = workName(File(file.path))
             enqueue(
                 context,
-                workName(file),
+                name,
                 workDataOf(FILE to file.path, FILENAME to file.filename),
+                ExistingWorkPolicy.KEEP,
             )
+            return name
+        }
 
-        private fun enqueue(context: Context, name: String, input: Data): UUID {
+        private fun enqueue(
+            context: Context,
+            name: String,
+            input: Data,
+            policy: ExistingWorkPolicy,
+        ): UUID {
             val request =
                 OneTimeWorkRequestBuilder<SaveWorker>()
                     .setConstraints(
@@ -95,8 +118,7 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                     .setInputData(input)
                     .build()
-            WorkManager.getInstance(context)
-                .enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, request)
+            WorkManager.getInstance(context).enqueueUniqueWork(name, policy, request)
             return request.id
         }
     }

@@ -59,6 +59,10 @@ class AppGraph(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** For work that must outlive the screen starting it, like copying a shared file. */
+    val appScope: CoroutineScope
+        get() = scope
+
     val currentSettings: StateFlow<AppSettings> =
         settings.settings.stateIn(scope, SharingStarted.Eagerly, settings.defaults)
 

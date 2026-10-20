@@ -357,10 +357,51 @@ export interface FetchHtmlPageResult {
 export type FetchedArticle =
   ({ format: "page" } & FetchHtmlPageResult) | { format: "pdf"; pdf: Buffer; finalUrl: string };
 
+const PDF_TYPES = ["application/pdf", "application/x-pdf"];
+
 /** Content types some servers send a PDF as, so the body's signature decides. */
 const GENERIC_BINARY_TYPES = ["application/octet-stream", "binary/octet-stream"];
 
 const PDF_SIGNATURE = Buffer.from("%PDF-");
+
+/**
+ * Reads just enough of `response` to see whether it starts with the PDF
+ * signature, so another download is turned away without being read. When it
+ * is a PDF, the returned response replays those bytes and then the rest.
+ */
+async function peekPdfSignature(
+  response: Response
+): Promise<{ isPdf: boolean; response: Response }> {
+  if (!response.body) return { isPdf: false, response };
+  const reader = response.body.getReader();
+  const head: Uint8Array[] = [];
+  let length = 0;
+  while (length < PDF_SIGNATURE.length) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    head.push(value);
+    length += value.byteLength;
+  }
+  const prefix = Buffer.concat(head);
+  if (!prefix.subarray(0, PDF_SIGNATURE.length).equals(PDF_SIGNATURE)) {
+    await reader.cancel().catch(() => {});
+    return { isPdf: false, response };
+  }
+  const replay = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(prefix);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return { isPdf: true, response: new Response(replay, { headers: response.headers }) };
+}
 
 /**
  * Fetches a page, or a PDF when `allowPdf` is set. Uses a longer timeout (30s)
@@ -388,15 +429,16 @@ async function fetchPage(url: string, allowPdf: boolean): Promise<FetchedArticle
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
   const maxBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
 
-  if (allowPdf && (mediaType === "application/pdf" || GENERIC_BINARY_TYPES.includes(mediaType))) {
-    const pdf = await readResponseBufferWithSizeLimit(response, maxBytes, url);
-    if (
-      mediaType === "application/pdf" ||
-      pdf.subarray(0, PDF_SIGNATURE.length).equals(PDF_SIGNATURE)
-    ) {
-      return { format: "pdf", pdf, finalUrl: response.url };
+  const declaredPdf = PDF_TYPES.includes(mediaType);
+  if (allowPdf && (declaredPdf || GENERIC_BINARY_TYPES.includes(mediaType))) {
+    let body = response;
+    if (!declaredPdf) {
+      const peeked = await peekPdfSignature(response);
+      if (!peeked.isPdf) throw new InvalidContentTypeError(contentType, url);
+      body = peeked.response;
     }
-    throw new InvalidContentTypeError(contentType, url);
+    const pdf = await readResponseBufferWithSizeLimit(body, maxBytes, url);
+    return { format: "pdf", pdf, finalUrl: response.url };
   }
 
   const isMarkdown = contentType.includes("text/markdown");

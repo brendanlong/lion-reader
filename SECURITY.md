@@ -60,10 +60,13 @@ fetches user-influenced URLs and must never be usable to reach internal services
   sanitized output, every other field goes through `escapeHtml`, and a URL becomes
   an href only if it's http(s).
 - **The native app's share target** (`ShareActivity`) is exported, so any app can
-  hand it a link to save. That stays bounded because only http(s) links are
-  taken, the server fetches through the SSRF guard and sanitizes on read, and
+  hand it a link or a file to save. That stays bounded because only http(s) links
+  are taken, the server fetches through the SSRF guard and sanitizes on read, and
   nothing goes back to the caller. **It must never forward the incoming intent or
-  its extras.**
+  its extras, and reads a shared file only from another app's `content://`
+  provider** (`copySharedFile`): it reads with the app's own permissions, so a
+  `file://` or own-provider URI would upload the app's private files, tokens
+  included.
 - **Analytics reports a closed vocabulary, never a URL** (`src/lib/analytics/`;
   no third-party script). **Adding a route to `paths.ts` is a security
   decision** — ask what that URL and title can contain.

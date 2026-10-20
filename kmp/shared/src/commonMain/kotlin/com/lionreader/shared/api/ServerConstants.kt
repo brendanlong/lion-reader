@@ -16,6 +16,12 @@ object ServerLimits {
 
     /** Characters per `/narration/speech` request. */
     const val CLOUD_SPEECH_CHARS = 1000
+
+    /**
+     * Bytes of a file `/saved/upload` accepts, by default: a server can set its own limit, and says
+     * so when a file is over it.
+     */
+    const val UPLOAD_BYTES = 5242880
 }
 
 /** File extensions `/saved/upload` converts; it picks the converter by the filename's. */

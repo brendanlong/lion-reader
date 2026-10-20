@@ -11,6 +11,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, narrationContent, subscriptions } from "@/server/db/schema";
 import { HttpFetchError } from "@/server/http/fetch";
+import { getAppErrorCode } from "@/server/errors";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
@@ -46,6 +47,8 @@ export interface FetchFullContentResult {
  *   async hop is pure overhead. App-server callers (fetchAndStoreFullContent)
  *   keep the default so the pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
+ * @throws `SERVER_BUSY` when a document conversion couldn't get its turn, so the
+ *   caller retries rather than storing the failure
  */
 export async function fetchFullContent(
   url: string,
@@ -73,6 +76,8 @@ export async function fetchFullContent(
 
     return { success: true, contentOriginal, contentCleaned };
   } catch (error) {
+    // Load, not the page: a stored error would never be retried.
+    if (getAppErrorCode(error) === "SERVER_BUSY") throw error;
     const errorMessage = getErrorMessage(error);
     logger.warn("Failed to fetch full content", { url, error: errorMessage });
 

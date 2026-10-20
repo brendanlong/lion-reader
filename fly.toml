@@ -40,11 +40,14 @@ kill_timeout = 30
 # Separate process groups for independent scaling and resource allocation
 [processes]
   app = "node dist/server.js"
-  worker = "node --max-old-space-size=320 dist/worker.js"
-  # The bot converts Drive .docx files (Google Docs saves); its VM has ~70MB
-  # of headroom, so its .docx worker gets a smaller heap than the default
-  # (see src/server/file/docx-to-html.ts).
-  discord = "env DOCX_WORKER_MAX_HEAP_MB=48 node dist/discord-bot.js"
+  # Full-content fetches can link to PDFs; with a 320MB heap on a 512MB VM,
+  # the PDF converter gets less than its default memory cap.
+  worker = "env PDF_CONVERTER_MAX_MEMORY_MB=96 node --max-old-space-size=320 dist/worker.js"
+  # The bot saves links, which may be PDFs, and converts Drive .docx files
+  # (Google Docs saves). Its VM has ~70MB of headroom, so both converters get
+  # less memory than the default: a large PDF or document fails as "too large
+  # or complex" there (src/server/file/docx-to-html.ts, pdf-to-markdown.ts).
+  discord = "env DOCX_WORKER_MAX_HEAP_MB=48 PDF_CONVERTER_MAX_MEMORY_MB=48 node dist/discord-bot.js"
 
 [env]
   # GIT_COMMIT_SHA (surfaced in the outgoing User-Agent) and BUILD_TIME are not
