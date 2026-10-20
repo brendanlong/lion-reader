@@ -1037,15 +1037,29 @@ img.content-img-loading {
 /* E-paper: browsers paint a *disabled* checkbox as a flat gray box (they
    largely ignore the global `accent-color`), and mid-grays dither on e-ink --
    see the .epaper block. Redraw it from the theme's black edge instead, with
-   the checked state carried by a fill rather than a hairline glyph. */
-.epaper .reader-prose li input[type="checkbox"] {
+   the checked state carried by a fill rather than a hairline glyph. App
+   checkboxes (`.checkbox`, from <Checkbox>) are redrawn even when enabled, so
+   enabled and disabled share one look. `:where()` keeps this at the
+   specificity of `.epaper` alone so the disabled rules below can override it
+   (`:is()` would take its prose argument's higher specificity). */
+.epaper :where(.reader-prose li input[type="checkbox"], .checkbox) {
   appearance: none;
   border: 1px solid var(--edge);
   border-radius: 0.15em;
   background-color: var(--surface);
 }
-.epaper .reader-prose li input[type="checkbox"]:checked {
+.epaper :where(.reader-prose li input[type="checkbox"], .checkbox):checked {
   background-color: var(--edge);
+}
+/* A disabled app checkbox must still read as different from an enabled one:
+   a dashed edge, and when checked an inset square instead of a full fill.
+   Task-list checkboxes are always disabled, so they keep the plain look. */
+.epaper .checkbox:disabled {
+  border-style: dashed;
+}
+.epaper .checkbox:disabled:checked {
+  padding: 2px;
+  background-clip: content-box;
 }
 
 /* =================================
