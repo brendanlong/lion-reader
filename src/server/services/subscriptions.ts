@@ -76,6 +76,30 @@ export async function clearedCustomTitle(
   return { customTitle: null };
 }
 
+/**
+ * The sender address of one of the user's active email subscriptions, or null
+ * for any other subscription. Sync's `Subscription` omits it.
+ */
+export async function getEmailSender(
+  db: DbOrTx,
+  userId: string,
+  subscriptionId: string
+): Promise<string | null> {
+  const [row] = await db
+    .select({ emailSender: subscriptions.emailSender })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        eq(subscriptions.type, "email"),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
+    .limit(1);
+  return row?.emailSender ?? null;
+}
+
 /** Matches `subscriptions` rows to web feeds, the only feeds shared between users. */
 export function isWebSubscription(): SQL {
   return eq(subscriptions.type, "web");

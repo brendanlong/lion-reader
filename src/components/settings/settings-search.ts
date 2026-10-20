@@ -159,7 +159,7 @@ export const SETTINGS_SEARCH_INDEX = [
     id: "blocked-senders",
     page: "/settings/email",
     title: "Blocked Senders",
-    description: "Email senders blocked when you unsubscribed from their newsletter.",
+    description: "Email senders you blocked when unsubscribing from their newsletter.",
     keywords: ["unblock", "block", "newsletters", "unsubscribe", "email"],
   },
   {

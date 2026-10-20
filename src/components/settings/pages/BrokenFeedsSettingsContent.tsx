@@ -102,6 +102,7 @@ export default function BrokenFeedsSettingsContent() {
       {/* Unsubscribe Confirmation Dialog */}
       <UnsubscribeDialog
         isOpen={unsubscribeTarget !== null}
+        subscriptionId={unsubscribeTarget?.id ?? ""}
         feedTitle={unsubscribeTarget?.title ?? ""}
         isLoading={unsubscribeMutation.isPending}
         onConfirm={() => {

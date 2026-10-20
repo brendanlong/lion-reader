@@ -89,9 +89,11 @@ export function Dialog({
     const focusableSelector =
       'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-    // Focus the first focusable element on open
-    const focusableElements = dialog.querySelectorAll<HTMLElement>(focusableSelector);
-    focusableElements[0]?.focus();
+    // Focus the `data-autofocus` element, else the first focusable one, on open
+    (
+      dialog.querySelector<HTMLElement>("[data-autofocus]") ??
+      dialog.querySelector<HTMLElement>(focusableSelector)
+    )?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;

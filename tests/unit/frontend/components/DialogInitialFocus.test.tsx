@@ -5,11 +5,9 @@
 /**
  * Initial focus for the app's confirmation dialogs.
  *
- * `Dialog` focuses its first focusable descendant on open. For the two
- * confirm/cancel dialogs that is Cancel, so they need nothing of their own —
- * these tests pin that down so the shared default can't silently drift (e.g.
- * a control added above the footer) and quietly start focusing the
- * destructive action.
+ * `ConfirmDialog` marks Cancel for `Dialog` to focus on open, even below an
+ * option like the unsubscribe dialog's block-sender checkbox, so it never
+ * focuses the destructive action.
  *
  * Delete-account is the exception: its first focusable is the "type delete to
  * confirm" input, so it keeps an explicit effect that moves focus to Cancel.
@@ -17,7 +15,7 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
 import DeleteAccountSettingsContent from "@/components/settings/pages/DeleteAccountSettingsContent";
 import { renderWithTrpc } from "../../../utils/component-test-helpers";
@@ -32,15 +30,19 @@ afterEach(() => {
 });
 
 describe("confirmation dialog initial focus", () => {
-  it("focuses Cancel when the unsubscribe dialog opens", () => {
+  it("focuses Cancel, not an option above it, when a confirm dialog opens", () => {
     render(
-      <UnsubscribeDialog
+      <ConfirmDialog
         isOpen={true}
-        feedTitle="Example Feed"
+        title="Unsubscribe?"
+        confirmLabel="Unsubscribe"
+        options={<input type="checkbox" aria-label="Also block" />}
         isLoading={false}
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
-      />
+      >
+        Unsubscribe?
+      </ConfirmDialog>
     );
 
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
