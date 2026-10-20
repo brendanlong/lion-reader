@@ -5,6 +5,7 @@ import {
   customType,
   foreignKey,
   index,
+  doublePrecision,
   integer,
   pgEnum,
   pgTable,
@@ -931,6 +932,10 @@ export const userEntries = pgTable(
     // subscription_entries and subscriptions.unsubscribed_at; only
     // insertUserEntriesWithMemberships seeds a new row's, which they confirm.
     activeMemberships: integer("active_memberships").notNull().default(0),
+
+    // How much the user wants the article (#2064): higher sorts first, NULL
+    // after every scored one. Memberships and tag rows carry copies.
+    score: doublePrecision("score"),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
@@ -968,6 +973,10 @@ export const subscriptionEntries = pgTable(
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
     isSpam: boolean("is_spam").notNull().default(false),
+    score: doublePrecision("score"),
+    // The article's place in this collection (#2064): lower sorts first, NULL
+    // after every positioned one. Only collections' memberships have one.
+    position: doublePrecision("position"),
   },
   (table) => [
     primaryKey({ columns: [table.subscriptionId, table.entryId] }),
@@ -1003,6 +1012,7 @@ export const tagEntries = pgTable(
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
     read: boolean("read").notNull(),
     starred: boolean("starred").notNull(),
+    score: doublePrecision("score"),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId, table.listId] }),
@@ -1079,7 +1089,7 @@ export const userFeeds = pgView("user_feeds", {
  * entry's subscriptions come from its memberships (`entryMemberships`).
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
- * (most recently redefined in 0147_list_read_paths.sql).
+ * (most recently redefined in 0168_entry_score_position.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const visibleEntries = pgView("visible_entries", {
@@ -1119,6 +1129,7 @@ export const visibleEntries = pgView("visible_entries", {
   // searchEntries uses it for the `@@` match and the ts_rank sort — it is never
   // selected as a value, so the raw tsvector never crosses the service boundary.
   searchVector: tsvector("search_vector"),
+  score: doublePrecision("score"),
 }).existing();
 
 // ============================================================================

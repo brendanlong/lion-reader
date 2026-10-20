@@ -36,7 +36,7 @@ import { logger } from "@/lib/logger";
 export interface ReconcileCountersResult {
   /** user_entries rows whose active_memberships was wrong. */
   userEntriesFixed: number;
-  /** Memberships whose copy of their row's read, starred or spam was wrong. */
+  /** Memberships whose copy of their row's read, starred, spam or score was wrong. */
   membershipsFixed: number;
   /** Tag and Uncategorized rows missing, extra, or with a wrong copy of state. */
   tagEntriesFixed: number;
@@ -76,10 +76,11 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
 
   const membershipsResult = await db.execute(sql`
     UPDATE subscription_entries se
-    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam, score = ue.score
     FROM user_entries ue
     WHERE ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
+      AND (se.read, se.starred, se.is_spam, se.score)
+        IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam, ue.score)
   `);
 
   // What reached_tag_lists gives for every membership, inlined over the whole
@@ -101,8 +102,8 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
     )
   `);
   const tagEntriesMissing = await db.execute(sql`
-    INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred)
-    SELECT r.user_id, r.entry_id, r.list_id, ue.published_or_fetched_at, ue.read, ue.starred
+    INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred, score)
+    SELECT r.user_id, r.entry_id, r.list_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.score
     FROM (${reached}) r
     JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id
     WHERE NOT EXISTS (
@@ -115,10 +116,10 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
   `);
   const tagEntriesStale = await db.execute(sql`
     UPDATE tag_entries te
-    SET read = ue.read, starred = ue.starred
+    SET read = ue.read, starred = ue.starred, score = ue.score
     FROM user_entries ue
     WHERE ue.user_id = te.user_id AND ue.entry_id = te.entry_id
-      AND (te.read, te.starred) IS DISTINCT FROM (ue.read, ue.starred)
+      AND (te.read, te.starred, te.score) IS DISTINCT FROM (ue.read, ue.starred, ue.score)
   `);
 
   const subscriptionsResult = await db.execute(sql`
