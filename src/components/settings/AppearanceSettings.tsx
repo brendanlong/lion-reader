@@ -120,7 +120,7 @@ function TextPreview() {
   const { style } = useEntryTextStyles();
 
   return (
-    <div className="border-edge-strong rounded-lg border bg-white p-4 dark:bg-zinc-800">
+    <div className="border-edge-strong bg-surface rounded-lg border p-4">
       <p className="ui-text-xs text-muted mb-2 font-medium tracking-wide uppercase">Preview</p>
       <p className="text-body" style={style}>
         The quick brown fox jumps over the lazy dog. This sample text demonstrates how your articles

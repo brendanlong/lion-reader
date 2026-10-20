@@ -77,7 +77,7 @@ export function DiscordBotSettings() {
           <button
             type="button"
             onClick={copyInviteUrl}
-            className="ui-text-sm text-body border-edge-input inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2.5 font-medium shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 hover:shadow dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+            className="ui-text-sm text-body border-edge-input bg-surface hover:border-edge-emphasis hover:bg-surface-muted inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition hover:shadow"
           >
             {copied ? "Copied!" : "Copy Link"}
           </button>

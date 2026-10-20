@@ -14,6 +14,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { PageLink } from "@/components/ui/page-link";
@@ -177,12 +178,7 @@ function ConsentCheckbox({
 }) {
   return (
     <label className="flex cursor-pointer items-start gap-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="text-body border-edge-input mt-0.5 h-5 w-5 shrink-0 rounded dark:bg-zinc-800"
-      />
+      <Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1" />
       <span className="ui-text-sm text-body">{children}</span>
     </label>
   );

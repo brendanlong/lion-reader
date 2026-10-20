@@ -96,7 +96,7 @@ export function ConsentForm({
             type="submit"
             name="user_action"
             value="deny"
-            className="ui-text-sm text-body border-edge-input flex-1 rounded-lg border bg-white px-4 py-2.5 font-medium transition-colors hover:bg-zinc-50 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            className="ui-text-sm text-body border-edge-input bg-surface hover:bg-surface-muted flex-1 rounded-lg border px-4 py-2.5 font-medium transition-colors"
           >
             Deny
           </button>

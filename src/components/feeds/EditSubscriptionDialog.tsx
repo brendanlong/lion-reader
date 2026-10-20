@@ -199,7 +199,7 @@ function EditSubscriptionForm({
                     className={`ui-text-sm flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
                       isSelected
                         ? "border-primary-solid bg-primary-solid text-primary-solid-foreground"
-                        : "text-body border-edge-input bg-white hover:border-zinc-400 hover:bg-zinc-50 dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+                        : "text-body border-edge-input bg-surface hover:border-edge-emphasis hover:bg-surface-muted"
                     }`}
                   >
                     <ColorDot color={tag.color} size="sm" />

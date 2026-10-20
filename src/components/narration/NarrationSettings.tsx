@@ -511,7 +511,7 @@ function ProviderOption({
     <label
       className={`relative flex cursor-pointer rounded-lg border p-4 transition-colors ${
         isSelected
-          ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+          ? "border-control-selected bg-surface-selected"
           : "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted"
       }`}
     >
@@ -526,7 +526,7 @@ function ProviderOption({
       <div className="flex items-start gap-3">
         <div
           className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
-            isSelected ? "border-control-selected" : "border-zinc-400 dark:border-zinc-500"
+            isSelected ? "border-control-selected" : "border-edge-emphasis"
           }`}
         >
           {isSelected && <div className="bg-control-selected h-2 w-2 rounded-full" />}

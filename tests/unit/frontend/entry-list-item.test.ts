@@ -24,9 +24,7 @@ describe("getItemClasses", () => {
       expect(classes).toContain("border-edge-input");
       expect(classes).toContain("bg-surface");
       expect(classes).toContain("hover:bg-surface-muted");
-      expect(classes).toContain("active:bg-zinc-100");
-      // Press step is intentionally a raw zinc pair (one step darker than surface-muted hover)
-      expect(classes).toContain("dark:active:bg-zinc-700");
+      expect(classes).toContain("active:bg-surface-pressed");
       // E-paper: unread keeps the theme's black edge (no e-paper override)
       expect(classes).not.toContain("epaper:border");
     });
