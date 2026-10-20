@@ -328,10 +328,11 @@ function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: E
  * another device while this client was offline): a brand-new entry is
  * unread and unstarred.
  *
- * Publishers stamp a web entry with its feed's own title (a feed's channel is
- * shared by every subscriber), so a stored subscription's title, which is the
- * user's custom one if they renamed it, replaces it. The saved subscription is
- * never stored, so saved articles keep their own.
+ * A live web entry carries its feed's own title (a feed's channel is shared by
+ * every subscriber), so the user's custom title for a stored subscription
+ * replaces it. Only a custom one: the payload's is newer than a stored feed
+ * title, which no event updates when the feed renames itself. The saved
+ * subscription is never stored, so saved articles keep their own.
  */
 export function applyNewEntry(
   utils: TRPCClientUtils,
@@ -342,14 +343,16 @@ export function applyNewEntry(
   if (counts) applyUnreadCounts(utils, queryClient, counts);
   if (!item) return;
   const db = getLocalDb(queryClient);
-  const subscription = item.subscriptionId
-    ? db.subscriptions.rows.getSynced(item.subscriptionId)
-    : undefined;
   const row = toEntryRow(item, item.entry, {
     read: item.entry.read ?? false,
     starred: item.entry.starred ?? false,
   });
-  if (subscription) row.feedTitle = subscription.title;
+  const subscription = item.subscriptionId
+    ? db.subscriptions.rows.getSynced(item.subscriptionId)
+    : undefined;
+  if (subscription && subscription.title !== subscription.originalTitle) {
+    row.feedTitle = subscription.title;
+  }
   addServerEntryToLists(db, row);
   learnNewSavedSubscription(utils, db, row);
 }

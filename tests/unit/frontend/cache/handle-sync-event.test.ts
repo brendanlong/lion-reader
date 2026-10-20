@@ -299,7 +299,7 @@ describe("handleSyncEvent - new_entry", () => {
     feedTitle: "Saved Articles",
   };
 
-  it("shows a stored subscription's title, else the payload's feed title (#2048)", () => {
+  it("shows a stored subscription's custom title, else the payload's feed title (#2048)", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -313,10 +313,13 @@ describe("handleSyncEvent - new_entry", () => {
         entry: { ...LIVE_PAYLOAD, type: "web", feedTitle: "Feed's Own Title" },
       });
 
-    handleSyncEvent(utils, queryClient, event("entry-known", "sub-1"));
+    handleSyncEvent(utils, queryClient, event("entry-renamed", "sub-1"));
+    // sub-2 isn't renamed: its stored feed title may predate the feed renaming itself.
+    handleSyncEvent(utils, queryClient, event("entry-not-renamed", "sub-2"));
     handleSyncEvent(utils, queryClient, event("entry-unknown", "sub-not-loaded"));
 
-    expect(storedEntry("entry-known")?.feedTitle).toBe("My Name For It");
+    expect(storedEntry("entry-renamed")?.feedTitle).toBe("My Name For It");
+    expect(storedEntry("entry-not-renamed")?.feedTitle).toBe("Feed's Own Title");
     expect(storedEntry("entry-unknown")?.feedTitle).toBe("Feed's Own Title");
   });
 
