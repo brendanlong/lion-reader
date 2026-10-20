@@ -69,7 +69,7 @@ describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
       // Deliberately no `id` here: namespacing rewrites it, and lol_html
       // re-serializes a start tag whose attribute changed, so an `id` would
       // make this assertion test the transform rather than the splice.
-      const before = `<DIV class=box lang=en><P>Fish &amp; chips`;
+      const before = `<DIV title=box lang=en><P>Fish &amp; chips`;
       const after = `</P><br>tail`;
       const out = convert(`${before}${MJX_X}${after}`);
       expect(out.startsWith(before)).toBe(true);

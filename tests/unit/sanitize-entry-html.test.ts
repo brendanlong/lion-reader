@@ -162,11 +162,11 @@ describe("sanitizeEntryHtml", () => {
 
     it("does not disturb surrounding uppercase HTML", () => {
       const out =
-        sanitizeEntryHtml('<DIV CLASS="wrap"><svg><rect width="4" height="4"/></svg></DIV>') ?? "";
+        sanitizeEntryHtml('<DIV TITLE="wrap"><svg><rect width="4" height="4"/></svg></DIV>') ?? "";
       // Uppercase HTML is matched case-insensitively; lol_html passes the
       // original bytes through untouched (HTML tag/attribute names are
       // case-insensitive, so this renders identically).
-      expect(out).toContain('<DIV CLASS="wrap">');
+      expect(out).toContain('<DIV TITLE="wrap">');
       expect(out).toContain("<rect");
     });
 

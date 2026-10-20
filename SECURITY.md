@@ -33,6 +33,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
   chokepoints.
 - **Never render feed-controlled text (titles, authors, feed names) as HTML.**
 - Any change to the sanitizer's allow-lists or transforms needs a security review.
+- **Feed markup can't reach the app's styles**: no `style`, and `class` keeps
+  only names the reader CSS styles. Otherwise a feed could hide content or lay
+  an invisible link over the app.
 - **Keep the defense-in-depth headers** (`securityHeaders` in `next.config.ts`:
   anti-framing, `nosniff`, `Referrer-Policy`, HSTS in production).
 - **CSP is the backstop** (`src/server/http/csp.ts`, applied in `src/proxy.ts`;

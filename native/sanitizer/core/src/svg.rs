@@ -114,7 +114,6 @@ const ALLOWED_SVG_ATTRS: &[&str] = &[
     "begin",
     "bias",
     "by",
-    "class",
     "clip",
     "clippathunits",
     "clip-path",

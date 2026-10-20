@@ -9,6 +9,7 @@
 //!   `lang`/`role`, `data-*`, `aria-*`, the MathML presentation set) plus
 //!   per-tag additions. `role`/`aria-*` are inert ARIA hooks kept for
 //!   assistive tech (e.g. `role="doc-noteref"` on footnotes).
+//!   `class` keeps only the allow-listed names (classes.rs).
 //! - URL-carrying attributes are scheme-checked (http/https/mailto/tel;
 //!   `data:image/*` additionally for img/source), on the entity-decoded value.
 //!   Protocol-relative and relative URLs pass. `data:` is accepted only when
@@ -34,6 +35,7 @@ use std::sync::LazyLock;
 use lol_html::html_content::{ContentType, Element, TextChunk, TextType};
 use lol_html::{doc_comments, doc_text, doctype, element, HtmlRewriter, Settings};
 
+use crate::classes::filter_classes;
 use crate::embeds::normalize_embed;
 use crate::idrefs::{prefix_fragment_href, prefix_id, prefix_id_list, ARIA_IDREF_ATTRS};
 use crate::scanner::{
@@ -622,10 +624,23 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     // allow-list are considered, so `to_remove` and `rewrites` stay disjoint and
     // a rewrite can never resurrect an attribute the filter just dropped.
     let mut rewrites: Vec<(String, String)> = Vec::new();
+    // A browser reads only the first `class`, but `set_attribute` would update
+    // only the first copy too, leaving a raw duplicate for API clients that
+    // parse differently — so a duplicate forces remove-all-then-set.
+    let mut first_class: Option<String> = None;
+    let mut duplicate_class = false;
     for attr in el.attributes() {
         let name = attr.name();
         if !attr_allowed(&tag, &name) {
             to_remove.push(name);
+            continue;
+        }
+        if name == "class" {
+            if first_class.is_none() {
+                first_class = Some(attr.value());
+            } else {
+                duplicate_class = true;
+            }
             continue;
         }
         // Name test before `attr.value()`, which allocates. `align` is never an
@@ -680,6 +695,16 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     }
     for (name, value) in rewrites {
         el.set_attribute(&name, &value)?;
+    }
+    if let Some(value) = first_class {
+        match filter_classes(&value) {
+            None => el.remove_attribute("class"),
+            Some(kept) if kept != value || duplicate_class => {
+                el.remove_attribute("class");
+                el.set_attribute("class", &kept)?;
+            }
+            Some(_) => {}
+        }
     }
 
     if tag == "a" {
@@ -1299,8 +1324,8 @@ mod tests {
     #[test]
     fn data_attributes_kept() {
         assert_eq!(
-            sanitize(r#"<p data-para-id="7" class="a" bogus="1">x</p>"#),
-            r#"<p data-para-id="7" class="a">x</p>"#
+            sanitize(r#"<p data-para-id="7" bogus="1">x</p>"#),
+            r#"<p data-para-id="7">x</p>"#
         );
     }
 
@@ -1611,7 +1636,7 @@ mod tests {
                             !matches!(s, "http" | "https" | "mailto" | "tel")
                                 && !crate::urls::is_data_image(value)
                         });
-                    if attr.to_ascii_lowercase().starts_with("on") || bad_url {
+                    if attr.to_ascii_lowercase().starts_with("on") || attr == "class" || bad_url {
                         return Some(format!("<svg:{tag} {attr}={value:?}>"));
                     }
                 }
@@ -1641,6 +1666,11 @@ mod tests {
                     || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"));
                 if !allowed {
                     return Some(format!("<{tag} {attr}>"));
+                }
+                if attr == "class"
+                    && crate::classes::filter_classes(value).as_deref() != Some(value)
+                {
+                    return Some(format!("<{tag} class={value:?}>"));
                 }
                 if let Some(schemes) = url_schemes_for(tag, attr) {
                     if !is_image_url_allowed(value, schemes) {
@@ -1682,6 +1712,8 @@ mod tests {
             "</p>",
             "<foo>",
             "</foo>",
+            r#"<p class="fixed footnote-content" class="absolute katex-html">"#,
+            r#"<p class=" katex-html  hidden ">"#,
             "<!--c-->",
             "<!doctype html>",
             "<center>",
@@ -1753,6 +1785,7 @@ mod tests {
             "</math>",
             "<![CDATA[",
             "]]>",
+            r#"<svg class="fixed"><a class="absolute inset-0" href="https://e.com">x</a></svg>"#,
             "<svg></svg>",
             "<svg><text>t</text></svg>",
             "<svg><title>t</title></svg>",
