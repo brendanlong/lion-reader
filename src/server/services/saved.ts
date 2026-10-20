@@ -10,7 +10,8 @@ import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
-import { entries, userEntries } from "@/server/db/schema";
+import { entries, subscriptions, userEntries } from "@/server/db/schema";
+import { entryMemberships, entryOriginOn } from "./entry-filters";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -201,8 +202,7 @@ interface InsertSavedEntryParams {
  * `onConflictDoNothing` (a duplicate `(owner_user_id, guid)`), so a concurrent
  * duplicate save (e.g. a double-click) is idempotent instead of surfacing a raw
  * unique-violation 500 (issue #952). The caller re-selects the existing article
- * in that case. Uploads use a random `uploaded:{uuid}` guid, so they never
- * conflict and always get a row back.
+ * in that case: for an upload, one saved under the same idempotency key.
  */
 async function insertSavedEntry(
   db: typeof dbType,
@@ -320,6 +320,7 @@ async function insertSavedEntry(
 /** Display site name for an uploaded file, by type. */
 const UPLOAD_SITE_NAMES: Record<SupportedFileType, string> = {
   docx: "Uploaded Document",
+  pdf: "Uploaded PDF",
   html: "Uploaded HTML",
   markdown: "Uploaded Text",
 };
@@ -331,22 +332,21 @@ type UploadedArticleFields = Omit<BuiltArticleFields, "newTextContent">;
  * Insert a null-URL (uploaded) saved article from already-derived fields.
  *
  * Uploaded articles have no URL, so — unlike {@link saveArticle} — there is no
- * existing-by-URL lookup, refetch, quality guard, or placeholder heal: the guid
- * is a fresh random `uploaded:{uuid}` that never conflicts. This is the shared
- * tail for every upload path (file upload, Markdown, pre-cleaned HTML).
+ * existing-by-URL lookup, refetch, quality guard, or placeholder heal. The guid
+ * is the caller's {@link uploadGuid} for an idempotent upload, whose duplicate
+ * returns the article already saved, or else a fresh random one. This is the
+ * shared tail for every upload path (file upload, Markdown, pre-cleaned HTML).
  */
 async function insertUploadedArticle(
   db: typeof dbType,
   userId: string,
-  fields: UploadedArticleFields
+  fields: UploadedArticleFields,
+  guid: string = `uploaded:${generateUuidv7()}`
 ): Promise<InsertedSavedArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
     throw errors.contentTooLarge("Uploaded article", maxSize);
   }
-
-  // Fresh random guid → the insert can't conflict.
-  const guid = `uploaded:${generateUuidv7()}`;
 
   const saved = await insertSavedEntry(db, userId, {
     ...fields,
@@ -355,7 +355,10 @@ async function insertUploadedArticle(
   });
 
   if (!saved) {
-    throw new Error("Uploaded article insert unexpectedly conflicted");
+    // The same idempotent upload, saved concurrently.
+    const existing = await selectExistingUpload(db, userId, guid);
+    if (!existing) throw new Error("Uploaded article insert conflicted with no article");
+    return existing;
   }
 
   logger.info("Created uploaded article", {
@@ -427,21 +430,21 @@ async function selectExistingSavedRow(db: typeof dbType, userId: string, normali
 }
 
 /**
- * Shape an already-saved row into a {@link SaveArticleResult} with outcome
- * `"existing"`, sanitizing the stored raw body per read off the event loop (raw
- * content must not leave the service layer).
+ * Shape an already-saved row into a {@link SavedArticle}, sanitizing the stored
+ * raw body per read off the event loop (raw content must not leave the service
+ * layer).
  */
-async function toExistingSavedArticle({
+async function savedArticleFromRow({
   entry,
   userState,
-}: NonNullable<Awaited<ReturnType<typeof selectExistingSavedRow>>>): Promise<SaveArticleResult> {
+}: NonNullable<Awaited<ReturnType<typeof selectExistingSavedRow>>>): Promise<SavedArticle> {
   const { cleaned } = await sanitizeEntryContentFamily("content", {
     original: entry.contentOriginal,
     cleaned: entry.contentCleaned,
   });
   return {
     id: entry.id,
-    url: entry.url!,
+    url: entry.url,
     title: entry.title,
     siteName: entry.siteName,
     author: entry.author,
@@ -451,7 +454,57 @@ async function toExistingSavedArticle({
     read: userState.read,
     starred: userState.starred,
     savedAt: entry.fetchedAt,
-    outcome: "existing",
+  };
+}
+
+/** An already-saved row as a {@link SaveArticleResult} with outcome `"existing"`. */
+async function toExistingSavedArticle(
+  row: NonNullable<Awaited<ReturnType<typeof selectExistingSavedRow>>>
+): Promise<SaveArticleResult> {
+  return { ...(await savedArticleFromRow(row)), outcome: "existing" };
+}
+
+const UPLOAD_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
+const UPLOAD_MEMBERSHIPS = entryMemberships(UPLOAD_ROW);
+
+/**
+ * The upload saved earlier under `guid`, shaped like a fresh upload's result,
+ * list item included (with the collections it has been filed into since).
+ */
+async function selectExistingUpload(
+  db: typeof dbType,
+  userId: string,
+  guid: string
+): Promise<InsertedSavedArticle | null> {
+  const [row] = await db
+    .select({
+      entry: entries,
+      userState: userEntries,
+      subscriptionId: subscriptions.id,
+      subscriptionIds: UPLOAD_MEMBERSHIPS.subscriptionIds,
+    })
+    .from(entries)
+    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+    .leftJoinLateral(UPLOAD_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(UPLOAD_MEMBERSHIPS, UPLOAD_ROW))
+    .where(
+      and(eq(entries.ownerUserId, userId), eq(entries.guid, guid), eq(userEntries.userId, userId))
+    )
+    .limit(1);
+  if (!row?.subscriptionId) return null;
+  const { entry, userState } = row;
+  return {
+    article: await savedArticleFromRow(row),
+    listItem: {
+      entryId: entry.id,
+      subscriptionId: row.subscriptionId,
+      subscriptionIds: row.subscriptionIds,
+      updatedAt: userState.updatedAt.toISOString(),
+      entry: toNewEntryListData(entry, SAVED_ARTICLES_TITLE, {
+        read: userState.read,
+        starred: userState.starred,
+      }),
+    },
   };
 }
 
@@ -840,6 +893,16 @@ export interface UploadFileParams extends CollectionsParam {
   /** The original filename: picks the converter, and is the last-resort title. */
   filename: string;
   title?: string;
+  /**
+   * Makes the upload idempotent: a repeat with the same key (a retry after a
+   * lost response) returns the article the first one saved, unconverted.
+   */
+  idempotencyKey?: string;
+}
+
+/** An idempotent upload's guid; unique per user, like every saved guid. */
+function uploadGuid(idempotencyKey: string): string {
+  return `uploaded:key:${idempotencyKey}`;
 }
 
 /**
@@ -854,7 +917,7 @@ function assertUploadSize(resource: string, bytes: number): void {
 }
 
 /**
- * Save an uploaded file (.docx, .html, .md, .txt; see `convertUploadedFile`).
+ * Save an uploaded file (.docx, .pdf, .html, .md, .txt; see `convertUploadedFile`).
  *
  * The converted content runs through the same {@link buildArticleFields} pipeline
  * as a URL save — Readability, excerpt, and title/author/site-name precedence —
@@ -876,6 +939,10 @@ export async function uploadFile(
   assertUploadSize("Uploaded file", file.length);
 
   return withCollections(db, userId, params.collectionIds, async () => {
+    const guid = params.idempotencyKey ? uploadGuid(params.idempotencyKey) : undefined;
+    const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
+    if (existing) return existing;
+
     const converted = await convertUpload(file, filename);
     const fields = await buildArticleFields(
       {
@@ -891,7 +958,7 @@ export async function uploadFile(
       },
       { minCleanedLength: 10 }
     );
-    return insertUploadedArticle(db, userId, fields);
+    return insertUploadedArticle(db, userId, fields, guid);
   });
 }
 

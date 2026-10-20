@@ -73,7 +73,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:colors
 
-  # The Rust `.node` binaries depend only on native/, so build them once here
+  # The Rust binaries depend only on native/, so build them once here
   # and share them with every job that needs them instead of paying for three
   # independent cargo builds. The cache makes even that one build a no-op when
   # native/ is unchanged; the artifact is what downstream jobs consume, so they
@@ -92,7 +92,9 @@ jobs:
         id: native-cache
         uses: actions/cache@v6.1.0
         with:
-          path: native/*/*.node
+          path: |
+            native/*/*.node
+            native/pdf/lion-reader-pdf
           key: native-modules-${{ runner.os }}-${{ hashFiles('native/**', 'rust-toolchain.toml') }}
 
       - uses: pnpm/action-setup@v6.1.0
@@ -119,7 +121,9 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: native-modules
-          path: native/*/*.node
+          path: |
+            native/*/*.node
+            native/pdf/lion-reader-pdf
           retention-days: 7
 
   # The Rust suites gate merges on their own, separately from build-native:
@@ -143,6 +147,7 @@ jobs:
           workspaces: |
             native/feed-parser
             native/markdown
+            native/pdf
             native/readability
             native/sanitizer
             native/speech-encoder
@@ -196,6 +201,10 @@ jobs:
         with:
           name: native-modules
           path: native/
+
+      # Artifacts don't keep file modes.
+      - name: Make the PDF converter executable
+        run: chmod +x native/pdf/lion-reader-pdf
 
       - name: Run unit tests
         run: pnpm test:unit
@@ -299,6 +308,10 @@ jobs:
           name: native-modules
           path: native/
 
+      # Artifacts don't keep file modes.
+      - name: Make the PDF converter executable
+        run: chmod +x native/pdf/lion-reader-pdf
+
       # The schema dump refuses a server newer than its pg_dump, and the
       # runner's preinstalled client is older than the service. Run the
       # service container's own pg_dump instead of installing one from apt,
@@ -377,6 +390,10 @@ jobs:
           name: native-modules
           path: native/
 
+      # Artifacts don't keep file modes.
+      - name: Make the PDF converter executable
+        run: chmod +x native/pdf/lion-reader-pdf
+
       - name: Migrate
         run: pnpm db:migrate:test
 
@@ -445,6 +462,10 @@ jobs:
         with:
           name: native-modules
           path: native/
+
+      # Artifacts don't keep file modes.
+      - name: Make the PDF converter executable
+        run: chmod +x native/pdf/lion-reader-pdf
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium

@@ -353,19 +353,64 @@ export interface FetchHtmlPageResult {
   finalUrl: string;
 }
 
+/** A fetched article: a page, or a PDF's raw bytes. */
+export type FetchedArticle =
+  ({ format: "page" } & FetchHtmlPageResult) | { format: "pdf"; pdf: Buffer; finalUrl: string };
+
+const PDF_TYPES = ["application/pdf", "application/x-pdf"];
+
+/** Content types some servers send a PDF as, so the body's signature decides. */
+const GENERIC_BINARY_TYPES = ["application/octet-stream", "binary/octet-stream"];
+
+const PDF_SIGNATURE = Buffer.from("%PDF-");
+
 /**
- * Fetches an HTML page with appropriate settings.
- *
- * Uses a longer timeout (30s) and an HTML Accept header. Requests HTML (not
- * Markdown — see HTML_ACCEPT_HEADER / #1280), but still reports `isMarkdown`
- * when a server returns markdown anyway (e.g. a raw `.md` URL) so the caller
- * can convert it as a fallback.
- *
- * @param url - The URL to fetch
- * @returns The content and whether it's Markdown
- * @throws Error on fetch failure
+ * Reads just enough of `response` to see whether it starts with the PDF
+ * signature, so another download is turned away without being read. When it
+ * is a PDF, the returned response replays those bytes and then the rest.
  */
-export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
+async function peekPdfSignature(
+  response: Response
+): Promise<{ isPdf: boolean; response: Response }> {
+  if (!response.body) return { isPdf: false, response };
+  const reader = response.body.getReader();
+  const head: Uint8Array[] = [];
+  let length = 0;
+  while (length < PDF_SIGNATURE.length) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    head.push(value);
+    length += value.byteLength;
+  }
+  const prefix = Buffer.concat(head);
+  if (!prefix.subarray(0, PDF_SIGNATURE.length).equals(PDF_SIGNATURE)) {
+    await reader.cancel().catch(() => {});
+    return { isPdf: false, response };
+  }
+  const replay = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(prefix);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return { isPdf: true, response: new Response(replay, { headers: response.headers }) };
+}
+
+/**
+ * Fetches a page, or a PDF when `allowPdf` is set. Uses a longer timeout (30s)
+ * and an HTML Accept header. Requests HTML (not Markdown — see
+ * HTML_ACCEPT_HEADER / #1280), but still reports `isMarkdown` when a server
+ * returns markdown anyway (e.g. a raw `.md` URL) so the caller can convert it as
+ * a fallback.
+ */
+async function fetchPage(url: string, allowPdf: boolean): Promise<FetchedArticle> {
   const response = await fetchWithSsrfProtection(url, {
     signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
     headers: {
@@ -381,6 +426,21 @@ export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
   }
 
   const contentType = response.headers.get("content-type") || "";
+  const mediaType = contentType.split(";")[0].trim().toLowerCase();
+  const maxBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+
+  const declaredPdf = PDF_TYPES.includes(mediaType);
+  if (allowPdf && (declaredPdf || GENERIC_BINARY_TYPES.includes(mediaType))) {
+    let body = response;
+    if (!declaredPdf) {
+      const peeked = await peekPdfSignature(response);
+      if (!peeked.isPdf) throw new InvalidContentTypeError(contentType, url);
+      body = peeked.response;
+    }
+    const pdf = await readResponseBufferWithSizeLimit(body, maxBytes, url);
+    return { format: "pdf", pdf, finalUrl: response.url };
+  }
+
   const isMarkdown = contentType.includes("text/markdown");
 
   // Accept markdown, HTML, or XHTML
@@ -392,12 +452,29 @@ export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
     throw new InvalidContentTypeError(contentType, url);
   }
 
-  const content = await readResponseWithSizeLimit(
-    response,
-    usageLimitsConfig.maxSavedArticleSizeBytes,
-    url
-  );
-  return { content, isMarkdown, finalUrl: response.url };
+  const content = await readResponseWithSizeLimit(response, maxBytes, url);
+  return { format: "page", content, isMarkdown, finalUrl: response.url };
+}
+
+/**
+ * Fetches an HTML (or Markdown) page; see {@link fetchPage}.
+ *
+ * @throws Error on fetch failure, or {@link InvalidContentTypeError} for anything
+ *   but HTML, XHTML or Markdown
+ */
+export async function fetchHtmlPage(url: string): Promise<FetchHtmlPageResult> {
+  const page = await fetchPage(url, false);
+  // Unreachable: without allowPdf, fetchPage rejects a PDF before reading it.
+  if (page.format !== "page") throw new InvalidContentTypeError("application/pdf", url);
+  return { content: page.content, isMarkdown: page.isMarkdown, finalUrl: page.finalUrl };
+}
+
+/**
+ * Fetches what a saved article or full-content fetch reads: an HTML (or
+ * Markdown) page, or a PDF, which the caller converts.
+ */
+export function fetchArticle(url: string): Promise<FetchedArticle> {
+  return fetchPage(url, true);
 }
 
 // ============================================================================

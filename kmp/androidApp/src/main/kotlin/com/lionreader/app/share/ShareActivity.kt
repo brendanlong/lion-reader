@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -14,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -26,49 +29,68 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 
 /**
- * The share-sheet target: saves the shared link (see [SaveWorker]) and shows how that goes in a
- * small dialog over the app it was shared from.
+ * The share-sheet target: saves the shared link or file (see [SaveWorker]) and shows how that goes
+ * in a small dialog over the app it was shared from.
  */
 class ShareActivity : ComponentActivity() {
+    private val fileShare: FileShareModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val send = intent.takeIf { it.action == Intent.ACTION_SEND }
         // A CharSequence per the docs; some apps send styled text.
-        val link =
-            intent
-                .takeIf { it.action == Intent.ACTION_SEND }
-                ?.getCharSequenceExtra(Intent.EXTRA_TEXT)
-                ?.toString()
-                .let(::sharedLink)
+        val link = send?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().let(::sharedLink)
+        // A link wins: apps attach a preview image to the links they share.
+        val file =
+            if (link != null) null
+            else
+                send?.let {
+                    IntentCompat.getParcelableExtra(it, Intent.EXTRA_STREAM, Uri::class.java)
+                }
         val tooLong = link != null && link.length > MAX_LINK_LENGTH
         val signedIn = graph.accounts.connection.value.auth.signedIn.value
         // Only once: a recreated dialog (rotation) follows the same work.
         if (savedInstanceState == null && link != null && !tooLong && signedIn) {
             SaveWorker.enqueue(this, link)
         }
+        if (file != null && signedIn) fileShare.start(file, send?.type)
         setContent {
             val settings by graph.currentSettings.collectAsStateWithLifecycle()
             LionReaderTheme(settings.theme) {
                 when {
-                    link == null -> Message("There's no link to save in what was shared.")
+                    file == null && link == null ->
+                        Message("There's no link to save in what was shared.")
                     tooLong -> Message("That link is too long to save.")
                     !signedIn ->
                         Message(
-                            "Sign in to Lion Reader to save links.",
+                            "Sign in to Lion Reader to save ${if (file != null) "files" else "links"}.",
                             action = "Open Lion Reader" to ::openApp,
                         )
-                    else -> Progress(link)
+                    link != null -> Progress(SaveWorker.workName(link), "link")
+                    else -> FileProgress()
                 }
             }
         }
     }
 
     @Composable
-    private fun Progress(link: String) {
+    private fun FileProgress() {
+        val state by fileShare.state.collectAsStateWithLifecycle()
+        when (val current = state) {
+            FileShareState.Copying -> Message("Saving…")
+            is FileShareState.Failed -> Message(current.message)
+            is FileShareState.Saving -> Progress(current.workName, "file")
+        }
+    }
+
+    /** Follows the [SaveWorker] job named [workName], which saves a [what] ("link" or "file"). */
+    @Composable
+    private fun Progress(workName: String, what: String) {
         val work by
-            remember(link) {
-                    WorkManager.getInstance(this)
-                        .getWorkInfosForUniqueWorkFlow(SaveWorker.workName(link))
-                        .map { it.lastOrNull() }
+            remember(workName) {
+                    WorkManager.getInstance(this).getWorkInfosForUniqueWorkFlow(workName).map {
+                        it.lastOrNull()
+                    }
                 }
                 .collectAsStateWithLifecycle(null)
         val info = work
@@ -84,12 +106,12 @@ class ShareActivity : ComponentActivity() {
             WorkInfo.State.FAILED ->
                 Message(
                     info.outputData.getString(SaveWorker.ERROR)
-                        ?: "Lion Reader couldn't save this link."
+                        ?: "Lion Reader couldn't save this $what."
                 )
             WorkInfo.State.ENQUEUED if info.runAttemptCount > 0 ->
                 Message("Couldn't reach Lion Reader. It'll keep trying in the background.")
             WorkInfo.State.ENQUEUED if !isOnline() ->
-                Message("You're offline. The link will be saved when you're back online.")
+                Message("You're offline. The $what will be saved when you're back online.")
             WorkInfo.State.CANCELLED -> LaunchedEffect(Unit) { finish() }
             else -> Message("Saving…")
         }

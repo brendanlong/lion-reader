@@ -13,6 +13,7 @@ import com.lionreader.app.narration.DeviceVoices
 import com.lionreader.app.narration.Narrator
 import com.lionreader.app.narration.SpeechEngine
 import com.lionreader.app.narration.SystemTts
+import com.lionreader.app.share.deleteSharedFileCopies
 import com.lionreader.app.ui.PageTurns
 import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.account.AccountStorage
@@ -58,6 +59,10 @@ class AppGraph(
     val settings = SettingsRepository(context.settingsStore, deviceDefaults())
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** For work that must outlive the screen starting it, like copying a shared file. */
+    val appScope: CoroutineScope
+        get() = scope
 
     val currentSettings: StateFlow<AppSettings> =
         settings.settings.stateIn(scope, SharingStarted.Eagerly, settings.defaults)
@@ -264,5 +269,7 @@ private class WorkManagerSync(
 
     override fun cancelAll() {
         SyncScheduler.cancelAll(context)
+        // Shared files waiting to be saved: their saves were just cancelled.
+        deleteSharedFileCopies(context)
     }
 }

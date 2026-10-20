@@ -19,7 +19,7 @@ const article: DemoArticle = {
 
     <h3>Save From the Share Menu</h3>
 
-    <p>On Android, an installed Lion Reader shows up in your phone&rsquo;s share menu. Share a link from your browser or any other app and it&rsquo;s <a href="/demo/all?entry=save-for-later">saved for later</a>. You can share files too &mdash; a Word document, Markdown, or HTML file becomes a <a href="/demo/all?entry=file-upload">saved article</a> you can read right away. On iPhone and iPad, where installed web apps can&rsquo;t receive shares, the free <a href="/demo/all?entry=wallabag-api">Wallabag app</a> gives you the same share-menu saving.</p>
+    <p>On Android, an installed Lion Reader shows up in your phone&rsquo;s share menu. Share a link from your browser or any other app and it&rsquo;s <a href="/demo/all?entry=save-for-later">saved for later</a>. You can share files too &mdash; a Word document, PDF, Markdown, or HTML file becomes a <a href="/demo/all?entry=file-upload">saved article</a> you can read right away. On iPhone and iPad, where installed web apps can&rsquo;t receive shares, the free <a href="/demo/all?entry=wallabag-api">Wallabag app</a> gives you the same share-menu saving.</p>
 
     <details>
       <summary>How to install</summary>

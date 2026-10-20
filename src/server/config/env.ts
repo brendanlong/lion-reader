@@ -337,6 +337,9 @@ function positiveIntegerFromEnv(name: string, defaultValue: number): number {
   return value;
 }
 
+/** The native app caps a shared file at this before uploading it. */
+export const DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES = 5 * 1024 * 1024;
+
 /**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
@@ -352,9 +355,12 @@ export const usageLimitsConfig = {
   /** Maximum number of entries to parse from a single feed (default: 100). */
   maxFeedEntries: parseInt(process.env.MAX_FEED_ENTRIES || "100", 10),
 
-  /** Maximum saved article page size in bytes (default: 5MB). */
+  /**
+   * Maximum saved article page size in bytes, which also caps uploads (default:
+   * {@link DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES}).
+   */
   maxSavedArticleSizeBytes: parseInt(
-    process.env.MAX_SAVED_ARTICLE_SIZE_BYTES || String(5 * 1024 * 1024),
+    process.env.MAX_SAVED_ARTICLE_SIZE_BYTES || String(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES),
     10
   ),
 
@@ -367,6 +373,12 @@ export const usageLimitsConfig = {
    * says what it bounds.
    */
   docxWorkerMaxHeapMb: positiveIntegerFromEnv("DOCX_WORKER_MAX_HEAP_MB", 64),
+
+  /**
+   * Heap cap, in MB, for the child process that converts `.pdf` files
+   * (`src/server/file/pdf-to-markdown.ts`).
+   */
+  pdfConverterMaxMemoryMb: positiveIntegerFromEnv("PDF_CONVERTER_MAX_MEMORY_MB", 128),
 };
 
 export const storageConfig = {

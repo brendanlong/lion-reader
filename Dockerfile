@@ -89,7 +89,8 @@ RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
     --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
     --mount=type=cache,id=cargo-target-markdown,target=/app/native/markdown/target \
     --mount=type=cache,id=cargo-target-speech-encoder,target=/app/native/speech-encoder/target \
-    for crate in sanitizer readability feed-parser markdown speech-encoder; do \
+    --mount=type=cache,id=cargo-target-pdf,target=/app/native/pdf/target \
+    for crate in sanitizer readability feed-parser markdown speech-encoder pdf; do \
       node native/build.mjs "$crate" || exit 1; \
     done
 
@@ -251,6 +252,10 @@ COPY --from=builder /app/native/speech-encoder/package.json ./native/speech-enco
 COPY --from=builder /app/native/speech-encoder/index.js ./native/speech-encoder/index.js
 COPY --from=builder /app/native/speech-encoder/index.d.ts ./native/speech-encoder/index.d.ts
 COPY --from=builder /app/native/speech-encoder/speech-encoder.node ./native/speech-encoder/speech-encoder.node
+
+# The PDF converter is an executable the app spawns, not a module: nothing
+# imports it, so the builder never needs it.
+COPY --from=native-builder /app/native/pdf/lion-reader-pdf ./native/pdf/lion-reader-pdf
 
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
