@@ -97,7 +97,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
       <div className="flex flex-col gap-2">
         <p className="ui-text-sm text-body font-medium">Invite created successfully</p>
         <div className="flex items-center gap-2">
-          <code className="ui-text-sm flex-1 truncate rounded bg-white/60 px-2 py-1 dark:bg-zinc-800/60">
+          <code className="ui-text-sm bg-surface/60 flex-1 truncate rounded px-2 py-1">
             {inviteUrl}
           </code>
           <Button variant="secondary" size="sm" onClick={handleCopy} className="shrink-0">

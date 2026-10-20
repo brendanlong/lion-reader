@@ -93,7 +93,7 @@ function DemoShell() {
           </PageLink>
           <PageLink
             href="/login"
-            className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
+            className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors"
           >
             Sign In
           </PageLink>

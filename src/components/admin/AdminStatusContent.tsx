@@ -12,6 +12,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, StatusCard } from "@/components/ui/card";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { AnnouncementBannerView } from "@/components/layout/AnnouncementBanner";
@@ -23,7 +24,6 @@ const textareaClass =
   "ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50";
 const selectClass =
   "ui-text-sm bg-surface text-body border-edge-input block rounded-md border px-3 py-2";
-const checkboxClass = "text-accent border-edge-input h-4 w-4 rounded dark:bg-zinc-800";
 
 interface SiteStatus {
   maintenance: { enabled: boolean; message: string };
@@ -114,12 +114,10 @@ function StatusForm({ initial }: { initial: SiteStatus }) {
               </div>
 
               <label className="ui-text-sm text-body mt-6 flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={annEnabled}
                   onChange={(e) => setAnnEnabled(e.target.checked)}
                   disabled={setAnnouncement.isPending}
-                  className={checkboxClass}
                 />
                 Enabled
               </label>

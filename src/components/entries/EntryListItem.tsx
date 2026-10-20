@@ -225,9 +225,7 @@ export const EntryListItem = memo(function EntryListItem({
                 // 44px WCAG touch target: pad the 16px icon out to 44px and cancel
                 // the padding with an equal negative margin so layout is unchanged.
                 className={`-m-[14px] flex shrink-0 items-center justify-center rounded-full p-[14px] transition-colors ${
-                  starred
-                    ? "text-star hover:text-star-hover"
-                    : "hover:text-star text-zinc-300 dark:text-zinc-600"
+                  starred ? "text-star hover:text-star-hover" : "hover:text-star text-faint"
                 }`}
                 aria-label={starred ? "Remove from starred" : "Add to starred"}
                 title={starred ? "Remove from starred (s)" : "Add to starred (s)"}

@@ -94,7 +94,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                     <button
                       ref={userMenuButtonRef}
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
+                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors"
                       aria-expanded={userMenuOpen}
                       aria-haspopup="true"
                     >
@@ -120,14 +120,14 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                           <ClientLink
                             href="/settings"
                             onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] items-center px-4"
                           >
                             Settings
                           </ClientLink>
                           <ClientLink
                             href="/settings/sessions"
                             onNavigate={() => setUserMenuOpen(false)}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] items-center px-4 active:bg-zinc-200 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] items-center px-4"
                           >
                             Sessions
                           </ClientLink>
@@ -136,7 +136,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                               setUserMenuOpen(false);
                               setFeedbackOpen(true);
                             }}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] w-full items-center px-4 text-left"
                           >
                             Send feedback
                           </button>
@@ -147,7 +147,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                               handleLogout();
                             }}
                             disabled={logoutMutation.isPending}
-                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 disabled:opacity-50 dark:active:bg-zinc-700"
+                            className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] w-full items-center px-4 text-left disabled:opacity-50"
                           >
                             {logoutMutation.isPending ? "Signing out..." : "Sign out"}
                           </button>

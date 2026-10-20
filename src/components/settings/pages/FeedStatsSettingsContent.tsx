@@ -170,7 +170,7 @@ function SummaryCard({ label, value, variant = "default" }: SummaryCardProps) {
   };
 
   return (
-    <div className="border-edge-strong rounded-lg border bg-zinc-50 p-4 dark:bg-zinc-800">
+    <div className="border-edge-strong bg-surface-subtle rounded-lg border p-4">
       <p className="ui-text-sm text-muted">{label}</p>
       <p className={`ui-text-2xl font-semibold tabular-nums ${variantClasses[variant]}`}>{value}</p>
     </div>

@@ -13,6 +13,7 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -330,11 +331,9 @@ export default function AdminFeedsContent() {
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <label className="ui-text-sm text-muted flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={hasSubscribers}
               onChange={(e) => setHasSubscribers(e.target.checked)}
-              className="text-accent border-edge-input h-4 w-4 rounded dark:bg-zinc-800"
             />
             Has subscribers
           </label>

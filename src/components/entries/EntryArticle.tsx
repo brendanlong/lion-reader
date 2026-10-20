@@ -209,7 +209,7 @@ export function EntryArticle({
                 href={unsubscribeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-sm text-muted hover:text-body inline-flex min-h-[44px] items-center gap-2 font-medium transition-colors active:text-zinc-800 dark:active:text-zinc-200"
+                className="ui-text-sm text-muted hover:text-body active:text-body inline-flex min-h-[44px] items-center gap-2 font-medium transition-colors"
               >
                 <ExternalLinkIcon className="h-4 w-4" />
                 Unsubscribe
@@ -229,7 +229,7 @@ function BackButton({ onBack }: { onBack: () => void }) {
   return (
     <button
       onClick={onBack}
-      className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
+      className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body active:bg-surface-pressed mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors sm:mb-6"
     >
       <ArrowLeftIcon className="h-4 w-4" />
       <span>Back to list</span>

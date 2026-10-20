@@ -112,7 +112,7 @@ export function WallabagApiSettings() {
 
           <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
             {/* QR Code */}
-            <div className="border-edge-strong rounded-lg border bg-white p-3 dark:bg-white">
+            <div className="border-edge-strong rounded-lg border bg-white p-3">
               <QRCodeSVG value={wallabagDeepLink} size={160} level="M" />
             </div>
 

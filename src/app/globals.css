@@ -126,6 +126,8 @@
   --surface: #ffffff; /* white - cards, inputs, controls */
   --surface-muted: #f4f4f5; /* zinc-100 - chips, hover fill (hover:bg-surface-muted) */
   --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
+  --surface-selected: #fafafa; /* zinc-50 - the selected card of a pick-one list, with border-control-selected */
+  --surface-pressed: #e4e4e7; /* zinc-200 - press feedback (active:bg-surface-pressed), a step past the hover fill */
   --fill-muted: #e4e4e7; /* zinc-200 - settings skeleton pulses, e-paper skeleton bars, toggle-off/progress/range tracks, thin dividers */
 
   /* Borders: `edge` for card outlines, `edge-strong` for dividers/note boxes
@@ -133,6 +135,9 @@
   --edge: #e4e4e7; /* zinc-200 */
   --edge-strong: #e4e4e7; /* zinc-200 (dark mode differs: zinc-700 vs zinc-800) */
   --edge-input: #d4d4d8; /* zinc-300 */
+  /* Stronger than edge-input: an unselected radio ring, a hovered or
+     dragged-over outline */
+  --edge-emphasis: #a1a1aa; /* zinc-400 */
 
   /* Focus ring / focused-border color (also drives control focus outlines) */
   --focus: #b45309; /* amber-700 - the brand accent */
@@ -226,10 +231,13 @@
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
   --color-surface-subtle: var(--surface-subtle);
+  --color-surface-selected: var(--surface-selected);
+  --color-surface-pressed: var(--surface-pressed);
   --color-fill-muted: var(--fill-muted);
   --color-edge: var(--edge);
   --color-edge-strong: var(--edge-strong);
   --color-edge-input: var(--edge-input);
+  --color-edge-emphasis: var(--edge-emphasis);
   --color-focus: var(--focus);
   --color-control-selected: var(--control-selected);
   --font-sans: var(--font-geist-sans);
@@ -308,10 +316,13 @@
   --surface: #18181b; /* zinc-900 */
   --surface-muted: #27272a; /* zinc-800 */
   --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+  --surface-selected: #27272a; /* zinc-800 */
+  --surface-pressed: #3f3f46; /* zinc-700 */
   --fill-muted: #3f3f46; /* zinc-700 */
   --edge: #27272a; /* zinc-800 */
   --edge-strong: #3f3f46; /* zinc-700 */
   --edge-input: #3f3f46; /* zinc-700 */
+  --edge-emphasis: #71717a; /* zinc-500 */
   --focus: #f59e0b; /* amber-500 - the brand accent */
   --control-selected: #f59e0b; /* amber-500 */
 }
@@ -449,6 +460,8 @@
   --surface: var(--epaper-paper);
   --surface-muted: var(--epaper-paper);
   --surface-subtle: var(--epaper-paper);
+  --surface-selected: var(--epaper-paper);
+  --surface-pressed: var(--epaper-paper);
 
   /* The one non-text gray: tracks, skeleton bars and the read-entry hairline,
      which must read as "present but not structural" next to the black edges. */
@@ -459,6 +472,8 @@
   --edge: var(--epaper-ink);
   --edge-strong: var(--epaper-ink);
   --edge-input: var(--epaper-ink);
+  /* Gray, not ink: a hovered card must not read as the selected (black) one */
+  --edge-emphasis: var(--epaper-gray-light);
 }
 
 /* Darken Tailwind Typography's prose palette to match the e-paper text tones */
@@ -549,10 +564,13 @@
     --surface: #18181b; /* zinc-900 */
     --surface-muted: #27272a; /* zinc-800 */
     --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+    --surface-selected: #27272a; /* zinc-800 */
+    --surface-pressed: #3f3f46; /* zinc-700 */
     --fill-muted: #3f3f46; /* zinc-700 */
     --edge: #27272a; /* zinc-800 */
     --edge-strong: #3f3f46; /* zinc-700 */
     --edge-input: #3f3f46; /* zinc-700 */
+    --edge-emphasis: #71717a; /* zinc-500 */
     --focus: #f59e0b; /* amber-500 - the brand accent */
     --control-selected: #f59e0b; /* amber-500 */
   }

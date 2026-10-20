@@ -347,8 +347,8 @@ export function SubscribeContent() {
                   disabled={isLoading}
                   className={`w-full rounded-lg border p-4 text-left transition-colors ${
                     selectedFeedUrl === feed.url
-                      ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
-                      : "border-edge-strong epaper:border-fill-muted bg-surface hover:bg-surface-muted hover:border-zinc-300 dark:hover:border-zinc-600"
+                      ? "border-control-selected bg-surface-selected"
+                      : "border-edge-strong epaper:border-fill-muted bg-surface hover:bg-surface-muted hover:border-edge-emphasis"
                   } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">

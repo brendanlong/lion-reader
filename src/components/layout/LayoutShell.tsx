@@ -15,7 +15,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { DynamicFavicon } from "@/components/layout/DynamicFavicon";
 
 const CONTROL_BUTTON_CLASS =
-  "control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700";
+  "control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-surface-pressed lg:hidden";
 
 interface LayoutShellProps {
   /** Right side of the header (subscribe + user menu, or sign up/sign in) */

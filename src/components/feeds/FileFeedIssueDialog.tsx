@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { Dialog, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TextLink } from "@/components/ui/text-link";
 import { buildFeedIssueUrl, LION_READER_ISSUES_URL, type FeedIssueInput } from "@/lib/github-issue";
 
@@ -90,11 +91,10 @@ export function FileFeedIssueDialog({ isOpen, feed, onClose }: FileFeedIssueDial
         {/* Confirmations */}
         <div className="space-y-3">
           <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={linkConfirmed}
               onChange={(e) => setLinkConfirmed(e.target.checked)}
-              className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
+              className="mt-1"
             />
             <span className="ui-text-sm text-body">
               I&apos;ve confirmed the{" "}
@@ -110,11 +110,10 @@ export function FileFeedIssueDialog({ isOpen, feed, onClose }: FileFeedIssueDial
           </label>
 
           <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={publicAcknowledged}
               onChange={(e) => setPublicAcknowledged(e.target.checked)}
-              className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
+              className="mt-1"
             />
             <span className="ui-text-sm text-body">
               I understand that issues are filed publicly at{" "}

@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc/client";
 
 interface UnsubscribeDialogProps {
@@ -100,12 +101,11 @@ function EmailUnsubscribeDialog({
       // buttons under a click.
       options={
         <label className="mt-4 flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={blockSender}
             disabled={!emailSender}
             onChange={(e) => setBlockSender(e.target.checked)}
-            className="text-accent border-edge-input bg-surface mt-0.5 h-4 w-4 rounded"
+            className="mt-1"
           />
           <span className="ui-text-sm text-body">
             Also block{" "}

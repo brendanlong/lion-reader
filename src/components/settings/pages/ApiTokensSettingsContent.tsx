@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
@@ -203,11 +204,10 @@ export default function ApiTokensSettingsContent() {
                     key={scope}
                     className="border-edge hover:bg-surface-muted flex cursor-pointer items-start gap-3 rounded-lg border p-3"
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedScopes.includes(scope)}
                       onChange={() => toggleScope(scope)}
-                      className="text-accent border-edge-input mt-1 h-4 w-4 rounded dark:bg-zinc-800"
+                      className="mt-1"
                     />
                     <div className="flex-1">
                       <p className="text-body font-medium">{label}</p>
@@ -298,16 +298,14 @@ export default function ApiTokensSettingsContent() {
             {inactiveTokens.map((token) => (
               <div
                 key={token.id}
-                className="border-edge rounded-lg border bg-zinc-50 p-4 opacity-60 dark:bg-zinc-900"
+                className="border-edge bg-surface-subtle rounded-lg border p-4 opacity-60"
               >
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
+                  <div className="control-outline bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
                     <CloseIcon className="text-faint h-4 w-4" />
                   </div>
                   <div>
-                    <p className="font-medium text-zinc-700 dark:text-zinc-400">
-                      {token.name || "Unnamed Token"}
-                    </p>
+                    <p className="text-muted font-medium">{token.name || "Unnamed Token"}</p>
                     <p className="ui-text-xs text-muted">
                       {token.revokedAt
                         ? `Revoked ${formatRelativeTime(new Date(token.revokedAt))}`

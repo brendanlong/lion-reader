@@ -20,7 +20,7 @@ interface AdminLayoutProps {
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
   return (
-    <div className="min-h-screen bg-white dark:bg-zinc-950">
+    <div className="bg-canvas min-h-screen">
       <AdminApp>{children}</AdminApp>
     </div>
   );

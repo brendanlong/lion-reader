@@ -174,7 +174,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors active:bg-zinc-100 dark:active:bg-zinc-700 ${className}`}
+        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >
@@ -206,10 +206,10 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             onDrop={handleDrop}
             className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
               isDragging
-                ? "bg-surface-muted epaper:border-edge border-zinc-500 dark:border-zinc-400"
+                ? "bg-surface-muted epaper:border-edge border-edge-emphasis"
                 : selectedFile
                   ? "border-success bg-success-subtle"
-                  : "border-edge-input epaper:border-fill-muted hover:bg-surface-muted hover:border-zinc-400 dark:hover:border-zinc-500"
+                  : "border-edge-input epaper:border-fill-muted hover:bg-surface-muted hover:border-edge-emphasis"
             }`}
           >
             <input

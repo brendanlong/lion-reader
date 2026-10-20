@@ -62,7 +62,7 @@ export function StickyEntryControls({
 
   return (
     <div className="pointer-events-none sticky bottom-0 -mx-4 flex justify-center px-4 pb-4">
-      <div className="border-edge-strong pointer-events-auto flex items-center gap-2 rounded-full border bg-white/95 px-3 py-1.5 shadow-lg backdrop-blur-sm dark:bg-zinc-900/95">
+      <div className="border-edge-strong bg-surface/95 pointer-events-auto flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-lg backdrop-blur-sm">
         {/* Star button */}
         <button
           onClick={onToggleStar}

@@ -48,6 +48,6 @@ export function getItemClasses(read: boolean, density: ListDensity = "comfortabl
   // Unread entries stand out as raised surface cards with a distinctly stronger
   // border (the only card/canvas separation available on e-paper, where every
   // fill is white).
-  const unreadClasses = `${baseClasses} bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700`;
+  const unreadClasses = `${baseClasses} bg-surface hover:bg-surface-muted active:bg-surface-pressed`;
   return compact ? unreadClasses : `${unreadClasses} border-edge-input`;
 }

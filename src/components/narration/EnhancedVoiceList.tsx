@@ -120,7 +120,7 @@ function VoiceItem({
     <div
       className={`relative rounded-lg border p-4 transition-colors ${
         isSelected
-          ? "border-control-selected epaper:bg-surface bg-zinc-50 dark:bg-zinc-800"
+          ? "border-control-selected bg-surface-selected"
           : isDownloaded
             ? "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted cursor-pointer"
             : "border-edge-strong epaper:border-fill-muted"
@@ -147,7 +147,7 @@ function VoiceItem({
               isSelected
                 ? "border-control-selected bg-control-selected"
                 : isDownloaded
-                  ? "border-zinc-400 bg-transparent dark:border-zinc-500"
+                  ? "border-edge-emphasis bg-transparent"
                   : "border-edge-input bg-transparent"
             }`}
           />
