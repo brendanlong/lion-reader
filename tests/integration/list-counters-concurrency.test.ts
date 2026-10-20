@@ -30,6 +30,7 @@ import { setSubscriptionTags, unsubscribe } from "../../src/server/services/subs
 import { deleteTag } from "../../src/server/services/tags";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
+import { deleteUser } from "../../src/server/services/users";
 import {
   createTestEntry,
   createTestFeed,
@@ -258,6 +259,38 @@ describe("unread counters under concurrent writes", () => {
         existing.map((id) => markEntriesRead(db, userId, [{ id }], true))
       ),
     ]);
+    await expectNoDrift();
+  });
+
+  it("deleting a user waits for a write holding one of their articles", async () => {
+    // The deletion must lock the user's rows before the user, as the writes
+    // do: a mark-read holding the row and then locking the user (for All)
+    // deadlocked against it (#2092).
+    const userId = await createTestUser();
+    const { entryIds } = await feedWithEntries(userId, 1);
+
+    const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      await client.query("BEGIN");
+      await client.query(
+        "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE",
+        [userId, entryIds[0]]
+      );
+      const deletion = deleteUser(db, userId);
+      await waitUntilBlockedBy(rows[0].pid);
+      await client.query(
+        "UPDATE user_entries SET read = true WHERE user_id = $1 AND entry_id = $2",
+        [userId, entryIds[0]]
+      );
+      await client.query("COMMIT");
+      await deletion;
+    } finally {
+      await client.end();
+    }
+
+    expect(await db.select().from(users).where(eq(users.id, userId))).toEqual([]);
     await expectNoDrift();
   });
 

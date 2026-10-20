@@ -17,7 +17,7 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
 } from "../../src/server/auth/oauth/state-cookie";
-import { createTestOAuthLink, createTestUser, createUnauthContext } from "./helpers";
+import { createTestOAuthLink, createTestUser, createUnauthContext, deleteUsers } from "./helpers";
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";
@@ -124,7 +124,7 @@ describe("Google OAuth", () => {
   async function cleanup(): Promise<void> {
     await db.delete(sessions);
     await db.delete(oauthAccounts);
-    await db.delete(users);
+    await deleteUsers();
   }
 
   beforeEach(async () => {

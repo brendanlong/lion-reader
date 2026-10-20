@@ -13,14 +13,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { db } from "../../src/server/db";
-import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
+import { sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
 import { NextRequest } from "next/server";
 import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
 } from "../../src/server/auth/oauth/state-cookie";
-import { createTestUser } from "./helpers";
+import { createTestUser, deleteUsers } from "./helpers";
 
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
@@ -154,7 +154,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
   async function cleanup(): Promise<void> {
     await db.delete(sessions);
     await db.delete(oauthAccounts);
-    await db.delete(users);
+    await deleteUsers();
   }
 
   beforeEach(async () => {

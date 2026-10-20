@@ -35,7 +35,24 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
       .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
       .where(eq(subscriptions.userId, userId));
 
-    // Step 2: Delete the user. This cascades to:
+    // Step 2: Take the locks the cascade will, in the order every other write
+    // takes them (src/server/CLAUDE.md, "Unread Counts"), or a mark-read, star
+    // or fan-out for this user deadlocks against the deletion (#2092).
+    await tx
+      .select({ entryId: userEntries.entryId })
+      .from(userEntries)
+      .where(eq(userEntries.userId, userId))
+      .orderBy(userEntries.entryId)
+      .for("update");
+    await tx
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId))
+      .orderBy(subscriptions.id)
+      .for("update");
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+
+    // Step 3: Delete the user. This cascades to:
     // - sessions, api_tokens, oauth_accounts
     // - oauth_authorization_codes, oauth_consent_grants, oauth_token_grants (and their tokens)
     // - subscriptions (which cascades to subscription_tags)
@@ -46,7 +63,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
     // - invites.used_by_user_id is set to NULL
     await tx.delete(users).where(eq(users.id, userId));
 
-    // Step 3: Delete the candidates nobody else subscribes to or has entries
+    // Step 4: Delete the candidates nobody else subscribes to or has entries
     // from (e.g. starred after unsubscribing), and their entries by cascade.
     // Checking in the DELETE itself, after the user's own rows are gone, means
     // only a subscribe still uncommitted when it runs can be lost (cascaded).

@@ -13,7 +13,7 @@ import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processOAuthCallback } from "../../src/server/auth/oauth/callback";
 import { createSession } from "../../src/server/auth/session";
-import { createTestOAuthLink, createTestUser } from "./helpers";
+import { createTestOAuthLink, createTestUser, deleteUsers } from "./helpers";
 
 const VICTIM_EMAIL = "victim@example.com";
 
@@ -26,7 +26,7 @@ describe("processOAuthCallback email verification", () => {
   async function cleanup(): Promise<void> {
     await db.delete(sessions);
     await db.delete(oauthAccounts);
-    await db.delete(users);
+    await deleteUsers();
   }
 
   beforeEach(cleanup);
