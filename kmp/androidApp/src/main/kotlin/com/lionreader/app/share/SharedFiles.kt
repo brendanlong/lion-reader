@@ -11,8 +11,19 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-/** Copies older than this belong to saves that were cancelled, and are deleted. */
-private val ABANDONED_AFTER_MILLIS = TimeUnit.DAYS.toMillis(30)
+/**
+ * A copy this old with no save queued for it was left behind (by a save cancelled outside
+ * [deleteSharedFileCopies], or the app dying mid-copy), and is deleted. Younger ones may still be
+ * being written.
+ */
+private val ABANDONED_AFTER_MILLIS = TimeUnit.DAYS.toMillis(1)
+
+private fun sharedFilesDir(context: Context) = File(context.filesDir, "shared-files")
+
+/** Deletes every copy, when their saves are cancelled (signing out). */
+fun deleteSharedFileCopies(context: Context) {
+    sharedFilesDir(context).deleteRecursively()
+}
 
 /** A shared file copied into app storage, so a background save can read it later. */
 data class CopiedFile(val path: String, val filename: String)
@@ -30,7 +41,7 @@ sealed interface CopyResult {
 fun sharedFileCopy(context: Context, uri: Uri): File {
     val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray())
     val name = digest.take(16).joinToString("") { "%02x".format(it) }
-    return File(File(context.filesDir, "shared-files").apply { mkdirs() }, name)
+    return File(sharedFilesDir(context).apply { mkdirs() }, name)
 }
 
 /**
@@ -47,6 +58,7 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
         return CopyResult.Failed("Lion Reader can only save files shared by another app.")
     }
     val resolver = context.contentResolver
+    // A provider can fail or have its grant revoked at any call; only the stream matters.
     val displayName =
         try {
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
@@ -58,14 +70,20 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
         }
     // The provider knows what the file is; the intent's type is the sender's guess (a link share
     // with an image attached says text/plain).
+    val providerType =
+        try {
+            resolver.getType(uri)
+        } catch (_: Exception) {
+            null
+        }
     val filename =
-        uploadFilename(displayName, resolver.getType(uri) ?: sharedType)
+        uploadFilename(displayName, providerType ?: sharedType)
             ?: return CopyResult.Failed(
                 "Lion Reader can save PDFs, Word documents, and HTML, Markdown, and text files."
             )
 
     val copy = sharedFileCopy(context, uri)
-    copy.parentFile?.let(::deleteAbandoned)
+    deleteAbandoned(context)
     return try {
         val input = resolver.openInputStream(uri) ?: throw IOException("No stream")
         var tooLarge = false
@@ -104,7 +122,10 @@ private fun isAnotherAppsContent(context: Context, uri: Uri): Boolean {
     return provider != null && provider.packageName != context.packageName
 }
 
-private fun deleteAbandoned(dir: File) {
+private fun deleteAbandoned(context: Context) {
     val cutoff = System.currentTimeMillis() - ABANDONED_AFTER_MILLIS
-    dir.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
+    sharedFilesDir(context)
+        .listFiles()
+        ?.filter { it.lastModified() < cutoff && SaveWorker.pendingFileSave(context, it) == null }
+        ?.forEach { it.delete() }
 }

@@ -13,6 +13,7 @@ import com.lionreader.app.narration.DeviceVoices
 import com.lionreader.app.narration.Narrator
 import com.lionreader.app.narration.SpeechEngine
 import com.lionreader.app.narration.SystemTts
+import com.lionreader.app.share.deleteSharedFileCopies
 import com.lionreader.app.ui.PageTurns
 import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.account.AccountStorage
@@ -268,5 +269,7 @@ private class WorkManagerSync(
 
     override fun cancelAll() {
         SyncScheduler.cancelAll(context)
+        // Shared files waiting to be saved: their saves were just cancelled.
+        deleteSharedFileCopies(context)
     }
 }
