@@ -612,7 +612,7 @@ OPS.push(
     async (w, rng) => {
       // Newsletters from a second sender, through the real ingest path:
       // delivery creates (or reactivates) the subscription, unsubscribing
-      // blocks the sender, and unblocking lets the next issue resubscribe.
+      // may block the sender, and unblocking lets the next issue resubscribe.
       const sender = `letters-${w.userId}@example.com`;
       const [sub] = await db
         .select({
@@ -629,8 +629,9 @@ OPS.push(
         );
       const caller = createCaller(await createAuthContext(w.userId));
       if (sub?.active && rng.chance(0.3)) {
-        await caller.subscriptions.delete({ id: sub.id });
-        return `unsubscribe email ${sub.id}`;
+        const blockSender = rng.chance(0.5);
+        await caller.subscriptions.delete({ id: sub.id, blockSender });
+        return `unsubscribe email ${sub.id}${blockSender ? " and block" : ""}`;
       }
       if (sub && !sub.active) {
         const [blocked] = await db

@@ -130,10 +130,9 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* Unsubscribe Confirmation Dialog */}
       <UnsubscribeDialog
         isOpen={unsubscribeTarget !== null}
-        subscriptionId={unsubscribeTarget?.id ?? ""}
         feedTitle={unsubscribeTarget?.title ?? ""}
         isCollection={unsubscribeTarget?.isCollection ?? false}
-        isEmail={unsubscribeTarget?.isEmail ?? false}
+        emailSubscriptionId={unsubscribeTarget?.isEmail ? unsubscribeTarget.id : undefined}
         isLoading={unsubscribeMutation.isPending}
         onConfirm={({ blockSender }) => {
           if (unsubscribeTarget) {

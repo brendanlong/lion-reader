@@ -13,9 +13,8 @@ function renderEmailDialog(onConfirm: (options: { blockSender: boolean }) => voi
   return renderWithTrpc(
     <UnsubscribeDialog
       isOpen={true}
-      subscriptionId="00000000-0000-7000-8000-000000000001"
       feedTitle="Example Newsletter"
-      isEmail={true}
+      emailSubscriptionId="00000000-0000-7000-8000-000000000001"
       isLoading={false}
       onConfirm={onConfirm}
       onCancel={vi.fn()}

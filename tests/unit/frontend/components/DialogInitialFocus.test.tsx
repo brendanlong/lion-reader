@@ -9,8 +9,8 @@
  * option like the unsubscribe dialog's block-sender checkbox, so it never
  * focuses the destructive action.
  *
- * Delete-account is the exception: its first focusable is the "type delete to
- * confirm" input, so it keeps an explicit effect that moves focus to Cancel.
+ * Delete-account marks its own Cancel, which comes after the "type delete to
+ * confirm" input.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";

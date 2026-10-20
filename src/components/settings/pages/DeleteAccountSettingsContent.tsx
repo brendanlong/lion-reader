@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import {
 export default function DeleteAccountSettingsContent() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   const deleteAccountMutation = trpc.users["me.deleteAccount"].useMutation({
     onSuccess: () => {
@@ -35,13 +34,6 @@ export default function DeleteAccountSettingsContent() {
       toast.error("Failed to delete account", { description: err.message });
     },
   });
-
-  // Focus the cancel button when dialog opens
-  useEffect(() => {
-    if (isDialogOpen) {
-      cancelButtonRef.current?.focus();
-    }
-  }, [isDialogOpen]);
 
   const handleOpenDialog = () => {
     setConfirmation("");
@@ -112,7 +104,7 @@ export default function DeleteAccountSettingsContent() {
 
         <DialogFooter>
           <Button
-            ref={cancelButtonRef}
+            data-autofocus
             variant="secondary"
             onClick={handleClose}
             disabled={deleteAccountMutation.isPending}

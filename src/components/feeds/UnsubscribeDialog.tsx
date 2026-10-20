@@ -12,52 +12,35 @@ import { trpc } from "@/lib/trpc/client";
 
 interface UnsubscribeDialogProps {
   isOpen: boolean;
-  subscriptionId: string;
   feedTitle: string;
   /** Collections are deleted rather than unsubscribed from; their articles stay put. */
   isCollection?: boolean;
-  /** Email subscriptions offer to block the sender too. */
-  isEmail?: boolean;
+  /** An email subscription's id, to offer blocking its sender too. */
+  emailSubscriptionId?: string;
   isLoading: boolean;
   onConfirm: (options: { blockSender: boolean }) => void;
   onCancel: () => void;
 }
 
-export function UnsubscribeDialog({
-  subscriptionId,
+export function UnsubscribeDialog(props: UnsubscribeDialogProps) {
+  // Remounting on each open resets the block-sender choice.
+  return <UnsubscribeDialogContent key={props.isOpen ? "open" : "closed"} {...props} />;
+}
+
+function UnsubscribeDialogContent({
   feedTitle,
   isCollection,
-  isEmail,
+  emailSubscriptionId,
   onConfirm,
-  onCancel,
   ...props
 }: UnsubscribeDialogProps) {
-  // Blocking is opt-in: the sender's address may also send mail the user
-  // still needs, like a newsletter platform's login codes (#1964).
-  const [blockSender, setBlockSender] = useState(false);
-  const emailSenderQuery = trpc.subscriptions.getEmailSender.useQuery(
-    { id: subscriptionId },
-    { enabled: props.isOpen && !!isEmail && subscriptionId !== "" }
-  );
-  const emailSender = isEmail ? emailSenderQuery.data?.emailSender : null;
-
-  const handleConfirm = () => {
-    onConfirm({ blockSender: blockSender && !!emailSender });
-    setBlockSender(false);
-  };
-  const handleCancel = () => {
-    onCancel();
-    setBlockSender(false);
-  };
-
   if (isCollection) {
     return (
       <ConfirmDialog
         title="Delete collection?"
         confirmLabel="Delete"
         confirmVariant="danger"
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
+        onConfirm={() => onConfirm({ blockSender: false })}
         {...props}
       >
         Delete <span className="text-body font-medium">{feedTitle}</span>? Its articles stay in
@@ -66,36 +49,14 @@ export function UnsubscribeDialog({
       </ConfirmDialog>
     );
   }
-  if (isEmail) {
+  if (emailSubscriptionId) {
     return (
-      <ConfirmDialog
-        title="Unsubscribe from newsletter?"
-        confirmLabel="Unsubscribe"
-        confirmVariant="danger"
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-        options={
-          emailSender && (
-            <label className="mt-4 flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={blockSender}
-                onChange={(e) => setBlockSender(e.target.checked)}
-                className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
-              />
-              <span className="ui-text-sm text-body">
-                Also block <span className="font-medium break-all">{emailSender}</span>, rejecting
-                all future emails from it. Don&apos;t block an address you get login codes from.
-              </span>
-            </label>
-          )
-        }
+      <EmailUnsubscribeDialog
+        feedTitle={feedTitle}
+        subscriptionId={emailSubscriptionId}
+        onConfirm={onConfirm}
         {...props}
-      >
-        Unsubscribe from <span className="text-body font-medium">{feedTitle}</span>? We&apos;ll ask
-        the sender to stop emailing you, but if they email you again, you&apos;ll be resubscribed
-        unless you block them.
-      </ConfirmDialog>
+      />
     );
   }
   return (
@@ -103,12 +64,66 @@ export function UnsubscribeDialog({
       title="Unsubscribe from feed?"
       confirmLabel="Unsubscribe"
       confirmVariant="danger"
-      onConfirm={handleConfirm}
-      onCancel={handleCancel}
+      onConfirm={() => onConfirm({ blockSender: false })}
       {...props}
     >
       Are you sure you want to unsubscribe from{" "}
       <span className="text-body font-medium">{feedTitle}</span>? You can always resubscribe later.
+    </ConfirmDialog>
+  );
+}
+
+function EmailUnsubscribeDialog({
+  feedTitle,
+  subscriptionId,
+  onConfirm,
+  ...props
+}: Omit<UnsubscribeDialogProps, "isCollection" | "emailSubscriptionId"> & {
+  subscriptionId: string;
+}) {
+  // Blocking is opt-in: the sender's address may also send mail the user
+  // still needs, like a newsletter platform's login codes (#1964).
+  const [blockSender, setBlockSender] = useState(false);
+  const emailSenderQuery = trpc.subscriptions.getEmailSender.useQuery(
+    { id: subscriptionId },
+    { enabled: props.isOpen }
+  );
+  const emailSender = emailSenderQuery.data?.emailSender;
+
+  return (
+    <ConfirmDialog
+      title="Unsubscribe from newsletter?"
+      confirmLabel="Unsubscribe"
+      confirmVariant="danger"
+      onConfirm={() => onConfirm({ blockSender: blockSender && !!emailSender })}
+      // Rendered (disabled) while the address loads, so it doesn't shift the
+      // buttons under a click.
+      options={
+        <label className="mt-4 flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={blockSender}
+            disabled={!emailSender}
+            onChange={(e) => setBlockSender(e.target.checked)}
+            className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
+          />
+          <span className="ui-text-sm text-body">
+            Also block{" "}
+            {emailSender ? (
+              <span className="font-medium break-all">{emailSender}</span>
+            ) : (
+              "the sender"
+            )}
+            , rejecting all future emails from it. Don&apos;t block an address you get login codes
+            from.
+          </span>
+        </label>
+      }
+      {...props}
+    >
+      Unsubscribe from <span className="text-body font-medium">{feedTitle}</span>? We&apos;ll ask
+      the sender to stop emailing you, but if they email you again, you&apos;ll be resubscribed
+      unless you block them.
     </ConfirmDialog>
   );
 }
