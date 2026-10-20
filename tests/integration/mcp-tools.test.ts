@@ -196,6 +196,14 @@ describe("MCP tool results", () => {
     expect(result.id).toEqual(expect.any(String));
   });
 
+  it("returns the first upload_article result for a retry with the same key (#2070)", async () => {
+    const args = { title: "Retried upload", content: "Body.", idempotencyKey: "agent-retry-1" };
+    const first = (await tool("upload_article").handler(db, userId, args)) as { id: string };
+    const retry = (await tool("upload_article").handler(db, userId, args)) as { id: string };
+
+    expect(retry.id).toBe(first.id);
+  });
+
   it("refetches an already-saved URL only when asked, honoring force (#1836)", async () => {
     const paragraph = "A paragraph of the report, long enough to count as real article text. ";
     const content = async (id: string) =>

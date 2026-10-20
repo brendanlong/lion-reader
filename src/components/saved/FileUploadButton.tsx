@@ -66,6 +66,8 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // One per picked file, so a double submit or a retry can't save it twice.
+  const [idempotencyKey, setIdempotencyKey] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
@@ -116,6 +118,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       }
       setError(null);
       setSelectedFile(file);
+      setIdempotencyKey(crypto.randomUUID());
     },
     [validateFile]
   );
@@ -160,6 +163,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       uploadMutation.mutate({
         content: base64Content,
         filename: selectedFile.name,
+        idempotencyKey,
       });
     };
     reader.onerror = () => {

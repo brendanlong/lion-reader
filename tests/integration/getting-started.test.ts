@@ -130,6 +130,16 @@ describe("createGettingStartedArticle", () => {
     expect(await savedEntriesFor(userId)).toHaveLength(0);
   });
 
+  it("doesn't add a second copy when the claim is released after the insert committed", async () => {
+    const userId = await createUser();
+    const entryId = await createGettingStartedArticle(db, userId);
+    // What a lost commit acknowledgement leaves: the article, but no claim.
+    await db.update(users).set({ gettingStartedAt: null }).where(eq(users.id, userId));
+
+    expect(await createGettingStartedArticle(db, userId)).toBe(entryId);
+    expect(await savedEntriesFor(userId)).toHaveLength(1);
+  });
+
   it("leaves an unstarred copy unstarred", async () => {
     const userId = await createUser();
     const entryId = await createGettingStartedArticle(db, userId);

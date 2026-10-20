@@ -31,6 +31,8 @@ interface SharedFile {
   content: string;
   filename: string;
   title?: string;
+  /** Generated once per shared file, so a retry can't save it twice. */
+  idempotencyKey: string;
 }
 
 /**
@@ -49,7 +51,12 @@ function takeSharedFile(onFile: (file: SharedFile) => void) {
     getRequest.onsuccess = () => {
       const fileData = getRequest.result;
       if (fileData) {
-        onFile({ content: fileData.content, filename: fileData.filename, title: fileData.title });
+        onFile({
+          content: fileData.content,
+          filename: fileData.filename,
+          title: fileData.title,
+          idempotencyKey: crypto.randomUUID(),
+        });
 
         const deleteTransaction = db.transaction("files", "readwrite");
         deleteTransaction.objectStore("files").delete("pending");

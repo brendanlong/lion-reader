@@ -147,6 +147,15 @@ export const savedArticleUrlSchema = z.url("Invalid URL");
 /** Collections to put a newly saved article in; checked before saving. */
 export const saveCollectionIdsSchema = z.array(uuidSchema).max(MAX_SAVE_COLLECTIONS).optional();
 
+/**
+ * Makes an upload idempotent: retrying with the same key returns the article
+ * the first attempt saved instead of saving another.
+ */
+export const uploadIdempotencyKeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,128}$/, "Invalid idempotency key")
+  .optional();
+
 // ============================================================================
 // URL Schemas
 // ============================================================================

@@ -130,6 +130,8 @@ export interface UploadArticleParams extends CollectionsParam {
    * caller-supplied: otherwise they resolve against a host that never resolves.
    */
   keepRelativeUrls?: boolean;
+  /** As {@link UploadFileParams.idempotencyKey}, but the existing article isn't re-rendered. */
+  idempotencyKey?: string;
 }
 
 /**
@@ -978,6 +980,10 @@ export async function uploadArticle(
   assertUploadSize("Uploaded article", Buffer.byteLength(params.content, "utf8"));
 
   return withCollections(db, userId, params.collectionIds, async () => {
+    const guid = params.idempotencyKey ? uploadGuid(params.idempotencyKey) : undefined;
+    const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
+    if (existing) return existing.article;
+
     // Convert markdown to HTML (with frontmatter title/summary/author); Readability
     // is skipped downstream because preCleanedContent is set.
     const markdownResult = await processMarkdown(params.content);
@@ -996,6 +1002,6 @@ export async function uploadArticle(
       },
       { keepRelativeUrls: params.keepRelativeUrls }
     );
-    return (await insertUploadedArticle(db, userId, fields)).article;
+    return (await insertUploadedArticle(db, userId, fields, guid)).article;
   });
 }
