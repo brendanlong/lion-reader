@@ -22,7 +22,7 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import {
   ContentTooLargeError,
-  fetchHtmlPage,
+  fetchArticle,
   HttpFetchError,
   type FetchHtmlPageResult,
 } from "@/server/http/fetch";
@@ -85,7 +85,10 @@ interface PluginArticle {
   baseUrl: string;
 }
 
-export type AcquiredArticle = PluginArticle | ({ kind: "page" } & FetchHtmlPageResult);
+export type AcquiredArticle =
+  | PluginArticle
+  | ({ kind: "page" } & FetchHtmlPageResult)
+  | { kind: "pdf"; pdf: Buffer; finalUrl: string };
 
 export interface AcquireArticleOptions {
   /** The saving user, for plugins that can fetch with their credentials. */
@@ -108,7 +111,7 @@ export class UserFetchError extends Error {
  * Fetches an article for a save or a full-content fetch: the hostname-matched
  * plugin, then (given `asUser`) its `fetchContentAsUser`, then the generic page
  * fetch, whose result is offered to {@link claimFetchedPage} unless it is
- * Markdown. Content is capped at `maxSavedArticleSizeBytes` on every path.
+ * Markdown or a PDF. Content is capped at `maxSavedArticleSizeBytes` on every path.
  *
  * A plugin failure falls back to the generic fetch, except a rate limit (the
  * same site would rate limit that too) and a size-limit breach, which are
@@ -164,7 +167,15 @@ export async function acquireArticleContent(
     }
   }
 
-  const page = await fetchHtmlPage(url);
+  const fetched = await fetchArticle(url);
+  if (fetched.format === "pdf") {
+    return { kind: "pdf", pdf: fetched.pdf, finalUrl: fetched.finalUrl };
+  }
+  const page: FetchHtmlPageResult = {
+    content: fetched.content,
+    isMarkdown: fetched.isMarkdown,
+    finalUrl: fetched.finalUrl,
+  };
   if (plugin || page.isMarkdown) return { kind: "page", ...page };
 
   const claimed = await claimFetchedPage({ html: page.content, url: new URL(page.finalUrl) });

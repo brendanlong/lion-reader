@@ -14,6 +14,8 @@ import {
 } from "@/server/feed/content-cleaner";
 import type { CleanedContent } from "@/server/feed/content-cleaner";
 import { processMarkdown } from "@/server/markdown";
+import { convertPdfToArticle } from "@/server/file/pdf-to-markdown";
+import { titleFromFilename } from "@/server/file/process-upload";
 import type { AcquiredArticle } from "@/server/plugins";
 
 /**
@@ -37,8 +39,8 @@ export interface ArticleContentBundle {
   } | null;
   /**
    * Set when `html` is already clean, so Readability is skipped: Markdown
-   * (frontmatter title/summary/author) or a `.docx` (mammoth body +
-   * `docProps/core.xml` metadata). Null when Readability should run.
+   * (frontmatter title/summary/author), a `.docx` (mammoth body +
+   * `docProps/core.xml` metadata) or a PDF. Null when Readability should run.
    */
   preCleanedContent: {
     title: string | null;
@@ -76,6 +78,20 @@ export async function articleContentFromAcquired(
     };
   }
 
+  if (acquired.kind === "pdf") {
+    const pdf = await convertPdfToArticle(acquired.pdf);
+    return {
+      html: pdf.html,
+      contentUrl: acquired.finalUrl,
+      pluginContent: null,
+      preCleanedContent: {
+        title: pdf.title ?? titleFromUrl(acquired.finalUrl),
+        summary: pdf.summary,
+        author: pdf.author,
+      },
+    };
+  }
+
   // We request HTML, not Markdown (#1280), so this is a fallback for a server
   // that returned Markdown anyway (e.g. a raw `.md` URL). Its body is the
   // content itself, and once flattened to Markdown the DOM structure
@@ -96,6 +112,18 @@ export async function articleContentFromAcquired(
     pluginContent: null,
     preCleanedContent: null,
   };
+}
+
+/** `/papers/My_Report.pdf` → "My Report", the way an upload's filename becomes a title. */
+function titleFromUrl(url: string): string | null {
+  const segment = new URL(url).pathname.split("/").pop() ?? "";
+  let filename = segment;
+  try {
+    filename = decodeURIComponent(segment);
+  } catch {
+    // A malformed escape: use the segment as written.
+  }
+  return titleFromFilename(filename) || null;
 }
 
 /** The stored HTML pair, plus Readability's metadata when it ran. */

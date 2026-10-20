@@ -1,7 +1,7 @@
 /**
- * `.pdf` → Markdown through the `lion-reader-pdf` helper (`native/pdf`). Go
- * through {@link convertPdfToMarkdown}: it is where the resource bounds are
- * enforced.
+ * `.pdf` → article HTML through the `lion-reader-pdf` helper (`native/pdf`), for
+ * uploads and for URLs that serve a PDF. Go through {@link convertPdfToArticle}:
+ * it is where the resource bounds are enforced.
  *
  * The helper is a child process, not an N-API module, so the kernel can bound
  * what a hostile PDF costs (`native/pdf/src/main.rs` has the numbers): it caps
@@ -17,6 +17,8 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
+import { stripTitleHeader } from "@/server/html/strip-title-header";
+import { markdownToHtmlAsync } from "@/server/markdown";
 import {
   documentConversionSlot,
   QueueTimeoutError,
@@ -58,7 +60,7 @@ const helperOutputSchema = z.union([
   }),
 ]);
 
-export interface ConvertedPdf {
+interface ConvertedPdf {
   markdown: string;
   /** Document-info title, else the largest text atop the first page. */
   title: string | null;
@@ -168,13 +170,13 @@ function parseHelperOutput(options: PdfConverterOptions, exit: HelperExit): Conv
   }
   switch (output.error) {
     case "unreadable":
-      throw new Error("The file is not a readable PDF");
+      throw errors.validation("The file is not a readable PDF");
     case "encrypted":
-      throw new Error("The PDF is password-protected");
+      throw errors.validation("The PDF is password-protected");
     case "no_text":
-      throw new Error("The PDF has no text to extract (scanned PDFs aren't supported)");
+      throw errors.validation("The PDF has no text to extract (scanned PDFs aren't supported)");
     case "too_many_pages":
-      throw new Error(`The PDF has more than ${options.maxPages} pages`);
+      throw errors.validation(`The PDF has more than ${options.maxPages} pages`);
     case "output_too_large":
       throw errors.contentTooLarge(
         "Converted document",
@@ -184,7 +186,7 @@ function parseHelperOutput(options: PdfConverterOptions, exit: HelperExit): Conv
 }
 
 /**
- * The app uses the converter behind {@link convertPdfToMarkdown}; separate
+ * The app uses the converter behind {@link convertPdfToArticle}; separate
  * instances exist so tests can shrink the limits.
  */
 export function createPdfConverter(options: PdfConverterOptions): {
@@ -226,7 +228,7 @@ export function createPdfConverter(options: PdfConverterOptions): {
     if (exit.code === RUST_PANIC_EXIT_CODE) {
       // pdf_oxide gave up on a malformed file rather than returning an error.
       logger.warn("PDF converter panicked", { bytes: buffer.length, stderr: exit.stderr });
-      throw new Error("The file is not a readable PDF");
+      throw errors.validation("The file is not a readable PDF");
     }
     if (exit.code !== 0) {
       throw new HelperFailedError(
@@ -262,17 +264,31 @@ const defaultConverter = createPdfConverter({
   maxPages: PDF_MAX_PAGES,
 });
 
+/** A PDF as article HTML, with the metadata the helper found. */
+export interface PdfArticle {
+  html: string;
+  /** Document-info title, else the largest text atop the first page. */
+  title: string | null;
+  author: string | null;
+  summary: string | null;
+}
+
 /**
- * Converts a PDF's text to Markdown, with its document-info metadata.
+ * Converts a PDF to article HTML. The Markdown goes through the usual renderer
+ * but not `processMarkdown`: PDF text is never frontmatter, and the title comes
+ * from the document, so the first heading is only dropped when it repeats that
+ * title.
  *
  * @throws `CONTENT_TOO_LARGE` if the result is too large to save, or the
  *   conversion exhausts its memory, CPU, output or deadline
  * @throws `SERVER_BUSY` if too many conversions are already waiting, or the
  *   deadline passes before this one gets its turn
  * @throws `INTERNAL_ERROR` if the helper can't run or misbehaves
- * @throws a plain `Error` (shown to the user) for a file that isn't a usable
- *   PDF: unreadable, password-protected, scanned, or over the page limit
+ * @throws `VALIDATION_ERROR` for a file that isn't a usable PDF: unreadable,
+ *   password-protected, scanned, or over the page limit
  */
-export function convertPdfToMarkdown(buffer: Buffer): Promise<ConvertedPdf> {
-  return defaultConverter.convert(buffer);
+export async function convertPdfToArticle(buffer: Buffer): Promise<PdfArticle> {
+  const { markdown, title, author, summary } = await defaultConverter.convert(buffer);
+  const html = await markdownToHtmlAsync(markdown);
+  return { html: title ? stripTitleHeader(html, title) : html, title, author, summary };
 }

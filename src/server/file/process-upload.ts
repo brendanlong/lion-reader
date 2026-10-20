@@ -10,8 +10,8 @@
  * - .docx files → mammoth conversion + `docProps/core.xml` metadata (Readability
  *   skipped downstream — mammoth output is already clean, chrome-free content, so
  *   running Readability only risks over-stripping; like a Markdown URL save)
- * - .pdf files → text and layout via `lion-reader-pdf`, rendered as Markdown,
- *   with document-info metadata (Readability skipped downstream, as for .docx)
+ * - .pdf files → `convertPdfToArticle`, with the PDF's metadata (Readability
+ *   skipped downstream, as for .docx)
  * - .html files → passthrough (Readability runs downstream)
  * - .md/.txt files → Markdown rendering (Readability skipped downstream, like a
  *   Markdown URL save)
@@ -19,11 +19,10 @@
 
 import { decodeBody } from "@/server/http/charset";
 import { logger } from "@/lib/logger";
-import { markdownToHtmlAsync, processMarkdown as convertMarkdown } from "@/server/markdown";
-import { stripTitleHeader } from "@/server/html/strip-title-header";
+import { processMarkdown as convertMarkdown } from "@/server/markdown";
 import { extractDocxCoreProperties } from "@/server/file/docx-core-props";
 import { convertDocxToHtml } from "@/server/file/docx-to-html";
-import { convertPdfToMarkdown } from "@/server/file/pdf-to-markdown";
+import { convertPdfToArticle } from "@/server/file/pdf-to-markdown";
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
   UPLOAD_FILE_TYPES,
@@ -127,20 +126,9 @@ async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedU
   };
 }
 
-/**
- * Converts a PDF via its extracted Markdown. Not through `processMarkdown`: PDF
- * text is never frontmatter, and the title comes from the document, so the
- * first heading is only dropped when it repeats that title.
- */
 async function convertPdf(buffer: Buffer, filename: string): Promise<ConvertedUpload> {
-  const pdf = await convertPdfToMarkdown(buffer);
-  const html = await markdownToHtmlAsync(pdf.markdown);
-  return {
-    html: pdf.title ? stripTitleHeader(html, pdf.title) : html,
-    preCleanedContent: { title: pdf.title, summary: pdf.summary, author: pdf.author },
-    fileType: "pdf",
-    filename,
-  };
+  const { html, title, summary, author } = await convertPdfToArticle(buffer);
+  return { html, preCleanedContent: { title, summary, author }, fileType: "pdf", filename };
 }
 
 /**

@@ -48,7 +48,7 @@ describe("PDF uploads", () => {
     ["has no text layer", buildPdf([Buffer.from("")]), /no text to extract/],
   ])("rejects a file that %s with a message for the user", async (_, file, message) => {
     const error = await convertUploadedFile(file, "file.pdf").catch((e: unknown) => e);
-    expect(error).not.toBeInstanceOf(TRPCError);
+    expect(getAppErrorCode(error)).toBe("VALIDATION_ERROR");
     expect((error as Error).message).toMatch(message);
   });
 
