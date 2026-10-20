@@ -599,6 +599,48 @@ fn namespaced_value(name: &str, value: &str) -> Option<String> {
     }
 }
 
+/// The value an attribute's first copy should end up with. lol_html keeps
+/// duplicate attributes, and a browser reads only the first copy, so later
+/// copies are never rewritten (rewriting one would overwrite the first copy,
+/// which `set_attribute` updates). A duplicate instead forces
+/// remove-all-then-set, so no raw copy survives for parsers that read the last.
+struct Rewrite {
+    name: String,
+    value: String,
+    /// Skips no-op writes: `set_attribute` makes lol_html re-serialize the
+    /// whole start tag, so an already-prefixed value (a re-sanitized summary)
+    /// or an empty id must not pay for one.
+    changed: bool,
+    duplicate: bool,
+}
+
+impl Rewrite {
+    fn new(name: String, original: String, rewritten: Option<String>) -> Self {
+        let (value, changed) = match rewritten {
+            Some(value) if value != original => (value, true),
+            _ => (original, false),
+        };
+        Rewrite {
+            name,
+            value,
+            changed,
+            duplicate: false,
+        }
+    }
+}
+
+/// Whether `name` is a later copy of an attribute already in `rewrites`, and if
+/// so, flags that entry as duplicated.
+fn mark_duplicate_rewrite(rewrites: &mut [Rewrite], name: &str) -> bool {
+    match rewrites.iter_mut().find(|r| r.name == name) {
+        Some(first) => {
+            first.duplicate = true;
+            true
+        }
+        None => false,
+    }
+}
+
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tag = el.tag_name();
     if !tag_allowed(&tag) {
@@ -621,9 +663,10 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     // pass: a separate `get_attribute` probe per interesting name, or even a
     // second walk of the attribute list, measurably slowed every element down —
     // including elements with no id at all. Only attributes that survive the
-    // allow-list are considered, so `to_remove` and `rewrites` stay disjoint and
-    // a rewrite can never resurrect an attribute the filter just dropped.
-    let mut rewrites: Vec<(String, String)> = Vec::new();
+    // allow-list are considered, and a rewrite whose name is also in `to_remove`
+    // (a duplicate copy failed a check) is skipped, so a rewrite can never
+    // resurrect an attribute the filter just dropped.
+    let mut rewrites: Vec<Rewrite> = Vec::new();
     // A browser reads only the first `class`, but `set_attribute` would update
     // only the first copy too, leaving a raw duplicate for API clients that
     // parse differently — so a duplicate forces remove-all-then-set.
@@ -646,13 +689,15 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         // Name test before `attr.value()`, which allocates. `align` is never an
         // idref, so this arm can settle it and skip the rest of the loop body.
         if name == "align" {
+            if mark_duplicate_rewrite(&mut rewrites, &name) {
+                continue;
+            }
             let value = attr.value();
             match canonical_align(&value) {
                 None => to_remove.push(name),
-                Some(canonical) if canonical != value => {
-                    rewrites.push((name, canonical.to_string()))
+                Some(canonical) => {
+                    rewrites.push(Rewrite::new(name, value, Some(canonical.to_string())))
                 }
-                Some(_) => {}
             }
             continue;
         }
@@ -678,23 +723,25 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         }
         // Name test before `attr.value()`, which allocates: most attributes
         // (`class`, `alt`, `width`, …) hold no id and must not pay for a copy.
-        if is_idref_attr(&name) {
+        if is_idref_attr(&name) && !mark_duplicate_rewrite(&mut rewrites, &name) {
             let value = attr.value();
-            if let Some(rewritten) = namespaced_value(&name, &value) {
-                // Skip no-op writes: `set_attribute` makes lol_html re-serialize
-                // the whole start tag, so an already-prefixed value (a
-                // re-sanitized summary) or an empty id must not pay for one.
-                if rewritten != value {
-                    rewrites.push((name, rewritten));
-                }
-            }
+            let rewritten = namespaced_value(&name, &value);
+            rewrites.push(Rewrite::new(name, value, rewritten));
+        }
+    }
+    for rewrite in rewrites {
+        if to_remove.contains(&rewrite.name) {
+            continue;
+        }
+        if rewrite.duplicate {
+            el.remove_attribute(&rewrite.name);
+            el.set_attribute(&rewrite.name, &rewrite.value)?;
+        } else if rewrite.changed {
+            el.set_attribute(&rewrite.name, &rewrite.value)?;
         }
     }
     for name in to_remove {
         el.remove_attribute(&name);
-    }
-    for (name, value) in rewrites {
-        el.set_attribute(&name, &value)?;
     }
     if let Some(value) = first_class {
         match filter_classes(&value) {
@@ -1036,6 +1083,37 @@ mod tests {
             sanitize("<a href=\"#intro\">go</a><h2 id=\"intro\">Intro</h2>"),
             "<a href=\"#uc-intro\">go</a><h2 id=\"uc-intro\">Intro</h2>"
         );
+    }
+
+    #[test]
+    fn duplicate_id_attributes_keep_only_the_namespaced_first_copy() {
+        // #2077: a browser reads the first copy, so it must become `uc-x` to
+        // match the rewritten `#x` link, and no raw copy may survive for
+        // parsers that read the last one.
+        assert_eq!(
+            sanitize("<a href=\"#x\">go</a><h2 id=\"x\" id=\"y\">t</h2>"),
+            "<a href=\"#uc-x\">go</a><h2 id=\"uc-x\">t</h2>"
+        );
+        // Also when the first copy needs no rewrite of its own.
+        assert_eq!(
+            sanitize("<h2 id=\"uc-x\" id=\"y\">t</h2>"),
+            "<h2 id=\"uc-x\">t</h2>"
+        );
+        assert_eq!(
+            sanitize("<table><tr><td align=\"Center\" align=\"left\">t</td></tr></table>"),
+            "<table><tr><td align=\"center\">t</td></tr></table>"
+        );
+    }
+
+    #[test]
+    fn duplicate_href_with_a_bad_copy_is_dropped_entirely() {
+        // A rewrite of the safe copy must not resurrect the removed attribute.
+        for html in [
+            "<a href=\"javascript:alert(1)\" href=\"#x\">t</a>",
+            "<a href=\"#x\" href=\"javascript:alert(1)\">t</a>",
+        ] {
+            assert_eq!(sanitize(html), "<a>t</a>", "{html}");
+        }
     }
 
     #[test]
