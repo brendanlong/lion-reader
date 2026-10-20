@@ -1068,7 +1068,7 @@ WHERE user_id = ${q(U0)} AND entry_id IN (${ids.map(q).join(", ")}) AND ${visibl
           },
           {
             label: "update",
-            sql: `UPDATE user_entries SET score = v.score, updated_at = now()
+            sql: `UPDATE user_entries SET score = v.score, updated_at = ${q(new Date().toISOString())}
 FROM (VALUES ${values}) AS v(entry_id, score)
 WHERE user_entries.user_id = ${q(U0)} AND user_entries.entry_id = v.entry_id AND ${visible}
   AND user_entries.score IS DISTINCT FROM v.score
