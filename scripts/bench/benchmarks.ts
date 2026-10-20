@@ -168,13 +168,11 @@ function listEntriesSql(o: ListOptions): string {
       : "ve.published_or_fetched_at";
   const idColumn = o.single && timelineSort ? "se.entry_id" : "ve.id";
   const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
-  if (o.unreadOnly ?? true) where.push("ve.read = false");
-  where.push("ve.is_spam = false");
+  if (o.unreadOnly ?? true) where.push("NOT ve.read");
+  where.push("NOT ve.is_spam");
   if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
   if (o.cursor) {
-    where.push(
-      `(${sortColumn} < ${ts(o.cursor.ts)} OR (${sortColumn} = ${ts(o.cursor.ts)} AND ${idColumn} < ${q(o.cursor.id)}))`
-    );
+    where.push(`(${sortColumn}, ${idColumn}) < (${ts(o.cursor.ts)}, ${q(o.cursor.id)}::uuid)`);
   }
   const join = o.single
     ? `\nINNER JOIN subscription_entries se ON se.subscription_id = ${q(o.single)}

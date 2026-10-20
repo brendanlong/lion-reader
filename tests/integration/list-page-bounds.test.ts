@@ -7,7 +7,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { db, pool } from "../../src/server/db";
 import * as schema from "../../src/server/db/schema";
@@ -57,6 +57,7 @@ const KNOWN_UNBOUNDED: Partial<Record<`${ListName}/${Filter}`, string>> = {
 };
 
 let userId: string;
+let otherUserId: string;
 const scopes: Record<ListName, Partial<ListEntriesParams>> = {
   all: {},
   starred: { starredOnly: true },
@@ -70,6 +71,7 @@ const createdFeeds: string[] = [];
 interface PlanNode {
   "Node Type": string;
   "Relation Name"?: string;
+  "Index Name"?: string;
   "Actual Rows": number;
   "Actual Loops": number;
   "Rows Removed by Filter"?: number;
@@ -87,6 +89,20 @@ function bigTableRowsRead(node: PlanNode): number {
         node["Actual Loops"]
       : 0;
   return own + (node.Plans ?? []).reduce((sum, child) => sum + bigTableRowsRead(child), 0);
+}
+
+/** One line per plan node, to show where a page that read too much spent it. */
+function describePlan(node: PlanNode, depth = 0): string {
+  const line = [
+    "  ".repeat(depth) + node["Node Type"],
+    node["Index Name"] ?? node["Relation Name"],
+    `rows=${node["Actual Rows"]}`,
+    node["Rows Removed by Filter"] ? `removed=${node["Rows Removed by Filter"]}` : undefined,
+    `loops=${node["Actual Loops"]}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [line, ...(node.Plans ?? []).map((child) => describePlan(child, depth + 1))].join("\n");
 }
 
 /** Runs `listEntries` and returns its page with the plan of its list query. */
@@ -194,15 +210,27 @@ beforeAll(async () => {
     read: i % 2 === 0,
   }));
 
+  // Another user's long, read history, so the tables' statistics are mostly
+  // read, as production's are: the planner estimates filters per table, not
+  // per list.
+  otherUserId = await createTestUser({ emailPrefix: "list-bounds-other" });
+  const otherFeed = await feed();
+  await createTestSubscription(otherUserId, otherFeed);
+  const otherIds = await createTestEntryBatch(otherFeed, 4 * NOISE, { start: START, stepMs: 1000 });
+  await createTestUserEntries(
+    otherIds.map((entryId) => ({ userId: otherUserId, entryId, read: true }))
+  );
+
   scopes.subscription = { subscriptionId: bigSubscription };
   scopes.tag = { tagId: sparseTag };
-  await db.execute(sql`ANALYZE user_entries`);
-  await db.execute(sql`ANALYZE subscription_entries`);
-  await db.execute(sql`ANALYZE entries`);
+  // As autovacuum leaves a table: no dead index entries, a current visibility map.
+  await db.execute(sql`VACUUM ANALYZE user_entries`);
+  await db.execute(sql`VACUUM ANALYZE subscription_entries`);
+  await db.execute(sql`VACUUM ANALYZE entries`);
 }, 120_000);
 
 afterAll(async () => {
-  await db.delete(users).where(eq(users.id, userId));
+  await db.delete(users).where(inArray(users.id, [userId, otherUserId]));
   for (const feedId of createdFeeds) {
     await db.delete(schema.feeds).where(eq(schema.feeds.id, feedId));
   }
@@ -234,12 +262,16 @@ describe("entry list pages read a bounded number of rows", () => {
       };
       const first = await explainPage(params);
       expect(first.page.items.length).toBeGreaterThan(0);
-      expect(bigTableRowsRead(first.plan)).toBeLessThanOrEqual(ROW_BUDGET);
+      expect(bigTableRowsRead(first.plan), describePlan(first.plan)).toBeLessThanOrEqual(
+        ROW_BUDGET
+      );
 
       const cursor = await deepCursor(params);
       if (cursor) {
         const deep = await explainPage({ ...params, cursor });
-        expect(bigTableRowsRead(deep.plan)).toBeLessThanOrEqual(ROW_BUDGET);
+        expect(bigTableRowsRead(deep.plan), describePlan(deep.plan)).toBeLessThanOrEqual(
+          ROW_BUDGET
+        );
       }
     });
   }
