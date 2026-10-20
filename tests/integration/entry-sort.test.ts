@@ -185,6 +185,7 @@ describe("sortable", () => {
     await addEntriesToCollection(db, userId, collection, [ids[3], unscored]);
     try {
       expect((await list({})).sortable).toEqual({ score: true, position: false });
+      expect((await list({ showSpam: true })).sortable).toEqual({ score: true, position: false });
       expect((await list({ subscriptionId: otherSubscription })).sortable).toEqual({
         score: false,
         position: false,

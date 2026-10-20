@@ -357,9 +357,24 @@ export async function listEntries(
         .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
         .$dynamic()
     ),
-    params.cursor || params.offset ? undefined : page.sortable(),
+    params.cursor || params.offset ? undefined : listSortable(db, params, page),
   ]);
   return { items: items.map(toEntryListItem), nextCursor, ...(sortable && { sortable }) };
+}
+
+/**
+ * Which ranked sorts the list has values for, ignoring spam: the score and
+ * position indexes leave it out, as the default lists do, so a showSpam
+ * list's lookup would otherwise walk every row. A scored spam article alone
+ * doesn't offer the sort.
+ */
+async function listSortable(
+  db: typeof dbType,
+  params: ListEntriesParams,
+  page: NonNullable<Awaited<ReturnType<typeof planEntryPage>>>
+): Promise<EntrySortable | undefined> {
+  if (!params.showSpam) return page.sortable();
+  return (await planEntryPage(db, { ...params, showSpam: false }))?.sortable();
 }
 
 /** An entry as Google Reader's item lists key it (`listGreaderItemRefs`). */
