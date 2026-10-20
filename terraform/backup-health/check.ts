@@ -10,9 +10,17 @@
  *
  * Every run pings healthchecks.io: success when a base backup completed within
  * MAX_BACKUP_AGE_MS, /fail otherwise. Anything it can't establish (an
- * unreadable catalog, an unparseable completion time) is a failure, because
- * assuming "probably fine" is the failure mode this exists to catch. A run that
- * never pings (Worker broken, cron gone) is caught by the check's own timeout.
+ * unreadable or malformed catalog) is a failure, because assuming "probably
+ * fine" is the failure mode this exists to catch. A run that never pings
+ * (Worker broken, cron gone) is caught by the check's own timeout.
+ *
+ * The key can only list the bucket (backup-health/tigris-policy.json): reading
+ * `backup.info` would need a policy that could also download the backups, and
+ * Tigris doesn't match wildcards mid-path. So success is judged from the
+ * listing: barman uploads `data.tar` as a multipart upload, which only appears
+ * once complete, and a failed backup leaves just its `backup.info`. A backup
+ * that fails after uploading its data looks successful; that's the cost of a
+ * key that can't read the database.
  */
 
 import { AwsClient } from "aws4fetch";
@@ -33,25 +41,27 @@ export const MAX_BACKUP_AGE_MS = 36 * 60 * 60 * 1000;
 
 /**
  * Requests a run may make on the free Workers plan; one more is rejected. The
- * scan reads backups until it would leave none for the ping. Running out means
- * that many failures in a row, which is worth an alert in itself.
+ * listing may use all but the one the ping needs.
  */
 export const SUBREQUEST_LIMIT = 50;
 
 const USER_AGENT = "LionReader-BackupHealth/1.0 (+https://github.com/brendanlong/lion-reader)";
 
-type BackupStatus = "DONE" | "STARTED" | "FAILED" | "UNKNOWN";
+/** barman's base archive: `data.tar`, plus a suffix when compressed. */
+const DATA_ARCHIVE = /^data\.tar(\.[a-z0-9]+)?$/;
 
-export interface BackupInfo {
-  status: BackupStatus;
-  /** Null when absent or unparseable. */
-  endTime: Date | null;
+export interface CatalogObject {
+  /** Key relative to `<server>/base/`, e.g. `20261020T115543/data.tar`. */
+  path: string;
+  lastModified: Date;
 }
 
-export interface ScannedBackup {
+export interface Backup {
+  /** barman's backup ID: its start time, `%Y%m%dT%H%M%S`. */
   id: string;
-  /** Null when the backup directory has no backup.info. */
-  info: BackupInfo | null;
+  hasData: boolean;
+  /** When the backup's newest file was written; barman writes `backup.info` last. */
+  finishedAt: Date;
 }
 
 export interface Assessment {
@@ -59,92 +69,86 @@ export interface Assessment {
   report: string;
 }
 
-/**
- * Parses barman's `backup.info`: `key=value` lines, with `end_time` written by
- * Python's `str(datetime)`, e.g. `2026-08-01 01:43:04.123456+00:00`.
- */
-export function parseBackupInfo(body: string): BackupInfo {
-  const rawStatus = /^status=(\S+)\s*$/m.exec(body)?.[1];
-  const status: BackupStatus =
-    rawStatus === "DONE" || rawStatus === "STARTED" || rawStatus === "FAILED"
-      ? rawStatus
-      : "UNKNOWN";
-
-  const rawEnd = /^end_time=(.+?)\s*$/m.exec(body)?.[1];
-  let endTime: Date | null = null;
-  if (rawEnd && rawEnd !== "None") {
-    const parsed = new Date(rawEnd.replace(" ", "T").replace(/(\.\d{3})\d+/, "$1"));
-    if (!Number.isNaN(parsed.getTime())) endTime = parsed;
-  }
-  return { status, endTime };
-}
-
 // parseTagValue: false keeps continuation tokens strings; an all-digit token
 // coerced to a number loses precision.
 const xmlParser = new XMLParser({ ignoreAttributes: true, parseTagValue: false });
 
 interface ListBucketResult {
-  CommonPrefixes?: { Prefix?: string } | { Prefix?: string }[];
+  Contents?: ListedObject | ListedObject[];
   IsTruncated?: string;
   NextContinuationToken?: string;
 }
 
+interface ListedObject {
+  Key?: string;
+  LastModified?: string;
+}
+
 /**
- * Parses one `ListObjectsV2` page listed with `delimiter=/` into backup IDs.
- * Throws on a malformed page: S3 can fail mid-response after a 200 status.
+ * Parses one `ListObjectsV2` page. Throws on a malformed page: S3 can fail
+ * mid-response after a 200 status.
  */
 export function parseBackupListPage(
   xml: string,
   prefix: string
-): { ids: string[]; nextContinuationToken: string | null } {
+): { objects: CatalogObject[]; nextContinuationToken: string | null } {
   if (XMLValidator.validate(xml) !== true) throw new Error("Backup listing is not valid XML");
   const result = (xmlParser.parse(xml) as { ListBucketResult?: ListBucketResult }).ListBucketResult;
-  const prefixes = result?.CommonPrefixes ?? [];
-  const ids = (Array.isArray(prefixes) ? prefixes : [prefixes])
-    .map((entry) => entry.Prefix)
-    .filter((p): p is string => typeof p === "string" && p.startsWith(prefix))
-    .map((p) => p.slice(prefix.length).replace(/\/$/, ""))
-    .filter((id) => id !== "");
   if (!result) throw new Error("Backup listing has no ListBucketResult");
-  if (result.IsTruncated !== "true") return { ids, nextContinuationToken: null };
+
+  const contents = result.Contents ?? [];
+  const objects = (Array.isArray(contents) ? contents : [contents]).map((entry) => {
+    const lastModified = new Date(entry.LastModified ?? "");
+    if (!entry.Key?.startsWith(prefix) || Number.isNaN(lastModified.getTime())) {
+      throw new Error(`Backup listing has a malformed entry: ${JSON.stringify(entry)}`);
+    }
+    return { path: entry.Key.slice(prefix.length), lastModified };
+  });
+
+  if (result.IsTruncated !== "true") return { objects, nextContinuationToken: null };
   if (!result.NextContinuationToken) {
     throw new Error("Backup listing is truncated but has no continuation token");
   }
-  return { ids, nextContinuationToken: result.NextContinuationToken };
+  return { objects, nextContinuationToken: result.NextContinuationToken };
 }
 
-/**
- * Judges the scanned backups, newest first, which stop at the first DONE one.
- * `catalogSize` is how many backups exist in total, scanned or not.
- */
-export function assessBackups(
-  scanned: ScannedBackup[],
-  catalogSize: number,
-  now: Date
-): Assessment {
-  const success = scanned.find((b) => b.info?.status === "DONE");
-  const failedCount = scanned.filter((b) => b !== success && b.info?.status === "FAILED").length;
+/** Groups listed files into backups, newest first. */
+export function groupBackups(objects: CatalogObject[]): Backup[] {
+  const backups = new Map<string, Backup>();
+  for (const { path, lastModified } of objects) {
+    const slash = path.indexOf("/");
+    if (slash <= 0) continue;
+    const id = path.slice(0, slash);
+    const backup = backups.get(id) ?? { id, hasData: false, finishedAt: lastModified };
+    if (DATA_ARCHIVE.test(path.slice(slash + 1))) backup.hasData = true;
+    if (lastModified > backup.finishedAt) backup.finishedAt = lastModified;
+    backups.set(id, backup);
+  }
+  // IDs are start timestamps, so they sort chronologically.
+  return [...backups.values()].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}
+
+export function assessBackups(backups: Backup[], now: Date): Assessment {
+  const successIndex = backups.findIndex((b) => b.hasData);
+  const success = backups[successIndex];
 
   const lines: string[] = [];
   let healthy = false;
-  if (catalogSize === 0) {
+  if (backups.length === 0) {
     lines.push("No base backups in the catalog.");
   } else if (!success) {
-    lines.push(`No successful base backup among the newest ${scanned.length}.`);
-  } else if (!success.info?.endTime) {
-    lines.push(`Newest successful base backup ${success.id} has no readable end_time.`);
+    lines.push("No base backup in the catalog has a data archive.");
   } else {
-    const ageMs = now.getTime() - success.info.endTime.getTime();
-    const ageHours = Math.floor(ageMs / 3_600_000);
+    const ageMs = now.getTime() - success.finishedAt.getTime();
     healthy = ageMs <= MAX_BACKUP_AGE_MS;
     lines.push(
-      `Newest successful base backup is ${ageHours}h old (threshold: ${MAX_BACKUP_AGE_MS / 3_600_000}h)`,
-      `Newest successful backup: ${success.id} (${success.info.endTime.toISOString()})`
+      `Newest successful base backup is ${Math.floor(ageMs / 3_600_000)}h old (threshold: ${MAX_BACKUP_AGE_MS / 3_600_000}h)`,
+      `Newest successful backup: ${success.id} (${success.finishedAt.toISOString()})`
     );
   }
   lines.push(
-    `Failed backups newer than that: ${failedCount}`,
-    `Backups in catalog: ${catalogSize}`
+    `Failed backups newer than that: ${success ? successIndex : backups.length}`,
+    `Backups in catalog: ${backups.length}`
   );
   if (!healthy) {
     lines.push("", "Investigate: fly ssh console -a lion-reader-pg -C 'flexctl backup list'");
@@ -152,7 +156,7 @@ export function assessBackups(
   return { healthy, report: [`Status: ${healthy ? "healthy" : "unhealthy"}`, ...lines].join("\n") };
 }
 
-async function scanBackups(env: Env): Promise<{ scanned: ScannedBackup[]; catalogSize: number }> {
+async function listCatalog(env: Env): Promise<CatalogObject[]> {
   const client = new AwsClient({
     accessKeyId: env.BACKUP_ACCESS_KEY_ID,
     secretAccessKey: env.BACKUP_SECRET_ACCESS_KEY,
@@ -162,52 +166,32 @@ async function scanBackups(env: Env): Promise<{ scanned: ScannedBackup[]; catalo
     // reports and the next hourly one tries again.
     retries: 0,
   });
-  const bucketUrl = `${env.BACKUP_BUCKET_ENDPOINT.replace(/\/$/, "")}/${env.BACKUP_BUCKET}`;
   const prefix = `${env.BACKUP_SERVER_NAME}/base/`;
-  const headers = { "User-Agent": USER_AGENT };
   // The heartbeat ping needs the last subrequest.
   let requestsLeft = SUBREQUEST_LIMIT - 1;
 
-  // delimiter=/ returns one entry per backup directory instead of every
-  // (multi-GB) data object inside it.
-  const ids: string[] = [];
+  const objects: CatalogObject[] = [];
   let continuationToken: string | null = null;
   do {
     if (requestsLeft === 0) throw new Error("Backup listing needs more pages than a run can fetch");
-    const url = new URL(bucketUrl);
+    const url = new URL(`${env.BACKUP_BUCKET_ENDPOINT.replace(/\/$/, "")}/${env.BACKUP_BUCKET}`);
     url.searchParams.set("list-type", "2");
     url.searchParams.set("prefix", prefix);
-    url.searchParams.set("delimiter", "/");
     if (continuationToken) url.searchParams.set("continuation-token", continuationToken);
     requestsLeft--;
-    const response = await client.fetch(url.toString(), { headers });
+    const response = await client.fetch(url.toString(), { headers: { "User-Agent": USER_AGENT } });
     if (!response.ok) throw new Error(`Listing backups failed: HTTP ${response.status}`);
     const page = parseBackupListPage(await response.text(), prefix);
-    ids.push(...page.ids);
+    objects.push(...page.objects);
     continuationToken = page.nextContinuationToken;
   } while (continuationToken);
-
-  // Backup IDs are start timestamps (%Y%m%dT%H%M%S), so they sort chronologically.
-  ids.sort().reverse();
-
-  const scanned: ScannedBackup[] = [];
-  for (const id of ids.slice(0, requestsLeft)) {
-    const response = await client.fetch(`${bucketUrl}/${prefix}${id}/backup.info`, { headers });
-    if (response.status !== 404 && !response.ok) {
-      throw new Error(`Reading backup ${id} failed: HTTP ${response.status}`);
-    }
-    const info = response.ok ? parseBackupInfo(await response.text()) : null;
-    scanned.push({ id, info });
-    if (info?.status === "DONE") break;
-  }
-  return { scanned, catalogSize: ids.length };
+  return objects;
 }
 
 export async function checkAndPing(env: Env): Promise<void> {
   let assessment: Assessment;
   try {
-    const { scanned, catalogSize } = await scanBackups(env);
-    assessment = assessBackups(scanned, catalogSize, new Date());
+    assessment = assessBackups(groupBackups(await listCatalog(env)), new Date());
   } catch (error) {
     assessment = {
       healthy: false,

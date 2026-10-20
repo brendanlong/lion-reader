@@ -6,12 +6,6 @@
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
       "Resource": ["arn:aws:s3:::lion-reader-pg-postgres"]
-    },
-    {
-      "Sid": "ReadBackupInfo",
-      "Effect": "Allow",
-      "Action": ["s3:GetObject"],
-      "Resource": ["arn:aws:s3:::lion-reader-pg-postgres/lion-reader-pg/base/*/backup.info"]
     }
   ]
 }
