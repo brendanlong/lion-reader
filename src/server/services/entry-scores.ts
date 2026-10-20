@@ -62,7 +62,7 @@ export async function setEntryScores(
     );
   const updated = await db.execute<{ entry_id: string; score: number | null }>(sql`
     UPDATE ${userEntries}
-    SET score = v.score, updated_at = now()
+    SET score = v.score, updated_at = ${new Date()}
     FROM (VALUES ${sql.join(values, sql`, `)}) AS v(entry_id, score)
     WHERE ${userEntries.userId} = ${userId}::uuid
       AND ${userEntries.entryId} = v.entry_id
