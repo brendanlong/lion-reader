@@ -632,8 +632,6 @@ CREATE TABLE public.oauth_access_tokens (
     token_hash text NOT NULL,
     client_id text NOT NULL,
     user_id uuid NOT NULL,
-    scopes text[],
-    resource text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
@@ -690,8 +688,7 @@ CREATE TABLE public.oauth_consent_grants (
     client_id text NOT NULL,
     scopes text[] NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    revoked_at timestamp with time zone
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.oauth_refresh_tokens (
@@ -699,13 +696,10 @@ CREATE TABLE public.oauth_refresh_tokens (
     token_hash text NOT NULL,
     client_id text NOT NULL,
     user_id uuid NOT NULL,
-    scopes text[],
     access_token_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
-    replaced_by_id uuid,
-    resource text,
     grant_id uuid NOT NULL
 );
 
@@ -1292,9 +1286,6 @@ ALTER TABLE ONLY public.oauth_refresh_tokens
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.oauth_token_grants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.oauth_refresh_tokens
-    ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
