@@ -114,8 +114,7 @@ function EmailUnsubscribeDialog({
             ) : (
               "the sender"
             )}
-            , rejecting all future emails from it. Don&apos;t block an address you get login codes
-            from.
+            .
           </span>
         </label>
       }
