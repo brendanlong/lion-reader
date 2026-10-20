@@ -103,6 +103,11 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
     SELECT r.list_id, r.user_id, r.entry_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.is_spam
     FROM (${reached}) r
     JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM tag_entries te WHERE te.list_id = r.list_id AND te.entry_id = r.entry_id
+    )
+    -- Held while copied, or a read committing meanwhile misses the new row.
+    FOR NO KEY UPDATE OF ue
     ON CONFLICT (list_id, entry_id) DO NOTHING
   `);
   const tagEntriesStale = await db.execute(sql`
