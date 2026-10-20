@@ -3,40 +3,32 @@
  * and the Settings → Connected Apps listing and revocation.
  */
 
-import { eq, and, isNull, desc, max } from "drizzle-orm";
+import { eq, and, desc, max } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
-  oauthAuthorizationCodes,
   oauthAccessTokens,
-  oauthRefreshTokens,
   oauthConsentGrants,
+  oauthTokenGrants,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
+import { deleteTokenGrants, lockUsersAgainstPreviousReleaseRotation } from "./service";
 import { logger } from "@/lib/logger";
 
 /**
  * Checks if user has already consented to the client with required scopes.
- * An empty `scopes` asks only whether an active grant exists.
  */
 export async function hasConsent(
   userId: string,
   clientId: string,
-  scopes: string[],
-  executor: DbOrTx = db
+  scopes: string[]
 ): Promise<boolean> {
-  const result = await executor
+  const result = await db
     .select({ scopes: oauthConsentGrants.scopes })
     .from(oauthConsentGrants)
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt)
-      )
-    )
+    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
     .limit(1);
 
   if (result.length === 0) {
@@ -49,14 +41,15 @@ export async function hasConsent(
 }
 
 /**
- * Records user consent for a client.
+ * Records user consent for a client and returns the consent grant's id.
+ * Re-consenting to a live grant keeps it, and the token grants under it.
  */
 export async function recordConsent(
   userId: string,
   clientId: string,
   scopes: string[]
-): Promise<void> {
-  await db
+): Promise<string> {
+  const [grant] = await db
     .insert(oauthConsentGrants)
     .values({
       id: generateUuidv7(),
@@ -66,12 +59,10 @@ export async function recordConsent(
     })
     .onConflictDoUpdate({
       target: [oauthConsentGrants.userId, oauthConsentGrants.clientId],
-      set: {
-        scopes,
-        updatedAt: new Date(),
-        revokedAt: null, // Clear any previous revocation
-      },
-    });
+      set: { scopes, updatedAt: new Date() },
+    })
+    .returning({ id: oauthConsentGrants.id });
+  return grant.id;
 }
 
 /**
@@ -112,7 +103,7 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
     })
     .from(oauthConsentGrants)
     .leftJoin(oauthClients, eq(oauthClients.clientId, oauthConsentGrants.clientId))
-    .where(and(eq(oauthConsentGrants.userId, userId), isNull(oauthConsentGrants.revokedAt)))
+    .where(eq(oauthConsentGrants.userId, userId))
     .orderBy(desc(oauthConsentGrants.updatedAt));
 
   const lastUsed = await db
@@ -142,87 +133,42 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
 }
 
 /**
- * Revokes the user's consent for a client and kills everything outstanding it
- * could still trade for access.
- *
- * Every half matters: dropping only the consent grant would leave live access
- * and refresh tokens (and the refresh chain renewing itself indefinitely),
- * dropping only the tokens would let the client walk back through
- * /oauth/authorize silently since consent is what suppresses the prompt, and
- * leaving an unredeemed authorization code would buy it a fresh hour-long
- * access token plus a 30-day refresh chain minutes after the user said no.
- *
- * The consent grant is revoked **first**, so the two token-redemption paths
- * that re-check it (`rotateRefreshToken({ requireUserConsent })` and the
- * authorization-code exchange) fail closed for anything racing this sweep.
+ * Revokes the user's consent for a client: deleting the consent grant deletes
+ * every token grant under it, and with them every token. The client can't walk
+ * back in silently either, since consent is what suppresses the prompt, and an
+ * unredeemed authorization code is worthless without it
+ * (`exchangeAuthorizationCode`).
  *
  * Returns false if the user has no active grant for the client.
  */
 export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
-  const now = new Date();
+  const deleted = await db.transaction(async (tx) => {
+    await lockUsersAgainstPreviousReleaseRotation(tx, [userId]);
+    return tx
+      .delete(oauthConsentGrants)
+      .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
+      .returning({ id: oauthConsentGrants.id });
+  });
 
-  const revokedGrants = await db
-    .update(oauthConsentGrants)
-    .set({ revokedAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt)
-      )
-    )
-    .returning({ id: oauthConsentGrants.id });
-
-  if (revokedGrants.length === 0) {
+  if (deleted.length === 0) {
     return false;
   }
 
-  await db
-    .update(oauthAuthorizationCodes)
-    .set({ usedAt: now })
-    .where(
-      and(
-        eq(oauthAuthorizationCodes.userId, userId),
-        eq(oauthAuthorizationCodes.clientId, clientId),
-        isNull(oauthAuthorizationCodes.usedAt)
-      )
-    );
-
-  await revokeUserClientTokens(userId, clientId, db, now);
-
   logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
-
   return true;
 }
 
 /**
- * Revokes every live access and refresh token a user holds for one client.
+ * Deletes every token grant a user holds for one client, and with them every
+ * token.
  */
 export async function revokeUserClientTokens(
   userId: string,
   clientId: string,
-  executor: DbOrTx = db,
-  now: Date = new Date()
+  executor: DbOrTx = db
 ): Promise<void> {
-  await executor
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.userId, userId),
-        eq(oauthRefreshTokens.clientId, clientId),
-        isNull(oauthRefreshTokens.revokedAt)
-      )
-    );
-
-  await executor
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthAccessTokens.userId, userId),
-        eq(oauthAccessTokens.clientId, clientId),
-        isNull(oauthAccessTokens.revokedAt)
-      )
-    );
+  await deleteTokenGrants(
+    and(eq(oauthTokenGrants.userId, userId), eq(oauthTokenGrants.clientId, clientId))!,
+    executor
+  );
 }

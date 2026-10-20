@@ -7,27 +7,41 @@
  * reuse detection. Both are now atomic UPDATE ... WHERE ... RETURNING claims.
  *
  * Replaying a rotated refresh token outside a short grace window revokes the
- * leaked token's rotation chain (not every token for the user+client, which
- * would sign out unrelated devices sharing a client_id). Within the grace window
- * the replay is treated as benign concurrency (racing parallel refreshes) and
- * the live successor is left intact.
+ * leaked token's grant (not every token for the user+client, which would sign
+ * out unrelated devices sharing a client_id). Within the grace window the
+ * replay is treated as benign concurrency (racing parallel refreshes) and the
+ * live successor is left intact.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
 import crypto from "crypto";
-import { eq, inArray } from "drizzle-orm";
-import { db } from "../../src/server/db";
-import { users, oauthClients, oauthRefreshTokens } from "../../src/server/db/schema";
-import { createTestUser, createTestOAuthClient } from "./helpers";
+import { eq, inArray, sql } from "drizzle-orm";
+import { db, type DbOrTx } from "../../src/server/db";
+import {
+  users,
+  oauthAccessTokens,
+  oauthClients,
+  oauthConsentGrants,
+  oauthRefreshTokens,
+  oauthTokenGrants,
+} from "../../src/server/db/schema";
+import { recordConsent, revokeUserClientTokens } from "../../src/server/oauth/grants";
+import {
+  createTestUser,
+  createTestOAuthClient,
+  createTestOAuthTokens,
+  holdTransaction,
+  waitForLockWaiter,
+} from "./helpers";
 import {
   createAuthorizationCode,
-  validateAndConsumeAuthCode,
-  createTokens,
+  exchangeAuthorizationCode,
   rotateRefreshToken,
   validateAccessToken,
   revokeClientToken,
 } from "../../src/server/oauth/service";
 import { getResourceIdentifier } from "../../src/server/oauth/config";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { hashToken, isOAuthAccessTokenFormat } from "../../src/server/oauth/utils";
 
 /**
@@ -67,6 +81,7 @@ async function createTestClient(): Promise<string> {
 }
 
 async function createTestAuthCode(userId: string, clientId: string): Promise<string> {
+  await recordConsent(userId, clientId, ["mcp"]);
   return createAuthorizationCode({
     clientId,
     userId,
@@ -86,18 +101,19 @@ afterAll(async () => {
   }
 });
 
-describe("validateAndConsumeAuthCode", () => {
+describe("exchangeAuthorizationCode", () => {
   it("redeems a valid code exactly once", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
-    const first = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    const first = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(first).not.toBeNull();
     expect(first?.userId).toBe(userId);
-    expect(first?.scopes).toEqual(["mcp"]);
+    expect(first?.tokens.scope).toBe("mcp");
+    expect(await validateAccessToken(first!.tokens.accessToken)).not.toBeNull();
 
-    const second = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    const second = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(second).toBeNull();
   });
 
@@ -108,7 +124,7 @@ describe("validateAndConsumeAuthCode", () => {
 
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
-        validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
+        exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
       )
     );
 
@@ -121,19 +137,19 @@ describe("validateAndConsumeAuthCode", () => {
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
-    const bad = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, "wrong-verifier");
+    const bad = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, "wrong-verifier");
     expect(bad).toBeNull();
 
     // The failed attempt consumed the code; a later attempt with the correct
     // verifier must not succeed (an attacker can't retry verifiers).
-    const retry = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    const retry = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(retry).toBeNull();
   });
 });
 
 describe("createTokens", () => {
   it("mints access tokens in the format request auth dispatches on", async () => {
-    const tokens = await createTokens({
+    const tokens = await createTestOAuthTokens({
       clientId: await createTestClient(),
       userId: await createUser(),
       scopes: ["mcp"],
@@ -146,7 +162,7 @@ describe("rotateRefreshToken", () => {
   it("rotates a valid refresh token and invalidates the old one", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
     expect(rotated).not.toBeNull();
@@ -159,7 +175,7 @@ describe("rotateRefreshToken", () => {
   it("allows at most one of many concurrent rotations to succeed", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const results = await Promise.all(
       Array.from({ length: 5 }, () => rotateRefreshToken(tokens.refreshToken, clientId))
@@ -179,7 +195,7 @@ describe("rotateRefreshToken", () => {
   it("treats an immediate replay as benign concurrency and does not revoke the chain", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
     expect(rotated).not.toBeNull();
@@ -196,7 +212,7 @@ describe("rotateRefreshToken", () => {
   it("revokes the whole grant when a rotated refresh token is replayed after the grace window", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
     expect(rotated).not.toBeNull();
@@ -220,8 +236,8 @@ describe("rotateRefreshToken", () => {
     // not sign the other out.
     const userId = await createUser();
     const clientId = await createTestClient();
-    const grantA = await createTokens({ clientId, userId, scopes: ["mcp"] });
-    const grantB = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const grantA = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+    const grantB = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     // Rotate grant A once, then replay its original token after the grace window
     // so it registers as a genuine leak.
@@ -240,10 +256,92 @@ describe("rotateRefreshToken", () => {
     expect(await rotateRefreshToken(grantB.refreshToken, clientId)).not.toBeNull();
   });
 
+  it("deletes a revoked grant's tokens, so the previous release refuses them too", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await revokeUserClientTokens(userId, clientId);
+
+    const rows = await db.execute(sql`
+      SELECT 1 FROM oauth_access_tokens WHERE token_hash = ${hashToken(tokens.accessToken)}
+      UNION ALL
+      SELECT 1 FROM oauth_refresh_tokens WHERE token_hash = ${hashToken(tokens.refreshToken)}
+    `);
+    expect(rows.rows).toEqual([]);
+  });
+
+  it("waits out an uncommitted grant delete, then finds nothing to rotate", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+
+    const held = await holdTransaction((tx) =>
+      tx.delete(oauthTokenGrants).where(eq(oauthTokenGrants.userId, userId))
+    );
+    const rotation = rotateRefreshToken(tokens.refreshToken, clientId);
+    await waitForLockWaiter("%oauth_token_grants%for key share%");
+    await held.commit();
+
+    expect(await rotation).toBeNull();
+  });
+
+  it("takes a token committed into the grant while its delete waited", async () => {
+    // What a rotation's successor relies on: the cascade sees rows committed
+    // after the DELETE started waiting on the grant.
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+    const [{ grantId }] = await db
+      .select({ grantId: oauthTokenGrants.id })
+      .from(oauthTokenGrants)
+      .where(eq(oauthTokenGrants.userId, userId));
+
+    const lateId = generateUuidv7();
+    const held = await holdTransaction((tx) =>
+      tx.insert(oauthAccessTokens).values({
+        id: lateId,
+        grantId,
+        tokenHash: `late-${lateId}`,
+        clientId,
+        userId,
+        scopes: ["mcp"],
+        expiresAt: new Date(Date.now() + 3_600_000),
+      })
+    );
+    const revoke = revokeUserClientTokens(userId, clientId);
+    await waitForLockWaiter('%delete from "oauth_token_grants"%');
+    await held.commit();
+    await revoke;
+
+    const rows = await db
+      .select({ id: oauthAccessTokens.id })
+      .from(oauthAccessTokens)
+      .where(eq(oauthAccessTokens.id, lateId));
+    expect(rows).toEqual([]);
+  });
+
+  it("leaves nothing usable when a revocation races rotations", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+
+    const [rotated] = await Promise.all([
+      rotateRefreshToken(tokens.refreshToken, clientId),
+      revokeUserClientTokens(userId, clientId),
+    ]);
+
+    if (rotated) {
+      expect(await validateAccessToken(rotated.accessToken)).toBeNull();
+      expect(await rotateRefreshToken(rotated.refreshToken, clientId)).toBeNull();
+    }
+    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
+  });
+
   it("does not revoke the grant for an unknown refresh token", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const bogus = await rotateRefreshToken("completely-unknown-token", clientId);
     expect(bogus).toBeNull();
@@ -260,7 +358,11 @@ describe("rotateRefreshToken", () => {
       const userId = await createUser();
       const clientId = await createTestClient();
       // Wallabag mints with no resource.
-      const tokens = await createTokens({ clientId, userId, scopes: ["reader:full-access"] });
+      const tokens = await createTestOAuthTokens({
+        clientId,
+        userId,
+        scopes: ["reader:full-access"],
+      });
 
       const rotated = await rotateRefreshToken(tokens.refreshToken, clientId);
       expect(rotated).not.toBeNull();
@@ -272,7 +374,7 @@ describe("rotateRefreshToken", () => {
     it("preserves the canonical MCP audience across rotation", async () => {
       const userId = await createUser();
       const clientId = await createTestClient();
-      const tokens = await createTokens({
+      const tokens = await createTestOAuthTokens({
         clientId,
         userId,
         scopes: ["mcp"],
@@ -289,31 +391,20 @@ describe("rotateRefreshToken", () => {
 });
 
 describe("revokeClientToken (RFC 7009)", () => {
-  it("revokes an access token", async () => {
-    const userId = await createUser();
-    const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+  it.each(["accessToken", "refreshToken"] as const)(
+    "revokes the whole grant given any %s in it, even a rotated-out one",
+    async (presented) => {
+      const userId = await createUser();
+      const clientId = await createTestClient();
+      const first = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+      const current = (await rotateRefreshToken(first.refreshToken, clientId))!;
 
-    await revokeClientToken(clientId, tokens.accessToken);
-    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
+      await revokeClientToken(clientId, first[presented]);
 
-    // The refresh token stays usable — RFC 7009 only requires revoking related
-    // refresh tokens when the client also revokes them; rotation still works.
-    expect(await rotateRefreshToken(tokens.refreshToken, clientId)).not.toBeNull();
-  });
-
-  it("revokes a refresh token and its linked access token", async () => {
-    const userId = await createUser();
-    const clientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
-
-    await revokeClientToken(clientId, tokens.refreshToken);
-
-    // RFC 7009 §2.1: revoking a refresh token SHOULD invalidate the access
-    // token issued with it.
-    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
-    expect(await rotateRefreshToken(tokens.refreshToken, clientId)).toBeNull();
-  });
+      expect(await validateAccessToken(current.accessToken)).toBeNull();
+      expect(await rotateRefreshToken(current.refreshToken, clientId)).toBeNull();
+    }
+  );
 
   it("is a silent no-op for an unknown token", async () => {
     const clientId = await createTestClient();
@@ -324,11 +415,139 @@ describe("revokeClientToken (RFC 7009)", () => {
     const userId = await createUser();
     const clientId = await createTestClient();
     const otherClientId = await createTestClient();
-    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     await revokeClientToken(otherClientId, tokens.accessToken);
     await revokeClientToken(otherClientId, tokens.refreshToken);
 
     expect(await validateAccessToken(tokens.accessToken)).not.toBeNull();
+  });
+});
+
+/**
+ * The previous release, still serving during a rollout, writes tokens without
+ * a grant and links rotations only through replaced_by_id. Its rows must land
+ * in a grant, or revoking grants would miss them.
+ */
+describe("tokens written by the previous release", () => {
+  async function insertLegacyPair(userId: string, clientId: string, executor: DbOrTx = db) {
+    const accessId = generateUuidv7();
+    const refreshId = generateUuidv7();
+    const expiresAt = new Date(Date.now() + 3_600_000);
+    await executor.execute(sql`
+      INSERT INTO oauth_access_tokens (id, token_hash, client_id, user_id, scopes, expires_at)
+      VALUES (${accessId}, ${"legacy-" + accessId}, ${clientId}, ${userId}, ARRAY['mcp'], ${expiresAt})
+    `);
+    await executor.execute(sql`
+      INSERT INTO oauth_refresh_tokens
+        (id, token_hash, client_id, user_id, scopes, access_token_id, expires_at)
+      VALUES (${refreshId}, ${"legacy-" + refreshId}, ${clientId}, ${userId}, ARRAY['mcp'],
+        ${accessId}, ${expiresAt})
+    `);
+    return { accessId, refreshId };
+  }
+
+  async function grantsOf(ids: string[]): Promise<Set<string>> {
+    const [access, refresh] = await Promise.all([
+      db
+        .select({ grantId: oauthAccessTokens.grantId })
+        .from(oauthAccessTokens)
+        .where(inArray(oauthAccessTokens.id, ids)),
+      db
+        .select({ grantId: oauthRefreshTokens.grantId })
+        .from(oauthRefreshTokens)
+        .where(inArray(oauthRefreshTokens.id, ids)),
+    ]);
+    return new Set([...access, ...refresh].map((row) => row.grantId));
+  }
+
+  it("refuses a token for a client the user hasn't consented to", async () => {
+    const userId = await createUser();
+    await expect(insertLegacyPair(userId, await createTestClient())).rejects.toMatchObject({
+      cause: { constraint: "oauth_token_grants_consent_unless_wallabag" },
+    });
+  });
+
+  it("turns its consent revoke into the delete that cascades to the tokens", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await db
+      .update(oauthConsentGrants)
+      .set({ revokedAt: new Date() })
+      .where(eq(oauthConsentGrants.userId, userId));
+
+    expect(
+      await db.select().from(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId))
+    ).toEqual([]);
+    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
+  });
+
+  it("serializes its rotation with a grant delete instead of deadlocking", async () => {
+    // Its rotation locks the user, claims the refresh token, inserts the
+    // successor and only then joins the grant, the reverse of a cascading
+    // delete's order.
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    await recordConsent(userId, clientId, ["mcp"]);
+    const first = await insertLegacyPair(userId, clientId);
+
+    let stamp!: () => void;
+    const stamped = new Promise<void>((resolve) => (stamp = resolve));
+    let claimed!: () => void;
+    const claim = new Promise<void>((resolve) => (claimed = resolve));
+    const rotation = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT 1 FROM users WHERE id = ${userId} FOR SHARE`);
+      await tx.execute(
+        sql`UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE id = ${first.refreshId}`
+      );
+      const second = await insertLegacyPair(userId, clientId, tx);
+      claimed();
+      await stamped;
+      await tx.execute(sql`
+        UPDATE oauth_refresh_tokens SET replaced_by_id = ${second.refreshId}
+        WHERE id = ${first.refreshId}
+      `);
+    });
+    await claim;
+
+    const revoke = revokeUserClientTokens(userId, clientId);
+    await waitForLockWaiter('%from "users"%for no key update%');
+    stamp();
+    await rotation;
+    await revoke;
+
+    const left = await db.execute(sql`
+      SELECT 1 FROM oauth_access_tokens WHERE user_id = ${userId}
+      UNION ALL SELECT 1 FROM oauth_refresh_tokens WHERE user_id = ${userId}
+    `);
+    expect(left.rows).toEqual([]);
+  });
+
+  it("puts a new pair in one grant, and a rotation's successor in its predecessor's", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const consentGrantId = await recordConsent(userId, clientId, ["mcp"]);
+    const first = await insertLegacyPair(userId, clientId);
+    const second = await insertLegacyPair(userId, clientId);
+    await db.execute(sql`
+      UPDATE oauth_refresh_tokens SET replaced_by_id = ${second.refreshId}
+      WHERE id = ${first.refreshId}
+    `);
+
+    const grants = await grantsOf([
+      first.accessId,
+      first.refreshId,
+      second.accessId,
+      second.refreshId,
+    ]);
+    expect(grants.size).toBe(1);
+
+    const [grant] = await db
+      .select()
+      .from(oauthTokenGrants)
+      .where(eq(oauthTokenGrants.id, [...grants][0]));
+    expect(grant).toMatchObject({ userId, clientId, consentGrantId, scopes: ["mcp"] });
   });
 });

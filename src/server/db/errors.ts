@@ -17,6 +17,14 @@ export function isUniqueViolation(error: unknown): boolean {
   return hasSqlState(error, PG_UNIQUE_VIOLATION);
 }
 
+/** Postgres SQLSTATE for a foreign-key violation. */
+const PG_FOREIGN_KEY_VIOLATION = "23503";
+
+/** Returns true if the error is a Postgres foreign-key violation (walks `cause` like `isUniqueViolation`). */
+export function isForeignKeyViolation(error: unknown): boolean {
+  return hasSqlState(error, PG_FOREIGN_KEY_VIOLATION);
+}
+
 /** Postgres SQLSTATE for a transaction aborted as a deadlock victim. */
 const PG_DEADLOCK_DETECTED = "40P01";
 

@@ -11,9 +11,7 @@
  * `WALLABAG_CLIENT_ID`.
  */
 
-import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
 import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { authenticateCredential } from "@/server/auth/credential";
@@ -61,6 +59,7 @@ export async function passwordGrant(
   const tokens = await createTokens({
     clientId: WALLABAG_CLIENT_ID,
     userId: login.user.id,
+    consentGrantId: null,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
 
@@ -81,16 +80,9 @@ export async function passwordGrant(
 
 /**
  * Signs out every Wallabag app for a user (Settings → Wallabag).
- *
- * Takes the same user-row lock a password change does, so a refresh racing it
- * serializes: it either finishes first and has its successor swept, or
- * waits and finds its token revoked (see `rotateRefreshToken`).
  */
 export async function revokeWallabagTokens(userId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
-    await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
-  });
+  await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID);
 }
 
 /**

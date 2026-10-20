@@ -17,7 +17,7 @@
  * back-reference would be unsafe. They're accepted as append-only.
  */
 
-import { and, eq, gt, inArray, isNull, lt, notExists, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, notExists, or, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import {
   apiTokens,
@@ -27,6 +27,7 @@ import {
   oauthClients,
   oauthConsentGrants,
   oauthRefreshTokens,
+  oauthTokenGrants,
   opmlImports,
   sessions,
 } from "../db/schema";
@@ -64,7 +65,7 @@ const DEAD_FEED_JOB_GRACE_MS = 60 * 60 * 1000;
  * before deletion. `/oauth/register` is open (no auth) and MCP clients such as
  * claude.ai re-register on every connect, so most rows never complete an
  * authorization; without cleanup they accumulate unbounded. A registration older
- * than this with no live tokens and no active consent grant is dead — the client
+ * than this with no active consent grant is dead — the client
  * would have to re-register to be usable — so it's safe to remove. Kept generous
  * so a client mid-onboarding (registered, not yet authorized) isn't reaped.
  */
@@ -88,6 +89,7 @@ export interface RetentionCleanupResult {
   oauthAuthorizationCodes: number;
   oauthAccessTokens: number;
   oauthRefreshTokens: number;
+  oauthTokenGrants: number;
   oauthClients: number;
   opmlImports: number;
   deadFeedJobs: number;
@@ -123,9 +125,8 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     .delete(oauthAuthorizationCodes)
     .where(lt(oauthAuthorizationCodes.expiresAt, expiryCutoff));
 
-  // Refresh tokens reference access tokens with ON DELETE SET NULL, and the
-  // rotation chain (replaced_by_id) is also SET NULL, so bulk deletes can't
-  // fail on FK order.
+  // Refresh tokens reference access tokens with ON DELETE SET NULL, and
+  // replaced_by_id is also SET NULL, so bulk deletes can't fail on FK order.
   const expiredAccessTokens = await db
     .delete(oauthAccessTokens)
     .where(
@@ -143,6 +144,25 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
         lt(oauthRefreshTokens.revokedAt, revokedCutoff)
       )
     );
+
+  // A grant whose last token was swept above is dead too. A grant commits
+  // together with its first tokens, so a live one is never seen empty.
+  const deadGrants = await db.delete(oauthTokenGrants).where(
+    and(
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(oauthAccessTokens)
+          .where(eq(oauthAccessTokens.grantId, oauthTokenGrants.id))
+      ),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(oauthRefreshTokens)
+          .where(eq(oauthRefreshTokens.grantId, oauthTokenGrants.id))
+      )
+    )
+  );
 
   // Dead feed jobs (issue #1085): a `fetch_feed` job survives when its feed
   // loses its last active subscriber (unsubscribe soft-delete) or the feed is
@@ -176,48 +196,18 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
   // Orphaned Dynamic Client Registration clients (issue #975): every row in
   // oauth_clients comes from open /oauth/register (CIMD URL clients are resolved
   // on the fly and never stored). Delete old registrations that never became
-  // usable — no live (non-revoked, unexpired) access or refresh token and no
-  // active consent grant. clientId is a plain text column (no FK), so an active
-  // client is protected by these NOT EXISTS checks, not by referential integrity;
-  // the liveness predicates match resolveClient/token validation exactly so we
-  // never remove a client a future request could still authenticate against.
+  // usable — no active consent grant. Every token such a client holds hangs off
+  // one (a token grant belongs to its consent grant), so no live token can
+  // outlast it. clientId is a plain text column (no FK), so an active client is
+  // protected by this NOT EXISTS check, not by referential integrity.
   const orphanedClients = await db.delete(oauthClients).where(
     and(
       lt(oauthClients.createdAt, orphanedClientCutoff),
       notExists(
         db
           .select({ one: sql`1` })
-          .from(oauthAccessTokens)
-          .where(
-            and(
-              eq(oauthAccessTokens.clientId, oauthClients.clientId),
-              isNull(oauthAccessTokens.revokedAt),
-              gt(oauthAccessTokens.expiresAt, nowDate)
-            )
-          )
-      ),
-      notExists(
-        db
-          .select({ one: sql`1` })
-          .from(oauthRefreshTokens)
-          .where(
-            and(
-              eq(oauthRefreshTokens.clientId, oauthClients.clientId),
-              isNull(oauthRefreshTokens.revokedAt),
-              gt(oauthRefreshTokens.expiresAt, nowDate)
-            )
-          )
-      ),
-      notExists(
-        db
-          .select({ one: sql`1` })
           .from(oauthConsentGrants)
-          .where(
-            and(
-              eq(oauthConsentGrants.clientId, oauthClients.clientId),
-              isNull(oauthConsentGrants.revokedAt)
-            )
-          )
+          .where(eq(oauthConsentGrants.clientId, oauthClients.clientId))
       )
     )
   );
@@ -241,6 +231,7 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     oauthAuthorizationCodes: expiredAuthCodes.rowCount ?? 0,
     oauthAccessTokens: expiredAccessTokens.rowCount ?? 0,
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
+    oauthTokenGrants: deadGrants.rowCount ?? 0,
     oauthClients: orphanedClients.rowCount ?? 0,
     opmlImports: oldOpmlImports.rowCount ?? 0,
     deadFeedJobs: deadFeedJobs.rowCount ?? 0,

@@ -14,14 +14,10 @@ import { describe, it, expect, afterAll, vi } from "vitest";
 import * as argon2 from "argon2";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { oauthClients, oauthRefreshTokens, users } from "../../src/server/db/schema";
+import { oauthClients, users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { revokeUserClientTokens } from "../../src/server/oauth/grants";
-import {
-  createTokens,
-  rotateRefreshToken,
-  validateAccessToken,
-} from "../../src/server/oauth/service";
+import { rotateRefreshToken, validateAccessToken } from "../../src/server/oauth/service";
 import { requireAuth, passwordGrant } from "../../src/server/wallabag/auth";
 import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
@@ -29,7 +25,13 @@ import { APP_CLIENT_ID, getAppResourceIdentifier } from "../../src/server/oauth/
 import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { POST as tokenEndpoint } from "../../src/app/api/wallabag/oauth/v2/token/route";
 import { createCaller } from "../../src/server/trpc/root";
-import { createAuthContext, createTestOAuthClient, createTestUser } from "./helpers";
+import {
+  createAuthContext,
+  createTestOAuthClient,
+  createTestUser,
+  createTestOAuthTokens,
+  waitForLockWaiter,
+} from "./helpers";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -51,7 +53,7 @@ async function createUser(password?: string): Promise<{ id: string; email: strin
 }
 
 async function mintToken(userId: string, scopes: string[]): Promise<string> {
-  const tokens = await createTokens({ clientId: "wallabag", userId, scopes });
+  const tokens = await createTestOAuthTokens({ clientId: "wallabag", userId, scopes });
   return tokens.accessToken;
 }
 
@@ -127,7 +129,7 @@ describe("Wallabag requireAuth scope enforcement", () => {
     "rejects a reader:full-access token issued to $issuer with 401",
     async ({ clientId, resource }) => {
       const user = await createUser();
-      const { accessToken } = await createTokens({
+      const { accessToken } = await createTestOAuthTokens({
         clientId: await clientId(),
         userId: user.id,
         scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -273,7 +275,7 @@ describe("Wallabag token endpoint client_id pinning", () => {
     // re-check.
     const user = await createUser();
     const victimClientId = "confidential-mcp-client";
-    const victim = await createTokens({
+    const victim = await createTestOAuthTokens({
       clientId: victimClientId,
       userId: user.id,
       scopes: [OAUTH_SCOPES.MCP],
@@ -302,7 +304,7 @@ describe("Wallabag token endpoint client_id pinning", () => {
 
   it("rotates a wallabag refresh token", async () => {
     const user = await createUser();
-    const tokens = await createTokens({
+    const tokens = await createTestOAuthTokens({
       clientId: WALLABAG_CLIENT_ID,
       userId: user.id,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -325,17 +327,17 @@ describe("oauthGrants.revokeWallabag", () => {
   it("signs out the caller's Wallabag apps only", async () => {
     const user = await createUser();
     const bystander = await createUser();
-    const mine = await createTokens({
+    const mine = await createTestOAuthTokens({
       clientId: WALLABAG_CLIENT_ID,
       userId: user.id,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     });
-    const mcp = await createTokens({
+    const mcp = await createTestOAuthTokens({
       clientId: "some-mcp-client",
       userId: user.id,
       scopes: [OAUTH_SCOPES.MCP],
     });
-    const theirs = await createTokens({
+    const theirs = await createTestOAuthTokens({
       clientId: WALLABAG_CLIENT_ID,
       userId: bystander.id,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -352,28 +354,11 @@ describe("oauthGrants.revokeWallabag", () => {
 });
 
 /**
- * Resolves once a token issue is blocked on the user-row share lock
- * (`lockUserAgainstCredentialChange`), not on some unrelated lock.
- */
-async function waitForUserLockWaiter(): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const result = await db.execute(sql`
-      SELECT count(*)::int AS waiting FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND wait_event_type = 'Lock'
-        AND query ILIKE '%from "users"%for share%'
-    `);
-    if ((result.rows[0] as { waiting: number }).waiting > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error("nothing ever waited on the lock");
-}
-
-/**
- * Runs a password change the way `me.changePassword` does — update the user
- * row, then sweep its Wallabag tokens, in one transaction — but holds the
- * transaction open between the two until `release` is called, so a concurrent
- * token issue can be started inside the window.
+ * Runs a password change the way the previous release's `me.changePassword`
+ * does — update the user row, then sweep its Wallabag token rows, in one
+ * transaction — but holds the transaction open between the two until
+ * `release` is called, so a concurrent token issue can be started inside the
+ * window.
  */
 async function heldPasswordChange(
   userId: string,
@@ -390,7 +375,12 @@ async function heldPasswordChange(
       .where(eq(users.id, userId));
     updated();
     await gate;
-    await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+    for (const table of [sql`oauth_refresh_tokens`, sql`oauth_access_tokens`]) {
+      await tx.execute(sql`
+        UPDATE ${table} SET revoked_at = now()
+        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID} AND revoked_at IS NULL
+      `);
+    }
   });
   await rowUpdated;
   return { release, done };
@@ -411,10 +401,11 @@ async function liveWallabagTokens(userId: string): Promise<number> {
   return Number((result.rows[0] as { live: string | number }).live);
 }
 
+// The previous release's password change sweeps only token rows (#2053).
 describe("token issue racing a password change", () => {
   it("a refresh during a password change waits for it, then finds its token revoked", async () => {
     const user = await createUser();
-    const tokens = await createTokens({
+    const tokens = await createTestOAuthTokens({
       clientId: WALLABAG_CLIENT_ID,
       userId: user.id,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -422,7 +413,7 @@ describe("token issue racing a password change", () => {
 
     const change = await heldPasswordChange(user.id, "new-hash");
     const rotation = rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID);
-    await waitForUserLockWaiter();
+    await waitForLockWaiter('%from "users"%for share%');
     change.release();
     await change.done;
 
@@ -434,16 +425,13 @@ describe("token issue racing a password change", () => {
 describe("refresh token revoked without rotation", () => {
   it("is refused without a reuse-detection alarm", async () => {
     const user = await createUser();
-    const tokens = await createTokens({
+    const tokens = await createTestOAuthTokens({
       clientId: WALLABAG_CLIENT_ID,
       userId: user.id,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     });
-    // Revoked by a password change a minute ago, well outside the grace window.
-    await db
-      .update(oauthRefreshTokens)
-      .set({ revokedAt: new Date(Date.now() - 60_000) })
-      .where(eq(oauthRefreshTokens.userId, user.id));
+    // Signed out by a password change.
+    await revokeUserClientTokens(user.id, WALLABAG_CLIENT_ID);
 
     const warn = vi.spyOn(console, "warn");
     try {

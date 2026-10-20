@@ -8,10 +8,15 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { getDb, createConfirmedUser, loginAs, closeTestConnections } from "./helpers";
-import { oauthAccessTokens, oauthClients, oauthConsentGrants } from "../../src/server/db/schema";
+import {
+  oauthAccessTokens,
+  oauthClients,
+  oauthConsentGrants,
+  oauthTokenGrants,
+} from "../../src/server/db/schema";
 import { createAuthorizationCode } from "../../src/server/oauth/service";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
@@ -40,15 +45,24 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
     scopes: ["mcp"],
     isPublic: true,
   });
+  const consentGrantId = generateUuidv7();
   await db.insert(oauthConsentGrants).values({
-    id: generateUuidv7(),
+    id: consentGrantId,
     userId: user.id,
     clientId,
     scopes: ["mcp"],
   });
-  const accessTokenId = generateUuidv7();
+  const grantId = generateUuidv7();
+  await db.insert(oauthTokenGrants).values({
+    id: grantId,
+    userId: user.id,
+    consentGrantId,
+    clientId,
+    scopes: ["mcp"],
+  });
   await db.insert(oauthAccessTokens).values({
-    id: accessTokenId,
+    id: generateUuidv7(),
+    grantId,
     tokenHash: crypto.randomBytes(32).toString("hex"),
     clientId,
     userId: user.id,
@@ -75,17 +89,16 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
 
   await expect(page.getByText("You haven't authorized any applications.")).toBeVisible();
 
-  const liveGrants = await db
+  const consent = await db
     .select({ id: oauthConsentGrants.id })
     .from(oauthConsentGrants)
-    .where(and(eq(oauthConsentGrants.userId, user.id), isNull(oauthConsentGrants.revokedAt)));
-  expect(liveGrants).toHaveLength(0);
-
-  const [token] = await db
-    .select({ revokedAt: oauthAccessTokens.revokedAt })
-    .from(oauthAccessTokens)
-    .where(eq(oauthAccessTokens.id, accessTokenId));
-  expect(token.revokedAt).not.toBeNull();
+    .where(eq(oauthConsentGrants.userId, user.id));
+  expect(consent).toHaveLength(0);
+  const tokenGrants = await db
+    .select({ id: oauthTokenGrants.id })
+    .from(oauthTokenGrants)
+    .where(eq(oauthTokenGrants.id, grantId));
+  expect(tokenGrants).toHaveLength(0);
 
   // The code the client was already holding must be worthless at the real token
   // endpoint — otherwise it trades for a fresh hour of access and a 30-day
@@ -101,50 +114,4 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
   });
   expect(tokenResponse.status()).toBe(400);
   expect((await tokenResponse.json()).error).toBe("invalid_grant");
-});
-
-test("the token endpoint refuses a code whose consent grant is gone", async ({ page }) => {
-  // The revocation sweep burns outstanding codes, so this reaches the token
-  // endpoint's own consent check the only way it can be reached in production:
-  // a code that outlived the sweep because it was minted alongside it. Revoking
-  // just the grant reproduces that state.
-  const db = getDb();
-  const user = await createConfirmedUser(db);
-
-  const clientId = generateUuidv7();
-  await db.insert(oauthClients).values({
-    id: generateUuidv7(),
-    clientId,
-    name: `E2E Client ${clientId.slice(-6)}`,
-    redirectUris: [REDIRECT_URI],
-    scopes: ["mcp"],
-    isPublic: true,
-  });
-  await db.insert(oauthConsentGrants).values({
-    id: generateUuidv7(),
-    userId: user.id,
-    clientId,
-    scopes: ["mcp"],
-    revokedAt: new Date(),
-  });
-  const code = await createAuthorizationCode({
-    clientId,
-    userId: user.id,
-    redirectUri: REDIRECT_URI,
-    scopes: ["mcp"],
-    codeChallenge: CODE_CHALLENGE,
-  });
-
-  const response = await page.request.post("/oauth/token", {
-    form: {
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: REDIRECT_URI,
-      code_verifier: CODE_VERIFIER,
-      client_id: clientId,
-    },
-  });
-
-  expect(response.status()).toBe(400);
-  expect((await response.json()).error).toBe("invalid_grant");
 });

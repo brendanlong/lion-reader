@@ -10,11 +10,10 @@ import { db } from "../../src/server/db";
 import { apiTokens, oauthAccessTokens, oauthClients, users } from "../../src/server/db/schema";
 import { POST } from "../../src/app/api/mcp/route";
 import { createApiToken } from "../../src/server/auth/api-token";
-import { createTokens } from "../../src/server/oauth/service";
 import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { getAppResourceIdentifier } from "../../src/server/oauth/app-client";
 import { hashToken } from "../../src/server/oauth/utils";
-import { createTestOAuthClient, createTestUser } from "./helpers";
+import { createTestOAuthClient, createTestUser, createTestOAuthTokens } from "./helpers";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -69,9 +68,9 @@ async function mcpToken(kind: TokenKind): Promise<string> {
     case "API token":
       return (await createApiToken(userId, ["mcp"])).token;
     case "OAuth token":
-      return (await createTokens(oauth)).accessToken;
+      return (await createTestOAuthTokens(oauth)).accessToken;
     case "OAuth token from before audience binding":
-      return (await createTokens({ ...oauth, resource: null })).accessToken;
+      return (await createTestOAuthTokens({ ...oauth, resource: null })).accessToken;
   }
 }
 
@@ -101,7 +100,7 @@ describe("/api/mcp authentication", () => {
 
   it("rejects an mcp-scoped OAuth token bound to another resource", async () => {
     const { userId, clientId } = await createUserAndClient();
-    const { accessToken } = await createTokens({
+    const { accessToken } = await createTestOAuthTokens({
       clientId,
       userId,
       scopes: ["mcp"],

@@ -174,6 +174,71 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.oauth_access_tokens_default_grant() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.grant_id := oauth_new_token_grant(NEW.user_id, NEW.client_id, NEW.scopes, NEW.resource);
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.oauth_consent_grants_delete_revoked() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM 1 FROM users WHERE id = NEW.user_id FOR NO KEY UPDATE;
+  DELETE FROM oauth_consent_grants WHERE id = NEW.id;
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.oauth_new_token_grant(p_user uuid, p_client text, p_scopes text[], p_resource text) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  grant_id uuid := uuidv7();
+BEGIN
+  INSERT INTO oauth_token_grants (id, user_id, consent_grant_id, client_id, scopes, resource)
+  VALUES (
+    grant_id, p_user,
+    (SELECT id FROM oauth_consent_grants
+     WHERE user_id = p_user AND client_id = p_client AND revoked_at IS NULL),
+    p_client, p_scopes, p_resource
+  );
+  RETURN grant_id;
+END;
+$$;
+
+CREATE FUNCTION public.oauth_refresh_tokens_default_grant() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.grant_id := COALESCE(
+    (SELECT grant_id FROM oauth_access_tokens WHERE id = NEW.access_token_id),
+    oauth_new_token_grant(NEW.user_id, NEW.client_id, NEW.scopes, NEW.resource)
+  );
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.oauth_refresh_tokens_join_predecessor_grant() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  successor_grant uuid;
+  successor_access uuid;
+BEGIN
+  SELECT grant_id, access_token_id INTO successor_grant, successor_access
+  FROM oauth_refresh_tokens WHERE id = NEW.replaced_by_id;
+  IF successor_grant <> NEW.grant_id THEN
+    UPDATE oauth_refresh_tokens SET grant_id = NEW.grant_id WHERE id = NEW.replaced_by_id;
+    UPDATE oauth_access_tokens SET grant_id = NEW.grant_id WHERE id = successor_access;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
     SET plan_cache_mode TO 'force_custom_plan'
@@ -638,7 +703,8 @@ CREATE TABLE public.oauth_access_tokens (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
-    last_used_at timestamp with time zone
+    last_used_at timestamp with time zone,
+    grant_id uuid NOT NULL
 );
 
 CREATE TABLE public.oauth_accounts (
@@ -705,7 +771,19 @@ CREATE TABLE public.oauth_refresh_tokens (
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
     replaced_by_id uuid,
-    resource text
+    resource text,
+    grant_id uuid NOT NULL
+);
+
+CREATE TABLE public.oauth_token_grants (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    consent_grant_id uuid,
+    client_id text NOT NULL,
+    scopes text[] NOT NULL,
+    resource text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT oauth_token_grants_consent_unless_wallabag CHECK (((consent_grant_id IS NOT NULL) OR (client_id = 'wallabag'::text)))
 );
 
 CREATE TABLE public.opml_imports (
@@ -1000,6 +1078,9 @@ ALTER TABLE ONLY public.oauth_refresh_tokens
 ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_token_hash_key UNIQUE (token_hash);
 
+ALTER TABLE ONLY public.oauth_token_grants
+    ADD CONSTRAINT oauth_token_grants_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.opml_imports
     ADD CONSTRAINT opml_imports_pkey PRIMARY KEY (id);
 
@@ -1113,6 +1194,8 @@ CREATE INDEX idx_oauth_access_tokens_client ON public.oauth_access_tokens USING 
 
 CREATE INDEX idx_oauth_access_tokens_expires ON public.oauth_access_tokens USING btree (expires_at);
 
+CREATE INDEX idx_oauth_access_tokens_grant ON public.oauth_access_tokens USING btree (grant_id);
+
 CREATE INDEX idx_oauth_access_tokens_user ON public.oauth_access_tokens USING btree (user_id);
 
 CREATE INDEX idx_oauth_accounts_scopes ON public.oauth_accounts USING gin (scopes);
@@ -1129,7 +1212,13 @@ CREATE INDEX idx_oauth_refresh_tokens_client ON public.oauth_refresh_tokens USIN
 
 CREATE INDEX idx_oauth_refresh_tokens_expires ON public.oauth_refresh_tokens USING btree (expires_at);
 
+CREATE INDEX idx_oauth_refresh_tokens_grant ON public.oauth_refresh_tokens USING btree (grant_id);
+
 CREATE INDEX idx_oauth_refresh_tokens_user ON public.oauth_refresh_tokens USING btree (user_id);
+
+CREATE INDEX idx_oauth_token_grants_consent ON public.oauth_token_grants USING btree (consent_grant_id);
+
+CREATE INDEX idx_oauth_token_grants_user_client ON public.oauth_token_grants USING btree (user_id, client_id);
 
 CREATE INDEX idx_opml_imports_status ON public.opml_imports USING btree (status);
 
@@ -1197,6 +1286,14 @@ CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^
 
 CREATE TRIGGER entries_changed_at_trigger AFTER UPDATE OF updated_at ON public.entries FOR EACH ROW WHEN ((new.updated_at > old.updated_at)) EXECUTE FUNCTION public.entries_changed_at();
 
+CREATE TRIGGER oauth_access_tokens_default_grant_trigger BEFORE INSERT ON public.oauth_access_tokens FOR EACH ROW WHEN ((new.grant_id IS NULL)) EXECUTE FUNCTION public.oauth_access_tokens_default_grant();
+
+CREATE TRIGGER oauth_consent_grants_delete_revoked_trigger AFTER UPDATE OF revoked_at ON public.oauth_consent_grants FOR EACH ROW WHEN ((new.revoked_at IS NOT NULL)) EXECUTE FUNCTION public.oauth_consent_grants_delete_revoked();
+
+CREATE TRIGGER oauth_refresh_tokens_default_grant_trigger BEFORE INSERT ON public.oauth_refresh_tokens FOR EACH ROW WHEN ((new.grant_id IS NULL)) EXECUTE FUNCTION public.oauth_refresh_tokens_default_grant();
+
+CREATE TRIGGER oauth_refresh_tokens_join_predecessor_grant_trigger AFTER UPDATE OF replaced_by_id ON public.oauth_refresh_tokens FOR EACH ROW WHEN (((new.replaced_by_id IS NOT NULL) AND (new.replaced_by_id IS DISTINCT FROM old.replaced_by_id))) EXECUTE FUNCTION public.oauth_refresh_tokens_join_predecessor_grant();
+
 CREATE TRIGGER subscription_entries_counters_delete_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
 CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
@@ -1250,6 +1347,9 @@ ALTER TABLE ONLY public.invites
     ADD CONSTRAINT invites_used_by_user_id_fkey FOREIGN KEY (used_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.oauth_token_grants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_access_tokens
     ADD CONSTRAINT oauth_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.oauth_accounts
@@ -1265,10 +1365,19 @@ ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_access_token_id_fkey FOREIGN KEY (access_token_id) REFERENCES public.oauth_access_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.oauth_token_grants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.oauth_refresh_tokens(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_token_grants
+    ADD CONSTRAINT oauth_token_grants_consent_grant_id_fkey FOREIGN KEY (consent_grant_id) REFERENCES public.oauth_consent_grants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_token_grants
+    ADD CONSTRAINT oauth_token_grants_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.opml_imports
     ADD CONSTRAINT opml_imports_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

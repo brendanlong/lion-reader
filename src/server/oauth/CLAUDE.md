@@ -25,7 +25,7 @@ The claude.ai **web** connector's OAuth flow is broken client-side (#986, upstre
 
 ## Revocation
 
-Settings → Connected Apps (`oauthGrants`, session-only) revokes a `(user, client)` grant, and **must close every path back in**: the consent grant (first), outstanding access/refresh tokens, and unredeemed authorization codes. Both redemption paths re-check consent (`hasConsent` on code exchange, `rotateRefreshToken`'s `requireUserConsent`) so a racing rotation is born unusable. The check is opt-in because the Wallabag password grant has no consent grant; Wallabag apps are signed out from their own settings section (`oauthGrants.revokeWallabag`) or by a password change.
+Settings → Connected Apps (`oauthGrants`, session-only) revokes a `(user, client)` consent grant by deleting it, which cascades to every token grant under it (SECURITY.md §6). That **must close every path back in**: consent is what suppresses the prompt, and the code exchange refuses a code without it. Wallabag apps have no consent grant; they're signed out from their own settings section (`oauthGrants.revokeWallabag`) or by a password change.
 
 ## Rate limiting & CORS
 

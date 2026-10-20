@@ -19,16 +19,23 @@ import {
   oauthClients,
   oauthConsentGrants,
   oauthRefreshTokens,
+  oauthTokenGrants,
   opmlImports,
   sessions,
   subscriptions,
   users,
 } from "../../src/server/db/schema";
 import { runRetentionCleanup } from "../../src/server/services/retention";
+import { recordConsent } from "../../src/server/oauth/grants";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { Temporal } from "temporal-polyfill";
 import { ENTRY_TOMBSTONE_RETENTION_MS } from "../../src/server/services/entry-tombstones";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestFeed,
+  createTestSubscription,
+  createTestTokenGrant,
+  createTestUser,
+} from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TEST_CLIENT_ID = "retention-test-client";
@@ -50,13 +57,15 @@ async function createSession(userId: string, expiresAt: Date, revokedAt?: Date):
 async function createAccessToken(
   userId: string,
   expiresAt: Date,
-  options: { clientId?: string; revokedAt?: Date } = {}
+  options: { clientId?: string; revokedAt?: Date; grantId?: string } = {}
 ): Promise<string> {
   const id = generateUuidv7();
+  const clientId = options.clientId ?? TEST_CLIENT_ID;
   await db.insert(oauthAccessTokens).values({
     id,
+    grantId: options.grantId ?? (await createTestTokenGrant(userId, { clientId })),
     tokenHash: `hash-${id}`,
-    clientId: options.clientId ?? TEST_CLIENT_ID,
+    clientId,
     userId,
     scopes: ["mcp"],
     expiresAt,
@@ -74,13 +83,16 @@ async function createRefreshToken(
     revokedAt?: Date;
     accessTokenId?: string;
     replacedById?: string;
+    grantId?: string;
   } = {}
 ): Promise<string> {
   const id = generateUuidv7();
+  const clientId = options.clientId ?? TEST_CLIENT_ID;
   await db.insert(oauthRefreshTokens).values({
     id,
+    grantId: options.grantId ?? (await createTestTokenGrant(userId, { clientId })),
     tokenHash: `hash-${id}`,
-    clientId: options.clientId ?? TEST_CLIENT_ID,
+    clientId,
     userId,
     scopes: ["mcp"],
     expiresAt,
@@ -102,24 +114,6 @@ async function createClient(clientId: string, createdAt: Date): Promise<string> 
     updatedAt: createdAt,
   });
   return clientId;
-}
-
-async function createConsentGrant(
-  userId: string,
-  clientId: string,
-  options: { revokedAt?: Date } = {}
-): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(oauthConsentGrants).values({
-    id,
-    userId,
-    clientId,
-    scopes: ["mcp"],
-    revokedAt: options.revokedAt ?? null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return id;
 }
 
 async function createAuthCode(userId: string, expiresAt: Date): Promise<string> {
@@ -160,6 +154,7 @@ async function createFeedJob(
 async function cleanupTables(): Promise<void> {
   await db.delete(oauthRefreshTokens);
   await db.delete(oauthAccessTokens);
+  await db.delete(oauthTokenGrants);
   await db.delete(oauthAuthorizationCodes);
   await db.delete(oauthConsentGrants);
   await db.delete(oauthClients);
@@ -302,6 +297,8 @@ describe("runRetentionCleanup", () => {
     expect(result.oauthAuthorizationCodes).toBe(1);
     expect(result.oauthAccessTokens).toBe(1);
     expect(result.oauthRefreshTokens).toBe(1);
+    // Each expired token was its grant's last.
+    expect(result.oauthTokenGrants).toBe(2);
 
     const codes = (
       await db.select({ id: oauthAuthorizationCodes.id }).from(oauthAuthorizationCodes)
@@ -320,6 +317,19 @@ describe("runRetentionCleanup", () => {
     );
     expect(refresh).toEqual([liveRefresh]);
     expect(refresh).not.toContain(expiredRefresh);
+  });
+
+  it("deletes token grants with no tokens left", async () => {
+    const userId = await createTestUser({ emailPrefix: "retention" });
+    const live = await createTestTokenGrant(userId);
+    await createAccessToken(userId, new Date(Date.now() + 60 * 60 * 1000), { grantId: live });
+    await createTestTokenGrant(userId);
+
+    const result = await runRetentionCleanup(db);
+
+    expect(result.oauthTokenGrants).toBe(1);
+    const grants = await db.select({ id: oauthTokenGrants.id }).from(oauthTokenGrants);
+    expect(grants).toEqual([{ id: live }]);
   });
 
   it("handles refresh-token rotation chains (replaced_by_id) without FK failures", async () => {
@@ -405,45 +415,18 @@ describe("runRetentionCleanup", () => {
     // Recently registered, still mid-onboarding: kept despite no tokens.
     const recent = await createClient("dcr-recent", recentDate);
 
-    // Old but has a live access token: kept.
-    const withLiveAccess = await createClient("dcr-live-access", old);
-    await createAccessToken(userId, new Date(Date.now() + 60 * 60 * 1000), {
-      clientId: withLiveAccess,
-    });
-
-    // Old but has a live refresh token: kept.
-    const withLiveRefresh = await createClient("dcr-live-refresh", old);
-    await createRefreshToken(userId, new Date(Date.now() + 30 * DAY_MS), {
-      clientId: withLiveRefresh,
-    });
-
     // Old but has an active consent grant (tokens all expired): kept.
     const withConsent = await createClient("dcr-consent", old);
-    await createConsentGrant(userId, withConsent);
-
-    // Old with only dead tokens (expired access, revoked refresh) and a revoked
-    // consent grant: nothing live, so deleted.
-    const withDeadGrants = await createClient("dcr-dead", old);
-    await createAccessToken(userId, new Date(Date.now() - 2 * DAY_MS), {
-      clientId: withDeadGrants,
-    });
-    await createRefreshToken(userId, new Date(Date.now() + 30 * DAY_MS), {
-      clientId: withDeadGrants,
-      revokedAt: new Date(Date.now() - DAY_MS),
-    });
-    await createConsentGrant(userId, withDeadGrants, {
-      revokedAt: new Date(Date.now() - DAY_MS),
-    });
+    await recordConsent(userId, withConsent, ["mcp"]);
 
     const result = await runRetentionCleanup(db);
 
-    expect(result.oauthClients).toBe(2);
+    expect(result.oauthClients).toBe(1);
     const remaining = (await db.select({ clientId: oauthClients.clientId }).from(oauthClients)).map(
       (r) => r.clientId
     );
-    expect(remaining.sort()).toEqual([recent, withLiveAccess, withLiveRefresh, withConsent].sort());
+    expect(remaining.sort()).toEqual([recent, withConsent].sort());
     expect(remaining).not.toContain(orphaned);
-    expect(remaining).not.toContain(withDeadGrants);
   });
 
   it("prunes entry tombstones past the sync horizon and keeps recent ones", async () => {
