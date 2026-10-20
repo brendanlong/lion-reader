@@ -10,7 +10,8 @@
  * The cache side effects are owned by the hook:
  * - onMutate: optimistically remove the subscription from all caches.
  * - onSuccess: apply the server-absolute counts and invalidate entries.list so
- *   the removed feed's entries are re-filtered out.
+ *   the removed feed's entries are re-filtered out. A blocked sender refreshes the
+ *   blocked-senders list.
  * - onError: toast, put the removed subscription back, and invalidate the
  *   subscription/tag/count caches to refetch truth.
  *
@@ -52,6 +53,7 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
     },
     onSuccess: (data, variables) => {
       handleSubscriptionDeleted(utils, variables.id, queryClient, data.counts);
+      if (variables.blockSender) utils.blockedSenders.list.invalidate();
       options?.onSuccess?.();
     },
     onError: (_error, _variables, context) => {

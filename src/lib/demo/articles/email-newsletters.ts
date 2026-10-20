@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Get a private email address for newsletters, and read them in Lion Reader instead of in your inbox.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader gives you a private email address so newsletters land in your reader instead of your inbox, with each sender becoming its own subscription that gets starring, tags, search, and summaries like any other article. Unsubscribing blocks the sender and, where supported, removes you from its mailing list too.</p>`,
+  summaryHtml: `<p>Lion Reader gives you a private email address so newsletters land in your reader instead of your inbox, with each sender becoming its own subscription that gets starring, tags, search, and summaries like any other article. Unsubscribing removes you from its mailing list where supported, and can block the sender too.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
@@ -25,7 +25,7 @@ const article: DemoArticle = {
 
     <h3>Unsubscribing and Blocking Senders</h3>
 
-    <p>Unsubscribe from a newsletter and Lion Reader blocks that sender, so their mail stops showing up &mdash; and for newsletters that support one-click unsubscribe, as most big newsletter platforms do, it takes you off the mailing list too, with no hunting for the tiny link at the bottom of the email. Past issues are hidden, except ones you starred. Changed your mind? Unblock the sender in Settings.</p>
+    <p>Unsubscribe from a newsletter and, if it supports one-click unsubscribe as most big newsletter platforms do, Lion Reader takes you off the mailing list, with no hunting for the tiny link at the bottom of the email. You can also block the sender, so their mail never shows up again &mdash; but leave an address unblocked if it also sends you login codes. Past issues are hidden, except ones you starred. Changed your mind? Unblock the sender in Settings.</p>
   `,
 };
 

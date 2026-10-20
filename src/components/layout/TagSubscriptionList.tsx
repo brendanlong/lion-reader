@@ -42,7 +42,12 @@ interface TagSubscriptionListProps {
     isEmail: boolean;
   }) => void;
   /** Callback to unsubscribe */
-  onUnsubscribe: (sub: { id: string; title: string; isCollection: boolean }) => void;
+  onUnsubscribe: (sub: {
+    id: string;
+    title: string;
+    isCollection: boolean;
+    isEmail: boolean;
+  }) => void;
   /** When true, only show subscriptions with unread entries */
   unreadOnly: boolean;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
@@ -144,6 +149,7 @@ export function TagSubscriptionList({
               id: sub.id,
               title: sub.title || untitledSubscriptionLabel(sub.type),
               isCollection: sub.type === "collection",
+              isEmail: sub.type === "email",
             })
           }
           onPrefetch={onPrefetch}

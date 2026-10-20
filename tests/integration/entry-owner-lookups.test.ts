@@ -126,14 +126,23 @@ describe("email and saved lookups by owner (#1846)", () => {
     expect(cleared.title).toBe("news@example.com");
   });
 
-  it("unsubscribing blocks the sender with its emails' List-Unsubscribe, and a later email reactivates it", async () => {
+  it("unsubscribing blocks the sender only when asked (#1964), with its emails' List-Unsubscribe", async () => {
     const userId = await user();
     const { subscriptionId } = await receiveEmail(userId, {
       listUnsubscribe: "<mailto:leave@example.com>",
     });
+    const caller = createCaller(await createAuthContext(userId));
 
-    await unsubscribe(db, userId, subscriptionId!);
+    await caller.subscriptions.delete({ id: subscriptionId! });
+    expect(await db.select().from(blockedSenders).where(eq(blockedSenders.userId, userId))).toEqual(
+      []
+    );
+    // Without a block, the sender's next email resubscribes.
+    const again = await receiveEmail(userId);
+    expect(again.subscriptionId).toBe(subscriptionId);
+    expect((await subscriptionRow(subscriptionId!)).unsubscribedAt).toBeNull();
 
+    await caller.subscriptions.delete({ id: subscriptionId!, blockSender: true });
     const [blocked] = await db
       .select()
       .from(blockedSenders)
@@ -142,11 +151,27 @@ describe("email and saved lookups by owner (#1846)", () => {
       senderEmail: "news@example.com",
       listUnsubscribeMailto: "mailto:leave@example.com",
     });
+    expect(await receiveEmail(userId)).toEqual({ success: false, error: "Sender blocked" });
+  });
 
-    await db.delete(blockedSenders).where(eq(blockedSenders.userId, userId));
-    const again = await receiveEmail(userId);
-    expect(again.subscriptionId).toBe(subscriptionId);
-    expect((await subscriptionRow(subscriptionId!)).unsubscribedAt).toBeNull();
+  it("only an active email subscription's own user gets its sender", async () => {
+    const userId = await user();
+    const otherUserId = await user();
+    const { subscriptionId } = await receiveEmail(userId);
+
+    const caller = createCaller(await createAuthContext(userId));
+    expect(await caller.subscriptions.getEmailSender({ id: subscriptionId! })).toEqual({
+      emailSender: "news@example.com",
+    });
+    const otherCaller = createCaller(await createAuthContext(otherUserId));
+    expect(await otherCaller.subscriptions.getEmailSender({ id: subscriptionId! })).toEqual({
+      emailSender: null,
+    });
+
+    await unsubscribe(db, userId, subscriptionId!);
+    expect(await caller.subscriptions.getEmailSender({ id: subscriptionId! })).toEqual({
+      emailSender: null,
+    });
   });
 
   it("a saved article belongs to its user, who alone finds it by URL and deletes it", async () => {

@@ -291,13 +291,18 @@ async function changeSubscriptionTags(
  * the affected lists' post-delete absolute counts, or null if there is no such
  * active subscription. Every unsubscribe path goes through here so they all do
  * the same thing: for an email subscription, send the sender's list-unsubscribe request
- * and block the sender; then remove its tags, soft-delete it, and publish
- * subscription_deleted.
+ * (and block the sender if `blockSender`); then remove its tags, soft-delete it,
+ * and publish subscription_deleted.
+ *
+ * Blocking is opt-in because a sender's address can also send mail the user
+ * still needs, like a login code from a newsletter platform (#1964). Without
+ * it, the sender's next email resubscribes the user.
  */
 export async function unsubscribe(
   db: typeof dbType,
   userId: string,
-  subscriptionId: string
+  subscriptionId: string,
+  { blockSender = false }: { blockSender?: boolean } = {}
 ): Promise<{ counts: BulkUnreadCounts } | null> {
   const [existing] = await db
     .select({
@@ -338,14 +343,16 @@ export async function unsubscribe(
       method: unsubscribeResult.method,
     });
 
-    blockedSenderValues = {
-      id: generateUuidv7(),
-      userId,
-      senderEmail: existing.emailSender,
-      blockedAt: now,
-      listUnsubscribeMailto: await getLatestUnsubscribeMailto(subscriptionId),
-      unsubscribeSentAt: unsubscribeResult.sent ? now : null,
-    };
+    if (blockSender) {
+      blockedSenderValues = {
+        id: generateUuidv7(),
+        userId,
+        senderEmail: existing.emailSender,
+        blockedAt: now,
+        listUnsubscribeMailto: await getLatestUnsubscribeMailto(subscriptionId),
+        unsubscribeSentAt: unsubscribeResult.sent ? now : null,
+      };
+    }
   }
 
   // One transaction so a crash can't half-apply the unsubscribe (e.g. tags

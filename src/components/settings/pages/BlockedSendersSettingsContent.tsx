@@ -2,7 +2,7 @@
  * Blocked Senders Settings Page
  *
  * Displays blocked email senders and allows users to unblock them.
- * Senders are blocked when unsubscribing from email newsletter feeds.
+ * Senders are blocked when the user opts to while unsubscribing from a newsletter.
  */
 
 "use client";
@@ -48,8 +48,8 @@ export default function BlockedSendersSettingsContent() {
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Blocked Senders</h2>
         <p className="ui-text-sm text-muted mt-1">
-          These senders were blocked when you unsubscribed from their newsletters. Emails from
-          blocked senders are automatically rejected.
+          You blocked these senders when unsubscribing from their newsletters. Emails from blocked
+          senders are automatically rejected.
         </p>
       </div>
 

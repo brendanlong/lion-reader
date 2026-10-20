@@ -181,6 +181,17 @@ export const subscriptionsRouter = createTRPCRouter({
     }),
 
   /**
+   * Get an email subscription's sender address (null for other subscription
+   * types), so unsubscribing can offer to block it.
+   */
+  getEmailSender: protectedProcedure
+    .input(z.object({ id: uuidSchema }))
+    .output(z.object({ emailSender: z.string().nullable() }))
+    .query(async ({ ctx, input }) => ({
+      emailSender: await subscriptionsService.getEmailSender(ctx.db, ctx.session.user.id, input.id),
+    })),
+
+  /**
    * Update a subscription.
    *
    * Allows users to update subscription settings:
@@ -216,6 +227,8 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * Sets unsubscribedAt timestamp instead of deleting the record.
    * This allows users to resubscribe later while preserving their read state.
+   * For an email subscription, `blockSender` also rejects the sender's future
+   * emails; without it, the sender's next email resubscribes.
    */
   delete: protectedProcedure
     .meta({
@@ -229,6 +242,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .input(
       z.object({
         id: uuidSchema,
+        blockSender: booleanQueryParam,
       })
     )
     .output(z.object({ success: z.boolean(), counts: unreadCountsSchema.optional() }))
@@ -236,7 +250,8 @@ export const subscriptionsRouter = createTRPCRouter({
       const result = await subscriptionUpdatesService.unsubscribe(
         ctx.db,
         ctx.session.user.id,
-        input.id
+        input.id,
+        { blockSender: input.blockSender }
       );
       if (!result) {
         throw errors.subscriptionNotFound();

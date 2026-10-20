@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { blockedSenders, subscriptions, subscriptionTags, users } from "../../src/server/db/schema";
 import { attemptUnsubscribe } from "../../src/server/email/unsubscribe";
@@ -15,7 +15,9 @@ import { createSession } from "../../src/server/auth/session";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { feedStreamId } from "../../src/server/google-reader/id";
 import { POST as greaderSubscriptionEdit } from "../../src/app/api/greader.php/reader/api/0/subscription/edit/route";
+import { createCaller } from "../../src/server/trpc/root";
 import {
+  createAuthContext,
   createTestEmailSubscription,
   createTestEntry,
   createTestTag,
@@ -148,7 +150,7 @@ describe("attemptUnsubscribe", () => {
 });
 
 describe("Google Reader subscription/edit ac=unsubscribe", () => {
-  it("unsubscribes from the newsletter and blocks the sender like the web app (#1819)", async () => {
+  it("unsubscribes from the newsletter like the web app (#1819), without blocking the sender (#1964)", async () => {
     const userId = await createTestUser();
     createdUserIds.push(userId);
     const subscriptionId = await createEmailSubscriptionForUser(userId);
@@ -183,16 +185,9 @@ describe("Google Reader subscription/edit ac=unsubscribe", () => {
 
     expect(response.status).toBe(200);
     expect(received.map((r) => r.path)).toEqual(["/unsub"]);
-    const [blocked] = await db
-      .select()
-      .from(blockedSenders)
-      .where(
-        and(
-          eq(blockedSenders.userId, userId),
-          eq(blockedSenders.senderEmail, `sender-${userId}@example.com`)
-        )
-      );
-    expect(blocked?.unsubscribeSentAt).not.toBeNull();
+    expect(await db.select().from(blockedSenders).where(eq(blockedSenders.userId, userId))).toEqual(
+      []
+    );
     const [subscription] = await db
       .select({ unsubscribedAt: subscriptions.unsubscribedAt })
       .from(subscriptions)
@@ -204,5 +199,31 @@ describe("Google Reader subscription/edit ac=unsubscribe", () => {
         .from(subscriptionTags)
         .where(eq(subscriptionTags.subscriptionId, subscriptionId))
     ).toEqual([]);
+  });
+});
+
+describe("subscriptions.delete with blockSender", () => {
+  it("records on the block that the one-click unsubscribe was sent", async () => {
+    const userId = await createTestUser();
+    createdUserIds.push(userId);
+    const subscriptionId = await createEmailSubscriptionForUser(userId);
+    await createTestEntry(subscriptionId, {
+      type: "email",
+      listUnsubscribeHttps: `${baseUrl}/unsub`,
+      listUnsubscribePost: true,
+    });
+
+    await createCaller(await createAuthContext(userId)).subscriptions.delete({
+      id: subscriptionId,
+      blockSender: true,
+    });
+
+    expect(received.map((r) => r.path)).toEqual(["/unsub"]);
+    const [blocked] = await db
+      .select()
+      .from(blockedSenders)
+      .where(eq(blockedSenders.userId, userId));
+    expect(blocked).toMatchObject({ senderEmail: `sender-${userId}@example.com` });
+    expect(blocked.unsubscribeSentAt).not.toBeNull();
   });
 });
