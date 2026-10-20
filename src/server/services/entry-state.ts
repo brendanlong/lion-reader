@@ -266,7 +266,7 @@ export async function markAllEntriesRead(
 
   const conditions: SQL[] = [
     eq(userEntries.userId, params.userId),
-    eq(userEntries.read, false),
+    sql`NOT ${userEntries.read}`,
     or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))!,
   ];
 
@@ -276,7 +276,7 @@ export async function markAllEntriesRead(
   // starred/saved.
   conditions.push(visibleUserEntrySql());
   if (!params.showSpam) {
-    conditions.push(eq(userEntries.isSpam, false));
+    conditions.push(sql`NOT ${userEntries.isSpam}`);
   }
 
   // Filter by subscriptionId: a foreign or unsubscribed subscription matches

@@ -1182,9 +1182,17 @@ CREATE INDEX idx_user_entries_published_or_fetched ON public.user_entries USING 
 
 CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
 
+CREATE INDEX idx_user_entries_recently_read ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC) WHERE ((read_changed_at IS NOT NULL) AND (NOT is_spam) AND (starred OR (active_memberships > 0)));
+
 CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
 
+CREATE INDEX idx_user_entries_starred_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
+
 CREATE INDEX idx_user_entries_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
+
+CREATE INDEX idx_user_entries_visible_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT is_spam) AND (starred OR (active_memberships > 0)));
+
+CREATE INDEX idx_user_entries_visible_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam) AND (starred OR (active_memberships > 0)));
 
 CREATE INDEX idx_users_getting_started_pending ON public.users USING btree (id) WHERE (getting_started_at IS NULL);
 

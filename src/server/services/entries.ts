@@ -412,12 +412,10 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
-  // Sort column (all choices are served by an existing index):
-  //  - "published" (default) uses the denormalized user_entries sort key, so
-  //    idx_user_entries_published_or_fetched (or, for unread or starred lists,
-  //    the partial index of that order) serves filter + sort.
-  //  - "readChanged"/"archived" sort by when read state was last changed
-  //    (idx_user_entries_read_changed_at).
+  // Sort column: the timeline ("published"), or when read state last changed
+  // ("readChanged"/"archived"). Each list's page must read about its own size
+  // in rows, whatever else the user has: `list-page-bounds.test.ts` holds every
+  // list and filter to that, so a new one needs an index there.
   const sortColumn = !timelineSort
     ? visibleEntries.readChangedAt
     : single
@@ -425,21 +423,17 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
       : visibleEntries.publishedOrFetchedAt;
   const idColumn = single && timelineSort ? subscriptionEntries.entryId : visibleEntries.id;
 
-  // Cursor condition
-  // Pass timestamp string directly to Postgres (::timestamptz) to preserve
-  // microsecond precision. Using new Date(ts) would truncate to milliseconds,
-  // causing entries to fall into gaps between cursor and actual timestamps.
+  // A row comparison, which Postgres reads as a bound on the index; the
+  // equivalent `a < x OR (a = x AND b < y)` is a filter, so every page would
+  // read the list from its top (#2067). The timestamp goes to Postgres as text
+  // (::timestamptz) to keep its microseconds.
   if (params.cursor) {
     const { ts, id } = timelineCursor.decode(params.cursor);
-    if (sortOrder === "newest") {
-      conditions.push(
-        sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} < ${id}))`
-      );
-    } else {
-      conditions.push(
-        sql`(${sortColumn} > ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} > ${id}))`
-      );
-    }
+    conditions.push(
+      sortOrder === "newest"
+        ? sql`(${sortColumn}, ${idColumn}) < (${ts}::timestamptz, ${id}::uuid)`
+        : sql`(${sortColumn}, ${idColumn}) > (${ts}::timestamptz, ${id}::uuid)`
+    );
   }
 
   const orderByClause =
