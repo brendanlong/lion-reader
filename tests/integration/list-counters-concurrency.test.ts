@@ -262,10 +262,10 @@ describe("unread counters under concurrent writes", () => {
     await expectNoDrift();
   });
 
-  it("deleting a user waits for a write holding one of their articles", async () => {
-    // The deletion must lock the user's rows before the user, as the writes
-    // do: a mark-read holding the row and then locking the user (for All)
-    // deadlocked against it (#2092).
+  it("deleting a user survives a deadlock with a write holding one of their articles", async () => {
+    // The deletion's cascade locks the user before their rows, the reverse of
+    // a mark-read, which holds the row and then locks the user (for All): it
+    // must retry rather than fail (#2092).
     const userId = await createTestUser();
     const { entryIds } = await feedWithEntries(userId, 1);
 

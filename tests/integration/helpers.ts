@@ -84,8 +84,8 @@ export async function createTestUser(options: CreateTestUserOptions = {}): Promi
 /**
  * Deletes the users matching `where` (all users by default) through
  * `deleteUser`. Tests whose signups leave `runPostSignupTasks` running must
- * clean up this way: a raw `DELETE FROM users` takes the user's rows out of
- * lock order and deadlocks against those tasks (#2092).
+ * clean up this way: a raw `DELETE FROM users` can deadlock against those
+ * tasks, which `deleteUser` retries (#2092).
  */
 export async function deleteUsers(where?: SQL): Promise<void> {
   const rows = await db.select({ id: users.id }).from(users).where(where);

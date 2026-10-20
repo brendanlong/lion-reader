@@ -29,8 +29,30 @@ export function isForeignKeyViolation(error: unknown): boolean {
 const PG_DEADLOCK_DETECTED = "40P01";
 
 /** Returns true if the error is a Postgres deadlock abort (walks `cause` like `isUniqueViolation`). */
-export function isDeadlock(error: unknown): boolean {
+function isDeadlock(error: unknown): boolean {
   return hasSqlState(error, PG_DEADLOCK_DETECTED);
+}
+
+/** Tries of a transaction that keeps losing deadlocks (see {@link retryDeadlocks}). */
+const DEADLOCK_ATTEMPTS = 3;
+
+/**
+ * Runs `run`, rerunning it when it loses a deadlock, for transactions whose
+ * locks can't be taken in one order against every writer they race. `run`
+ * must be a whole transaction: a deadlock aborts it.
+ */
+export async function retryDeadlocks<T>(
+  run: () => Promise<T>,
+  onRetry: (attempt: number) => void
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      if (attempt >= DEADLOCK_ATTEMPTS || !isDeadlock(err)) throw err;
+      onRetry(attempt);
+    }
+  }
 }
 
 function hasSqlState(error: unknown, code: string): boolean {
