@@ -1,16 +1,31 @@
 /**
- * The database benchmarks: each one reproduces, statement by statement, the
- * SQL a service function sends for one user action, against the seeded
- * dataset (`seed.ts`). Each cites the function it mirrors; **when that
- * function's SQL changes, change the benchmark with it**, or before/after
- * comparisons measure the wrong thing.
- *
- * Values are inlined as literals where the app binds parameters; the planner
- * sees the same values either way. Writes run inside a transaction that is
- * rolled back (`run.ts`), so every iteration starts from the same data.
+ * The database benchmarks: the SQL a service function sends for one user
+ * action, against the seeded dataset (`seed.ts`). Reads record it by running
+ * the function (`recordStatements`). Writes reproduce it statement by
+ * statement and cite the function they mirror; **when that function's SQL
+ * changes, change the benchmark with it**. Their values are inlined as
+ * literals where the app binds parameters; the planner sees the same values
+ * either way. Writes run inside a transaction that is rolled back (`run.ts`),
+ * so every iteration starts from the same data.
  */
 
 import type { ClientBase } from "pg";
+
+import { db as appDb } from "@/server/db";
+import {
+  countTotalEntries,
+  listEntries,
+  listGreaderItemRefs,
+  type ListEntriesParams,
+} from "@/server/services/entries";
+import { getEntries, getFullEntry } from "@/server/services/entry-reads";
+import { getUserUnreadCounts } from "@/server/services/counts";
+import { collectSyncChanges, collectSyncEvents, currentSyncCursors } from "@/server/services/sync";
+import { getSubscription } from "@/server/services/subscriptions";
+import { listTags } from "@/server/services/tags";
+import { getGreaderUnreadCounts } from "@/server/google-reader/subscriptions";
+import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
+import { recordStatements } from "./record";
 
 import {
   COLLECTIONS,
@@ -34,6 +49,8 @@ export interface Statement {
   /** Short name, unique within the benchmark (e.g. "update", "counts.users"). */
   label: string;
   sql: string;
+  /** Bind parameters, for SQL recorded from the app (`recordStatements`). */
+  params?: unknown[];
 }
 
 export interface PreparedBenchmark {
@@ -80,17 +97,17 @@ async function one<T>(db: ClientBase, sql: string): Promise<T> {
 /** `isCollectionSubscription()` (services/subscriptions.ts) over the unaliased `subscriptions`. */
 const IS_COLLECTION = "subscriptions.type = 'collection'";
 
-/** `inSavedSubscriptionSql` (services/entry-filters.ts) for a `visible_entries` alias. */
-const inSaved = (alias: string): string => `EXISTS (
-    SELECT 1 FROM subscription_entries
-    JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
-      AND subscriptions.type = 'saved'
-    WHERE subscription_entries.user_id = ${alias}.user_id
-      AND subscription_entries.entry_id = ${alias}.id)`;
+/** `buildEntriesInSubscriptionsCondition` (services/entry-filters.ts). */
+function entriesInSubscriptions(
+  ids: string[],
+  columns: { userId: string; entryId: string }
+): string {
+  return `EXISTS (SELECT 1 FROM subscription_entries
+  WHERE subscription_entries.user_id = ${columns.userId} AND subscription_entries.entry_id = ${columns.entryId}
+    AND subscription_entries.subscription_id IN (${list(ids)}))`;
+}
 
-/** `entryFeedTitleSql()` (services/entry-filters.ts). */
-const FEED_TITLE =
-  "CASE WHEN subscriptions.type = 'saved' THEN 'Saved Articles'::text ELSE COALESCE(subscriptions.custom_title, feeds.title) END";
+const UE_COLUMNS = { userId: "user_entries.user_id", entryId: "user_entries.entry_id" };
 
 /**
  * `entryMemberships` joined with `entryOriginOn` (services/entry-filters.ts)
@@ -110,105 +127,6 @@ const membershipJoins = (userCol: string, entryCol: string): string =>
 ) entry_memberships ON true
 LEFT JOIN subscriptions ON subscriptions.id = entry_memberships.origin_id AND subscriptions.user_id = ${userCol}`;
 
-/** `entryListSelectFields` + `entryFeedTitleSql()` (services/entries.ts, entry-filters.ts). */
-const LIST_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id AS subscription_greader_stream_id,
-  ve.type, ve.url, ve.title, ve.author, ve.summary, ve.published_at,
-  ve.fetched_at, ve.read, ve.starred, ve.read_changed_at, ve.updated_at,
-  subscriptions.id AS subscription_id, entry_memberships.subscription_ids,
-  ve.site_name, ${FEED_TITLE} AS feed_title`;
-
-/**
- * `entryReadSelectFields` + `fullContentBodyFields` (services/entry-reads.ts): the
- * external APIs' reads (getEntry/getEntries) load full-content bodies only for
- * subscriptions that show them; the app's entry view (getFullEntry) loads all.
- */
-function fullColumns(scope: "all" | "shown"): string {
-  const loaded = scope === "all" ? "true" : "subscriptions.fetch_full_content";
-  return `ve.id, ve.greader_item_id, subscriptions.greader_stream_id AS subscription_greader_stream_id,
-  ve.type, ve.url, ve.title, ve.author, ve.content_original, ve.content_cleaned,
-  ve.full_content_fetched_at, ve.full_content_error,
-  ve.summary, ve.published_at, ve.fetched_at, ve.read, ve.starred, ve.read_changed_at,
-  ve.updated_at, ve.entry_updated_at, ve.content_hash,
-  subscriptions.id AS subscription_id, entry_memberships.subscription_ids,
-  subscriptions.fetch_full_content, ve.site_name, ${FEED_TITLE} AS feed_title, feeds.url AS feed_url,
-  ve.unsubscribe_url,
-  CASE WHEN ${loaded} AND ve.full_content_cleaned IS NULL THEN ve.full_content_original END AS full_content_original,
-  CASE WHEN ${loaded} THEN ve.full_content_cleaned END AS full_content_cleaned`;
-}
-
-/** The joins every entry read performs (`entryMemberships`). */
-const FROM_VISIBLE = `FROM visible_entries ve
-LEFT JOIN feeds ON ve.owner_feed_id = feeds.id
-${membershipJoins("ve.user_id", "ve.id")}`;
-
-interface ListOptions {
-  userId: string;
-  /** One subscription's list, walked through its memberships' timeline. */
-  single?: string;
-  /** A tag's (its id) or Uncategorized's (the user's id) list, through its tag_entries (no spam). */
-  tagList?: string;
-  where?: string[];
-  unreadOnly?: boolean;
-  limit?: number;
-  /** "archived" is Wallabag's: by read_changed_at, without Recently Read's exclusion. */
-  sortBy?: "published" | "readChanged" | "archived";
-  cursor?: { ts: string; id: string };
-  /** `listGreaderItemRefs`' columns rather than `listEntries`'. */
-  refs?: boolean;
-}
-
-/**
- * `listEntries` (services/entries.ts), newest first; `limit` is the page size.
- * With `refs`, `listGreaderItemRefs`, which pages the same way.
- */
-function listEntriesSql(o: ListOptions): string {
-  const timelineSort = o.sortBy !== "readChanged" && o.sortBy !== "archived";
-  // The list's own rows (`listRowsOf`): one subscription's memberships, or a
-  // tag's or Uncategorized's tag_entries.
-  const rows = o.single
-    ? { join: "subscription_entries se", alias: "se", list: `se.subscription_id = ${q(o.single)}` }
-    : o.tagList
-      ? { join: "tag_entries te", alias: "te", list: `te.list_id = ${q(o.tagList)}` }
-      : undefined;
-  const sortColumn = !timelineSort
-    ? "ve.read_changed_at"
-    : rows
-      ? `${rows.alias}.published_or_fetched_at`
-      : "ve.published_or_fetched_at";
-  const idColumn = rows && timelineSort ? `${rows.alias}.entry_id` : "ve.id";
-  const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
-  if (o.unreadOnly ?? true) where.push("NOT ve.read");
-  where.push("NOT ve.is_spam");
-  // The list's rows' copies of the filters too.
-  if (rows && (o.unreadOnly ?? true)) where.push(`NOT ${rows.alias}.read`);
-  if (o.single) where.push("NOT se.is_spam");
-  if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
-  if (o.cursor) {
-    where.push(`(${sortColumn}, ${idColumn}) < (${ts(o.cursor.ts)}, ${q(o.cursor.id)}::uuid)`);
-  }
-  const join = rows
-    ? `\nINNER JOIN ${rows.join} ON ${rows.list}
-  AND ${rows.alias}.user_id = ve.user_id AND ${rows.alias}.entry_id = ve.id`
-    : "";
-  const select = o.refs
-    ? `SELECT ve.id, ve.greader_item_id, subscriptions.greader_stream_id, ve.fetched_at, ${sortColumn} AS sort_ts
-FROM visible_entries ve
-${membershipJoins("ve.user_id", "ve.id")}`
-    : `SELECT ${LIST_COLUMNS}, ${sortColumn} AS sort_ts
-${FROM_VISIBLE}`;
-  return `${select}${join}
-WHERE ${where.join("\n  AND ")}
-ORDER BY ${sortColumn} DESC, ${idColumn} DESC
-LIMIT ${(o.limit ?? 10) + 1} OFFSET 0`;
-}
-
-/** `getEntries` (services/entry-reads.ts). */
-function getEntriesSql(userId: string, entryIds: string[]): string {
-  return `SELECT ${fullColumns("shown")}
-${FROM_VISIBLE}
-WHERE ve.id IN (${list(entryIds)}) AND ve.user_id = ${q(userId)}`;
-}
-
 /** `verifySubscriptionOwnership` (services/entry-filters.ts). */
 function verifyOwnershipSql(userId: string, subscriptionId: string): Statement {
   return {
@@ -219,25 +137,6 @@ WHERE subscriptions.id = ${q(subscriptionId)} AND subscriptions.user_id = ${q(us
 LIMIT 1`,
   };
 }
-
-/** `buildEntriesInSubscriptionsCondition` (services/entry-filters.ts). */
-function entriesInSubscriptions(
-  ids: string[],
-  columns: { userId: string; entryId: string }
-): string {
-  return `EXISTS (SELECT 1 FROM subscription_entries
-  WHERE subscription_entries.user_id = ${columns.userId} AND subscription_entries.entry_id = ${columns.entryId}
-    AND subscription_entries.subscription_id IN (${list(ids)}))`;
-}
-
-/** `getSavedSubscriptionId` (services/subscriptions.ts): Saved lists walk the saved subscription. */
-const savedSubscriptionSql: Statement = {
-  label: "saved_subscription",
-  sql: `SELECT subscriptions.id FROM subscriptions
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`,
-};
-
-const UE_COLUMNS = { userId: "user_entries.user_id", entryId: "user_entries.entry_id" };
 
 /** `getUserUnreadCounts` (services/counts.ts). */
 const userCountsSql = (userId: string): Statement => ({
@@ -379,23 +278,6 @@ WHERE user_entries.user_id = ${q(userId)} AND subscriptions.user_id = ${q(userId
 ORDER BY user_entries.entry_id
 FOR NO KEY UPDATE OF user_entries`,
 });
-
-/** `getSubscriptionsByIds` (services/subscriptions.ts). */
-function subscriptionRowsSql(userId: string, subscriptionIds: string[]): string {
-  return `SELECT user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
-  user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
-  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id, statement_timestamp(),
-  COALESCE(json_agg(json_build_object('id', tags.id, 'name', tags.name, 'color', tags.color)
-                    ORDER BY tags.name, tags.id)
-           FILTER (WHERE tags.id IS NOT NULL), '[]'::json) AS tags
-FROM user_feeds
-LEFT JOIN subscription_tags ON subscription_tags.subscription_id = user_feeds.id
-LEFT JOIN tags ON tags.id = subscription_tags.tag_id
-WHERE user_feeds.id IN (${list(subscriptionIds)}) AND user_feeds.user_id = ${q(userId)}
-GROUP BY user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
-  user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
-  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id`;
-}
 
 /** `unsubscribe` (services/subscription-updates.ts), from its existence check to its counts. */
 async function unsubscribeStatements(
@@ -560,141 +442,148 @@ ORDER BY ve.published_or_fetched_at DESC, ve.id DESC LIMIT ${n}`
   ).map((r) => r.id);
 }
 
-/**
- * `collectSyncEvents` (services/sync.ts) from a cursor `back` changes back:
- * the entry, subscription and tag reads and the count lookup. For
- * `sync.changes` (the Android app's delta sync) it adds the database clock
- * read, `reportHidden` (entries a state change hid come back too),
- * `listCollectionMemberships` and the tombstones read.
- */
-async function syncStatements(
-  db: ClientBase,
-  changes: boolean,
-  back: number = 200
-): Promise<Statement[]> {
-  const cursor = await one<{ ts: string; id: string }>(
-    db,
-    `SELECT updated_at::text AS ts, entry_id AS id FROM user_entries WHERE user_id = ${q(U0)}
-ORDER BY updated_at DESC, entry_id DESC OFFSET ${back} LIMIT 1`
-  );
-  const subCursor = await one<{ ts: string }>(
-    db,
-    `SELECT updated_at::text AS ts FROM subscriptions WHERE user_id = ${q(U0)}
-ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
-  );
-  const tagCursor = await one<{ ts: string }>(
-    db,
-    `SELECT max(updated_at)::text AS ts FROM tags WHERE user_id = ${q(U0)}`
-  );
-  const c = ts(cursor.ts);
-  const after = (col: string, id: string) => `(${col}, ${id}) > (${c}, ${q(cursor.id)}::uuid)`;
-  // The app sends the first page's cursor as `entriesSince` on every page.
-  const since = (col: string, id = "user_entries.entry_id") =>
-    changes ? `(${after(col, id)} OR ${after(col, id)})` : after(col, id);
-  const visible = "(user_entries.starred = true OR user_entries.active_memberships > 0)";
-  const entriesSql = `WITH page AS (
-  SELECT user_entries.user_id, user_entries.entry_id, user_entries.changed_at, user_entries.read,
-    user_entries.starred, user_entries.read_changed_at, ${visible} AS visible,
-    ${since("user_entries.updated_at")} AS state_changed, user_entries.updated_at AS state_updated_at
-  FROM user_entries
-  WHERE user_entries.user_id = ${q(U0)} AND ${after("user_entries.changed_at", "user_entries.entry_id")}
-    AND ${changes ? `(${visible} OR ${since("user_entries.updated_at")})` : visible}
-  ORDER BY user_entries.changed_at, user_entries.entry_id
-  LIMIT 501
-)
-SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, entries.published_at,
-  entries.fetched_at, entries.site_name, entries.updated_at, entries.is_spam,
-  page.read, page.starred, page.read_changed_at, subscriptions.id AS subscription_id,
-  entry_memberships.subscription_ids, entries.type,
-  ${FEED_TITLE} AS feed_title, page.visible,
-  ${since("entries.updated_at", "entries.id")} AS metadata_changed, page.state_changed,
-  ${since("entries.created_at", "entries.id")} AS is_new, page.changed_at, page.state_updated_at
-FROM page
-INNER JOIN entries ON entries.id = page.entry_id
-LEFT JOIN feeds ON feeds.id = entries.owner_feed_id
-${membershipJoins("page.user_id", "page.entry_id")}
-ORDER BY page.changed_at, page.entry_id`;
-  const changed = (
-    await rows<{
-      id: string;
-      visible: boolean;
-      subscription_id: string | null;
-      state_changed: boolean;
-      metadata_changed: boolean;
-      is_new: boolean;
-    }>(db, entriesSql)
-  ).filter((r) => r.visible);
-  const subsSql = `SELECT subscriptions.id, subscriptions.subscribed_at, subscriptions.unsubscribed_at,
-  subscriptions.updated_at AS updated_at_instant
-FROM subscriptions
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.updated_at > ${ts(subCursor.ts)}
-ORDER BY subscriptions.updated_at`;
-  const activeSubs = (
-    await rows<{ id: string; unsubscribed_at: string | null }>(
-      db,
-      `SELECT id, unsubscribed_at FROM subscriptions WHERE user_id = ${q(U0)} AND updated_at > ${ts(subCursor.ts)}`
-    )
-  ).filter((s) => s.unsubscribed_at === null);
-  const counted = changed
-    .filter((r) => r.state_changed || (r.metadata_changed && r.is_new))
-    .map((r) => ({ id: r.id, subscriptionId: r.subscription_id }));
-  const stateChanged = changed.filter((r) => r.state_changed);
-  const deletionsCursor = await one<{ ts: string }>(
-    db,
-    "SELECT (now() - interval '1 day')::text AS ts"
-  );
-  return [
-    ...(changes ? [{ label: "db_now", sql: "SELECT now() AS now" }] : []),
-    { label: "entries", sql: entriesSql },
-    ...(counted.length > 0
-      ? (await bulkCounts(db, U0, counted)).map((s) => ({ ...s, label: `counts.${s.label}` }))
-      : []),
-    { label: "subscriptions", sql: subsSql },
-    ...(activeSubs.length > 0
-      ? [
-          {
-            label: "subscription_rows",
-            sql: subscriptionRowsSql(
-              U0,
-              activeSubs.map((s) => s.id)
-            ),
-          },
-        ]
-      : []),
-    {
-      label: "tags",
-      sql: `SELECT tags.id, tags.name, tags.color, tags.created_at, tags.deleted_at, tags.updated_at
-FROM tags WHERE tags.user_id = ${q(U0)} AND tags.updated_at > ${ts(tagCursor.ts)} ORDER BY tags.updated_at`,
-    },
-    ...(changes && stateChanged.length > 0
-      ? [
-          // listCollectionMemberships
-          {
-            label: "collection_memberships",
-            sql: `SELECT subscription_entries.entry_id, subscription_entries.subscription_id
-FROM subscription_entries
-INNER JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
-WHERE subscription_entries.user_id = ${q(U0)} AND subscription_entries.entry_id IN (${list(stateChanged.map((r) => r.id))})
-  AND subscriptions.unsubscribed_at IS NULL AND ${IS_COLLECTION}`,
-          },
-        ]
-      : []),
-    ...(changes
-      ? [
-          {
-            label: "tombstones",
-            sql: `SELECT entry_tombstones.entry_id, entry_tombstones.deleted_at FROM entry_tombstones
-WHERE entry_tombstones.user_id = ${q(U0)} AND entry_tombstones.deleted_at > ${ts(deletionsCursor.ts)}
-ORDER BY entry_tombstones.deleted_at LIMIT 501`,
-          },
-        ]
-      : []),
-  ];
-}
-
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
+
+/** A list page as the web app requests it (`entries.list`): unread, 10 a page. */
+const appList = (params: Partial<ListEntriesParams> = {}): ListEntriesParams => ({
+  userId: U0,
+  unreadOnly: true,
+  limit: 10,
+  showSpam: false,
+  ...params,
+});
+
+/** How deep the deep-page benchmarks start. */
+const DEEP_ROWS = 500;
+
+/**
+ * The list's params with a cursor `rows` into it, paged with the app's own
+ * query (`rows` a multiple of 100).
+ */
+async function deep(params: ListEntriesParams, rows = DEEP_ROWS): Promise<ListEntriesParams> {
+  let cursor: string | undefined;
+  for (let read = 0; read < rows; read += 100) {
+    const page = await listEntries(appDb, { ...params, limit: 100, cursor });
+    if (!page.nextCursor) throw new Error(`list shorter than ${rows}: ${JSON.stringify(params)}`);
+    cursor = page.nextCursor;
+  }
+  return { ...params, cursor };
+}
+
+/** The stream routes' page sizes (`resolveStreamListParams`'s `page`). */
+const GREADER_CONTENTS_PAGE = { defaultCount: 20, maxCount: 300 };
+const GREADER_IDS_PAGE = { defaultCount: 1000, maxCount: 10000 };
+
+/** A read benchmark of one `listEntries` page. */
+function listBenchmark(
+  name: string,
+  source: string,
+  params: (db: ClientBase) => Promise<ListEntriesParams>
+): Benchmark {
+  return {
+    name,
+    kind: "read",
+    source: `services/entries.ts listEntries (${source})`,
+    prepare: async (db) => {
+      const resolved = await params(db);
+      return { statements: await recordStatements("list", (app) => listEntries(app, resolved)) };
+    },
+  };
+}
+
+/** A web subscription of U0's, unread and 500+ entries long. */
+async function longSubscription(db: ClientBase): Promise<string> {
+  return (
+    await one<{ id: string }>(
+      db,
+      `SELECT id FROM subscriptions WHERE user_id = ${q(U0)} AND unsubscribed_at IS NULL
+ORDER BY unread_count DESC, id LIMIT 1`
+    )
+  ).id;
+}
+
+/** U0's tag whose subscriptions hold the fewest articles (at least one). */
+async function sparseTag(db: ClientBase): Promise<string> {
+  return (
+    await one<{ id: string }>(
+      db,
+      `SELECT st.tag_id AS id FROM subscription_tags st
+JOIN subscriptions s ON s.id = st.subscription_id AND s.user_id = ${q(U0)} AND s.unsubscribed_at IS NULL
+JOIN subscription_entries se ON se.subscription_id = s.id
+JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
+WHERE NOT ue.read
+GROUP BY st.tag_id ORDER BY count(*), st.tag_id LIMIT 1`
+    )
+  ).id;
+}
+
+/** The sync cursors `back` changes before U0's newest, as a client would hold them. */
+async function syncCursors(db: ClientBase, back: number) {
+  const iso = (col: string) => `to_json(${col}) #>> '{}'`;
+  const entries = await one<{ ts: string; id: string }>(
+    db,
+    `SELECT ${iso("changed_at")} AS ts, entry_id AS id FROM user_entries WHERE user_id = ${q(U0)}
+ORDER BY changed_at DESC, entry_id DESC OFFSET ${back} LIMIT 1`
+  );
+  const subscriptions = await one<{ ts: string }>(
+    db,
+    `SELECT ${iso("updated_at")} AS ts FROM subscriptions WHERE user_id = ${q(U0)}
+ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
+  );
+  const tags = await one<{ ts: string }>(
+    db,
+    `SELECT ${iso("max(updated_at)")} AS ts FROM tags WHERE user_id = ${q(U0)}`
+  );
+  return {
+    entries: entries.ts,
+    entriesAfterId: entries.id,
+    subscriptions: subscriptions.ts,
+    tags: tags.ts,
+  };
+}
+
+/** A Google Reader stream read: the route's `resolveStreamListParams`, then its page. */
+async function greaderStream(
+  streamId: string,
+  query: Record<string, string>,
+  page: { defaultCount: number; maxCount: number },
+  withContents: boolean
+): Promise<Statement[]> {
+  return recordStatements("stream", async (app) => {
+    const params = await resolveStreamListParams(
+      app,
+      { id: U0, showSpam: false },
+      streamId,
+      new URLSearchParams(query),
+      page
+    );
+    if (isStreamError(params)) throw new Error(`${streamId}: ${params.message}`);
+    const refs = await listGreaderItemRefs(app, params);
+    if (withContents) {
+      await getEntries(
+        app,
+        U0,
+        refs.items.map((ref) => ref.id)
+      );
+    }
+  });
+}
+
+/** The Wallabag entries route's page and total for saved articles (`perPage` 30). */
+async function wallabagEntries(
+  filter: { updatedAfter?: Date },
+  sortBy: ListEntriesParams["sortBy"]
+) {
+  const shared = { type: "saved" as const, showSpam: false, ...filter };
+  return recordStatements("wallabag", async (app) => {
+    await Promise.all([
+      listEntries(app, { ...shared, userId: U0, limit: 30, offset: 0, sortBy }),
+      countTotalEntries(app, U0, shared),
+    ]);
+  });
+}
 
 const READS: Benchmark[] = [
   {
@@ -702,162 +591,74 @@ const READS: Benchmark[] = [
     kind: "read",
     source: "services/tags.ts listTags",
     prepare: async () => ({
-      statements: [
-        {
-          label: "tags",
-          sql: `SELECT tags.id, tags.name, tags.color, tags.created_at,
-  (SELECT COUNT(*)::int FROM subscription_tags WHERE subscription_tags.tag_id = "tags"."id") AS feed_count,
-  tags.unread_count
-FROM tags WHERE tags.user_id = ${q(U0)} AND tags.deleted_at IS NULL ORDER BY tags.name`,
-        },
-        {
-          label: "uncategorized_feeds",
-          sql: `SELECT COUNT(*)::int FROM subscriptions
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.unsubscribed_at IS NULL
-  AND NOT EXISTS (SELECT 1 FROM subscription_tags WHERE subscription_tags.subscription_id = subscriptions.id)`,
-        },
-        {
-          label: "uncategorized_unread",
-          sql: `SELECT uncategorized_unread_count FROM users WHERE users.id = ${q(U0)}`,
-        },
-      ],
+      statements: await recordStatements("tags", (app) => listTags(app, U0)),
     }),
   },
   {
     name: "ssr.entries_count",
     kind: "read",
     source: "services/counts.ts getUserUnreadCounts (entries.countLists, once per SSR)",
-    prepare: async () => ({ statements: [userCountsSql(U0)] }),
+    prepare: async () => ({
+      statements: await recordStatements("counts", (app) => getUserUnreadCounts(app, U0)),
+    }),
   },
   {
     name: "ssr.sync_cursors",
     kind: "read",
     source: "services/sync.ts currentSyncCursors",
     prepare: async () => ({
-      statements: [
-        {
-          label: "entries",
-          sql: `SELECT user_entries.changed_at, user_entries.entry_id FROM user_entries
-WHERE user_entries.user_id = ${q(U0)}
-ORDER BY user_entries.changed_at DESC, user_entries.entry_id DESC LIMIT 1`,
-        },
-        {
-          label: "subscriptions",
-          sql: `SELECT MAX(subscriptions.updated_at) FROM subscriptions WHERE subscriptions.user_id = ${q(U0)}`,
-        },
-        {
-          label: "tags",
-          sql: `SELECT MAX(tags.updated_at) FROM tags WHERE tags.user_id = ${q(U0)}`,
-        },
-      ],
+      statements: await recordStatements("cursors", (app) => currentSyncCursors(app, U0)),
     }),
   },
-  {
-    name: "ssr.list_all",
-    kind: "read",
-    source: "services/entries.ts listEntries (/all, unread, first page)",
-    prepare: async () => ({ statements: [{ label: "list", sql: listEntriesSql({ userId: U0 }) }] }),
-  },
-  {
-    name: "ssr.list_all_page_20",
-    kind: "read",
-    source: "services/entries.ts listEntries (/all, unread, keyset cursor 200 rows deep)",
-    prepare: async (db) => {
-      const cursor = await one<{ ts: string; id: string }>(
-        db,
-        `SELECT published_or_fetched_at::text AS ts, id FROM visible_entries
-WHERE user_id = ${q(U0)} AND read = false AND is_spam = false
-ORDER BY published_or_fetched_at DESC, id DESC OFFSET 200 LIMIT 1`
-      );
-      return { statements: [{ label: "list", sql: listEntriesSql({ userId: U0, cursor }) }] };
-    },
-  },
-  {
-    name: "ssr.list_subscription",
-    kind: "read",
-    source:
-      "services/entries.ts listEntries (/subscription/:id, U0's subscription with most unread)",
-    prepare: async (db) => {
-      const { id } = await one<{ id: string }>(
-        db,
-        `SELECT id FROM subscriptions WHERE user_id = ${q(U0)} AND unsubscribed_at IS NULL
-ORDER BY unread_count DESC, id LIMIT 1`
-      );
-      return {
-        statements: [
-          verifyOwnershipSql(U0, id),
-          { label: "list", sql: listEntriesSql({ userId: U0, single: id }) },
-        ],
-      };
-    },
-  },
-  {
-    name: "ssr.list_tag",
-    kind: "read",
-    source: "services/entries.ts listEntries (/tag/:id; the tag also holds a collection)",
-    prepare: async () => ({
-      statements: [{ label: "list", sql: listEntriesSql({ userId: U0, tagList: tagId(0, 1) }) }],
-    }),
-  },
-  {
-    name: "ssr.list_starred",
-    kind: "read",
-    source: "services/entries.ts listEntries (/starred)",
-    prepare: async () => ({
-      statements: [
-        { label: "list", sql: listEntriesSql({ userId: U0, where: ["ve.starred = true"] }) },
-      ],
-    }),
-  },
-  {
-    name: "ssr.list_saved",
-    kind: "read",
-    source: "services/entries.ts listEntries (/saved)",
-    prepare: async () => ({
-      statements: [
-        savedSubscriptionSql,
-        { label: "list", sql: listEntriesSql({ userId: U0, single: savedSubscriptionId(0) }) },
-      ],
-    }),
-  },
-  {
-    name: "ssr.list_uncategorized",
-    kind: "read",
-    source: "services/entries.ts listEntries (/uncategorized; includes untagged collections)",
-    prepare: async () => ({
-      statements: [{ label: "list", sql: listEntriesSql({ userId: U0, tagList: U0 }) }],
-    }),
-  },
-  {
-    name: "ssr.list_recently_read",
-    kind: "read",
-    source: "services/entries.ts listEntries (/recently-read)",
-    prepare: async () => ({
-      statements: [
-        {
-          label: "list",
-          sql: listEntriesSql({ userId: U0, unreadOnly: false, sortBy: "readChanged" }),
-        },
-      ],
-    }),
-  },
+  listBenchmark("ssr.list_all", "/all, unread, first page", async () => appList()),
+  listBenchmark("ssr.list_all_page_20", "/all, unread, keyset cursor 200 rows deep", async () =>
+    deep(appList(), 200)
+  ),
+  listBenchmark(
+    "ssr.list_subscription",
+    "/subscription/:id, U0's subscription with most unread",
+    async (db) => appList({ subscriptionId: await longSubscription(db) })
+  ),
+  listBenchmark("ssr.list_tag", "/tag/:id; the tag also holds a collection", async () =>
+    appList({ tagId: tagId(0, 1) })
+  ),
+  listBenchmark("ssr.list_starred", "/starred", async () => appList({ starredOnly: true })),
+  listBenchmark("ssr.list_saved", "/saved", async () => appList({ type: "saved" })),
+  listBenchmark(
+    "ssr.list_uncategorized",
+    "/uncategorized; includes untagged collections",
+    async () => appList({ uncategorized: true })
+  ),
+  listBenchmark("ssr.list_recently_read", "/recently-read", async () =>
+    appList({ unreadOnly: false, sortBy: "readChanged" })
+  ),
+  listBenchmark(
+    "list.sparse_tag",
+    "/tag/:id, U0's tag with the fewest unread articles",
+    async (db) => appList({ tagId: await sparseTag(db) })
+  ),
+  listBenchmark("list.subscription_deep", `/subscription/:id, ${DEEP_ROWS} rows deep`, async (db) =>
+    deep(appList({ subscriptionId: await longSubscription(db) }))
+  ),
+  listBenchmark("list.tag_deep", `/tag/:id, ${DEEP_ROWS} rows deep`, async () =>
+    deep(appList({ tagId: tagId(0, 1) }))
+  ),
+  listBenchmark("list.uncategorized_deep", `/uncategorized, ${DEEP_ROWS} rows deep`, async () =>
+    deep(appList({ uncategorized: true }))
+  ),
+  listBenchmark("list.starred_deep", `/starred, all, ${DEEP_ROWS} rows deep`, async () =>
+    deep(appList({ starredOnly: true, unreadOnly: false }))
+  ),
+  listBenchmark("list.recently_read_deep", `/recently-read, ${DEEP_ROWS} rows deep`, async () =>
+    deep(appList({ unreadOnly: false, sortBy: "readChanged" }))
+  ),
   {
     name: "ssr.entries_get",
     kind: "read",
     source: "services/entry-reads.ts getFullEntry (entries.get)",
     prepare: async (db) => {
       const { id } = await plainUnreadEntry(db);
-      return {
-        statements: [
-          {
-            label: "get",
-            sql: `SELECT ${fullColumns("all")}
-${FROM_VISIBLE}
-WHERE ve.id = ${q(id)} AND ve.user_id = ${q(U0)}
-LIMIT 1`,
-          },
-        ],
-      };
+      return { statements: await recordStatements("get", (app) => getFullEntry(app, U0, id)) };
     },
   },
   {
@@ -865,171 +666,106 @@ LIMIT 1`,
     kind: "read",
     source: "services/subscriptions.ts getSubscription",
     prepare: async () => ({
-      statements: [{ label: "get", sql: subscriptionRowsSql(U0, [subLarge]) }],
+      statements: await recordStatements("get", (app) => getSubscription(app, U0, subLarge)),
     }),
   },
-  {
-    name: "list.collection",
-    kind: "read",
-    source: "services/entries.ts listEntries (/subscription/:id for a collection, unread)",
-    prepare: async () => {
-      return {
-        statements: [
-          verifyOwnershipSql(U0, readingList),
-          { label: "list", sql: listEntriesSql({ userId: U0, single: readingList }) },
-        ],
-      };
-    },
-  },
-  {
-    name: "list.mostly_read_feed_unread",
-    kind: "read",
-    source: "services/entries.ts listEntries (unread only, 3,000-entry feed with 40 unread)",
-    prepare: async () => {
-      return {
-        statements: [
-          verifyOwnershipSql(U0, subMostlyRead),
-          { label: "list", sql: listEntriesSql({ userId: U0, single: subMostlyRead }) },
-        ],
-      };
-    },
-  },
-  {
-    name: "list.keeps_up_unread",
-    kind: "read",
-    source:
-      "services/entries.ts listEntries (/all, unread, a user with 60 unread of 30,000 entries)",
-    prepare: async () => ({
-      statements: [{ label: "list", sql: listEntriesSql({ userId: U_KEEPS_UP }) }],
-    }),
-  },
+  listBenchmark("list.collection", "/subscription/:id for a collection, unread", async () =>
+    appList({ subscriptionId: readingList })
+  ),
+  listBenchmark(
+    "list.mostly_read_feed_unread",
+    "unread only, 3,000-entry feed with 40 unread",
+    async () => appList({ subscriptionId: subMostlyRead })
+  ),
+  listBenchmark(
+    "list.keeps_up_unread",
+    "/all, unread, a user with 60 unread of 30,000 entries",
+    async () => appList({ userId: U_KEEPS_UP })
+  ),
   {
     name: "wallabag.entries_archived",
     kind: "read",
     source:
       "wallabag entries route: listEntries + countTotalEntries (type saved, sort archived, perPage 30)",
-    prepare: async () => ({
-      statements: [
-        savedSubscriptionSql,
-        {
-          label: "list",
-          sql: listEntriesSql({
-            userId: U0,
-            single: savedSubscriptionId(0),
-            unreadOnly: false,
-            sortBy: "archived",
-            limit: 30,
-          }),
-        },
-        {
-          label: "count",
-          sql: `SELECT count(*)::int FROM visible_entries ve
-WHERE ve.user_id = ${q(U0)} AND ${inSaved("ve")} AND ve.is_spam = false`,
-        },
-      ],
-    }),
+    prepare: async () => ({ statements: await wallabagEntries({}, "archived") }),
   },
   {
     name: "search",
     kind: "read",
     source: "services/entries.ts searchEntries (all entries, two-word query)",
-    prepare: async () => {
-      const tsq = `plainto_tsquery('english', ${q(searchQuery())})`;
-      return {
-        statements: [
-          {
-            label: "search",
-            sql: `SELECT * FROM (
-  SELECT ${LIST_COLUMNS}, ts_rank(ve.search_vector, ${tsq}) AS rank
-  ${FROM_VISIBLE}
-  WHERE ve.user_id = ${q(U0)} AND ve.search_vector @@ ${tsq} AND ve.is_spam = false
-) ranked
-ORDER BY ranked.rank DESC, ranked.id DESC
-LIMIT 11 OFFSET 0`,
-          },
-        ],
-      };
-    },
+    prepare: async () => ({
+      statements: await recordStatements("search", (app) =>
+        listEntries(app, appList({ unreadOnly: false, query: searchQuery() }))
+      ),
+    }),
   },
   {
     name: "sync.events",
     kind: "read",
     source: "services/sync.ts sync.events: collectSyncEvents (~200 changes)",
-    prepare: async (db) => ({ statements: await syncStatements(db, false) }),
+    prepare: async (db) => {
+      const cursors = await syncCursors(db, 200);
+      return {
+        statements: await recordStatements("sync", (app) => collectSyncEvents(app, U0, cursors)),
+      };
+    },
   },
   {
     name: "sync.changes",
     kind: "read",
-    source:
-      "services/sync.ts sync.changes: collectSyncEvents(reportHidden) + listCollectionMemberships + tombstones",
-    prepare: async (db) => ({ statements: await syncStatements(db, true) }),
+    source: "services/sync.ts collectSyncChanges (sync.changes, ~200 changes)",
+    prepare: async (db) => {
+      const cursors = await syncCursors(db, 200);
+      const deletions = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      return {
+        statements: await recordStatements("sync", (app) =>
+          collectSyncChanges(app, U0, {
+            ...cursors,
+            // The app sends the first page's cursor as `entriesSince` on every page.
+            entriesSince: cursors.entries,
+            entriesSinceAfterId: cursors.entriesAfterId,
+            deletions,
+          })
+        ),
+      };
+    },
   },
   {
     name: "sync.events_catchup",
     kind: "read",
     source:
       "services/sync.ts sync.events: collectSyncEvents, first page of a ~5000-change catch-up",
-    prepare: async (db) => ({ statements: await syncStatements(db, false, 5000) }),
+    prepare: async (db) => {
+      const cursors = await syncCursors(db, 5000);
+      return {
+        statements: await recordStatements("sync", (app) => collectSyncEvents(app, U0, cursors)),
+      };
+    },
   },
   {
     name: "wallabag.entries_since",
     kind: "read",
     source:
       "wallabag entries route: listEntries + countTotalEntries (type saved, since a week ago, perPage 30)",
-    prepare: async () => {
-      const since = `ve.updated_at >= ${ts(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())}`;
-      return {
-        statements: [
-          savedSubscriptionSql,
-          {
-            label: "list",
-            sql: listEntriesSql({
-              userId: U0,
-              single: savedSubscriptionId(0),
-              where: [since],
-              unreadOnly: false,
-              limit: 30,
-            }),
-          },
-          {
-            label: "count",
-            sql: `SELECT count(*)::int FROM visible_entries ve
-WHERE ve.user_id = ${q(U0)} AND ${inSaved("ve")} AND ${since} AND ve.is_spam = false`,
-          },
-        ],
-      };
-    },
+    prepare: async () => ({
+      statements: await wallabagEntries(
+        { updatedAfter: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        "published"
+      ),
+    }),
   },
   {
     name: "greader.stream_feed",
     kind: "read",
     source:
-      "greader stream/contents route: resolveFeedStream + listGreaderItemRefs + getEntries (feed/{n}, n=20)",
+      "greader stream/contents route: resolveStreamListParams + listGreaderItemRefs + getEntries (feed/{n}, n=20)",
     prepare: async (db) => {
       const { stream } = await one<{ stream: string }>(
         db,
         `SELECT greader_stream_id::text AS stream FROM subscriptions WHERE id = ${q(subA)}`
       );
-      const listSql = listEntriesSql({
-        userId: U0,
-        single: subA,
-        unreadOnly: false,
-        limit: 20,
-        refs: true,
-      });
-      const ids = (await rows<{ id: string }>(db, listSql)).slice(0, 20).map((r) => r.id);
       return {
-        statements: [
-          // resolveFeedStream
-          {
-            label: "resolve_stream",
-            sql: `SELECT subscriptions.id, subscriptions.type FROM subscriptions
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${stream} LIMIT 1`,
-          },
-          verifyOwnershipSql(U0, subA),
-          { label: "list", sql: listSql },
-          { label: "get_entries", sql: getEntriesSql(U0, ids) },
-        ],
+        statements: await greaderStream(`feed/${stream}`, {}, GREADER_CONTENTS_PAGE, true),
       };
     },
   },
@@ -1037,43 +773,29 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${s
     name: "greader.stream_saved",
     kind: "read",
     source:
-      "greader stream/contents route: resolveFeedStream + listGreaderItemRefs + getEntries (Saved, n=20)",
+      "greader stream/contents route: resolveStreamListParams + listGreaderItemRefs + getEntries (Saved, n=20)",
     prepare: async (db) => {
       const { stream } = await one<{ stream: string }>(
         db,
         `SELECT greader_stream_id::text AS stream FROM subscriptions WHERE id = ${q(savedSubscriptionId(0))}`
       );
-      const listSql = listEntriesSql({
-        userId: U0,
-        single: savedSubscriptionId(0),
-        unreadOnly: false,
-        limit: 20,
-        refs: true,
-      });
-      const ids = (await rows<{ id: string }>(db, listSql)).slice(0, 20).map((r) => r.id);
       return {
-        statements: [
-          // resolveFeedStream
-          {
-            label: "resolve_subscription",
-            sql: `SELECT subscriptions.id, subscriptions.type FROM subscriptions
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${stream} LIMIT 1`,
-          },
-          savedSubscriptionSql,
-          { label: "list", sql: listSql },
-          { label: "get_entries", sql: getEntriesSql(U0, ids) },
-        ],
+        statements: await greaderStream(`feed/${stream}`, {}, GREADER_CONTENTS_PAGE, true),
       };
     },
   },
   {
     name: "greader.items_ids",
     kind: "read",
-    source: "greader stream/items/ids route: listGreaderItemRefs (unread reading list, n=10000)",
+    source:
+      "greader stream/items/ids route: resolveStreamListParams + listGreaderItemRefs (unread reading list, n=10000)",
     prepare: async () => ({
-      statements: [
-        { label: "list", sql: listEntriesSql({ userId: U0, limit: 10_000, refs: true }) },
-      ],
+      statements: await greaderStream(
+        "user/-/state/com.google/reading-list",
+        { xt: "user/-/state/com.google/read", n: "10000" },
+        GREADER_IDS_PAGE,
+        false
+      ),
     }),
   },
   {
@@ -1081,20 +803,7 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${s
     kind: "read",
     source: "google-reader/subscriptions.ts getGreaderUnreadCounts",
     prepare: async () => ({
-      statements: [
-        {
-          label: "counts",
-          sql: `SELECT subscriptions.greader_stream_id AS stream_id, subscriptions.unread_count AS unread, latest.newest AS newest
-FROM subscriptions
-LEFT JOIN LATERAL (
-  SELECT se.published_or_fetched_at AS newest FROM subscription_entries se
-  WHERE se.subscription_id = subscriptions.id
-  ORDER BY se.published_or_fetched_at DESC, se.entry_id DESC LIMIT 1
-) latest ON true
-WHERE subscriptions.user_id = ${q(U0)}::uuid AND subscriptions.unsubscribed_at IS NULL AND NOT ${IS_COLLECTION}`,
-        },
-        userCountsSql(U0),
-      ],
+      statements: await recordStatements("counts", (app) => getGreaderUnreadCounts(app, U0)),
     }),
   },
 ];
