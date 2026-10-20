@@ -62,8 +62,8 @@ export async function getUserFeedSubscriptionMap(userId: string): Promise<Map<st
 
 /**
  * The fields of an entry event the client receives, whichever channel it came
- * from: a web feed's (with the subscription looked up here) or, for email and
- * saved entries, the user's own (with the subscription already on the event).
+ * from: a web feed's (with the subscription looked up here) or the user's own
+ * (with the subscription already on the event).
  */
 interface ClientEntryEvent {
   subscriptionId: string | null;
@@ -153,11 +153,15 @@ export function startSseConnection({
 
   /**
    * Sends a new_entry event, whether it came from a web feed's channel or
-   * (email, saved) the user's channel.
+   * the user's channel.
    */
   function sendNewEntry(
     // `feedType` only decides the counts; clients get the payload's `type`.
-    event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
+    event: ClientEntryEvent & {
+      feedType: EntryType;
+      subscriptionIds?: string[];
+      entry?: NewEntryListData;
+    }
   ): void {
     // The user's absolute unread counts go with the event so the client
     // sets counts directly instead of applying a +1 delta. That makes
@@ -202,7 +206,7 @@ export function startSseConnection({
           type: "new_entry",
           subscriptionId,
           // A new entry's one membership is its origin (#1846).
-          subscriptionIds: subscriptionId ? [subscriptionId] : [],
+          subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
           entryId: event.entryId,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,
@@ -248,7 +252,7 @@ export function startSseConnection({
       return;
     }
 
-    // User events (subscriptions, tags, imports, entry state, email and saved entries)
+    // User events (subscriptions, tags, imports, entry state, single-recipient entries)
     if (channel === userEventsChannel) {
       const event = parseUserEvent(message);
       if (!event) return;

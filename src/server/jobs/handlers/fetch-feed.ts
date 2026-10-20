@@ -273,14 +273,19 @@ async function processSuccessfulFetch(
     alwaysUpdateVisibility: forceReprocess,
   });
 
-  // Fetch full content for new entries if any subscriber has fetchFullContent
-  // enabled. This is done after processEntries so entries exist in the database.
-  // Archive re-announcements (see `isBackfilledEntry`) are excluded throughout:
-  // they aren't news the hub failed to push, and they must not spend the
+  // Fetch full content for what this fetch announced, if any subscriber has
+  // fetchFullContent enabled. This is done after processEntries so entries
+  // exist in the database. Archive re-announcements (see `isBackfilledEntry`)
+  // are left out unless they reached someone as news: they must not spend the
   // per-fetch full-content budget that the genuinely new articles need.
+  const fullContentResult = await fetchFullContentForNewEntries(
+    db,
+    feed.id,
+    processResult.announcedEntryIds
+  );
+
+  // Push telemetry counts what the feed itself published as new.
   const newEntries = processResult.entries.filter((e) => e.isNew && !e.isBackfill);
-  const newEntryIds = newEntries.map((e) => e.id);
-  const fullContentResult = await fetchFullContentForNewEntries(db, feed.id, newEntryIds);
 
   // Push-reliability telemetry: for scheduled/backup polls only (hub pushes go
   // through ingestWebsubNotification, not here). If push were working, the hub

@@ -35,8 +35,12 @@ import { canonicalGuidSql } from "@/server/feed/guid-identity";
 export async function insertUserEntriesWithMemberships(
   db: DbOrTx,
   candidates: SQL
-): Promise<Array<{ subscriptionId: string; entryId: string }>> {
-  const result = await db.execute<{ subscription_id: string; entry_id: string }>(sql`
+): Promise<Array<{ subscriptionId: string; userId: string; entryId: string }>> {
+  const result = await db.execute<{
+    subscription_id: string;
+    user_id: string;
+    entry_id: string;
+  }>(sql`
     WITH c AS (${candidates}),
     missing AS (
       SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
@@ -58,9 +62,13 @@ export async function insertUserEntriesWithMemberships(
     INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
     SELECT subscription_id, user_id, entry_id, published_or_fetched_at FROM missing
     ON CONFLICT DO NOTHING
-    RETURNING subscription_id, entry_id
+    RETURNING subscription_id, user_id, entry_id
   `);
-  return result.rows.map((r) => ({ subscriptionId: r.subscription_id, entryId: r.entry_id }));
+  return result.rows.map((r) => ({
+    subscriptionId: r.subscription_id,
+    userId: r.user_id,
+    entryId: r.entry_id,
+  }));
 }
 
 /**

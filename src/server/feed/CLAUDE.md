@@ -18,6 +18,8 @@ Web entries are keyed on `(owner_feed_id, guid)` (#1846), but feed guids compare
 
 An entry published well before the feed's previous full fetch is an archive re-announcement, not news, and is linked already read — except in a subscription's first grant, which is all news to a new subscriber (`isBackfilledEntry` explains the rule, threshold and accepted risk). **The verdict belongs to the link, not the entry** (#2036): the fan-out judges it per subscription (`linksReadSql`) — never store it on the entry, or an article re-announced long after it was first seen keeps its first verdict. A new linking path that reaches existing subscribers must judge it the same way.
 
+**A fetch announces what its fan-out links, not what it created** (#2062): the feed's channel carries its new entries that aren't backfill, and every other link made unread goes to that subscriber's own channel (`announceLinkedEntries`); the full-content fetch takes the same set (`announcedEntryIds`).
+
 ## WebSub
 
 Feeds with a hub get pushes and drop to a 24h backup poll. Mechanics are in `websub.ts` and `websub-notification.ts`; the rules that keep a silently dead hub from leaving a feed stale:
