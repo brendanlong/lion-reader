@@ -97,7 +97,10 @@ function startPoolMonitor(): void {
 
 startPoolMonitor();
 
-export const db = drizzle(pool, { schema });
+/** The app's Drizzle settings; the benchmarks' query recorder uses them too. */
+export const dbConfig = { schema };
+
+export const db = drizzle(pool, dbConfig);
 
 export type Database = typeof db;
 

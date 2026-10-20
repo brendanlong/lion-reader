@@ -34,6 +34,7 @@ import {
   savedFeedId,
   savedSubscriptionId,
   subscriptionId,
+  SPARSE_TAG,
   tagId,
   tagName,
   userEmail,
@@ -417,6 +418,18 @@ function buildPlan() {
       s.tagNumbers = rand() < 0.3 && second !== first ? [first, second] : [first];
     }
   }
+
+  // A sparse tag (`SPARSE_TAG`): an extra tag of U0's, holding only its
+  // quietest tagged web feed, which keeps its other tags. A tag list that
+  // walks the user's timeline instead of its own rows reads all of U0's
+  // history for a page of it (#1946).
+  const webFeeds = new Set(feeds.filter((f) => f.kind === "web").map((f) => f.id));
+  const quietest = subs
+    .filter((s) => s.userIdx === 0 && s.active && s.tagNumbers.length > 0 && webFeeds.has(s.feedId))
+    .reduce((a, b) => (b.n < a.n ? b : a));
+  if (users[0].tags + 1 !== SPARSE_TAG) throw new Error("SPARSE_TAG must be U0's next tag");
+  quietest.tagNumbers = [...quietest.tagNumbers, SPARSE_TAG];
+  users[0].tags = SPARSE_TAG;
 
   return { users, feeds, subs };
 }

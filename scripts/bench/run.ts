@@ -36,7 +36,8 @@ import { parseArgs } from "node:util";
 
 import { Client } from "pg";
 
-import { BENCHMARKS, type Benchmark, type PreparedBenchmark } from "./benchmarks";
+import { BENCHMARKS, type Benchmark, type PreparedBenchmark, type Statement } from "./benchmarks";
+import { closeRecording } from "./record";
 import { U0, userEmail } from "./dataset";
 import {
   RESULT_VERSION,
@@ -226,7 +227,7 @@ function statementRows(plan: PlanNode): number {
 
 async function explain(
   client: Client,
-  sql: string,
+  statement: Statement,
   opts: RunOptions,
   timing: boolean
 ): Promise<Sample> {
@@ -239,7 +240,10 @@ async function explain(
     "FORMAT JSON",
   ].join(", ");
   const before = opts.pgss ? await pgssTotals(client) : null;
-  const res = await client.query<{ "QUERY PLAN": ExplainDoc[] }>(`EXPLAIN (${options}) ${sql}`);
+  const res = await client.query<{ "QUERY PLAN": ExplainDoc[] }>(
+    `EXPLAIN (${options}) ${statement.sql}`,
+    statement.params
+  );
   const after = opts.pgss ? await pgssTotals(client) : null;
   const doc = res.rows[0]["QUERY PLAN"][0];
   const plan = doc.Plan;
@@ -314,7 +318,7 @@ async function iterate(
     const samples: Sample[] = [];
     for (const statement of prepared.statements) {
       try {
-        samples.push(await explain(client, statement.sql, opts, timing));
+        samples.push(await explain(client, statement, opts, timing));
       } catch (err) {
         throw new Error(`${bench.name} / ${statement.label}: ${(err as Error).message}`);
       }
@@ -601,7 +605,9 @@ async function main(): Promise<void> {
   console.log(`\nWrote ${out}`);
 }
 
-main().catch((err: unknown) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then(closeRecording)
+  .catch((err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  });

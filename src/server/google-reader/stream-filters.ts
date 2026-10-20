@@ -98,6 +98,12 @@ function streamQueryFilter(
   return filter;
 }
 
+/** `stream/contents`' page sizes: lower than the ids stream's, as each item carries a full article body. */
+export const STREAM_CONTENTS_PAGE = { defaultCount: 20, maxCount: 300 };
+
+/** `stream/items/ids`' page sizes. */
+export const STREAM_ITEM_IDS_PAGE = { defaultCount: 1000, maxCount: 10000 };
+
 /**
  * The `listEntries` query for a stream read: the stream's filter, the request's
  * narrowing, and its page (`n`, capped at `maxCount`; `c`; `r=o` for oldest

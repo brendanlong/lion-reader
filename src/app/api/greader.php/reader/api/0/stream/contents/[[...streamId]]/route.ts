@@ -29,7 +29,11 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
-import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
+import {
+  isStreamError,
+  resolveStreamListParams,
+  STREAM_CONTENTS_PAGE,
+} from "@/server/google-reader/stream-filters";
 import { formatEntryAsItem } from "@/server/google-reader/format";
 import * as entriesService from "@/server/services/entries";
 import * as entryReadsService from "@/server/services/entry-reads";
@@ -59,8 +63,7 @@ const handleStreamContents = withClientErrors(async function (
     session.user,
     streamIdStr,
     new URL(request.url).searchParams,
-    // Capped lower than the ids stream: each item carries a full article body.
-    { defaultCount: 20, maxCount: 300 }
+    STREAM_CONTENTS_PAGE
   );
   if (isStreamError(listParams)) return errorResponse(listParams.message, listParams.status);
 
