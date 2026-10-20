@@ -238,20 +238,22 @@ class SyncEngine(
     /**
      * The scores of the entries on the device, for a database older than scores (10.sqm); after
      * that `sync.changes` reports each change to one. Pages through the scored entries only: the
-     * server lists them first. A server older than scores refuses the order (400), and has none to
-     * list.
+     * server lists them first. A server older than scores refuses the order on the first page
+     * (400), and has none to list; a refusal after that fails the sync, to list them again.
      */
     private suspend fun listScores() {
         var cursor: String? = null
-        try {
-            do {
-                val page = api.listByScore(cursor)
-                writer.saveScores(page.items)
-                cursor = page.nextCursor
-            } while (cursor != null && page.items.all { it.score != null })
-        } catch (e: ApiException) {
-            if (e.failure() !is ApiFailure.Invalid) throw e
-        }
+        do {
+            val page =
+                try {
+                    api.listByScore(cursor)
+                } catch (e: ApiException) {
+                    if (cursor != null || e.failure() !is ApiFailure.Invalid) throw e
+                    break
+                }
+            writer.saveScores(page.items)
+            cursor = page.nextCursor
+        } while (cursor != null && page.items.all { it.score != null })
         writer.finishScores()
     }
 

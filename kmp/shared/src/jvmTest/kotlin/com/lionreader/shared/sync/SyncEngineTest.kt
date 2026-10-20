@@ -1454,4 +1454,37 @@ class SyncEngineTest {
             server.requests.count { it.url.parameters["sortBy"] == "score" },
         )
     }
+
+    /** The server sends a new entry's score and positions in the state change beside it. */
+    @Test
+    fun aNewEntrysRankingsComeWithItsStateChange() = runTest {
+        server.subscriptions += subscription("sub-1")
+        server.subscriptions +=
+            Subscription("col-1", COLLECTION_TYPE, title = "Col", tags = emptyList())
+        serve(entry("a", ageDays = 1).copy(positions = mapOf("col-1" to 2.0)))
+        server.collections["col-1"] = mutableSetOf("a", "n")
+        engine.sync(downloadContent = false)
+
+        val published = Instant.fromEpochMilliseconds(NOW - 2 * DAY).toString()
+        server.queueChanges(
+            events =
+                listOf(
+                    server.newEntry(
+                        "n",
+                        "sub-1",
+                        EventEntry(type = "web", publishedAt = published, fetchedAt = published),
+                    ),
+                    server
+                        .stateChanged("n", read = false, starred = false, subscriptionId = "sub-1")
+                        .copy(score = 3.0, positions = mapOf("col-1" to 1.0)),
+                )
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals(
+            listOf("n", "a"),
+            timeline(ListScope.Subscription("col-1"), sort = ListSort.FIRST),
+        )
+        assertEquals(listOf("n", "a"), timeline(sort = ListSort.HIGHEST))
+    }
 }

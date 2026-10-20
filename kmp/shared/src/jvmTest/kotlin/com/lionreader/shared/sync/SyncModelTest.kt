@@ -141,7 +141,16 @@ class SyncModelTest {
                         val subscription =
                             if (random.nextInt(4) == 0) null
                             else server.subscriptions.random(random)
-                        log += "server new ${server.addEntry(subscriptionId = subscription).id}"
+                        val entry = server.addEntry(subscriptionId = subscription)
+                        log += "server new ${entry.id}"
+                        // Sometimes a collection's new member, placed (an ebook's chapter) and
+                        // scored before the device hears of it.
+                        if (random.nextInt(3) == 0) {
+                            server.toggleCollection(entry)
+                            server.setPosition(entry, random.nextInt(1, 4).toDouble())
+                            server.setScore(entry, random.nextInt(1, 4).toDouble())
+                            log += "server placed ${entry.id}"
+                        }
                     }
                     in 57..60 -> {
                         val saved = server.visible.filter { it.saved }.randomOrNull(random)

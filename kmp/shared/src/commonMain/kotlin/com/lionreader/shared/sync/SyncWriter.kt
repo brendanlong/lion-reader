@@ -235,8 +235,10 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             event.readChangedAt?.let(::parseMillis),
                             event.entryId,
                         )
-                        // Its positions came with its memberships.
+                        // Its memberships again, for their positions: an entry new in this page
+                        // (its new_entry, which has none, came first) wasn't here for them.
                         event.rankings?.let {
+                            store.setMemberships(event.entryId, event.subscriptionIds, it.positions)
                             db.entryQueries.updateScore(it.score, event.entryId)
                         }
                     }

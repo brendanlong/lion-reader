@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -72,6 +73,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
@@ -448,7 +450,8 @@ private fun ChoiceItem(text: String, selected: Boolean, onClick: () -> Unit) {
         text = { Text(text) },
         trailingIcon = { RadioButton(selected = selected, onClick = null) },
         onClick = onClick,
-        modifier = Modifier.semantics { this.selected = selected },
+        // Announced as a radio button, checked or not.
+        modifier = Modifier.selectable(selected, role = Role.RadioButton, onClick = onClick),
     )
 }
 

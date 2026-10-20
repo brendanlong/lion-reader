@@ -377,32 +377,32 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val page = changed.take(syncPageSize)
         val events = page.flatMap { e ->
             buildList {
+                // As the server's entryRowToSyncEvents: a new entry's new_entry and, its state
+                // being new too, its entry_state_changed, which alone has its score and positions.
                 if (e.createdSeq > since) {
                     add(SyncEvent.NewEntry(e.id, e.origin, e.memberships, e.eventEntry()))
-                } else {
-                    if (e.metadataSeq > since) {
-                        add(
-                            SyncEvent.EntryUpdated(
-                                e.id,
-                                com.lionreader.shared.api.EntryMetadata(title = e.id),
-                            )
+                } else if (e.metadataSeq > since) {
+                    add(
+                        SyncEvent.EntryUpdated(
+                            e.id,
+                            com.lionreader.shared.api.EntryMetadata(title = e.id),
                         )
-                    }
-                    if (e.stateSeq > since) {
-                        add(
-                            SyncEvent.EntryStateChanged(
-                                e.id,
-                                e.read,
-                                e.starred,
-                                e.readChangedAt?.let { e.time(it) },
-                                e.memberships,
-                                e.origin,
-                                if (e.read) null else e.eventEntry(),
-                                score = e.score,
-                                positions = e.positions.toMap(),
-                            )
+                    )
+                }
+                if (e.stateSeq > since) {
+                    add(
+                        SyncEvent.EntryStateChanged(
+                            e.id,
+                            e.read,
+                            e.starred,
+                            e.readChangedAt?.let { e.time(it) },
+                            e.memberships,
+                            e.origin,
+                            if (e.read) null else e.eventEntry(),
+                            score = e.score,
+                            positions = e.positions.toMap(),
                         )
-                    }
+                    )
                 }
             }
         }
