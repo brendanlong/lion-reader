@@ -9,6 +9,7 @@
 //!   `lang`/`role`, `data-*`, `aria-*`, the MathML presentation set) plus
 //!   per-tag additions. `role`/`aria-*` are inert ARIA hooks kept for
 //!   assistive tech (e.g. `role="doc-noteref"` on footnotes).
+//!   `class` keeps only the allow-listed names (classes.rs).
 //! - URL-carrying attributes are scheme-checked (http/https/mailto/tel;
 //!   `data:image/*` additionally for img/source), on the entity-decoded value.
 //!   Protocol-relative and relative URLs pass. `data:` is accepted only when
@@ -34,6 +35,7 @@ use std::sync::LazyLock;
 use lol_html::html_content::{ContentType, Element, TextChunk, TextType};
 use lol_html::{doc_comments, doc_text, doctype, element, HtmlRewriter, Settings};
 
+use crate::classes::filter_classes;
 use crate::embeds::normalize_embed;
 use crate::idrefs::{prefix_fragment_href, prefix_id, prefix_id_list, ARIA_IDREF_ATTRS};
 use crate::scanner::{
@@ -626,6 +628,15 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         let name = attr.name();
         if !attr_allowed(&tag, &name) {
             to_remove.push(name);
+            continue;
+        }
+        if name == "class" {
+            let value = attr.value();
+            match filter_classes(&value) {
+                None => to_remove.push(name),
+                Some(kept) if kept != value => rewrites.push((name, kept)),
+                Some(_) => {}
+            }
             continue;
         }
         // Name test before `attr.value()`, which allocates. `align` is never an
@@ -1299,8 +1310,8 @@ mod tests {
     #[test]
     fn data_attributes_kept() {
         assert_eq!(
-            sanitize(r#"<p data-para-id="7" class="a" bogus="1">x</p>"#),
-            r#"<p data-para-id="7" class="a">x</p>"#
+            sanitize(r#"<p data-para-id="7" bogus="1">x</p>"#),
+            r#"<p data-para-id="7">x</p>"#
         );
     }
 

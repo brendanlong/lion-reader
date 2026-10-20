@@ -792,8 +792,9 @@ img.content-img-loading {
    alongside `prose` in EntryContentRenderer and SummaryCard) -- NOT to all
    `.prose` blocks. Doc pages like /terms and /privacy also use `.prose` but
    size their own headings with `ui-text-*` utilities, which we must not
-   clobber. Reader content is sanitized markdown with no heading classes, so
-   scoping here is both sufficient and side-effect free.
+   clobber. The sanitizer strips every source class except the few these
+   rules style (`native/sanitizer/core/src/classes.rs` — add a class there
+   before styling it), so scoping here is both sufficient and side-effect free.
 
    Tailwind Typography's defaults make the in-body h1 (2.25em / 36px) larger
    than the entry title and collapse h4-h6 to body size. Override with a

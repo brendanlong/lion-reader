@@ -19,6 +19,7 @@
 //! `src/server/html/CLAUDE.md`).
 
 pub mod absolutize;
+pub mod classes;
 pub mod embeds;
 pub mod idrefs;
 pub mod limits;
@@ -125,6 +126,22 @@ mod tests {
         assert!(out.contains(r#"viewBox="0 0 1 1""#), "{out}");
         assert!(!out.contains("script"), "{out}");
         assert!(!out.contains("onclick"), "{out}");
+    }
+
+    #[test]
+    fn source_classes_cannot_style_entries_with_app_utilities() {
+        // An X post's media link: our Tailwind turned it into an overlay that
+        // swallowed every click in the reader.
+        assert_eq!(
+            run(r#"<a class="absolute inset-0 z-10" href="https://x.com/p">m</a>"#),
+            r#"<a href="https://x.com/p" target="_blank" rel="noopener noreferrer">m</a>"#
+        );
+        assert_eq!(
+            run("<div class=\"fixed footnote-content\tkatex-html opacity-0\">x</div>"),
+            r#"<div class="footnote-content katex-html">x</div>"#
+        );
+        let out = run(r#"<svg class="fixed inset-0"><circle class="hidden" r="1"/></svg>"#);
+        assert!(!out.contains("class"), "{out}");
     }
 
     #[test]
