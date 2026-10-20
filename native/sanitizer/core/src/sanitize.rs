@@ -577,17 +577,43 @@ fn handle_input(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send
 /// with a literal `#` always decodes to a fragment, so this can only ever
 /// under-match, never mistake a URL for a fragment.
 ///
-/// Whether an attribute *name* can hold an id or an id reference. Pure name
-/// test so the caller can skip reading the value. The `aria-` prefix check
-/// guards the list scan, which would otherwise run for every attribute.
-fn is_idref_attr(name: &str) -> bool {
-    matches!(name, "id" | "name" | "headers" | "href")
-        || (name.starts_with("aria-") && ARIA_IDREF_ATTRS.contains(&name))
+/// The duplicate-tracking bit of an attribute that can hold an id or an id
+/// reference, or None for any other attribute. Pure name test so the caller can
+/// skip reading the value. The `aria-` prefix check guards the list scan, which
+/// would otherwise run for every attribute.
+fn idref_bit(name: &str) -> Option<u64> {
+    let index = match name {
+        "id" => 0,
+        "name" => 1,
+        "headers" => 2,
+        "href" => 3,
+        _ if name.starts_with("aria-") => {
+            ARIA_IDREF_ATTRS.iter().position(|a| *a == name)? + FIRST_ARIA_BIT
+        }
+        _ => return None,
+    };
+    Some(1 << index)
+}
+
+const ALIGN_BIT: u64 = 1 << 4;
+const FIRST_ARIA_BIT: usize = 5;
+const _: () = assert!(FIRST_ARIA_BIT + ARIA_IDREF_ATTRS.len() <= 64);
+
+/// Inverse of [`idref_bit`] and [`ALIGN_BIT`], by bit index.
+fn rewritable_attr_name(index: u32) -> &'static str {
+    match index {
+        0 => "id",
+        1 => "name",
+        2 => "headers",
+        3 => "href",
+        4 => "align",
+        i => ARIA_IDREF_ATTRS[i as usize - FIRST_ARIA_BIT],
+    }
 }
 
 /// The namespaced form of an id-defining or id-referencing attribute, or None
 /// when this particular value needs no rewrite. Only called for names that
-/// passed [`is_idref_attr`]. `name` must be lowercased, as lol_html gives it for
+/// have an [`idref_bit`]. `name` must be lowercased, as lol_html gives it for
 /// HTML elements.
 fn namespaced_value(name: &str, value: &str) -> Option<String> {
     match name {
@@ -597,6 +623,39 @@ fn namespaced_value(name: &str, value: &str) -> Option<String> {
         // `headers` and the ARIA idrefs are space-separated id lists.
         _ => Some(prefix_id_list(value)),
     }
+}
+
+/// Collapses each attribute in `duplicates` (a set of [`idref_bit`]s and
+/// [`ALIGN_BIT`]) to its first copy, rewritten. lol_html keeps duplicate
+/// attributes and `set_attribute` updates only the first copy, so the rewrite
+/// alone would leave a raw copy for parsers that read the last one. Must run
+/// before `rewrites` is applied, so that `get_attribute` sees the original
+/// first copy of a value that needed no rewrite.
+#[cold]
+#[inline(never)]
+fn collapse_duplicates(
+    el: &mut Element,
+    rewrites: &mut Vec<(String, String)>,
+    to_remove: &[String],
+    mut duplicates: u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    while duplicates != 0 {
+        let name = rewritable_attr_name(duplicates.trailing_zeros());
+        duplicates &= duplicates - 1;
+        if to_remove.iter().any(|n| n == name) {
+            continue;
+        }
+        let value = match rewrites.iter().position(|(n, _)| n == name) {
+            Some(i) => rewrites.swap_remove(i).1,
+            None => match el.get_attribute(name) {
+                Some(value) => value,
+                None => continue,
+            },
+        };
+        el.remove_attribute(name);
+        el.set_attribute(name, &value)?;
+    }
+    Ok(())
 }
 
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -621,9 +680,14 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     // pass: a separate `get_attribute` probe per interesting name, or even a
     // second walk of the attribute list, measurably slowed every element down —
     // including elements with no id at all. Only attributes that survive the
-    // allow-list are considered, so `to_remove` and `rewrites` stay disjoint and
-    // a rewrite can never resurrect an attribute the filter just dropped.
+    // allow-list are considered, and a rewrite whose name is also in `to_remove`
+    // (another copy failed a check) is skipped, so a rewrite can never
+    // resurrect an attribute the filter just dropped. Only the first copy of an
+    // attribute is rewritten, as a browser reads only that one; `seen` and
+    // `duplicates` hold `idref_bit`s and `ALIGN_BIT`.
     let mut rewrites: Vec<(String, String)> = Vec::new();
+    let mut seen: u64 = 0;
+    let mut duplicates: u64 = 0;
     // A browser reads only the first `class`, but `set_attribute` would update
     // only the first copy too, leaving a raw duplicate for API clients that
     // parse differently — so a duplicate forces remove-all-then-set.
@@ -646,6 +710,11 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         // Name test before `attr.value()`, which allocates. `align` is never an
         // idref, so this arm can settle it and skip the rest of the loop body.
         if name == "align" {
+            if seen & ALIGN_BIT != 0 {
+                duplicates |= ALIGN_BIT;
+                continue;
+            }
+            seen |= ALIGN_BIT;
             let value = attr.value();
             match canonical_align(&value) {
                 None => to_remove.push(name),
@@ -678,7 +747,12 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         }
         // Name test before `attr.value()`, which allocates: most attributes
         // (`class`, `alt`, `width`, …) hold no id and must not pay for a copy.
-        if is_idref_attr(&name) {
+        if let Some(bit) = idref_bit(&name) {
+            if seen & bit != 0 {
+                duplicates |= bit;
+                continue;
+            }
+            seen |= bit;
             let value = attr.value();
             if let Some(rewritten) = namespaced_value(&name, &value) {
                 // Skip no-op writes: `set_attribute` makes lol_html re-serialize
@@ -690,11 +764,16 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             }
         }
     }
-    for name in to_remove {
-        el.remove_attribute(&name);
+    if duplicates != 0 {
+        collapse_duplicates(el, &mut rewrites, &to_remove, duplicates)?;
     }
     for (name, value) in rewrites {
-        el.set_attribute(&name, &value)?;
+        if !to_remove.contains(&name) {
+            el.set_attribute(&name, &value)?;
+        }
+    }
+    for name in to_remove {
+        el.remove_attribute(&name);
     }
     if let Some(value) = first_class {
         match filter_classes(&value) {
@@ -1036,6 +1115,37 @@ mod tests {
             sanitize("<a href=\"#intro\">go</a><h2 id=\"intro\">Intro</h2>"),
             "<a href=\"#uc-intro\">go</a><h2 id=\"uc-intro\">Intro</h2>"
         );
+    }
+
+    #[test]
+    fn duplicate_id_attributes_keep_only_the_namespaced_first_copy() {
+        // #2077: a browser reads the first copy, so it must become `uc-x` to
+        // match the rewritten `#x` link, and no raw copy may survive for
+        // parsers that read the last one.
+        assert_eq!(
+            sanitize("<a href=\"#x\">go</a><h2 id=\"x\" id=\"y\">t</h2>"),
+            "<a href=\"#uc-x\">go</a><h2 id=\"uc-x\">t</h2>"
+        );
+        // Also when the first copy needs no rewrite of its own.
+        assert_eq!(
+            sanitize("<h2 id=\"uc-x\" id=\"y\">t</h2>"),
+            "<h2 id=\"uc-x\">t</h2>"
+        );
+        assert_eq!(
+            sanitize("<table><tr><td align=\"Center\" align=\"left\">t</td></tr></table>"),
+            "<table><tr><td align=\"center\">t</td></tr></table>"
+        );
+    }
+
+    #[test]
+    fn duplicate_href_with_a_bad_copy_is_dropped_entirely() {
+        // A rewrite of the safe copy must not resurrect the removed attribute.
+        for html in [
+            "<a href=\"javascript:alert(1)\" href=\"#x\">t</a>",
+            "<a href=\"#x\" href=\"javascript:alert(1)\">t</a>",
+        ] {
+            assert_eq!(sanitize(html), "<a>t</a>", "{html}");
+        }
     }
 
     #[test]
