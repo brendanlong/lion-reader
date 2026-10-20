@@ -220,6 +220,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Build output
     "dist/**",
+    "terraform/build/**",
     // Vendored ONNX Runtime WASM/JS files
     "public/onnx/**",
     // Generated PWA service worker (next-pwa output from `pnpm build`)

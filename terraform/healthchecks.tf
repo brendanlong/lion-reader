@@ -1,5 +1,7 @@
 # healthchecks.io — the dead-man's-switch monitors. What each one means and which
-# process pings it is in ../docs/DESIGN.md ("Observability").
+# process pings it is in ../docs/DESIGN.md ("Observability"). A check with an
+# `env_var` is pinged by the Fly app through that secret; one without is wired
+# up inside Terraform (backup-health.tf).
 
 # Looked up rather than hardcoded so a recreated channel needs no code change.
 # `kind` alone is a unique-enough selector while there is one integration; on a
@@ -33,12 +35,18 @@ locals {
       timeout = 300
       grace   = 1800
     }
+    backup_health = {
+      name    = "Lion Reader Postgres Base Backups"
+      env_var = null
+      timeout = 3600
+      grace   = 7200
+    }
   }
 }
 
-# One resource rather than three: `channels` is what must not be got wrong —
+# One resource rather than one per check: `channels` is what must not be got wrong —
 # omitting it detaches every notification and leaves the checks green — so it is
-# declared once instead of three times.
+# declared once.
 resource "healthchecksio_check" "this" {
   for_each = local.healthchecks
 

@@ -352,13 +352,15 @@ Do this periodically — an untested backup isn't a backup.
 
 ### Monitoring
 
-A stalled archive is the dangerous _silent_ failure: if WAL stops shipping, the DB looks
-healthy while PITR quietly stops advancing. Check regularly:
+The "Postgres base backups" healthchecks.io check alerts when no base backup has
+succeeded in the last 36 hours. An hourly Cloudflare Worker reads the barman catalog in
+the backup bucket with a read-only key (`terraform/backup-health.tf`). It watches base
+backups, not WAL: WAL only replays on top of a base backup, and base backups once failed
+for 14 days while WAL archiving stayed healthy.
 
-- `fly postgres backup list` shows a recent base backup, and `fly postgres backup config
-show` reports healthy/recent archiving.
+A stalled WAL archive is the other silent failure, and nothing alerts on it: the DB looks
+healthy while PITR quietly stops advancing. Check by hand:
+
+- `fly postgres backup config show` reports healthy/recent archiving.
 - On [fly-metrics.net](https://fly-metrics.net), watch the primary's `pg_wal` directory —
   WAL segments piling up locally means archiving is failing to drain them.
-- Eyeball the Tigris backup bucket occasionally for recent WAL objects.
-- **Follow-up:** wire an automated alert (worker job or external cron) that pages if the
-  newest archived WAL is older than N minutes — the manual checks above are the interim.

@@ -2,18 +2,29 @@
 
 Everything about the deployment is managed either by Fly.io (`../fly.toml`) or
 here. This module owns `lionreader.com` DNS (Cloudflare), the Bunny CDN pull
-zone, Mailgun, Sentry, the healthchecks.io monitors, and the domain registration
-at Amazon Registrar. Change them here, not in a dashboard.
+zone, Mailgun, Sentry, the healthchecks.io monitors, the backup-health Cloudflare
+Worker, and the domain registration at Amazon Registrar. Change them here, not
+in a dashboard.
 
 ## Credentials
 
 ```sh
-export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit
+export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit + account Workers Scripts:Edit
 export BUNNYNET_API_KEY=...       # see providers.tf on the name
 export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
 export SENTRY_AUTH_TOKEN=...      # org:read + project:write
 export HEALTHCHECKSIO_API_KEY=... # must be read-write; see providers.tf
 # AWS creds via the normal chain — for the S3 state backend and route53domains
+```
+
+The backup-health Worker also needs a Tigris key that can only read the Postgres
+backup bucket (`var.backup_bucket`). Don't reuse the app's storage key: it reads
+user data and can't see that bucket. Bundle the Worker before planning:
+
+```sh
+export TF_VAR_backup_bucket_access_key_id=...
+export TF_VAR_backup_bucket_secret_access_key=...
+pnpm build:backup-health-worker
 ```
 
 ## Always read the plan

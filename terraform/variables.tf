@@ -45,3 +45,27 @@ variable "sentry_organization" {
   type        = string
   default     = "brendan-long"
 }
+
+variable "backup_bucket" {
+  description = "Tigris bucket holding the Postgres barman catalog (fly postgres backup config show)."
+  type        = string
+  default     = "lion-reader-pg-postgres"
+}
+
+variable "backup_server_name" {
+  description = "Top-level directory of the barman catalog in that bucket: the Postgres app name, not flexctl's \"Server Name\" (always `cloud`)."
+  type        = string
+  default     = "lion-reader-pg"
+}
+
+variable "backup_bucket_access_key_id" {
+  description = "Tigris access key ID, read-only and scoped to var.backup_bucket."
+  type        = string
+  sensitive   = true
+}
+
+variable "backup_bucket_secret_access_key" {
+  description = "Secret for var.backup_bucket_access_key_id."
+  type        = string
+  sensitive   = true
+}
