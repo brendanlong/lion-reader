@@ -23,7 +23,9 @@ import { SearchIcon } from "@/components/ui/icons";
 import { SkeletonText } from "@/components/ui/skeleton";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
-import { SortToggle } from "./SortToggle";
+import { SortToggle, shownSortOrder } from "./SortToggle";
+import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { useListSortable } from "@/lib/hooks/useLocalEntries";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
@@ -68,15 +70,13 @@ export function EntryPageLayout({
   markAllReadOptions,
 }: EntryPageLayoutProps) {
   // Use non-suspending hooks directly so buttons render immediately
-  const {
-    showUnreadOnly,
-    toggleShowUnreadOnly,
-    sortOrder,
-    toggleSortOrder,
-    searchQuery,
-    setSearchQuery,
-  } = useUrlViewPreferences();
+  const { showUnreadOnly, toggleShowUnreadOnly, setSortOrder, searchQuery, setSearchQuery } =
+    useUrlViewPreferences();
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
+  // The sort the list can use (`buildEntriesListInput`), shown by Date while
+  // its values are gone, keeping the choice in the URL for when they return.
+  const listInput = useEntriesListInput();
+  const sortable = useListSortable(listInput);
   const { openEntryId } = useEntryUrlState();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const pathname = useAppPathname();
@@ -164,7 +164,13 @@ export function EntryPageLayout({
                 shortcutEnabled={keyboardShortcutsEnabled && !openEntryId}
               />
             )}
-            {!isSearching && <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />}
+            {!isSearching && (
+              <SortToggle
+                sortOrder={shownSortOrder(listInput.sortOrder, sortable)}
+                sortable={sortable}
+                onChange={setSortOrder}
+              />
+            )}
             <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
           </div>
         </div>

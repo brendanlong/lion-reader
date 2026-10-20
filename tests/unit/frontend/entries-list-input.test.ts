@@ -79,3 +79,41 @@ describe("buildEntriesListInput", () => {
     expect(input.direction).toBe("backward");
   });
 });
+
+describe("sorting by score and position (#2064)", () => {
+  it.each(["highest", "lowest", "first", "last", "oldest"] as const)("reads ?sort=%s", (sort) => {
+    expect(parseViewPreferencesFromParams(new URLSearchParams(`sort=${sort}`)).sortOrder).toBe(
+      sort
+    );
+  });
+
+  it("ignores an unknown sort", () => {
+    expect(parseViewPreferencesFromParams(new URLSearchParams("sort=random")).sortOrder).toBe(
+      "newest"
+    );
+  });
+
+  it("asks for the sort a direction belongs to", () => {
+    const input = buildEntriesListInput(
+      { tagId: "tag" },
+      { unreadOnly: true, sortOrder: "lowest" }
+    );
+    expect(input).toMatchObject({ sortBy: "score", sortOrder: "lowest" });
+  });
+
+  it("sorts only a subscription's list by position", () => {
+    expect(
+      buildEntriesListInput({ subscriptionId: "c" }, { unreadOnly: true, sortOrder: "first" })
+    ).toMatchObject({ sortBy: "position", sortOrder: "first" });
+    expect(buildEntriesListInput({}, { unreadOnly: true, sortOrder: "first" })).toMatchObject({
+      sortBy: undefined,
+      sortOrder: "newest",
+    });
+  });
+
+  it("keeps Recently Read sorted by when it was read", () => {
+    expect(
+      buildEntriesListInput({ sortBy: "readChanged" }, { unreadOnly: false, sortOrder: "highest" })
+    ).toMatchObject({ sortBy: "readChanged", sortOrder: "newest" });
+  });
+});

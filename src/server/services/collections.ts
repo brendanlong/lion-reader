@@ -23,6 +23,7 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-events";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
+import { publishEntryStates } from "@/server/services/entry-state";
 import {
   getSubscription,
   isCollectionSubscription,
@@ -363,10 +364,21 @@ export async function setCollectionPositions(
         AND ${subscriptionEntries.position} IS DISTINCT FROM v.position
       RETURNING ${subscriptionEntries.entryId}
     `);
+    // Positions travel with the entry's state, so delta sync re-delivers it.
+    await touchUserEntries(
+      tx,
+      userId,
+      updated.rows.map((row) => row.entry_id)
+    );
     return { members, changed: updated.rows };
   });
 
   const found = new Set(members.map((row) => row.entryId));
+  publishEntryStates(
+    db,
+    userId,
+    changed.map((row) => row.entry_id)
+  );
   return {
     changedIds: changed.map((row) => row.entry_id),
     notInCollectionIds: entryIds.filter((id) => !found.has(id)),

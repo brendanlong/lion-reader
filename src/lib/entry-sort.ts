@@ -29,3 +29,15 @@ export type RankedSortBy = "score" | "position";
 export function isRankedSort(sortBy: string | undefined): sortBy is RankedSortBy {
   return sortBy === "score" || sortBy === "position";
 }
+
+/** The sort a direction belongs to: each name is one sort's, so it says both. */
+export function sortFieldOf(order: EntrySortOrder): "published" | RankedSortBy {
+  if (order === "highest" || order === "lowest") return "score";
+  if (order === "first" || order === "last") return "position";
+  return "published";
+}
+
+export function reverseSortOrder(order: EntrySortOrder): EntrySortOrder {
+  const [first, second] = ENTRY_SORT_DIRECTIONS[sortFieldOf(order)];
+  return order === first ? second : first;
+}

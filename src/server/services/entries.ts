@@ -33,6 +33,7 @@ import {
   VISIBLE_ROW,
 } from "./entry-filters";
 import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
+import { entryPositionsSchema } from "@/lib/events/schemas";
 import {
   ENTRY_SORT_DIRECTIONS,
   isRankedSort,
@@ -117,6 +118,8 @@ export const entryListItemSchema = z.object({
    * and for a saved article the saved subscription (`entryMemberships`).
    */
   subscriptionIds: z.array(z.string()),
+  /** Its position in each of those that gives it one (a collection's order, #2064). */
+  positions: entryPositionsSchema,
   type: z.enum(ENTRY_TYPES),
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -173,6 +176,7 @@ interface EntryListRow {
   id: string;
   subscriptionId: string | null;
   subscriptionIds: string[];
+  positions: Record<string, number>;
   type: EntryType;
   url: string | null;
   title: string | null;
@@ -198,6 +202,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     id: row.id,
     subscriptionId: row.subscriptionId,
     subscriptionIds: row.subscriptionIds,
+    positions: row.positions,
     type: row.type,
     url: row.url,
     title: row.title,
@@ -269,6 +274,7 @@ const entryListSelectFields = {
   entryUpdatedAt: visibleEntries.entryUpdatedAt,
   subscriptionId: subscriptions.id,
   subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
+  positions: VISIBLE_MEMBERSHIPS.positions,
   siteName: visibleEntries.siteName,
 };
 

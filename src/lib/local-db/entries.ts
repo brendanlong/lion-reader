@@ -35,6 +35,8 @@ export type EntryRow = {
    * group (a membership change moves the server's `user_entries.updated_at`).
    */
   subscriptionIds: string[];
+  /** Its position in each of those collections that gives it one (#2064); state group too. */
+  positions: Record<string, number>;
   type: EntryType;
   url: string | null;
   title: string | null;
@@ -50,6 +52,8 @@ export type EntryRow = {
   entryUpdatedAt?: Date;
   read: boolean;
   starred: boolean;
+  /** The user's score for it (#2064), or null; state group. */
+  score: number | null;
   feedTitle: string | null;
   siteName: string | null;
 };
@@ -64,8 +68,9 @@ export type EntryStore = SyncedCollection<StoredEntryRow>;
 
 export type EntryState = Pick<EntryRow, "read" | "starred">;
 
-/** A state write; `subscriptionIds` when the write carries them. */
-type EntryStateWrite = EntryState & { subscriptionIds?: string[] };
+/** A state write; the memberships, positions and score when the write carries them. */
+type EntryStateWrite = EntryState &
+  Partial<Pick<EntryRow, "subscriptionIds" | "positions" | "score">>;
 
 /** The fields an `entry_updated` event carries. */
 export type EntryMetadata = Pick<EntryRow, "title" | "author" | "summary" | "url" | "publishedAt">;
@@ -86,6 +91,7 @@ function toEntryRow(entry: EntryRow): EntryRow {
     id: entry.id,
     subscriptionId: entry.subscriptionId,
     subscriptionIds: entry.subscriptionIds,
+    positions: entry.positions,
     type: entry.type,
     url: entry.url,
     title: entry.title,
@@ -96,6 +102,7 @@ function toEntryRow(entry: EntryRow): EntryRow {
     updatedAt: entry.updatedAt,
     read: entry.read,
     starred: entry.starred,
+    score: entry.score,
     feedTitle: entry.feedTitle,
     siteName: entry.siteName,
   };
@@ -148,7 +155,9 @@ export function mergeServerEntry(
           ...toEntryRow(base),
           read: state.read,
           starred: state.starred,
+          score: state.score,
           subscriptionIds: state.subscriptionIds,
+          positions: state.positions,
         },
         stateFresh ? row.updatedAt : stored.stateUpdatedAt,
         metadataFresh ? rowMetadataUpdatedAt : stored.metadataUpdatedAt
@@ -188,8 +197,9 @@ export function upsertServerEntries(store: EntryStore, rows: EntryRow[]): void {
 
 /**
  * Writes read/starred state from the server (a mutation response or
- * `entry_state_changed`), and the entry's `subscriptionIds` when it carries
- * them (read with the same row, so as fresh as the state).
+ * `entry_state_changed`), and the entry's `subscriptionIds`, `positions` and
+ * `score` when it carries them (read with the same row, so as fresh as the
+ * state).
  */
 export function setServerEntryState(
   store: EntryStore,
@@ -202,6 +212,8 @@ export function setServerEntryState(
       read: state.read,
       starred: state.starred,
       ...(state.subscriptionIds && { subscriptionIds: state.subscriptionIds }),
+      ...(state.positions && { positions: state.positions }),
+      ...(state.score !== undefined && { score: state.score }),
     },
     updatedAt: state.updatedAt,
   });
@@ -226,7 +238,9 @@ export function setStoredEntryCollection(
   const subscriptionIds = added
     ? [...stored.subscriptionIds, collectionId]
     : stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
-  store.upsert([{ ...stored, subscriptionIds }]);
+  store.upsert([
+    { ...stored, subscriptionIds, positions: withoutKey(stored.positions, collectionId) },
+  ]);
 }
 
 /** Drops a deleted subscription from the stored entries' `subscriptionIds`. */
@@ -238,8 +252,14 @@ export function removeStoredEntryMemberships(store: EntryStore, subscriptionId: 
       .map((entry) => ({
         ...entry,
         subscriptionIds: entry.subscriptionIds.filter((id) => id !== subscriptionId),
+        positions: withoutKey(entry.positions, subscriptionId),
       }))
   );
+}
+
+function withoutKey(positions: Record<string, number>, key: string): Record<string, number> {
+  if (!(key in positions)) return positions;
+  return Object.fromEntries(Object.entries(positions).filter(([id]) => id !== key));
 }
 
 /** Writes metadata from an `entry_updated` event. */

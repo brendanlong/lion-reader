@@ -10,6 +10,7 @@ import type { db as dbType } from "@/server/db";
 import { userEntries } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 import { visibleUserEntrySql } from "./entry-filters";
+import { publishEntryStates } from "./entry-state";
 
 /** The most scores one write may set. */
 export const MAX_ENTRY_SCORE_BATCH = 1000;
@@ -72,6 +73,11 @@ export async function setEntryScores(
   `);
 
   const found = new Set(visible.map((row) => row.entryId));
+  publishEntryStates(
+    db,
+    userId,
+    updated.rows.map((row) => row.entry_id)
+  );
   return {
     changed: updated.rows.map((row) => ({ entryId: row.entry_id, score: row.score })),
     notFoundIds: [...byEntry.keys()].filter((id) => !found.has(id)),

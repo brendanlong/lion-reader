@@ -13,13 +13,14 @@ import { hashKey } from "@tanstack/react-query";
 import type { EntryRow } from "./entries";
 import type { SyncedCollection } from "./synced-collection";
 import type { EntryType } from "@/lib/entry-types";
+import { ENTRY_SORT_DIRECTIONS, isRankedSort, type EntrySortOrder } from "@/lib/entry-sort";
 
 export type ListEntryRow = {
   key: string;
   listKey: string;
   entryId: string;
-  /** Ascending sort position within the list (see `listOrder`). */
-  order: number;
+  /** Its place in the list (see `listOrder`). */
+  order: ListOrder;
   /**
    * Left the collection the list shows. The row stays so the list keeps its
    * place while the entry is open, but renders only as the open entry.
@@ -34,8 +35,8 @@ export interface EntryListFilters {
   uncategorized?: boolean;
   unreadOnly?: boolean;
   starredOnly?: boolean;
-  sortOrder?: "newest" | "oldest";
-  sortBy?: "published" | "readChanged";
+  sortOrder?: EntrySortOrder;
+  sortBy?: "published" | "readChanged" | "score" | "position";
   type?: EntryType;
   query?: string;
   limit?: number;
@@ -44,8 +45,8 @@ export interface EntryListFilters {
 export interface EntryListMeta {
   input: EntryListFilters & Record<string, unknown>;
   hasMore: boolean;
-  /** `order` of the last loaded entry (the pagination window's edge). */
-  lastOrder: number;
+  /** The last loaded entry's place (the pagination window's edge). */
+  last?: ListPlace;
   entryIds: Set<string>;
   /**
    * Entries inserted live since the list's last full fetch started. That
@@ -60,7 +61,12 @@ export interface EntryListMeta {
 export interface EntryLists {
   rows: SyncedCollection<ListEntryRow>;
   meta: Map<string, EntryListMeta>;
+  /** Which ranked sorts each loaded list has values for, by list key. */
+  sortable: SyncedCollection<ListSortableRow>;
 }
+
+/** Which ranked sorts a list has values for (`entries.list`'s `sortable`), kept live. */
+export type ListSortableRow = { listKey: string; score: boolean; position: boolean };
 
 /**
  * The list identity for an `entries.list` input — the input minus the
@@ -80,19 +86,69 @@ function listEntryKey(listKey: string, entryId: string): string {
 
 /** Search results and Recently Read are ordered by fields entries don't carry. */
 function isServerOrdered(input: EntryListFilters): boolean {
-  return !!input.query || (input.sortBy !== undefined && input.sortBy !== "published");
+  return !!input.query || input.sortBy === "readChanged";
 }
 
 /**
- * Newest-first lists sort descending by `COALESCE(publishedAt, fetchedAt)`,
- * then id. `order` is stored ascending (negated for newest-first) so every
- * list sorts `order ASC`; the id tiebreak direction comes from
- * `isNewestFirst`. Server-ordered lists use their fetch position.
+ * An entry's place in a list: `keys` compared in order, ascending, then the
+ * entry id, descending when `descendingId`. A list ordered by date is
+ * `[±COALESCE(publishedAt, fetchedAt)]`; by score or position, entries
+ * without a value come after the rest, newest first, as the server orders
+ * them (#2064): `[0, ±value, ±time]` for those with one, `[1, 0, -time]` for
+ * those without. Server-ordered lists use their fetch position.
  */
-function listOrder(input: EntryListFilters, entry: EntryRow, index: number): number {
-  if (isServerOrdered(input)) return index;
+export type ListOrder = { keys: number[]; descendingId: boolean };
+
+/** An entry's place in a list, with the id its order breaks ties by. */
+export type ListPlace = { order: ListOrder; entryId: string };
+
+type EntrySortFields = Pick<EntryRow, "id" | "publishedAt" | "fetchedAt" | "score" | "positions">;
+
+function listOrder(input: EntryListFilters, entry: EntrySortFields, index: number): ListOrder {
+  if (isServerOrdered(input)) return { keys: [index], descendingId: false };
   const time = entrySortKey(entry);
-  return isNewestFirst(input) ? -time : time;
+  const sortBy = isRankedSort(input.sortBy) ? input.sortBy : "published";
+  const reversed = isReversed(input, sortBy);
+  if (sortBy === "published") {
+    return reversed ? { keys: [time], descendingId: false } : { keys: [-time], descendingId: true };
+  }
+  const value =
+    sortBy === "score"
+      ? entry.score
+      : input.subscriptionId
+        ? entry.positions[input.subscriptionId]
+        : undefined;
+  if (value === null || value === undefined) return { keys: [1, 0, -time], descendingId: true };
+  // A score sorts highest first and a position lowest first; reversing flips
+  // the value and the date within it.
+  const descending = (sortBy === "score") !== reversed;
+  return descending
+    ? { keys: [0, -value, -time], descendingId: true }
+    : { keys: [0, value, time], descendingId: false };
+}
+
+function isReversed(input: EntryListFilters, sortBy: "published" | "score" | "position"): boolean {
+  return input.sortOrder === ENTRY_SORT_DIRECTIONS[sortBy][1];
+}
+
+/** Orders two places in one list. */
+export function comparePlaces(a: ListPlace, b: ListPlace): number {
+  const keys = Math.max(a.order.keys.length, b.order.keys.length);
+  for (let i = 0; i < keys; i++) {
+    const diff = (a.order.keys[i] ?? 0) - (b.order.keys[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  if (a.entryId === b.entryId) return 0;
+  const ascending = a.entryId < b.entryId ? -1 : 1;
+  return a.order.descendingId ? -ascending : ascending;
+}
+
+function sameOrder(a: ListOrder, b: ListOrder): boolean {
+  return (
+    a.descendingId === b.descendingId &&
+    a.keys.length === b.keys.length &&
+    a.keys.every((key, i) => key === b.keys[i])
+  );
 }
 
 /** An entry's place in a published-order list: `COALESCE(publishedAt, fetchedAt)`, then id. */
@@ -100,20 +156,16 @@ function entrySortKey(entry: Pick<EntryRow, "publishedAt" | "fetchedAt">): numbe
   return (entry.publishedAt ?? entry.fetchedAt).getTime();
 }
 
-export function isNewestFirst(input: EntryListFilters): boolean {
-  return input.sortOrder !== "oldest";
-}
-
-/** Orders entries as a published-order list with these filters shows them. */
+/** Orders entries as a list with these filters shows them (not server-ordered ones). */
 export function compareListEntries(
   input: EntryListFilters
 ): (a: EntrySortFields, b: EntrySortFields) => number {
-  const direction = isNewestFirst(input) ? -1 : 1;
   return (a, b) =>
-    direction * (entrySortKey(a) - entrySortKey(b) || (a.id > b.id ? 1 : a.id < b.id ? -1 : 0));
+    comparePlaces(
+      { order: listOrder(input, a, 0), entryId: a.id },
+      { order: listOrder(input, b, 0), entryId: b.id }
+    );
 }
-
-type EntrySortFields = Pick<EntryRow, "id" | "publishedAt" | "fetchedAt">;
 
 /** Call when a full (not next-page) fetch of the list starts. */
 export function markEntryListFetchStarted(lists: EntryLists, input: Record<string, unknown>): void {
@@ -132,7 +184,11 @@ export function markEntryListFetchStarted(lists: EntryLists, input: Record<strin
 export function ingestEntryListPages(
   lists: EntryLists,
   input: EntryListMeta["input"],
-  pages: Array<{ items: EntryRow[]; nextCursor?: string }>,
+  pages: Array<{
+    items: EntryRow[];
+    nextCursor?: string;
+    sortable?: Omit<ListSortableRow, "listKey">;
+  }>,
   mode: "replace" | "append"
 ): void {
   const listKey = entryListKey(input);
@@ -151,7 +207,8 @@ export function ingestEntryListPages(
     }));
 
   const hasMore = pages.at(-1)?.nextCursor !== undefined;
-  const lastOrder = rows.at(-1)?.order ?? -Infinity;
+  const lastRow = rows.at(-1);
+  const last = lastRow && { order: lastRow.order, entryId: lastRow.entryId };
   const entryIds = new Set(rows.map((row) => row.entryId));
   if (mode === "append" && previous) {
     for (const id of previous.entryIds) entryIds.add(id);
@@ -160,7 +217,9 @@ export function ingestEntryListPages(
     // render after a gap of unloaded entries (the next page brings it back).
     for (const id of previous.insertedSinceFetch) {
       const order = lists.rows.getSynced(listEntryKey(listKey, id))?.order;
-      if (order !== undefined && (!hasMore || order <= lastOrder)) entryIds.add(id);
+      if (order && (!hasMore || !last || comparePlaces({ order, entryId: id }, last) <= 0)) {
+        entryIds.add(id);
+      }
     }
     lists.rows.remove(
       [...previous.entryIds]
@@ -172,18 +231,21 @@ export function ingestEntryListPages(
   lists.rows.upsert(
     rows.filter((row) => {
       const stored = lists.rows.getSynced(row.key);
-      return stored?.order !== row.order || stored.removed !== row.removed;
+      return !stored || !sameOrder(stored.order, row.order) || stored.removed !== row.removed;
     })
   );
   const keepsLiveChanges = mode === "append" && previous;
   lists.meta.set(listKey, {
     input,
     hasMore,
-    lastOrder,
+    last,
     entryIds,
     insertedSinceFetch: keepsLiveChanges ? previous.insertedSinceFetch : new Set(),
     removedSinceFetch: keepsLiveChanges ? previous.removedSinceFetch : new Set(),
   });
+  // A next page's first is the earlier fetch's: live changes since may be newer.
+  const sortable = pages[0]?.sortable;
+  if (mode === "replace" && sortable) lists.sortable.upsert([{ listKey, ...sortable }]);
 }
 
 export function removeEntryList(lists: EntryLists, input: Record<string, unknown>): void {
@@ -192,6 +254,28 @@ export function removeEntryList(lists: EntryLists, input: Record<string, unknown
   if (!meta) return;
   lists.rows.remove([...meta.entryIds].map((id) => listEntryKey(listKey, id)));
   lists.meta.delete(listKey);
+  lists.sortable.remove([listKey]);
+}
+
+/**
+ * Records that lists now have a value for a ranked sort, as an entry gained
+ * a score or a position live: every loaded list `includes`, which the
+ * caller judges by the entry's memberships and state. Values going away
+ * leave the sort offered until the list's next fetch, which shows it by date
+ * while nothing has a value.
+ */
+export function markListsSortable(
+  lists: EntryLists,
+  sort: "score" | "position",
+  includes: (input: EntryListMeta["input"]) => boolean
+): void {
+  const rows: ListSortableRow[] = [];
+  for (const [listKey, meta] of lists.meta) {
+    const row = lists.sortable.getSynced(listKey);
+    if (!row || row[sort] || !includes(meta.input)) continue;
+    rows.push({ ...row, [sort]: true });
+  }
+  lists.sortable.upsert(rows);
 }
 
 /**
@@ -338,7 +422,9 @@ function insertIntoListsWhere(
     if (hasUnknownFilter || !belongs(input)) continue;
 
     const order = listOrder(input, entry, 0);
-    if (meta.hasMore && order > meta.lastOrder) continue;
+    if (meta.hasMore && meta.last && comparePlaces({ order, entryId: entry.id }, meta.last) > 0) {
+      continue;
+    }
 
     meta.entryIds.add(entry.id);
     meta.insertedSinceFetch.add(entry.id);

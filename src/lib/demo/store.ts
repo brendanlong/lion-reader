@@ -313,6 +313,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       id: entry.id,
       subscriptionId: originOf(state),
       subscriptionIds: subscriptionIdsOf(state),
+      positions: {},
       type: entry.type,
       url: entry.url,
       title: entry.title,
@@ -547,6 +548,8 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
           type: state.entry.type,
           updatedAt: state.updatedAt,
           readChangedAt: state.readChangedAt,
+          score: null,
+          positions: {},
         });
       }
       return {

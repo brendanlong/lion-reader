@@ -61,6 +61,8 @@ function seedEntry(queryClient: QueryClient, overrides: Partial<EntryRow> = {}):
       id: "e1",
       subscriptionId: "sub-1",
       subscriptionIds: ["sub-1"],
+      positions: {},
+      score: null,
       type: "web",
       url: null,
       title: "Entry",

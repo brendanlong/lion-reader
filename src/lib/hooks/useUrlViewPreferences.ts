@@ -1,7 +1,7 @@
 /**
  * useUrlViewPreferences Hook
  *
- * Manages view preferences (unreadOnly, sortOrder) synced to URL query params.
+ * Manages view preferences (unreadOnly, sort, search) synced to URL query params.
  * This enables:
  * - Server-side prefetching with correct filters
  * - Shareable/bookmarkable filtered views
@@ -18,6 +18,7 @@ import { clientPush, clientReplace } from "@/lib/navigation";
 import { useAppHref, useAppPathname, useAppSearchParams } from "./useAppLocation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
 import { getDefaultViewPreferences } from "@/lib/queries/entries-list-input";
+import type { EntrySortOrder } from "@/lib/entry-sort";
 
 /**
  * Result of the useUrlViewPreferences hook.
@@ -34,14 +35,14 @@ export interface UseUrlViewPreferencesResult {
   toggleShowUnreadOnly: () => void;
 
   /**
-   * Current preference: sort order for entries.
+   * Current preference: the sort and its direction (`?sort=`).
    */
-  sortOrder: "newest" | "oldest";
+  sortOrder: EntrySortOrder;
 
   /**
-   * Toggle the sortOrder preference (updates URL).
+   * Set the sort (updates URL).
    */
-  toggleSortOrder: () => void;
+  setSortOrder: (sortOrder: EntrySortOrder) => void;
 
   /**
    * Active full-text search query (`?q=` URL param); undefined when not searching.
@@ -93,7 +94,7 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
 
   // Helper to update URL with new params
   const updateUrl = useCallback(
-    (updates: { unreadOnly?: boolean; sort?: "newest" | "oldest" }) => {
+    (updates: { unreadOnly?: boolean; sort?: EntrySortOrder }) => {
       const params = new URLSearchParams(searchParams.toString());
 
       // Update unreadOnly param
@@ -126,9 +127,12 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
     updateUrl({ unreadOnly: !unreadOnly });
   }, [updateUrl, unreadOnly]);
 
-  const toggleSortOrder = useCallback(() => {
-    updateUrl({ sort: sortOrder === "newest" ? "oldest" : "newest" });
-  }, [updateUrl, sortOrder]);
+  const setSortOrder = useCallback(
+    (sort: EntrySortOrder) => {
+      updateUrl({ sort });
+    },
+    [updateUrl]
+  );
 
   const setSearchQuery = useCallback(
     (query: string | null) => {
@@ -158,10 +162,10 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
       showUnreadOnly: unreadOnly,
       toggleShowUnreadOnly,
       sortOrder,
-      toggleSortOrder,
+      setSortOrder,
       searchQuery,
       setSearchQuery,
     }),
-    [unreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder, searchQuery, setSearchQuery]
+    [unreadOnly, toggleShowUnreadOnly, sortOrder, setSortOrder, searchQuery, setSearchQuery]
   );
 }

@@ -94,6 +94,8 @@ const membershipSubscription = alias(subscriptions, "membership_subscription");
  *   {@link entryOriginOn}.
  * - `subscriptionIds`, the active subscriptions holding it: its origin, its
  *   collections and, for a saved article, the saved subscription. Sorted.
+ * - `positions`, its position in each of those that gives it one (#2064),
+ *   by subscription id: only collections do.
  *
  * Join it with `leftJoinLateral(memberships, sql\`true\`)` to a per-user
  * entry row (`visible_entries` or `user_entries`).
@@ -109,6 +111,9 @@ export function entryMemberships(row: { userId: AnyColumn; entryId: AnyColumn })
         FILTER (WHERE ${membershipSubscription.unsubscribedAt} IS NULL), '{}')`.as(
         "subscription_ids"
       ),
+      positions: sql<Record<string, number>>`COALESCE(jsonb_object_agg(${membership.subscriptionId},
+        ${membership.position}) FILTER (WHERE ${membershipSubscription.unsubscribedAt} IS NULL
+        AND ${membership.position} IS NOT NULL), '{}')`.as("positions"),
     })
     .from(membership)
     .innerJoin(membershipSubscription, eq(membershipSubscription.id, membership.subscriptionId))

@@ -100,6 +100,8 @@ export function handleSyncEvent(
             id: event.entryId,
             ...state,
             subscriptionIds: event.subscriptionIds,
+            ...(event.positions && { positions: event.positions }),
+            ...(event.score !== undefined && { score: event.score }),
             updatedAt: new Date(event.updatedAt),
             // Sent with an unread flip; star/unstar of an unread entry falls
             // back to the stored row.

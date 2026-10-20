@@ -113,6 +113,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
     starred: false,
     readChangedAt: null,
     score: null,
+    positions: {},
     feedTitle: null,
     feedUrl: null,
     siteName: null,
