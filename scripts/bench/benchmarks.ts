@@ -30,6 +30,7 @@ import { recordStatements } from "./record";
 import {
   COLLECTIONS,
   U0,
+  SPARSE_TAG,
   U_KEEPS_UP,
   WEB,
   benchUuid,
@@ -504,21 +505,6 @@ ORDER BY unread_count DESC, id LIMIT 1`
   ).id;
 }
 
-/** U0's tag whose subscriptions hold the fewest articles (at least one). */
-async function sparseTag(db: ClientBase): Promise<string> {
-  return (
-    await one<{ id: string }>(
-      db,
-      `SELECT st.tag_id AS id FROM subscription_tags st
-JOIN subscriptions s ON s.id = st.subscription_id AND s.user_id = ${q(U0)} AND s.unsubscribed_at IS NULL
-JOIN subscription_entries se ON se.subscription_id = s.id
-JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-WHERE NOT ue.read
-GROUP BY st.tag_id ORDER BY count(*), st.tag_id LIMIT 1`
-    )
-  ).id;
-}
-
 /** The sync cursors `back` changes before U0's newest, as a client would hold them. */
 async function syncCursors(db: ClientBase, back: number) {
   const iso = (col: string) => `to_json(${col}) #>> '{}'`;
@@ -632,10 +618,8 @@ const READS: Benchmark[] = [
   listBenchmark("ssr.list_recently_read", "/recently-read", async () =>
     appList({ unreadOnly: false, sortBy: "readChanged" })
   ),
-  listBenchmark(
-    "list.sparse_tag",
-    "/tag/:id, U0's tag with the fewest unread articles",
-    async (db) => appList({ tagId: await sparseTag(db) })
+  listBenchmark("list.sparse_tag", "/tag/:id, a tag of one quiet feed (#1946)", async () =>
+    appList({ tagId: tagId(0, SPARSE_TAG) })
   ),
   listBenchmark("list.subscription_deep", `/subscription/:id, ${DEEP_ROWS} rows deep`, async (db) =>
     deep(appList({ subscriptionId: await longSubscription(db) }))
