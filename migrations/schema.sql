@@ -174,6 +174,18 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.reached_tag_lists(p_user uuid[], p_entry uuid[]) RETURNS TABLE(list_id uuid, user_id uuid, entry_id uuid)
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT DISTINCT COALESCE(t.id, se.user_id), se.user_id, se.entry_id
+  FROM (SELECT DISTINCT u, e FROM unnest(p_user, p_entry) AS p(u, e)) p
+  JOIN subscription_entries se ON se.user_id = p.u AND se.entry_id = p.e
+  JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
+  LEFT JOIN subscription_tags st ON st.subscription_id = s.id
+  LEFT JOIN tags t ON t.id = st.tag_id AND t.user_id = s.user_id AND t.deleted_at IS NULL
+  WHERE t.id IS NOT NULL OR (st.subscription_id IS NULL AND s.type <> 'saved')
+$$;
+
 CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
     SET plan_cache_mode TO 'force_custom_plan'
@@ -230,28 +242,33 @@ $$;
 
 CREATE FUNCTION public.subscription_entries_copy_state() RETURNS trigger
     LANGUAGE plpgsql
-    AS $_$
+    AS $$
+DECLARE
+  v_user uuid[]; v_entry uuid[];
 BEGIN
-  EXECUTE $q$
-    SELECT 1
-    FROM user_entries ue
-    JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
-      ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
-    ORDER BY ue.user_id, ue.entry_id
-    FOR NO KEY UPDATE OF ue
-  $q$;
+  PERFORM 1
+  FROM user_entries ue
+  JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
+    ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
+  ORDER BY ue.user_id, ue.entry_id
+  FOR SHARE OF ue;
 
-  EXECUTE $q$
-    UPDATE subscription_entries se
-    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
-    FROM changed_rows c
-    JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
-    WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
-      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
-  $q$;
+  UPDATE subscription_entries se
+  SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+  FROM changed_rows c
+  JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+  WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
+    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam);
+
+  PERFORM 1 FROM subscriptions
+  WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
+  ORDER BY id FOR NO KEY UPDATE;
+
+  SELECT array_agg(user_id), array_agg(entry_id) INTO v_user, v_entry FROM changed_rows;
+  PERFORM sync_tag_entries(v_user, v_entry);
   RETURN NULL;
 END;
-$_$;
+$$;
 
 CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
     LANGUAGE plpgsql
@@ -276,10 +293,23 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.subscription_entries_drop_lists() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_user uuid[]; v_entry uuid[];
+BEGIN
+  SELECT array_agg(user_id), array_agg(entry_id) INTO v_user, v_entry FROM changed_rows;
+  PERFORM sync_tag_entries(v_user, v_entry);
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.subscription_tags_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
+  PERFORM sync_tag_entries_of_subscriptions(ARRAY(SELECT DISTINCT subscription_id FROM changed_rows));
   PERFORM recompute_list_counters(u.user_id)
   FROM (
     SELECT DISTINCT s.user_id FROM changed_rows c JOIN subscriptions s ON s.id = c.subscription_id
@@ -319,6 +349,8 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  PERFORM sync_tag_entries_of_subscriptions(a_id);
+
   UPDATE user_entries ue
   SET active_memberships = ue.active_memberships + m.d
   FROM (
@@ -332,6 +364,47 @@ BEGIN
   PERFORM recompute_list_counters(u.user_id)
   FROM (SELECT DISTINCT user_id FROM unnest(a_user) AS a(user_id) ORDER BY user_id) u;
   RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.sync_tag_entries(p_user uuid[], p_entry uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF p_user IS NULL THEN
+    RETURN;
+  END IF;
+
+  WITH reached AS (
+    SELECT * FROM reached_tag_lists(p_user, p_entry)
+  ),
+  dropped AS (
+    DELETE FROM tag_entries te
+    USING (SELECT DISTINCT u, e FROM unnest(p_user, p_entry) AS p(u, e)) p
+    WHERE te.user_id = p.u AND te.entry_id = p.e
+      AND NOT EXISTS (
+        SELECT 1 FROM reached r WHERE r.list_id = te.list_id AND r.entry_id = te.entry_id
+      )
+  )
+  INSERT INTO tag_entries (list_id, user_id, entry_id, published_or_fetched_at, read, starred, is_spam)
+  SELECT r.list_id, r.user_id, r.entry_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.is_spam
+  FROM reached r
+  JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id
+  ORDER BY r.list_id, r.entry_id
+  ON CONFLICT (list_id, entry_id) DO NOTHING;
+END;
+$$;
+
+CREATE FUNCTION public.sync_tag_entries_of_subscriptions(p_sub uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_user uuid[]; v_entry uuid[];
+BEGIN
+  SELECT array_agg(se.user_id), array_agg(se.entry_id) INTO v_user, v_entry
+  FROM subscription_entries se
+  WHERE se.subscription_id = ANY(p_sub);
+  PERFORM sync_tag_entries(v_user, v_entry);
 END;
 $$;
 
@@ -353,22 +426,26 @@ $$;
 
 CREATE FUNCTION public.user_entries_copy_state() RETURNS trigger
     LANGUAGE plpgsql
-    AS $_$
+    AS $$
 BEGIN
-  EXECUTE $q$
-    UPDATE subscription_entries se
-    SET read = n.read, starred = n.starred, is_spam = n.is_spam
-    FROM (
-      SELECT user_id, entry_id, read, starred, is_spam FROM new_rows
-      EXCEPT
-      SELECT user_id, entry_id, read, starred, is_spam FROM old_rows
-    ) n
-    WHERE se.user_id = n.user_id AND se.entry_id = n.entry_id
-      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam)
-  $q$;
+  UPDATE subscription_entries se
+  SET read = n.read, starred = n.starred, is_spam = n.is_spam
+  FROM new_rows n
+  JOIN old_rows o ON o.user_id = n.user_id AND o.entry_id = n.entry_id
+  WHERE (n.read, n.starred, n.is_spam) IS DISTINCT FROM (o.read, o.starred, o.is_spam)
+    AND se.user_id = n.user_id AND se.entry_id = n.entry_id
+    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam);
+
+  UPDATE tag_entries te
+  SET read = n.read, starred = n.starred, is_spam = n.is_spam
+  FROM new_rows n
+  JOIN old_rows o ON o.user_id = n.user_id AND o.entry_id = n.entry_id
+  WHERE (n.read, n.starred, n.is_spam) IS DISTINCT FROM (o.read, o.starred, o.is_spam)
+    AND te.user_id = n.user_id AND te.entry_id = n.entry_id
+    AND (te.read, te.starred, te.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam);
   RETURN NULL;
 END;
-$_$;
+$$;
 
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
@@ -821,6 +898,16 @@ CREATE TABLE public.subscriptions (
     CONSTRAINT subscriptions_named_unless_web CHECK (((type = 'web'::public.feed_type) OR (custom_title IS NOT NULL)))
 );
 
+CREATE TABLE public.tag_entries (
+    list_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    entry_id uuid NOT NULL,
+    published_or_fetched_at timestamp with time zone NOT NULL,
+    read boolean NOT NULL,
+    starred boolean NOT NULL,
+    is_spam boolean NOT NULL
+);
+
 CREATE TABLE public.tags (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1074,6 +1161,9 @@ ALTER TABLE ONLY public.subscription_tags
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.tag_entries
+    ADD CONSTRAINT tag_entries_pkey PRIMARY KEY (list_id, entry_id);
+
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
 
@@ -1219,6 +1309,12 @@ CREATE UNIQUE INDEX idx_subscriptions_greader_stream_id ON public.subscriptions 
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 
+CREATE INDEX idx_tag_entries_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT is_spam);
+
+CREATE INDEX idx_tag_entries_unread_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam));
+
+CREATE INDEX idx_tag_entries_user_entry ON public.tag_entries USING btree (user_id, entry_id);
+
 CREATE INDEX idx_tags_updated_at ON public.tags USING btree (user_id, updated_at);
 
 CREATE INDEX idx_user_entries_changed_at ON public.user_entries USING btree (user_id, changed_at, entry_id);
@@ -1276,6 +1372,8 @@ CREATE TRIGGER subscription_entries_copy_state_trigger AFTER INSERT ON public.su
 CREATE TRIGGER subscription_entries_counters_delete_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
 CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
+
+CREATE TRIGGER subscription_entries_drop_lists_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_drop_lists();
 
 CREATE TRIGGER subscription_tags_recompute_lists_delete_trigger AFTER DELETE ON public.subscription_tags REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_tags_recompute_lists();
 
@@ -1380,6 +1478,9 @@ ALTER TABLE ONLY public.subscriptions
 
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.tag_entries
+    ADD CONSTRAINT tag_entries_user_id_entry_id_fkey FOREIGN KEY (user_id, entry_id) REFERENCES public.user_entries(user_id, entry_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

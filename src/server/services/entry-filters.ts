@@ -331,8 +331,8 @@ export async function buildEntrySubscriptionFilter(
  * same filter logic.
  */
 export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {
-  // The read, starred and spam filters are literals, not `= $n`: a generic plan
-  // can only use a partial index (`WHERE NOT read …`) for a literal predicate.
+  // Literal filters, for the partial indexes ("Ordering & Pagination" in
+  // src/server/CLAUDE.md).
   const conditions: SQL[] = [];
 
   if (params.unreadOnly) {

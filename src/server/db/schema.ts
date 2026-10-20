@@ -990,6 +990,36 @@ export const subscriptionEntries = pgTable(
 );
 
 /**
+ * The rows of every tag's list and of Uncategorized (#2066): one per (list,
+ * entry), the list being a tag or, for Uncategorized, its user. Triggers keep
+ * them from memberships, subscriptions and tags (migration 0163), with copies
+ * of the user_entries row's state like a membership's, so a tag's page reads
+ * the tag's own index. Read state from user_entries; never write these.
+ */
+export const tagEntries = pgTable(
+  "tag_entries",
+  {
+    listId: uuid("list_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    entryId: uuid("entry_id").notNull(),
+    publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
+    read: boolean("read").notNull(),
+    starred: boolean("starred").notNull(),
+    isSpam: boolean("is_spam").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.listId, table.entryId] }),
+    foreignKey({
+      columns: [table.userId, table.entryId],
+      foreignColumns: [userEntries.userId, userEntries.entryId],
+    })
+      .onDelete("cascade")
+      .onUpdate("cascade"),
+    index("idx_tag_entries_user_entry").on(table.userId, table.entryId),
+  ]
+);
+
+/**
  * Hard-deleted entries (saved articles), reported to delta-sync clients so they
  * drop local copies. No FK to entries: the entry row is gone by definition.
  * Pruned by the retention job (see services/entry-tombstones.ts).

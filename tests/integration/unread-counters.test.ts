@@ -19,6 +19,7 @@ import {
   entries,
   subscriptionEntries,
   subscriptions,
+  tagEntries,
   userEntries,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -74,6 +75,7 @@ async function expectNoDrift() {
   expect(result).toEqual({
     userEntriesFixed: 0,
     membershipsFixed: 0,
+    tagEntriesFixed: 0,
     subscriptionsFixed: 0,
     usersFixed: 0,
     tagsFixed: 0,
@@ -348,10 +350,19 @@ describe("unread counters (triggers + reconciliation)", () => {
       .update(subscriptionEntries)
       .set({ read: true, starred: false })
       .where(eq(subscriptionEntries.subscriptionId, subId));
+    // The article's Uncategorized row with a stale state, and a row for a
+    // list it isn't in.
+    await db.update(tagEntries).set({ read: true }).where(eq(tagEntries.userId, userId));
+    await db.execute(sql`
+      INSERT INTO tag_entries (list_id, user_id, entry_id, published_or_fetched_at, read, starred, is_spam)
+      SELECT ${generateUuidv7()}, user_id, entry_id, published_or_fetched_at, read, starred, is_spam
+      FROM tag_entries WHERE user_id = ${userId}
+    `);
 
     const result = await reconcileCounters(db);
     expect(result.userEntriesFixed).toBe(1);
     expect(result.membershipsFixed).toBe(1);
+    expect(result.tagEntriesFixed).toBe(2);
     expect(result.subscriptionsFixed).toBeGreaterThanOrEqual(1);
     expect(result.usersFixed).toBeGreaterThanOrEqual(1);
 
@@ -363,6 +374,12 @@ describe("unread counters (triggers + reconciliation)", () => {
         .from(subscriptionEntries)
         .where(eq(subscriptionEntries.subscriptionId, subId))
     ).toEqual([{ read: false, starred: true }]);
+    expect(
+      await db
+        .select({ listId: tagEntries.listId, read: tagEntries.read })
+        .from(tagEntries)
+        .where(eq(tagEntries.userId, userId))
+    ).toEqual([{ listId: userId, read: false }]);
     await expectNoDrift();
   });
 });

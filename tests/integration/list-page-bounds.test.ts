@@ -35,25 +35,13 @@ const DEEP = 500;
  * row's entry and memberships, and some slack. A walk reads thousands.
  */
 const ROW_BUDGET = 8 * (LIMIT + 1);
-const BIG_TABLES = new Set(["user_entries", "subscription_entries", "entries"]);
+const BIG_TABLES = new Set(["user_entries", "subscription_entries", "tag_entries", "entries"]);
 
 const STEP_MS = 60_000;
 const START = new Date("2024-01-01T00:00:00Z");
 const MIDDLE = new Date(START.getTime() + (NOISE / 2) * STEP_MS);
 
 type ListName = "all" | "starred" | "subscription" | "tag" | "uncategorized" | "recentlyRead";
-type Filter = "all" | "unread";
-
-/**
- * Lists still read more than their page, with the issue that bounds them. A
- * case here must fail; when a fix makes it pass, delete its entry.
- */
-const KNOWN_UNBOUNDED: Partial<Record<`${ListName}/${Filter}`, string>> = {
-  "tag/all": "#2066",
-  "tag/unread": "#2066",
-  "uncategorized/all": "#2066",
-  "uncategorized/unread": "#2066",
-};
 
 let userId: string;
 let otherUserId: string;
@@ -226,6 +214,7 @@ beforeAll(async () => {
   await db.execute(sql`VACUUM ANALYZE user_entries`);
   await db.execute(sql`VACUUM ANALYZE subscription_entries`);
   await db.execute(sql`VACUUM ANALYZE entries`);
+  await db.execute(sql`VACUUM ANALYZE tag_entries`);
 }, 120_000);
 
 afterAll(async () => {
@@ -241,16 +230,13 @@ const CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
       list,
       filter,
       sortOrder,
-      known: KNOWN_UNBOUNDED[`${list}/${filter}`],
     }))
   )
 );
 
 describe("entry list pages read a bounded number of rows", () => {
-  for (const { list, filter, sortOrder, known } of CASES) {
-    const name = `${list}, ${filter}, ${sortOrder}${known ? ` (unbounded until ${known})` : ""}`;
-    const test = known ? it.fails : it;
-    test(name, async () => {
+  for (const { list, filter, sortOrder } of CASES) {
+    it(`${list}, ${filter}, ${sortOrder}`, async () => {
       const params: ListEntriesParams = {
         userId,
         ...scopes[list],

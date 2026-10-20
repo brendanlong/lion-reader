@@ -246,6 +246,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
     expect(check).toEqual({
       userEntriesFixed: 0,
       membershipsFixed: 0,
+      tagEntriesFixed: 0,
       subscriptionsFixed: 0,
       usersFixed: 0,
       tagsFixed: 0,

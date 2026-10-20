@@ -184,6 +184,10 @@ fetches user-influenced URLs and must never be usable to reach internal services
   `subscription_entries`' (#1846) foreign keys, to the owner's subscription and to
   the owner's own `user_entries` row, stop any membership from crossing users
   (`services/collections.ts`).
+- **A tag's and Uncategorized's rows (`tag_entries`) come only from a user's own
+  memberships and live tags** (`reached_tag_lists`), and a list page joins them on
+  the user as well as the list id: Uncategorized's list id is the user's id, and a
+  tag id from the request must never reach another user's rows (`listRowsOf`).
 - AI summaries are keyed `(user_id, content_hash)`. Narration is a shared cache of a
   deterministic transform of public content, so **only a failure the content causes
   may be recorded on a `narration_content` row** — never one from a user's own key

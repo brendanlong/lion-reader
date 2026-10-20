@@ -743,6 +743,7 @@ describe("unread counters under random operations", () => {
         expect(await reconcileCounters(db), context).toEqual({
           userEntriesFixed: 0,
           membershipsFixed: 0,
+          tagEntriesFixed: 0,
           subscriptionsFixed: 0,
           usersFixed: 0,
           tagsFixed: 0,

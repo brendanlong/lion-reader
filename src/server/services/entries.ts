@@ -13,6 +13,7 @@ import {
   feeds,
   subscriptionEntries,
   subscriptions,
+  tagEntries,
   tags,
   visibleEntries,
 } from "@/server/db/schema";
@@ -236,18 +237,37 @@ const entryListSelectFields = {
 };
 
 /**
- * The one subscription a list shows, when it shows exactly one: the
- * `subscriptionId` filter (already checked by `buildEntrySubscriptionFilter`)
- * or, for Saved, the saved subscription.
+ * The rows a list has of its own, which carry its sort key and copies of each
+ * article's state: one subscription's memberships (the `subscriptionId`
+ * filter, already checked by `buildEntrySubscriptionFilter`, or Saved's), or a
+ * tag's or Uncategorized's `tag_entries`. Null for All and Starred, which
+ * read `user_entries` itself. Joined on the user too: a list id alone
+ * (Uncategorized's is the user's id) must never reach another user's rows
+ * (SECURITY.md §7).
  */
-async function singleSubscriptionOf(
-  db: typeof dbType,
-  params: ListEntriesParams
-): Promise<string | null> {
-  if (params.tagId || params.uncategorized) return null;
-  if (params.subscriptionId) return params.subscriptionId;
-  if (params.type === "saved") return getSavedSubscriptionId(db, params.userId);
-  return null;
+async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "query">) {
+  const subscriptionId =
+    params.subscriptionId ??
+    (params.type === "saved" && !params.tagId && !params.uncategorized
+      ? await getSavedSubscriptionId(db, params.userId)
+      : null);
+  const tagListId = params.tagId ?? (params.uncategorized ? params.userId : null);
+  const rows = subscriptionId
+    ? { table: subscriptionEntries, inList: eq(subscriptionEntries.subscriptionId, subscriptionId) }
+    : tagListId
+      ? { table: tagEntries, inList: eq(tagEntries.listId, tagListId) }
+      : null;
+  if (!rows) return null;
+  const { table } = rows;
+  return {
+    table,
+    on: and(
+      rows.inList,
+      eq(table.userId, visibleEntries.userId),
+      eq(table.entryId, visibleEntries.id)
+    )!,
+    savedOnly: !params.subscriptionId && !params.tagId && !params.uncategorized,
+  };
 }
 
 // ============================================================================
@@ -350,14 +370,17 @@ export async function listGreaderItemRefs(
   };
 }
 
-/** The read, starred and spam filters, on a membership's copies of them. */
-function membershipStateConditions(params: Omit<ListEntriesParams, "query">): SQL[] {
+/** The read, starred and spam filters, on a list row's copies of them. */
+function listRowStateConditions(
+  rows: typeof subscriptionEntries | typeof tagEntries,
+  params: Omit<ListEntriesParams, "query">
+): SQL[] {
   const conditions: SQL[] = [];
-  if (params.unreadOnly) conditions.push(sql`NOT ${subscriptionEntries.read}`);
-  else if (params.readOnly) conditions.push(sql`${subscriptionEntries.read}`);
-  if (params.starredOnly) conditions.push(sql`${subscriptionEntries.starred}`);
-  else if (params.unstarredOnly) conditions.push(sql`NOT ${subscriptionEntries.starred}`);
-  if (!params.showSpam) conditions.push(sql`NOT ${subscriptionEntries.isSpam}`);
+  if (params.unreadOnly) conditions.push(sql`NOT ${rows.read}`);
+  else if (params.readOnly) conditions.push(sql`${rows.read}`);
+  if (params.starredOnly) conditions.push(sql`${rows.starred}`);
+  else if (params.unstarredOnly) conditions.push(sql`NOT ${rows.starred}`);
+  if (!params.showSpam) conditions.push(sql`NOT ${rows.isSpam}`);
   return conditions;
 }
 
@@ -393,32 +416,26 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   });
   if (subscriptionFilter === null) return null;
 
-  // One subscription's list (a subscription filter, or Saved) joins that
-  // subscription's memberships, which can't fan out. Sorted by the timeline,
-  // it walks them (idx_subscription_entries_timeline, whose sort key is the
-  // row's) rather than the user's timeline, which may hold them sparsely.
-  // Sorted otherwise, the join still lets Postgres start from the
-  // memberships when they're few, where an EXISTS filter left it walking the
-  // user's whole history for a sparse page (Wallabag's Saved by `archived`).
+  // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
+  // joins them, which can't fan out, and pages through their index: walking
+  // the user's timeline instead reads every article outside the list. Sorted
+  // otherwise, the join still lets Postgres start from the list's rows when
+  // they're few (Wallabag's Saved by `archived`). The rows' copies of each
+  // article's state are filtered too (the article's own still apply), so a
+  // filtered page reads the index of its matches.
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
-  const single = await singleSubscriptionOf(db, params);
-  if (subscriptionFilter && !single) {
+  const listRows = await listRowsOf(db, params);
+  if (subscriptionFilter && !listRows) {
     conditions.push(subscriptionFilter);
   }
-  if (single) {
-    // The membership's copies of the row's state (the row's own still apply),
-    // so a filtered page of one subscription reads its index of matches.
-    conditions.push(...membershipStateConditions(params));
+  if (listRows) {
+    conditions.push(...listRowStateConditions(listRows.table, params));
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).
-  // Saved is the saved subscription's list, which `single` already is.
+  // Saved is the saved subscription's list, which `listRows` already is.
   conditions.push(
-    ...buildEntryFilterConditions(
-      single && !params.subscriptionId && params.type === "saved"
-        ? { ...params, type: undefined }
-        : params
-    )
+    ...buildEntryFilterConditions(listRows?.savedOnly ? { ...params, type: undefined } : params)
   );
 
   // Recently Read: exclude entries that were never explicitly read-state-changed.
@@ -429,19 +446,16 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   }
 
   // Sort column: the timeline ("published"), or when read state last changed
-  // ("readChanged"/"archived"). Each list's page must read about its own size
-  // in rows, whatever else the user has: `list-page-bounds.test.ts` holds every
-  // list and filter to that, so a new one needs an index there.
+  // ("readChanged"/"archived").
   const sortColumn = !timelineSort
     ? visibleEntries.readChangedAt
-    : single
-      ? subscriptionEntries.publishedOrFetchedAt
+    : listRows
+      ? listRows.table.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
-  const idColumn = single && timelineSort ? subscriptionEntries.entryId : visibleEntries.id;
+  const idColumn = listRows && timelineSort ? listRows.table.entryId : visibleEntries.id;
 
-  // A row comparison, which Postgres reads as a bound on the index; the
-  // equivalent `a < x OR (a = x AND b < y)` is a filter, so every page would
-  // read the list from its top (#2067). The timestamp goes to Postgres as text
+  // A row comparison, never the `OR` form (#2067; "Ordering & Pagination" in
+  // src/server/CLAUDE.md). The timestamp goes to Postgres as text
   // (::timestamptz) to keep its microseconds.
   if (params.cursor) {
     const { ts, id } = timelineCursor.decode(params.cursor);
@@ -470,21 +484,11 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     sortTs: sql`${sortColumn}`.mapWith(parseTimestamptzOrNull),
 
     // visible_entries emits exactly one row per (user, entry), and so does a
-    // join on one subscription's memberships, so no DISTINCT ON dedup is
-    // needed and the (sortColumn, id) keyset cursor resumes cleanly over
-    // unique rows.
+    // join on a list's rows (one per list and article), so no DISTINCT ON
+    // dedup is needed and the (sortColumn, id) keyset cursor resumes cleanly
+    // over unique rows.
     apply: <T extends PgSelect>(query: T) =>
-      (single
-        ? query.innerJoin(
-            subscriptionEntries,
-            and(
-              eq(subscriptionEntries.subscriptionId, single),
-              eq(subscriptionEntries.userId, visibleEntries.userId),
-              eq(subscriptionEntries.entryId, visibleEntries.id)
-            )
-          )
-        : query
-      )
+      (listRows ? query.innerJoin(listRows.table, listRows.on) : query)
         .where(and(...conditions))
         .orderBy(...orderByClause)
         .limit(limit + 1)
