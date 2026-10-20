@@ -17,9 +17,10 @@ export HEALTHCHECKSIO_API_KEY=... # must be read-write; see providers.tf
 # AWS creds via the normal chain — for the S3 state backend and route53domains
 ```
 
-The backup-health Worker also needs a Tigris key that can only read the Postgres
-backup bucket (`var.backup_bucket`). Don't reuse the app's storage key: it reads
-user data and can't see that bucket. Bundle the Worker before planning:
+The backup-health Worker also needs a Tigris key whose only permissions are the
+IAM policy in `backup-health/tigris-policy.json`, with no bucket access granted
+in the key's simple settings. Don't reuse the app's storage key: it reads user
+data. Bundle the Worker before planning:
 
 ```sh
 export TF_VAR_backup_bucket_access_key_id=...
