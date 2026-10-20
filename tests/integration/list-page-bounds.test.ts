@@ -49,7 +49,6 @@ type Filter = "all" | "unread";
  * case here must fail; when a fix makes it pass, delete its entry.
  */
 const KNOWN_UNBOUNDED: Partial<Record<`${ListName}/${Filter}`, string>> = {
-  "subscription/unread": "#2066",
   "tag/all": "#2066",
   "tag/unread": "#2066",
   "uncategorized/all": "#2066",

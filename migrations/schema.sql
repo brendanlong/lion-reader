@@ -228,6 +228,27 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.subscription_entries_copy_state() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM 1
+  FROM user_entries ue
+  JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
+    ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
+  ORDER BY ue.user_id, ue.entry_id
+  FOR SHARE OF ue;
+
+  UPDATE subscription_entries se
+  SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+  FROM changed_rows c
+  JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+  WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
+    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam);
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -323,6 +344,21 @@ BEGIN
     NEW.changed_at := GREATEST(NEW.changed_at, NEW.updated_at);
   END IF;
   RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.user_entries_copy_state() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE subscription_entries se
+  SET read = n.read, starred = n.starred, is_spam = n.is_spam
+  FROM new_rows n
+  JOIN old_rows o ON o.user_id = n.user_id AND o.entry_id = n.entry_id
+  WHERE (n.read, n.starred, n.is_spam) IS DISTINCT FROM (o.read, o.starred, o.is_spam)
+    AND se.user_id = n.user_id AND se.entry_id = n.entry_id
+    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam);
+  RETURN NULL;
 END;
 $$;
 
@@ -747,7 +783,10 @@ CREATE TABLE public.subscription_entries (
     subscription_id uuid NOT NULL,
     user_id uuid NOT NULL,
     entry_id uuid NOT NULL,
-    published_or_fetched_at timestamp with time zone NOT NULL
+    published_or_fetched_at timestamp with time zone NOT NULL,
+    read boolean DEFAULT false NOT NULL,
+    starred boolean DEFAULT false NOT NULL,
+    is_spam boolean DEFAULT false NOT NULL
 );
 
 CREATE TABLE public.subscription_tags (
@@ -1158,6 +1197,8 @@ CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
 CREATE INDEX idx_subscription_entries_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC);
 
+CREATE INDEX idx_subscription_entries_unread_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam));
+
 CREATE INDEX idx_subscription_entries_user_entry ON public.subscription_entries USING btree (user_id, entry_id);
 
 CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (tag_id);
@@ -1222,6 +1263,8 @@ CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^
 
 CREATE TRIGGER entries_changed_at_trigger AFTER UPDATE OF updated_at ON public.entries FOR EACH ROW WHEN ((new.updated_at > old.updated_at)) EXECUTE FUNCTION public.entries_changed_at();
 
+CREATE TRIGGER subscription_entries_copy_state_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_copy_state();
+
 CREATE TRIGGER subscription_entries_counters_delete_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
 CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
@@ -1235,6 +1278,8 @@ CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DEL
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
 
 CREATE TRIGGER user_entries_changed_at_trigger BEFORE INSERT OR UPDATE OF updated_at ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_changed_at();
+
+CREATE TRIGGER user_entries_copy_state_trigger AFTER UPDATE ON public.user_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_copy_state();
 
 CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
 

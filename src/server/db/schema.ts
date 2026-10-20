@@ -963,6 +963,12 @@ export const subscriptionEntries = pgTable(
     entryId: uuid("entry_id").notNull(),
     // The user_entries row's sort key, which never changes.
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
+    // Copies of the user_entries row's state, kept by triggers so one
+    // subscription's filtered lists have an index (migration 0161). Read state
+    // from user_entries; never write these.
+    read: boolean("read").notNull().default(false),
+    starred: boolean("starred").notNull().default(false),
+    isSpam: boolean("is_spam").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.subscriptionId, table.entryId] }),

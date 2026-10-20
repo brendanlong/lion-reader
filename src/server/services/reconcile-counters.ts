@@ -1,8 +1,8 @@
 /**
  * Unread-counter reconciliation (issue #1117, step 5a).
  *
- * The counters (see `services/counts.ts`) and `user_entries.active_memberships`
- * are maintained by triggers. This sweep recomputes them from their
+ * The counters (see `services/counts.ts`), `user_entries.active_memberships`
+ * and the memberships' copies of their row's state are maintained by triggers. This sweep recomputes them from their
  * definitions and fixes any drift, serving two purposes:
  *
  * 1. Detection: nonzero fixes mean a trigger bug or an untracked write path —
@@ -35,6 +35,8 @@ import { logger } from "@/lib/logger";
 export interface ReconcileCountersResult {
   /** user_entries rows whose active_memberships was wrong. */
   userEntriesFixed: number;
+  /** Memberships whose copy of their row's read, starred or spam was wrong. */
+  membershipsFixed: number;
   subscriptionsFixed: number;
   usersFixed: number;
   tagsFixed: number;
@@ -67,6 +69,14 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
       GROUP BY ue2.user_id, ue2.entry_id
     ) t
     WHERE ue.user_id = t.user_id AND ue.entry_id = t.entry_id AND ue.active_memberships <> t.n
+  `);
+
+  const membershipsResult = await db.execute(sql`
+    UPDATE subscription_entries se
+    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+    FROM user_entries ue
+    WHERE ue.user_id = se.user_id AND ue.entry_id = se.entry_id
+      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
   `);
 
   const subscriptionsResult = await db.execute(sql`
@@ -137,6 +147,7 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
 
   const result: ReconcileCountersResult = {
     userEntriesFixed: userEntriesResult.rowCount ?? 0,
+    membershipsFixed: membershipsResult.rowCount ?? 0,
     subscriptionsFixed: subscriptionsResult.rowCount ?? 0,
     usersFixed: usersResult.rowCount ?? 0,
     tagsFixed: tagsResult.rowCount ?? 0,

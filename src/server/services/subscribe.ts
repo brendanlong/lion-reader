@@ -469,8 +469,9 @@ export async function mergeSubscriptionIntoFeed(
     // the articles stay visible, and bumping it would flood the user's delta
     // sync.
     await tx.execute(sql`
-      INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-      SELECT ${survivor.id}::uuid, user_id, entry_id, published_or_fetched_at
+      INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
+                                        read, starred, is_spam)
+      SELECT ${survivor.id}::uuid, user_id, entry_id, published_or_fetched_at, read, starred, is_spam
       FROM subscription_entries
       WHERE subscription_id = ${oldSubscriptionId}
       ON CONFLICT DO NOTHING

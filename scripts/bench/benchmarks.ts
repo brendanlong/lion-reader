@@ -170,6 +170,9 @@ function listEntriesSql(o: ListOptions): string {
   const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
   if (o.unreadOnly ?? true) where.push("NOT ve.read");
   where.push("NOT ve.is_spam");
+  // One subscription's list also filters on its memberships' copies.
+  if (o.single && (o.unreadOnly ?? true)) where.push("NOT se.read");
+  if (o.single) where.push("NOT se.is_spam");
   if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
   if (o.cursor) {
     where.push(`(${sortColumn}, ${idColumn}) < (${ts(o.cursor.ts)}, ${q(o.cursor.id)}::uuid)`);

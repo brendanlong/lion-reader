@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, isNotNull, type SQL } from "drizzle-orm";
 import type { PgSelect } from "drizzle-orm/pg-core";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
@@ -350,6 +350,17 @@ export async function listGreaderItemRefs(
   };
 }
 
+/** The read, starred and spam filters, on a membership's copies of them. */
+function membershipStateConditions(params: Omit<ListEntriesParams, "query">): SQL[] {
+  const conditions: SQL[] = [];
+  if (params.unreadOnly) conditions.push(sql`NOT ${subscriptionEntries.read}`);
+  else if (params.readOnly) conditions.push(sql`${subscriptionEntries.read}`);
+  if (params.starredOnly) conditions.push(sql`${subscriptionEntries.starred}`);
+  else if (params.unstarredOnly) conditions.push(sql`NOT ${subscriptionEntries.starred}`);
+  if (!params.showSpam) conditions.push(sql`NOT ${subscriptionEntries.isSpam}`);
+  return conditions;
+}
+
 /**
  * `cursor` and `offset` are two different ways to page and must not be
  * combined: the cursor predicate would narrow the window and offset would then
@@ -393,6 +404,11 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   const single = await singleSubscriptionOf(db, params);
   if (subscriptionFilter && !single) {
     conditions.push(subscriptionFilter);
+  }
+  if (single) {
+    // The membership's copies of the row's state (the row's own still apply),
+    // so a filtered page of one subscription reads its index of matches.
+    conditions.push(...membershipStateConditions(params));
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).

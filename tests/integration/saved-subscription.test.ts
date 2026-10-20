@@ -253,6 +253,7 @@ describe("the saved subscription (#1846)", () => {
     ).toEqual([{ unread: 2 }]);
     expect(await reconcileCounters(db)).toEqual({
       userEntriesFixed: 0,
+      membershipsFixed: 0,
       subscriptionsFixed: 0,
       usersFixed: 0,
       tagsFixed: 0,

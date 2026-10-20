@@ -261,6 +261,9 @@ export async function addEntriesToCollection(
             userId: visibleEntries.userId,
             entryId: visibleEntries.id,
             publishedOrFetchedAt: visibleEntries.publishedOrFetchedAt,
+            read: visibleEntries.read,
+            starred: visibleEntries.starred,
+            isSpam: visibleEntries.isSpam,
           })
           .from(visibleEntries)
           .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)))

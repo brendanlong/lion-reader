@@ -44,7 +44,10 @@ import {
   createTestUser,
 } from "./helpers";
 
-const NO_FIXES = { userEntriesFixed: 0, subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 };
+const NO_FIXES = {
+  userEntriesFixed: 0,
+  membershipsFixed: 0,
+  subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 };
 
 async function cleanup(): Promise<void> {
   await db.delete(userEntries);

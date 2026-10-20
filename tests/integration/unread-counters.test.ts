@@ -13,7 +13,14 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   createSubscription,
@@ -66,6 +73,7 @@ async function expectNoDrift() {
   const result = await reconcileCounters(db);
   expect(result).toEqual({
     userEntriesFixed: 0,
+    membershipsFixed: 0,
     subscriptionsFixed: 0,
     usersFixed: 0,
     tagsFixed: 0,
@@ -336,14 +344,25 @@ describe("unread counters (triggers + reconciliation)", () => {
       .update(userEntries)
       .set({ activeMemberships: 5 })
       .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+    await db
+      .update(subscriptionEntries)
+      .set({ read: true, starred: false })
+      .where(eq(subscriptionEntries.subscriptionId, subId));
 
     const result = await reconcileCounters(db);
     expect(result.userEntriesFixed).toBe(1);
+    expect(result.membershipsFixed).toBe(1);
     expect(result.subscriptionsFixed).toBeGreaterThanOrEqual(1);
     expect(result.usersFixed).toBeGreaterThanOrEqual(1);
 
     expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
     expect(await userCounters(userId)).toEqual({ savedUnread: 0, starredUnread: 1 });
+    expect(
+      await db
+        .select({ read: subscriptionEntries.read, starred: subscriptionEntries.starred })
+        .from(subscriptionEntries)
+        .where(eq(subscriptionEntries.subscriptionId, subId))
+    ).toEqual([{ read: false, starred: true }]);
     await expectNoDrift();
   });
 });

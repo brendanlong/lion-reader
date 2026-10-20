@@ -18,8 +18,10 @@ import { canonicalGuidSql } from "@/server/feed/guid-identity";
  *
  * `candidates` is a SELECT of `subscription_id, user_id, entry_id,
  * published_or_fetched_at, is_spam, read`, the new row's values. The
- * membership copies the sort key of an existing row rather than the
- * candidate's, since the two must agree. A new row starts with
+ * membership copies the sort key and state of an existing row rather than
+ * the candidate's, since the two must agree (the membership triggers correct
+ * a state that changes meanwhile, but writing it right here saves them the
+ * update). A new row starts with
  * `active_memberships` counting the membership inserted with it, which the
  * membership triggers confirm under lock (correcting it if the subscription
  * was unsubscribed meanwhile); left at 0, they would rewrite every new row.
@@ -44,6 +46,8 @@ export async function insertUserEntriesWithMemberships(
     WITH c AS (${candidates}),
     missing AS (
       SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
+             COALESCE(ue.read, c.read) AS state_read, COALESCE(ue.starred, false) AS state_starred,
+             COALESCE(ue.is_spam, c.is_spam) AS state_is_spam,
              (s.unsubscribed_at IS NULL)::int AS active_memberships,
              COALESCE(ue.published_or_fetched_at, c.published_or_fetched_at) AS published_or_fetched_at
       FROM c
@@ -59,8 +63,11 @@ export async function insertUserEntriesWithMemberships(
       SELECT user_id, entry_id, published_or_fetched_at, is_spam, read, active_memberships FROM missing
       ON CONFLICT DO NOTHING
     )
-    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-    SELECT subscription_id, user_id, entry_id, published_or_fetched_at FROM missing
+    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
+                                      read, starred, is_spam)
+    SELECT subscription_id, user_id, entry_id, published_or_fetched_at,
+           state_read, state_starred, state_is_spam
+    FROM missing
     ON CONFLICT DO NOTHING
     RETURNING subscription_id, user_id, entry_id
   `);
