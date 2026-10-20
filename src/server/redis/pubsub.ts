@@ -77,13 +77,15 @@ const userEventSchema = z.discriminatedUnion("type", [
   // channel (`announceLinkedEntries` in `@/server/feed/entry-processor`). They
   // carry what the SSE route adds to a web feed's events itself: the user's
   // subscriptionId (for saved articles, the saved subscription's). It derives
-  // a new entry's `subscriptionIds`.
+  // a new entry's `subscriptionIds` unless the event carries them (a linked
+  // web entry may already be in the user's collections).
   // Like `feedId`, `feedType` is server-side only: the SSE route counts by
   // it, and clients get the payload's `type`.
   newEntryEventSchema.omit({ subscriptionIds: true }).extend({
     userId: z.string(),
     ...serverTimestamp,
     feedType: z.enum(["web", "email", "saved"]),
+    subscriptionIds: z.array(z.string()).optional(),
   }),
   entryUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
   subscriptionCreatedEventSchema.extend({
@@ -216,8 +218,8 @@ async function publishToChannel(
 // by passing the wrong channel name. See SECURITY.md on cross-user isolation.
 
 /**
- * Publishes a web feed's entry event to the feed's channel. Email and saved
- * entries have one recipient, so theirs go through publishUserEvent.
+ * Publishes a web feed's entry event to the feed's channel. An entry event with
+ * one recipient goes through publishUserEvent.
  */
 export async function publishFeedEvent(event: Published<FeedEvent>): Promise<number> {
   return publishToChannel(getFeedEventsChannel(event.feedId), stamp<FeedEvent>(event));

@@ -13,11 +13,8 @@ import { entries, userEntries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishFeedEvent, publishUserEvent } from "../redis/pubsub";
 import type { NewEntryListDataSource } from "@/lib/events/schemas";
-import {
-  linkedAsBackfill,
-  newEntryAnnouncement,
-  toEntryMetadata,
-} from "@/server/services/entry-sync-events";
+import { newEntryAnnouncement, toEntryMetadata } from "@/server/services/entry-sync-events";
+import { entryMemberships } from "@/server/services/entry-filters";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { canonicalGuid, guidMatchCandidates } from "./guid-identity";
@@ -674,9 +671,8 @@ type FanOutLink = Awaited<ReturnType<typeof insertUserEntriesWithMemberships>>[n
  * but the fetch's new entries that aren't backfill. That is a stale-feed
  * subscribe's first grant (archive entries included), an entry reappearing to
  * a subscriber who joined since, and a #952 heal. Each carries the user's
- * state, as the catch-up's does, and a link made already read (a backfill)
- * announces nothing. At most the fetch's entries per subscriber, and only on
- * those rare paths. Fire and forget, like the feed's.
+ * state and memberships, as the catch-up's does, and a link made already read
+ * (a backfill) announces nothing, as there. Fire and forget, like the feed's.
  *
  * @returns The ids of the entries it announced to anyone
  */
@@ -687,6 +683,12 @@ async function announceLinkedEntries(
   const announced = new Set<string>();
   if (links.length === 0) return announced;
 
+  const linkRow = { userId: userEntries.userId, entryId: userEntries.entryId };
+  const memberships = entryMemberships(linkRow);
+  // Exact pairs, as two array parameters: a backfill re-announcement links
+  // every existing subscriber, all read.
+  const userIdsArray = `{${links.map((l) => l.userId).join(",")}}`;
+  const entryIdsArray = `{${links.map((l) => l.entryId).join(",")}}`;
   const rows = await db
     .select({
       userId: userEntries.userId,
@@ -694,6 +696,8 @@ async function announceLinkedEntries(
       read: userEntries.read,
       starred: userEntries.starred,
       readChangedAt: userEntries.readChangedAt,
+      changedAt: userEntries.changedAt,
+      subscriptionIds: memberships.subscriptionIds,
       type: entries.type,
       url: entries.url,
       title: entries.title,
@@ -703,14 +707,17 @@ async function announceLinkedEntries(
       fetchedAt: entries.fetchedAt,
       siteName: entries.siteName,
       isSpam: entries.isSpam,
-      updatedAt: entries.updatedAt,
+      entryUpdatedAt: entries.updatedAt,
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .leftJoinLateral(memberships, sql`true`)
     .where(
       and(
-        inArray(userEntries.userId, [...new Set(links.map((l) => l.userId))]),
-        inArray(userEntries.entryId, [...new Set(links.map((l) => l.entryId))])
+        sql`(${userEntries.userId}, ${userEntries.entryId}) IN (
+          SELECT * FROM unnest(${userIdsArray}::uuid[], ${entryIdsArray}::uuid[]))`,
+        // Linked read without the user touching it: a backfill.
+        sql`NOT (${userEntries.read} AND ${userEntries.readChangedAt} IS NULL)`
       )
     );
   const rowsByLink = new Map(rows.map((r) => [`${r.userId}:${r.entryId}`, r]));
@@ -718,20 +725,19 @@ async function announceLinkedEntries(
   for (const link of links) {
     const row = rowsByLink.get(`${link.userId}:${link.entryId}`);
     if (!row) continue;
-    const announcement = newEntryAnnouncement(
-      { ...row, isBackfill: linkedAsBackfill(row) },
-      feedTitle,
-      row
-    );
+    const announcement = newEntryAnnouncement({ ...row, isBackfill: false }, feedTitle, row);
     if (!announcement) continue;
     announced.add(link.entryId);
     publishUserEvent({
       type: "new_entry",
       userId: link.userId,
       subscriptionId: link.subscriptionId,
+      subscriptionIds: row.subscriptionIds,
       feedType: "web",
       entryId: link.entryId,
-      updatedAt: row.updatedAt,
+      // What sync stamps it with; truncated to milliseconds, so a cursor
+      // past it can only re-report, never skip.
+      updatedAt: new Date(row.changedAt.epochMilliseconds),
       ...announcement,
     });
   }

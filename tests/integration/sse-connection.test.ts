@@ -135,6 +135,37 @@ describe("startSseConnection", () => {
     }
   });
 
+  it("forwards a single-recipient web entry's memberships and counts its subscription (#2062)", async () => {
+    // A fetch linked an entry the user already holds in a collection.
+    const userId = await createTestUser({ emailPrefix: "sse-linked" });
+    const feedId = await createTestFeed();
+    const subscriptionId = await createTestSubscription(userId, feedId);
+    const entryId = await createTestEntry(feedId, { userIds: [userId] });
+    const collectionId = generateUuidv7();
+    const connection = await connect(userId);
+
+    try {
+      await publishUserEvent({
+        type: "new_entry",
+        userId,
+        subscriptionId,
+        subscriptionIds: [collectionId, subscriptionId],
+        feedType: "web",
+        entryId,
+        updatedAt: new Date(),
+      });
+      await connection.waitFor((e) => e.event === "new_entry");
+
+      expect(connection.sent[0].data).toMatchObject({
+        subscriptionId,
+        subscriptionIds: [collectionId, subscriptionId],
+        counts: { subscriptions: [{ id: subscriptionId, unread: 1 }] },
+      });
+    } finally {
+      connection.close();
+    }
+  });
+
   it("stops sending a feed's entries once its subscription is deleted, for that user only", async () => {
     const leaverId = await createTestUser({ emailPrefix: "sse-leaver" });
     const stayerId = await createTestUser({ emailPrefix: "sse-stayer" });

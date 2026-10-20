@@ -157,7 +157,11 @@ export function startSseConnection({
    */
   function sendNewEntry(
     // `feedType` only decides the counts; clients get the payload's `type`.
-    event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
+    event: ClientEntryEvent & {
+      feedType: EntryType;
+      subscriptionIds?: string[];
+      entry?: NewEntryListData;
+    }
   ): void {
     // The user's absolute unread counts go with the event so the client
     // sets counts directly instead of applying a +1 delta. That makes
@@ -202,7 +206,7 @@ export function startSseConnection({
           type: "new_entry",
           subscriptionId,
           // A new entry's one membership is its origin (#1846).
-          subscriptionIds: subscriptionId ? [subscriptionId] : [],
+          subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
           entryId: event.entryId,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,

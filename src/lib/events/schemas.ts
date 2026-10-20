@@ -36,10 +36,11 @@ export const entryMetadataSchema = z.object({
  * insert the entry into cached entries.list pages without a refetch. Extends
  * entryMetadataSchema (the entry_updated payload) with the extra list fields.
  *
- * `read`/`starred` are omitted on the live SSE path (a brand-new entry is
- * always unread/unstarred) but set by the sync.events catch-up path, where the
- * entry may have been read or starred on another device while this client was
- * offline. Consumers must treat absence as false.
+ * `read`/`starred` are omitted from a feed's own announcement of a brand-new
+ * entry (always unread/unstarred) but set wherever the user's row may predate
+ * the event: the sync.events catch-up path (read or starred on another device
+ * while this client was offline) and an entry a fetch linked to one subscriber
+ * (`announceLinkedEntries`). Consumers must treat absence as false.
  */
 export const newEntryListDataSchema = entryMetadataSchema.extend({
   // The entry's own type, for display only (a saved article shows its site

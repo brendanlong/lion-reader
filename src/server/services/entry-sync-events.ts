@@ -65,14 +65,6 @@ export function newEntryAnnouncement(
   return payload ? { entry: payload } : {};
 }
 
-/**
- * Whether a user's row was linked as a backfill, judged from its state after
- * the fact: read without the user ever touching it.
- */
-export function linkedAsBackfill(state: { read: boolean; readChangedAt: Date | null }): boolean {
-  return state.read && state.readChangedAt === null;
-}
-
 /** A user's entry that changed since a catch-up's start, as `sync` reads it. */
 export interface ChangedEntryRow extends NewEntryListDataSource {
   id: string;
@@ -115,15 +107,13 @@ export function entryRowToSyncEvents(
   const stamps = { timestamp: row.updatedAt, updatedAt: row.updatedAt };
 
   if (row.metadataChanged && row.isNew) {
-    const announcement = newEntryAnnouncement(
-      { ...row, isBackfill: linkedAsBackfill(row) },
-      row.feedTitle,
-      {
-        read: row.read,
-        starred: row.starred,
-        readChangedAt: row.readChangedAt,
-      }
-    );
+    // Linked read without the user touching it: a backfill.
+    const isBackfill = row.read && row.readChangedAt === null;
+    const announcement = newEntryAnnouncement({ ...row, isBackfill }, row.feedTitle, {
+      read: row.read,
+      starred: row.starred,
+      readChangedAt: row.readChangedAt,
+    });
     if (announcement) {
       events.push({
         type: "new_entry",

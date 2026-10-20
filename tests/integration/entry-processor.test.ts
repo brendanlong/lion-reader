@@ -1450,8 +1450,9 @@ describe("Entry Processor", () => {
 
     it("announces links the feed's channel doesn't to each linked subscriber (#2062)", async () => {
       // A stale-feed subscribe's forced refresh links the feed's existing
-      // entries, and an archive entry it inserts, to the new subscriber. None
-      // is new news to the feed, so only the subscriber's own channel can say so.
+      // entries, and an archive entry it inserts, to the new subscriber. Neither
+      // is news to the feed, so only the subscriber's own channel can say so;
+      // a genuinely new entry is the feed channel's alone.
       const feed = await createTestFeed();
       const watcherId = await createTestUser({ emailPrefix: "watcher" });
       await createWatchingSubscription(watcherId, feed.id);
@@ -1489,6 +1490,7 @@ describe("Entry Processor", () => {
             items: [
               current,
               { guid: "archive-1", title: "Old", pubDate: new Date("2022-03-01T00:00:00Z") },
+              { guid: "fresh-1", title: "New", pubDate: new Date("2026-08-10T00:30:00Z") },
             ],
           },
           {
@@ -1500,31 +1502,34 @@ describe("Entry Processor", () => {
         );
 
         const deadline = Date.now() + 5000;
-        while (received.length < 2 && Date.now() < deadline) {
+        while (received.length < 3 && Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
-        // Long enough for an event the watcher or the feed shouldn't get to arrive.
+        // Long enough for an event nobody should get to arrive.
         await new Promise((resolve) => setTimeout(resolve, 250));
 
         const currentId = (await findEntryByGuid(feed.id, "current-1"))!.id;
         const archiveId = (await findEntryByGuid(feed.id, "archive-1"))!.id;
-        expect(received.map((r) => r.channel)).toEqual([
-          getUserEventsChannel(newcomerId),
-          getUserEventsChannel(newcomerId),
-        ]);
-        const events = received.map((r) => parseUserEvent(r.message));
-        expect(events.map((e) => e?.type === "new_entry" && e.entryId).sort()).toEqual(
-          [currentId, archiveId].sort()
-        );
-        for (const event of events) {
-          expect(event).toMatchObject({
+        const freshId = (await findEntryByGuid(feed.id, "fresh-1"))!.id;
+        const entryIdsOn = (channel: string) =>
+          received
+            .filter((r) => r.channel === channel)
+            .map((r) => (JSON.parse(r.message) as { entryId: string }).entryId)
+            .sort();
+        expect(entryIdsOn(getFeedEventsChannel(feed.id))).toEqual([freshId]);
+        expect(entryIdsOn(getUserEventsChannel(watcherId))).toEqual([]);
+        expect(entryIdsOn(getUserEventsChannel(newcomerId))).toEqual([currentId, archiveId].sort());
+        for (const r of received.filter((r) => r.channel === getUserEventsChannel(newcomerId))) {
+          expect(parseUserEvent(r.message)).toMatchObject({
             type: "new_entry",
             subscriptionId: newcomerSubscriptionId,
+            subscriptionIds: [newcomerSubscriptionId],
             feedType: "web",
             entry: { type: "web", feedTitle: "Test Feed", read: false, starred: false },
           });
         }
-        expect(result.announcedEntryIds.sort()).toEqual([currentId, archiveId].sort());
+        expect(result.announcedEntryIds[0]).toBe(freshId);
+        expect(result.announcedEntryIds.slice(1).sort()).toEqual([currentId, archiveId].sort());
       } finally {
         handle!.close();
       }

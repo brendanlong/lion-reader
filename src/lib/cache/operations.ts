@@ -323,10 +323,8 @@ function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: E
  * Places a new entry, whether from the response of the mutation that created
  * it or its `new_entry` event, and applies the counts that came with it.
  * Idempotent (absolute counts, insert deduped by id), so the acting tab can
- * apply both, and a reconnect catch-up can re-deliver the event. `read`/
- * `starred` are set only by the catch-up (the entry may have changed state on
- * another device while this client was offline): a brand-new entry is
- * unread and unstarred.
+ * apply both, and a reconnect catch-up can re-deliver the event. Absent
+ * `read`/`starred` mean false (see `newEntryListDataSchema`).
  *
  * A live web entry carries its feed's own title (a feed's channel is shared by
  * every subscriber), so the user's custom title for a stored subscription
