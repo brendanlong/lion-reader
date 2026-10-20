@@ -71,17 +71,19 @@ const serverTimestamp = { timestamp: z.string() };
  * whatever the SSE route consumes before forwarding.
  */
 const userEventSchema = z.discriminatedUnion("type", [
-  // Entry events for sources with exactly one recipient (email, saved), which
-  // go to that user's channel instead of a feed channel. They carry what the
-  // SSE route adds to a web feed's events itself: the user's subscriptionId
-  // (for saved articles, the saved subscription's). It derives a new entry's
-  // `subscriptionIds`.
+  // Entry events with exactly one recipient, which go to that user's channel
+  // instead of a feed channel: email and saved entries, and a web entry a
+  // fetch linked to one subscriber without announcing it on the feed's
+  // channel (`announceLinkedEntries` in `@/server/feed/entry-processor`). They
+  // carry what the SSE route adds to a web feed's events itself: the user's
+  // subscriptionId (for saved articles, the saved subscription's). It derives
+  // a new entry's `subscriptionIds`.
   // Like `feedId`, `feedType` is server-side only: the SSE route counts by
   // it, and clients get the payload's `type`.
   newEntryEventSchema.omit({ subscriptionIds: true }).extend({
     userId: z.string(),
     ...serverTimestamp,
-    feedType: z.enum(["email", "saved"]),
+    feedType: z.enum(["web", "email", "saved"]),
   }),
   entryUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
   subscriptionCreatedEventSchema.extend({
@@ -130,8 +132,8 @@ export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
  * Returns the channel name for feed-specific events.
  * Each web feed has its own channel so one publish reaches every subscriber,
  * and servers only receive events for feeds their connected users are
- * subscribed to. Email and saved entries have a single recipient and go to
- * the user's channel instead.
+ * subscribed to. An entry event with a single recipient (email, saved, or a
+ * web entry linked to one subscriber) goes to the user's channel instead.
  *
  * @param feedId - The feed's ID
  * @returns The channel name for the feed's events

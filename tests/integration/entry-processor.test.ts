@@ -9,7 +9,12 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
-import { createPubSubSubscription, getFeedEventsChannel } from "../../src/server/redis/pubsub";
+import {
+  createPubSubSubscription,
+  getFeedEventsChannel,
+  getUserEventsChannel,
+  parseUserEvent,
+} from "../../src/server/redis/pubsub";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateContentHash,
@@ -1438,6 +1443,88 @@ describe("Entry Processor", () => {
 
         const fresh = await findEntryByGuid(feed.id, "fresh-1");
         expect(newEntryIds).toEqual([fresh!.id]);
+      } finally {
+        handle!.close();
+      }
+    });
+
+    it("announces links the feed's channel doesn't to each linked subscriber (#2062)", async () => {
+      // A stale-feed subscribe's forced refresh links the feed's existing
+      // entries, and an archive entry it inserts, to the new subscriber. None
+      // is new news to the feed, so only the subscriber's own channel can say so.
+      const feed = await createTestFeed();
+      const watcherId = await createTestUser({ emailPrefix: "watcher" });
+      await createWatchingSubscription(watcherId, feed.id);
+      const current: ParsedEntry = {
+        guid: "current-1",
+        title: "Current",
+        pubDate: new Date("2026-08-09T23:00:00Z"),
+      };
+      const previousLastFetchedAt = new Date("2026-08-10T00:00:00Z");
+      await processEntries(
+        feed.id,
+        { title: "Test Feed", items: [current] },
+        { fetchedAt: previousLastFetchedAt }
+      );
+
+      const newcomerId = await createTestUser({ emailPrefix: "newcomer" });
+      const newcomerSubscriptionId = await createTestSubscription(newcomerId, feed.id);
+
+      const received: Array<{ channel: string; message: string }> = [];
+      const handle = createPubSubSubscription((channel, message) => {
+        received.push({ channel, message });
+      });
+      expect(handle).not.toBeNull();
+      await handle!.subscribe(
+        getFeedEventsChannel(feed.id),
+        getUserEventsChannel(watcherId),
+        getUserEventsChannel(newcomerId)
+      );
+
+      try {
+        const result = await processEntries(
+          feed.id,
+          {
+            title: "Test Feed",
+            items: [
+              current,
+              { guid: "archive-1", title: "Old", pubDate: new Date("2022-03-01T00:00:00Z") },
+            ],
+          },
+          {
+            fetchedAt: new Date("2026-08-10T01:00:00Z"),
+            previousLastFetchedAt,
+            feedTitle: "Test Feed",
+            alwaysUpdateVisibility: true,
+          }
+        );
+
+        const deadline = Date.now() + 5000;
+        while (received.length < 2 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        // Long enough for an event the watcher or the feed shouldn't get to arrive.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+
+        const currentId = (await findEntryByGuid(feed.id, "current-1"))!.id;
+        const archiveId = (await findEntryByGuid(feed.id, "archive-1"))!.id;
+        expect(received.map((r) => r.channel)).toEqual([
+          getUserEventsChannel(newcomerId),
+          getUserEventsChannel(newcomerId),
+        ]);
+        const events = received.map((r) => parseUserEvent(r.message));
+        expect(events.map((e) => e?.type === "new_entry" && e.entryId).sort()).toEqual(
+          [currentId, archiveId].sort()
+        );
+        for (const event of events) {
+          expect(event).toMatchObject({
+            type: "new_entry",
+            subscriptionId: newcomerSubscriptionId,
+            feedType: "web",
+            entry: { type: "web", feedTitle: "Test Feed", read: false, starred: false },
+          });
+        }
+        expect(result.announcedEntryIds.sort()).toEqual([currentId, archiveId].sort());
       } finally {
         handle!.close();
       }

@@ -62,8 +62,8 @@ export async function getUserFeedSubscriptionMap(userId: string): Promise<Map<st
 
 /**
  * The fields of an entry event the client receives, whichever channel it came
- * from: a web feed's (with the subscription looked up here) or, for email and
- * saved entries, the user's own (with the subscription already on the event).
+ * from: a web feed's (with the subscription looked up here) or the user's own
+ * (with the subscription already on the event).
  */
 interface ClientEntryEvent {
   subscriptionId: string | null;
@@ -153,7 +153,7 @@ export function startSseConnection({
 
   /**
    * Sends a new_entry event, whether it came from a web feed's channel or
-   * (email, saved) the user's channel.
+   * the user's channel.
    */
   function sendNewEntry(
     // `feedType` only decides the counts; clients get the payload's `type`.
@@ -248,7 +248,7 @@ export function startSseConnection({
       return;
     }
 
-    // User events (subscriptions, tags, imports, entry state, email and saved entries)
+    // User events (subscriptions, tags, imports, entry state, single-recipient entries)
     if (channel === userEventsChannel) {
       const event = parseUserEvent(message);
       if (!event) return;

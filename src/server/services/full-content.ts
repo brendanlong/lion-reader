@@ -193,8 +193,9 @@ export async function feedWantsFullContent(db: typeof dbType, feedId: string): P
  * entry arrived: a poll calls it inline from the `fetch_feed` job, and a WebSub
  * push (which is ingested in the hub's callback request, where slow article
  * fetches must not run) defers it to a `fetch_full_content` job. Callers pass
- * only genuinely new entries — not archive re-announcements (`isBackfill`),
- * which must not spend the per-batch budget the real news needs.
+ * what the fetch announced (`announcedEntryIds`): not archive re-announcements
+ * that reached no one as news, which must not spend the per-batch budget the
+ * real news needs.
  *
  * Runs Readability inline (`offloadClean: false`): it only runs on the worker,
  * off the request path, where the thread-pool hop is pure overhead.

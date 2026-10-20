@@ -187,12 +187,8 @@ export async function ingestWebsubNotification(
       await recordHubAnnouncedEntries(feed.hubUrl, announcedCount);
     }
 
-    // Archive re-announcements are excluded, as on the poll path: they aren't
-    // news, and mustn't spend the full-content budget the real entries need.
-    await queueFullContentFetch(
-      feedId,
-      result.entries.filter((e) => e.isNew && !e.isBackfill).map((e) => e.id)
-    );
+    // What the push announced, as on the poll path.
+    await queueFullContentFetch(feedId, result.announcedEntryIds);
   } catch (error) {
     logger.error("WebSub notification processing failed", {
       feedId,

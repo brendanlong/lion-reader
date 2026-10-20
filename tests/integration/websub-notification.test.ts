@@ -32,7 +32,13 @@ import {
 } from "../../src/server/jobs/queue";
 import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
 import { MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../../src/server/services/full-content";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestMembership,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 const HUB_URL = "https://hub.example.com/";
 
@@ -551,11 +557,16 @@ describe("ingestWebsubNotification", () => {
   });
 
   it("queues no full-content work for an archive replay", async () => {
-    // Same rule as the poll path: re-announced history isn't news and mustn't
-    // spend the full-content budget.
-    const { feed } = await seedPushFeed("pushfullarchive", new Date(Date.now() - 60 * 60 * 1000), {
-      fetchFullContent: true,
-    });
+    // Same rule as the poll path: re-announced history isn't news to a
+    // subscriber who already has the feed, and mustn't spend the full-content
+    // budget.
+    const { feed, userId, subscriptionId } = await seedPushFeed(
+      "pushfullarchive",
+      new Date(Date.now() - 60 * 60 * 1000),
+      { fetchFullContent: true }
+    );
+    const heldId = await createTestEntry(feed.id, { guid: "held-1", lastSeenAt: null });
+    await createTestMembership(subscriptionId, userId, heldId, { read: true });
 
     await ingestWebsubNotification(
       feed,
@@ -568,6 +579,29 @@ describe("ingestWebsubNotification", () => {
     );
 
     expect(await queuedFullContentJobs()).toEqual([]);
+  });
+
+  it("queues full content for an archive entry in a subscription's first grant (#2062)", async () => {
+    // It reaches that subscriber unread, as news.
+    const { feed } = await seedPushFeed("pushfullfirst", new Date(Date.now() - 60 * 60 * 1000), {
+      fetchFullContent: true,
+    });
+
+    await ingestWebsubNotification(
+      feed,
+      pushBody(
+        "archive-first-1",
+        "Old post",
+        new Date("2022-03-01T00:00:00Z"),
+        `${articleBaseUrl}/post/archive-first-1`
+      )
+    );
+
+    const [archive] = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
+    const queued = await queuedFullContentJobs();
+    expect(queued.map((job) => getJobPayload(job, "fetch_full_content").entryIds)).toEqual([
+      [archive.id],
+    ]);
   });
 
   it("reports an unparseable push body instead of throwing", async () => {

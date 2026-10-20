@@ -9,11 +9,15 @@
 import { createHash } from "crypto";
 import { eq, and, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { db } from "../db";
-import { entries, type Entry, type NewEntry } from "../db/schema";
+import { entries, userEntries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
-import { publishFeedEvent } from "../redis/pubsub";
+import { publishFeedEvent, publishUserEvent } from "../redis/pubsub";
 import type { NewEntryListDataSource } from "@/lib/events/schemas";
-import { newEntryAnnouncement, toEntryMetadata } from "@/server/services/entry-sync-events";
+import {
+  linkedAsBackfill,
+  newEntryAnnouncement,
+  toEntryMetadata,
+} from "@/server/services/entry-sync-events";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { canonicalGuid, guidMatchCandidates } from "./guid-identity";
@@ -70,6 +74,12 @@ export interface ProcessEntriesResult {
   backfillCount: number;
   /** Number of entries that disappeared from the feed */
   disappearedCount: number;
+  /**
+   * The entries this fetch announced as news to some subscriber: its new
+   * entries that aren't backfill, then any it linked to a subscriber unread
+   * otherwise (see `announceLinkedEntries`). What the full-content fetch takes.
+   */
+  announcedEntryIds: string[];
   /** Whether any entries changed (new, updated, or disappeared) */
   hasChanges: boolean;
   /** Details of each processed entry */
@@ -589,14 +599,15 @@ async function updateEntriesPushedAt(entryIds: string[], pushedAt: Date): Promis
  * @param entryIds - Array of entry IDs to make visible
  * @param previousLastFetchedAt - The feed's previous full fetch, which the
  *   backfill guard judges against; null disables it
+ * @returns The memberships it added
  */
 export async function createUserEntriesForFeed(
   feedId: string,
   entryIds: string[],
   previousLastFetchedAt: Date | null
-): Promise<void> {
+): Promise<FanOutLink[]> {
   if (entryIds.length === 0) {
-    return;
+    return [];
   }
 
   // Format entry IDs as PostgreSQL array literal because node-postgres
@@ -636,7 +647,7 @@ export async function createUserEntriesForFeed(
   // entries can deadlock (they insert many rows each). Retry the loser: a poll
   // has already stamped last_seen_at, so an unchanged next poll wouldn't fan
   // these entries out again, and a push's subscribers would wait for a poll.
-  let added: Awaited<ReturnType<typeof fanOut>>;
+  let added: FanOutLink[];
   for (let attempt = 1; ; attempt++) {
     try {
       added = await fanOut();
@@ -652,6 +663,79 @@ export async function createUserEntriesForFeed(
     entryCount: entryIds.length,
     membershipsAdded: added.length,
   });
+  return added;
+}
+
+type FanOutLink = Awaited<ReturnType<typeof insertUserEntriesWithMemberships>>[number];
+
+/**
+ * Publishes new_entry, on each subscriber's own channel, for the links a
+ * fan-out added that the feed's channel doesn't announce (#2062): anything
+ * but the fetch's new entries that aren't backfill. That is a stale-feed
+ * subscribe's first grant (archive entries included), an entry reappearing to
+ * a subscriber who joined since, and a #952 heal. Each carries the user's
+ * state, as the catch-up's does, and a link made already read (a backfill)
+ * announces nothing. At most the fetch's entries per subscriber, and only on
+ * those rare paths. Fire and forget, like the feed's.
+ *
+ * @returns The ids of the entries it announced to anyone
+ */
+async function announceLinkedEntries(
+  links: FanOutLink[],
+  feedTitle: string | null
+): Promise<Set<string>> {
+  const announced = new Set<string>();
+  if (links.length === 0) return announced;
+
+  const rows = await db
+    .select({
+      userId: userEntries.userId,
+      entryId: userEntries.entryId,
+      read: userEntries.read,
+      starred: userEntries.starred,
+      readChangedAt: userEntries.readChangedAt,
+      type: entries.type,
+      url: entries.url,
+      title: entries.title,
+      author: entries.author,
+      summary: entries.summary,
+      publishedAt: entries.publishedAt,
+      fetchedAt: entries.fetchedAt,
+      siteName: entries.siteName,
+      isSpam: entries.isSpam,
+      updatedAt: entries.updatedAt,
+    })
+    .from(userEntries)
+    .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .where(
+      and(
+        inArray(userEntries.userId, [...new Set(links.map((l) => l.userId))]),
+        inArray(userEntries.entryId, [...new Set(links.map((l) => l.entryId))])
+      )
+    );
+  const rowsByLink = new Map(rows.map((r) => [`${r.userId}:${r.entryId}`, r]));
+
+  for (const link of links) {
+    const row = rowsByLink.get(`${link.userId}:${link.entryId}`);
+    if (!row) continue;
+    const announcement = newEntryAnnouncement(
+      { ...row, isBackfill: linkedAsBackfill(row) },
+      feedTitle,
+      row
+    );
+    if (!announcement) continue;
+    announced.add(link.entryId);
+    publishUserEvent({
+      type: "new_entry",
+      userId: link.userId,
+      subscriptionId: link.subscriptionId,
+      feedType: "web",
+      entryId: link.entryId,
+      updatedAt: row.updatedAt,
+      ...announcement,
+    });
+  }
+  return announced;
 }
 
 /**
@@ -839,11 +923,12 @@ export async function processEntries(
   // steady-state feeds pay nothing; a feed with any activity heals its orphans.
   // Existing subscribers already have rows for existing entries; new subscribers
   // get rows at subscription time.
-  if (shouldUpdateVisibility) {
-    await createUserEntriesForFeed(feedId, allEntryIds, previousLastFetchedAt ?? null);
-  }
+  const links = shouldUpdateVisibility
+    ? await createUserEntriesForFeed(feedId, allEntryIds, previousLastFetchedAt ?? null)
+    : [];
 
-  if (newCount > backfillCount) {
+  const feedAnnouncedIds = results.filter((r) => r.isNew && !r.isBackfill).map((r) => r.id);
+  if (feedAnnouncedIds.length > 0) {
     // Publish new_entry events AFTER the user_entries fanout: the SSE endpoint
     // computes each connected subscriber's absolute unread counts from
     // visible_entries when the event arrives, so the rows must exist first or
@@ -871,12 +956,28 @@ export async function processEntries(
     }
   }
 
+  const feedAnnounced = new Set(feedAnnouncedIds);
+  let linkAnnounced = new Set<string>();
+  try {
+    linkAnnounced = await announceLinkedEntries(
+      links.filter((link) => !feedAnnounced.has(link.entryId)),
+      feedTitle ?? null
+    );
+  } catch (error) {
+    // The links are made; their subscribers see them on the next refetch.
+    logger.error("Failed to announce linked entries", {
+      feedId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   return {
     newCount,
     updatedCount,
     unchangedCount,
     backfillCount,
     disappearedCount,
+    announcedEntryIds: [...feedAnnouncedIds, ...linkAnnounced],
     hasChanges,
     entries: results,
   };
