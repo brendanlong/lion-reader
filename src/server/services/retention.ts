@@ -17,7 +17,7 @@
  * back-reference would be unsafe. They're accepted as append-only.
  */
 
-import { and, eq, inArray, isNull, lt, notExists, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, notExists, or, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import {
   apiTokens,
@@ -207,12 +207,7 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
         db
           .select({ one: sql`1` })
           .from(oauthConsentGrants)
-          .where(
-            and(
-              eq(oauthConsentGrants.clientId, oauthClients.clientId),
-              isNull(oauthConsentGrants.revokedAt)
-            )
-          )
+          .where(eq(oauthConsentGrants.clientId, oauthClients.clientId))
       )
     )
   );

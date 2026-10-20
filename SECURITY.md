@@ -139,12 +139,12 @@ fetches user-influenced URLs and must never be usable to reach internal services
   `redirect_uri` exact-match; refresh rotation with reuse detection; client secrets
   hashed; RFC 8707 audience enforced at use.
 - **Revoking is deleting, down a foreign-key chain:** consent grant → token grant
-  (`oauth_token_grants`, one per authorization) → its tokens, each `ON DELETE
-CASCADE`. Delete the grant (or the consent), never only token rows: a rotation or
-  code exchange racing the delete inserts into the same grant, and the foreign
-  key's row lock is what makes the cascade catch it or the insert fail. Only
-  Wallabag's token grants have no consent grant (a `CHECK`), so every other one
-  can be revoked from Connected Apps.
+  (`oauth_token_grants`, one per authorization) → its tokens, each link
+  `ON DELETE CASCADE`. Delete the grant (or the consent), never only token rows: a
+  rotation or code exchange racing the delete inserts into the same grant, and the
+  foreign key's row lock is what makes the cascade catch it or the insert fail.
+  Only Wallabag's token grants have no consent grant (a `CHECK`), so every other
+  one can be revoked from Connected Apps.
 - **The consent POST re-validates scopes/redirect/client server-side — never trust
   the form.**
 - **OAuth access tokens are accepted only by the resource their audience names.**

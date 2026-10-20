@@ -6,7 +6,10 @@
 -- that DELETE with an exchange or rotation inserting into the same grant.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
--- In the order the previous release takes them: consent, refresh, access.
+-- In the order the previous release takes them: users (the token grants'
+-- foreign key needs it anyway), consent, refresh, access.
+LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
 LOCK TABLE oauth_consent_grants IN SHARE ROW EXCLUSIVE MODE;
 --> statement-breakpoint
 LOCK TABLE oauth_refresh_tokens, oauth_access_tokens IN ACCESS EXCLUSIVE MODE;
@@ -191,3 +194,22 @@ CREATE TRIGGER oauth_refresh_tokens_join_predecessor_grant_trigger
   AFTER UPDATE OF replaced_by_id ON oauth_refresh_tokens
   FOR EACH ROW WHEN (NEW.replaced_by_id IS NOT NULL AND NEW.replaced_by_id IS DISTINCT FROM OLD.replaced_by_id)
   EXECUTE FUNCTION oauth_refresh_tokens_join_predecessor_grant();
+--> statement-breakpoint
+
+-- The previous release revokes consent by stamping revoked_at; turn that into
+-- the delete this release does, so it cascades the same way. It locks the user
+-- first for the same reason lockUsersAgainstPreviousReleaseRotation does.
+CREATE FUNCTION oauth_consent_grants_delete_revoked() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM 1 FROM users WHERE id = NEW.user_id FOR NO KEY UPDATE;
+  DELETE FROM oauth_consent_grants WHERE id = NEW.id;
+  RETURN NULL;
+END;
+$$;
+--> statement-breakpoint
+CREATE TRIGGER oauth_consent_grants_delete_revoked_trigger
+  AFTER UPDATE OF revoked_at ON oauth_consent_grants
+  FOR EACH ROW WHEN (NEW.revoked_at IS NOT NULL)
+  EXECUTE FUNCTION oauth_consent_grants_delete_revoked();

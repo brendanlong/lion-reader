@@ -16,11 +16,12 @@
 import { describe, it, expect, afterAll } from "vitest";
 import crypto from "crypto";
 import { eq, inArray, sql } from "drizzle-orm";
-import { db } from "../../src/server/db";
+import { db, type DbOrTx } from "../../src/server/db";
 import {
   users,
   oauthAccessTokens,
   oauthClients,
+  oauthConsentGrants,
   oauthRefreshTokens,
   oauthTokenGrants,
 } from "../../src/server/db/schema";
@@ -429,15 +430,15 @@ describe("revokeClientToken (RFC 7009)", () => {
  * in a grant, or revoking grants would miss them.
  */
 describe("tokens written by the previous release", () => {
-  async function insertLegacyPair(userId: string, clientId: string) {
+  async function insertLegacyPair(userId: string, clientId: string, executor: DbOrTx = db) {
     const accessId = generateUuidv7();
     const refreshId = generateUuidv7();
     const expiresAt = new Date(Date.now() + 3_600_000);
-    await db.execute(sql`
+    await executor.execute(sql`
       INSERT INTO oauth_access_tokens (id, token_hash, client_id, user_id, scopes, expires_at)
       VALUES (${accessId}, ${"legacy-" + accessId}, ${clientId}, ${userId}, ARRAY['mcp'], ${expiresAt})
     `);
-    await db.execute(sql`
+    await executor.execute(sql`
       INSERT INTO oauth_refresh_tokens
         (id, token_hash, client_id, user_id, scopes, access_token_id, expires_at)
       VALUES (${refreshId}, ${"legacy-" + refreshId}, ${clientId}, ${userId}, ARRAY['mcp'],
@@ -462,7 +463,66 @@ describe("tokens written by the previous release", () => {
 
   it("refuses a token for a client the user hasn't consented to", async () => {
     const userId = await createUser();
-    await expect(insertLegacyPair(userId, await createTestClient())).rejects.toThrow();
+    await expect(insertLegacyPair(userId, await createTestClient())).rejects.toMatchObject({
+      cause: { constraint: "oauth_token_grants_consent_unless_wallabag" },
+    });
+  });
+
+  it("turns its consent revoke into the delete that cascades to the tokens", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await db
+      .update(oauthConsentGrants)
+      .set({ revokedAt: new Date() })
+      .where(eq(oauthConsentGrants.userId, userId));
+
+    expect(
+      await db.select().from(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId))
+    ).toEqual([]);
+    expect(await validateAccessToken(tokens.accessToken)).toBeNull();
+  });
+
+  it("serializes its rotation with a grant delete instead of deadlocking", async () => {
+    // Its rotation locks the user, claims the refresh token, inserts the
+    // successor and only then joins the grant, the reverse of a cascading
+    // delete's order.
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    await recordConsent(userId, clientId, ["mcp"]);
+    const first = await insertLegacyPair(userId, clientId);
+
+    let stamp!: () => void;
+    const stamped = new Promise<void>((resolve) => (stamp = resolve));
+    let claimed!: () => void;
+    const claim = new Promise<void>((resolve) => (claimed = resolve));
+    const rotation = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT 1 FROM users WHERE id = ${userId} FOR SHARE`);
+      await tx.execute(
+        sql`UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE id = ${first.refreshId}`
+      );
+      const second = await insertLegacyPair(userId, clientId, tx);
+      claimed();
+      await stamped;
+      await tx.execute(sql`
+        UPDATE oauth_refresh_tokens SET replaced_by_id = ${second.refreshId}
+        WHERE id = ${first.refreshId}
+      `);
+    });
+    await claim;
+
+    const revoke = revokeUserClientTokens(userId, clientId);
+    await waitForLockWaiter('%from "users"%for no key update%');
+    stamp();
+    await rotation;
+    await revoke;
+
+    const left = await db.execute(sql`
+      SELECT 1 FROM oauth_access_tokens WHERE user_id = ${userId}
+      UNION ALL SELECT 1 FROM oauth_refresh_tokens WHERE user_id = ${userId}
+    `);
+    expect(left.rows).toEqual([]);
   });
 
   it("puts a new pair in one grant, and a rotation's successor in its predecessor's", async () => {

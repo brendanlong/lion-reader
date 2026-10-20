@@ -3,7 +3,7 @@
  * and the Settings → Connected Apps listing and revocation.
  */
 
-import { eq, and, isNull, isNotNull, desc, max } from "drizzle-orm";
+import { eq, and, desc, max } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
@@ -14,7 +14,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
-import { deleteTokenGrants } from "./service";
+import { deleteTokenGrants, lockUsersAgainstPreviousReleaseRotation } from "./service";
 import { logger } from "@/lib/logger";
 
 /**
@@ -28,13 +28,7 @@ export async function hasConsent(
   const result = await db
     .select({ scopes: oauthConsentGrants.scopes })
     .from(oauthConsentGrants)
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt)
-      )
-    )
+    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
     .limit(1);
 
   if (result.length === 0) {
@@ -55,18 +49,6 @@ export async function recordConsent(
   clientId: string,
   scopes: string[]
 ): Promise<string> {
-  // A row the previous release revoked must not come back to life with its
-  // token grants (#2053).
-  await db
-    .delete(oauthConsentGrants)
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNotNull(oauthConsentGrants.revokedAt)
-      )
-    );
-
   const [grant] = await db
     .insert(oauthConsentGrants)
     .values({
@@ -121,7 +103,7 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
     })
     .from(oauthConsentGrants)
     .leftJoin(oauthClients, eq(oauthClients.clientId, oauthConsentGrants.clientId))
-    .where(and(eq(oauthConsentGrants.userId, userId), isNull(oauthConsentGrants.revokedAt)))
+    .where(eq(oauthConsentGrants.userId, userId))
     .orderBy(desc(oauthConsentGrants.updatedAt));
 
   const lastUsed = await db
@@ -160,10 +142,13 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
  * Returns false if the user has no active grant for the client.
  */
 export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
-  const deleted = await db
-    .delete(oauthConsentGrants)
-    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
-    .returning({ id: oauthConsentGrants.id });
+  const deleted = await db.transaction(async (tx) => {
+    await lockUsersAgainstPreviousReleaseRotation(tx, [userId]);
+    return tx
+      .delete(oauthConsentGrants)
+      .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
+      .returning({ id: oauthConsentGrants.id });
+  });
 
   if (deleted.length === 0) {
     return false;

@@ -37,7 +37,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
 
     // Step 2: Delete the user. This cascades to:
     // - sessions, api_tokens, oauth_accounts
-    // - oauth_authorization_codes, oauth_access_tokens, oauth_refresh_tokens, oauth_consent_grants
+    // - oauth_authorization_codes, oauth_consent_grants, oauth_token_grants (and their tokens)
     // - subscriptions (which cascades to subscription_tags)
     // - user_entries, tags
     // - ingest_addresses, blocked_senders, opml_imports

@@ -26,6 +26,7 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { runRetentionCleanup } from "../../src/server/services/retention";
+import { recordConsent } from "../../src/server/oauth/grants";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { Temporal } from "temporal-polyfill";
 import { ENTRY_TOMBSTONE_RETENTION_MS } from "../../src/server/services/entry-tombstones";
@@ -113,24 +114,6 @@ async function createClient(clientId: string, createdAt: Date): Promise<string> 
     updatedAt: createdAt,
   });
   return clientId;
-}
-
-async function createConsentGrant(
-  userId: string,
-  clientId: string,
-  options: { revokedAt?: Date } = {}
-): Promise<string> {
-  const id = generateUuidv7();
-  await db.insert(oauthConsentGrants).values({
-    id,
-    userId,
-    clientId,
-    scopes: ["mcp"],
-    revokedAt: options.revokedAt ?? null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return id;
 }
 
 async function createAuthCode(userId: string, expiresAt: Date): Promise<string> {
@@ -434,23 +417,16 @@ describe("runRetentionCleanup", () => {
 
     // Old but has an active consent grant (tokens all expired): kept.
     const withConsent = await createClient("dcr-consent", old);
-    await createConsentGrant(userId, withConsent);
-
-    // Old with a consent grant the previous release revoked: deleted.
-    const withRevokedConsent = await createClient("dcr-revoked", old);
-    await createConsentGrant(userId, withRevokedConsent, {
-      revokedAt: new Date(Date.now() - DAY_MS),
-    });
+    await recordConsent(userId, withConsent, ["mcp"]);
 
     const result = await runRetentionCleanup(db);
 
-    expect(result.oauthClients).toBe(2);
+    expect(result.oauthClients).toBe(1);
     const remaining = (await db.select({ clientId: oauthClients.clientId }).from(oauthClients)).map(
       (r) => r.clientId
     );
     expect(remaining.sort()).toEqual([recent, withConsent].sort());
     expect(remaining).not.toContain(orphaned);
-    expect(remaining).not.toContain(withRevokedConsent);
   });
 
   it("prunes entry tombstones past the sync horizon and keeps recent ones", async () => {

@@ -183,6 +183,16 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.oauth_consent_grants_delete_revoked() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM 1 FROM users WHERE id = NEW.user_id FOR NO KEY UPDATE;
+  DELETE FROM oauth_consent_grants WHERE id = NEW.id;
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.oauth_new_token_grant(p_user uuid, p_client text, p_scopes text[], p_resource text) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
@@ -1277,6 +1287,8 @@ CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^
 CREATE TRIGGER entries_changed_at_trigger AFTER UPDATE OF updated_at ON public.entries FOR EACH ROW WHEN ((new.updated_at > old.updated_at)) EXECUTE FUNCTION public.entries_changed_at();
 
 CREATE TRIGGER oauth_access_tokens_default_grant_trigger BEFORE INSERT ON public.oauth_access_tokens FOR EACH ROW WHEN ((new.grant_id IS NULL)) EXECUTE FUNCTION public.oauth_access_tokens_default_grant();
+
+CREATE TRIGGER oauth_consent_grants_delete_revoked_trigger AFTER UPDATE OF revoked_at ON public.oauth_consent_grants FOR EACH ROW WHEN ((new.revoked_at IS NOT NULL)) EXECUTE FUNCTION public.oauth_consent_grants_delete_revoked();
 
 CREATE TRIGGER oauth_refresh_tokens_default_grant_trigger BEFORE INSERT ON public.oauth_refresh_tokens FOR EACH ROW WHEN ((new.grant_id IS NULL)) EXECUTE FUNCTION public.oauth_refresh_tokens_default_grant();
 

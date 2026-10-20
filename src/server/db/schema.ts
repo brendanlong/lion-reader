@@ -483,7 +483,7 @@ export const oauthConsentGrants = pgTable(
     scopes: text("scopes").array().notNull(), // Approved scopes
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-    // Set only by the previous release, which revoked instead of deleting (#2053).
+    // Set only by the previous release, and a trigger then deletes the row (#2053).
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (table) => [

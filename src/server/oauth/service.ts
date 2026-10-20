@@ -5,7 +5,17 @@
  * codes and tokens.
  */
 
-import { eq, and, arrayContains, isNull, gt, inArray, or, type SQL } from "drizzle-orm";
+import {
+  eq,
+  and,
+  arrayContains,
+  isNull,
+  gt,
+  inArray,
+  or,
+  type SQL,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthAuthorizationCodes,
@@ -158,7 +168,6 @@ export async function exchangeAuthorizationCode(
       and(
         eq(oauthConsentGrants.userId, authCode.userId),
         eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt),
         arrayContains(oauthConsentGrants.scopes, authCode.scopes)
       )
     );
@@ -283,11 +292,35 @@ async function insertTokenPair(
  * (see rotateRefreshToken), so its successor can't survive.
  */
 export async function deleteTokenGrants(condition: SQL, executor: DbOrTx = db): Promise<number> {
-  const deleted = await executor
-    .delete(oauthTokenGrants)
-    .where(condition)
-    .returning({ id: oauthTokenGrants.id });
-  return deleted.length;
+  return executor.transaction(async (tx) => {
+    await lockUsersAgainstPreviousReleaseRotation(
+      tx,
+      tx.select({ id: oauthTokenGrants.userId }).from(oauthTokenGrants).where(condition)
+    );
+    const deleted = await tx
+      .delete(oauthTokenGrants)
+      .where(condition)
+      .returning({ id: oauthTokenGrants.id });
+    return deleted.length;
+  });
+}
+
+/**
+ * Locks the users rows before a delete cascades to their tokens. The previous
+ * release's rotation share-locks the user, claims the refresh token and only
+ * then locks the grant, the reverse of a cascading delete; serializing on the
+ * user row first keeps the two from deadlocking (#2053).
+ */
+export async function lockUsersAgainstPreviousReleaseRotation(
+  tx: DbOrTx,
+  userIds: string[] | SQLWrapper
+): Promise<void> {
+  await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.id, userIds))
+    .orderBy(users.id)
+    .for("no key update");
 }
 
 /**
