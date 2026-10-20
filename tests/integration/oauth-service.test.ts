@@ -321,6 +321,38 @@ describe("rotateRefreshToken", () => {
     expect(rows).toEqual([]);
   });
 
+  it("serializes with retention deleting its access token instead of deadlocking (#2069)", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
+    const accessTokenHash = hashToken(tokens.accessToken);
+
+    // Retention's DELETE locks the access token, then its cascade updates the
+    // refresh row at the end of the statement; pause between the two.
+    let resume!: () => void;
+    const paused = new Promise<void>((resolve) => (resume = resolve));
+    let locked!: () => void;
+    const accessTokenLocked = new Promise<void>((resolve) => (locked = resolve));
+    const retention = db.transaction(async (tx) => {
+      await tx
+        .select({ id: oauthAccessTokens.id })
+        .from(oauthAccessTokens)
+        .where(eq(oauthAccessTokens.tokenHash, accessTokenHash))
+        .for("update");
+      locked();
+      await paused;
+      await tx.delete(oauthAccessTokens).where(eq(oauthAccessTokens.tokenHash, accessTokenHash));
+    });
+    await accessTokenLocked;
+
+    const rotation = rotateRefreshToken(tokens.refreshToken, clientId);
+    await waitForLockWaiter("%oauth_access_tokens%");
+    resume();
+
+    await retention;
+    expect(await rotation).not.toBeNull();
+  });
+
   it("leaves nothing usable when a revocation races rotations", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();

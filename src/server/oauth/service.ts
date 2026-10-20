@@ -428,7 +428,11 @@ export async function rotateRefreshToken(
   const now = new Date();
 
   const [owner] = await db
-    .select({ userId: oauthRefreshTokens.userId, grantId: oauthRefreshTokens.grantId })
+    .select({
+      userId: oauthRefreshTokens.userId,
+      grantId: oauthRefreshTokens.grantId,
+      accessTokenId: oauthRefreshTokens.accessTokenId,
+    })
     .from(oauthRefreshTokens)
     .where(eq(oauthRefreshTokens.tokenHash, tokenHash))
     .limit(1);
@@ -449,6 +453,17 @@ export async function rotateRefreshToken(
       .for("key share");
     if (!grant) {
       return null;
+    }
+
+    // Retention deletes expired access tokens, and the delete cascades to the
+    // paired refresh row. Locking the access token before claiming the refresh
+    // token takes the two in the same order, so the two can't deadlock (#2069).
+    if (owner.accessTokenId) {
+      await tx
+        .select({ id: oauthAccessTokens.id })
+        .from(oauthAccessTokens)
+        .where(eq(oauthAccessTokens.id, owner.accessTokenId))
+        .for("no key update");
     }
 
     const [claimed] = await tx
