@@ -1,5 +1,5 @@
 /**
- * Writes the server's request limits and cloud-speech pause settings the
+ * Writes the server's request limits, upload file types and cloud-speech pause settings the
  * native app must agree with, as Kotlin constants, so a server change reaches
  * the app instead of a stale copy. Regenerate with `pnpm app:server-constants`;
  * a unit test fails when the committed copy is stale.
@@ -13,6 +13,7 @@ import {
   MAX_CLOUD_SPEECH_CHARS,
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
 } from "../src/lib/narration/constants";
+import { SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
 import { MAX_ENTRIES_PAGE_SIZE } from "../src/server/services/entries";
 import { MAX_ENTRY_STATE_BATCH } from "../src/server/services/entry-state";
 import { MAX_SYNC_PAGE_ENTRIES } from "../src/server/services/sync";
@@ -49,6 +50,10 @@ object ServerLimits {
     /** Characters per \`/narration/speech\` request. */
     const val CLOUD_SPEECH_CHARS = ${int(MAX_CLOUD_SPEECH_CHARS)}
 }
+
+/** File extensions \`/saved/upload\` converts; it picks the converter by the filename's. */
+val UPLOAD_EXTENSIONS: List<String> =
+    listOf(${SUPPORTED_UPLOAD_EXTENSIONS.map((ext) => JSON.stringify(ext)).join(", ")})
 
 /** The silence after each chunk of cloud speech (\`pauseSeconds\`), as the web sets it. */
 object CloudSpeechPause {

@@ -18,6 +18,10 @@ object ServerLimits {
     const val CLOUD_SPEECH_CHARS = 1000
 }
 
+/** File extensions `/saved/upload` converts; it picks the converter by the filename's. */
+val UPLOAD_EXTENSIONS: List<String> =
+    listOf(".docx", ".pdf", ".html", ".htm", ".md", ".markdown", ".txt")
+
 /** The silence after each chunk of cloud speech (`pauseSeconds`), as the web sets it. */
 object CloudSpeechPause {
     const val DEFAULT_SECONDS = 0.6f

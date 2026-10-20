@@ -329,6 +329,9 @@ data class SpeechRequest(
 
 @Serializable data class SaveArticleRequest(val url: String)
 
+/** [content] is the file, Base64-encoded; the server picks the converter by [filename]. */
+@Serializable data class UploadFileRequest(val content: String, val filename: String)
+
 @Serializable data class SavedArticle(val id: String, val title: String? = null)
 
 @Serializable data class SaveArticleResponse(val article: SavedArticle)

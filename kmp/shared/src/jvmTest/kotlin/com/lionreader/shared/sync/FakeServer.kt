@@ -27,6 +27,7 @@ import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
+import com.lionreader.shared.api.UploadFileRequest
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -76,6 +77,9 @@ class FakeServer {
      */
     val savedUrls = mutableListOf<String>()
     var saveError: Pair<HttpStatusCode, String>? = null
+
+    /** Files saved with `POST /saved/upload`, as sent (Base64 content). */
+    val uploads = mutableListOf<UploadFileRequest>()
 
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
@@ -282,6 +286,13 @@ class FakeServer {
                 val summary = summaries[entryId]
                 if (summary == null) respond("{}", HttpStatusCode.InternalServerError, jsonHeaders)
                 else json(GeneratedSummary.serializer(), GeneratedSummary(summary))
+            }
+            path == "/saved/upload" -> {
+                uploads += body(request, UploadFileRequest.serializer())
+                json(
+                    SaveArticleResponse.serializer(),
+                    SaveArticleResponse(SavedArticle("s-2", "Uploaded")),
+                )
             }
             path == "/saved" -> {
                 val url = body(request, SaveArticleRequest.serializer()).url

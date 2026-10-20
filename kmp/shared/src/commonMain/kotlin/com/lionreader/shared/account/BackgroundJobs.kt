@@ -35,7 +35,7 @@ suspend fun Accounts.runBackgroundSync(full: Boolean, io: CoroutineDispatcher): 
     }
 }
 
-/** How saving a shared link went. */
+/** How saving a shared link or file went. */
 sealed interface SaveOutcome {
     /** Saved; the caller syncs to bring it onto the device. */
     data class Saved(val title: String?) : SaveOutcome
@@ -52,20 +52,32 @@ sealed interface SaveOutcome {
  * up when the server rejects the link or the user isn't signed in; anything else is tried again
  * (saving a URL twice just updates the article).
  */
-suspend fun ServerConnection.saveLink(url: String): SaveOutcome {
+suspend fun ServerConnection.saveLink(url: String): SaveOutcome =
+    save("Lion Reader couldn't save this link.") { api.saveArticle(url).title }
+
+/**
+ * Saves a shared file (`uploadFile`) the way [saveLink] saves a link. A retry after a lost response
+ * can save it twice: unlike a URL, an upload has nothing to recognize it by.
+ */
+suspend fun ServerConnection.saveFile(filename: String, bytes: ByteArray): SaveOutcome =
+    save("Lion Reader couldn't save this file.") { api.uploadFile(filename, bytes).title }
+
+private suspend fun ServerConnection.save(
+    rejected: String,
+    request: suspend () -> String?,
+): SaveOutcome {
     if (!auth.signedIn.value) return SaveOutcome.Failed(SIGN_IN_TO_SAVE)
     return try {
-        SaveOutcome.Saved(api.saveArticle(url).title)
+        SaveOutcome.Saved(request())
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         when (val why = e.apiFailure()) {
             ApiFailure.SignedOut -> SaveOutcome.Failed(SIGN_IN_TO_SAVE)
-            is ApiFailure.Rejected ->
-                SaveOutcome.Failed(why.message ?: "Lion Reader couldn't save this link.")
+            is ApiFailure.Rejected -> SaveOutcome.Failed(why.message ?: rejected)
             else -> SaveOutcome.Retry
         }
     }
 }
 
-private const val SIGN_IN_TO_SAVE = "Sign in to Lion Reader to save links."
+private const val SIGN_IN_TO_SAVE = "Sign in to Lion Reader to save."

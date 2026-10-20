@@ -19,6 +19,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readAvailable
+import kotlin.io.encoding.Base64
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -182,6 +183,19 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 "/saved",
                 SaveArticleRequest(url),
                 SaveArticleRequest.serializer(),
+            )
+            .article
+
+    /**
+     * Saves a file as a saved article: the server converts it by its [filename]'s extension (a PDF,
+     * Word document, HTML, Markdown or text file) and rejects anything else.
+     */
+    suspend fun uploadFile(filename: String, bytes: ByteArray): SavedArticle =
+        post(
+                SaveArticleResponse.serializer(),
+                "/saved/upload",
+                UploadFileRequest(Base64.encode(bytes), filename),
+                UploadFileRequest.serializer(),
             )
             .article
 
