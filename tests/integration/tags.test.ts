@@ -921,24 +921,38 @@ describe("Tags API", () => {
       expect(result.items).toHaveLength(0);
     });
 
-    it("returns empty list for another user's tag", async () => {
+    it("lists nothing through another user's tag or Uncategorized", async () => {
       const userId1 = await createTestUser();
       const userId2 = await createTestUser({ emailPrefix: "other" });
 
-      // User 1 has a feed and subscription
+      // Both follow one feed; user 2 tags theirs and has an untagged one too,
+      // so user 2's tag and Uncategorized both hold the shared entry.
       const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
       await createTestSubscription(userId1, feedId);
-      await createTestEntry(feedId);
+      const subId2 = await createTestSubscription(userId2, feedId);
+      const otherFeedId = await createTestFeed({ url: "https://feed2.com/rss" });
+      await createTestSubscription(userId2, otherFeedId);
+      await createTestEntry(feedId, { userIds: [userId1, userId2] });
+      await createTestEntry(otherFeedId, { userIds: [userId2] });
+      const tagId = await createTestTag(userId2, { name: "Tech", subscriptionIds: [subId2] });
 
-      // Tag owned by user 2
-      const tagId = await createTestTag(userId2, { name: "Tech" });
-
-      // User 1 tries to filter by user 2's tag
+      // User 1 passes user 2's tag id, and user 2's id (Uncategorized's list id).
       const caller = createCaller(await createAuthContext(userId1));
+      expect((await caller.entries.list({ tagId })).items).toHaveLength(0);
+      expect((await caller.entries.list({ tagId: userId2 })).items).toHaveLength(0);
+    });
 
-      const result = await caller.entries.list({ tagId });
+    it("lists nothing through a deleted tag", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
+      const subId = await createTestSubscription(userId, feedId);
+      await createTestEntry(feedId, { userIds: [userId] });
+      const tagId = await createTestTag(userId, { subscriptionIds: [subId] });
+      // Tombstoned without dropping its subscriptions first, as deleteTag does.
+      await db.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
 
-      expect(result.items).toHaveLength(0);
+      const caller = createCaller(await createAuthContext(userId));
+      expect((await caller.entries.list({ tagId })).items).toHaveLength(0);
     });
 
     it("combines tagId and feedId filters", async () => {

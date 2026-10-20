@@ -408,6 +408,17 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.tags_sync_lists() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM sync_tag_entries_of_subscriptions(
+    ARRAY(SELECT subscription_id FROM subscription_tags WHERE tag_id = NEW.id)
+  );
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.user_entries_changed_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1309,9 +1320,11 @@ CREATE UNIQUE INDEX idx_subscriptions_greader_stream_id ON public.subscriptions 
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 
-CREATE INDEX idx_tag_entries_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT is_spam);
+CREATE INDEX idx_tag_entries_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC);
 
 CREATE INDEX idx_tag_entries_unread_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam));
+
+CREATE INDEX idx_tag_entries_unspammed_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT is_spam);
 
 CREATE INDEX idx_tag_entries_user_entry ON public.tag_entries USING btree (user_id, entry_id);
 
@@ -1382,6 +1395,8 @@ CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
+
+CREATE TRIGGER tags_sync_lists_trigger AFTER UPDATE OF deleted_at ON public.tags FOR EACH ROW WHEN (((old.deleted_at IS NULL) IS DISTINCT FROM (new.deleted_at IS NULL))) EXECUTE FUNCTION public.tags_sync_lists();
 
 CREATE TRIGGER user_entries_changed_at_trigger BEFORE INSERT OR UPDATE OF updated_at ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_changed_at();
 

@@ -7,6 +7,13 @@
 -- timeline. Triggers keep them; app code never writes them.
 SET LOCAL lock_timeout = '5s';
 
+-- Everything the rows derive from, up front and in the lock order
+-- (src/server/CLAUDE.md): writes wait until the backfill below is done, and
+-- one already holding a lock can't deadlock with the migration.
+LOCK TABLE user_entries, subscription_entries, subscriptions, subscription_tags, tags
+  IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
+
 CREATE TABLE tag_entries (
   list_id uuid NOT NULL,
   user_id uuid NOT NULL,
@@ -21,6 +28,11 @@ CREATE TABLE tag_entries (
 );
 --> statement-breakpoint
 CREATE INDEX idx_tag_entries_timeline
+  ON tag_entries (list_id, published_or_fetched_at DESC, entry_id DESC);
+--> statement-breakpoint
+-- Without spam, which every list hides by default (spam email lands in
+-- Uncategorized); the plain timeline serves showSpam.
+CREATE INDEX idx_tag_entries_unspammed_timeline
   ON tag_entries (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE NOT is_spam;
 --> statement-breakpoint
 CREATE INDEX idx_tag_entries_unread_timeline
@@ -122,8 +134,8 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
--- Every path that removes memberships holds their user_entries rows already
--- (collection removes lock them, and a deleted row's memberships go with it).
+-- Removing memberships only removes tag rows, so this copies no state and
+-- needs no lock on the user_entries rows.
 CREATE FUNCTION subscription_entries_drop_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -221,7 +233,24 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
--- The triggers above lock every table they read, so nothing moves while this runs.
+-- A tag's tombstone hides its list. deleteTag removes the tag's subscriptions
+-- first (locking their members), so this normally has nothing to sync.
+CREATE FUNCTION tags_sync_lists() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM sync_tag_entries_of_subscriptions(
+    ARRAY(SELECT subscription_id FROM subscription_tags WHERE tag_id = NEW.id)
+  );
+  RETURN NULL;
+END;
+$$;
+--> statement-breakpoint
+CREATE TRIGGER tags_sync_lists_trigger
+  AFTER UPDATE OF deleted_at ON tags
+  FOR EACH ROW WHEN ((OLD.deleted_at IS NULL) IS DISTINCT FROM (NEW.deleted_at IS NULL))
+  EXECUTE FUNCTION tags_sync_lists();
+--> statement-breakpoint
 INSERT INTO tag_entries (list_id, user_id, entry_id, published_or_fetched_at, read, starred, is_spam)
 SELECT DISTINCT ON (r.list_id, r.entry_id)
        r.list_id, r.user_id, r.entry_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.is_spam

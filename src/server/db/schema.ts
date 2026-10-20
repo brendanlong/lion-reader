@@ -990,11 +990,9 @@ export const subscriptionEntries = pgTable(
 );
 
 /**
- * The rows of every tag's list and of Uncategorized (#2066): one per (list,
- * entry), the list being a tag or, for Uncategorized, its user. Triggers keep
- * them from memberships, subscriptions and tags (migration 0163), with copies
- * of the user_entries row's state like a membership's, so a tag's page reads
- * the tag's own index. Read state from user_entries; never write these.
+ * A tag's or Uncategorized's list rows, kept by triggers ("Subscription
+ * Attribution" in src/server/CLAUDE.md). `list_id` is the tag's id, or the
+ * user's for Uncategorized.
  */
 export const tagEntries = pgTable(
   "tag_entries",

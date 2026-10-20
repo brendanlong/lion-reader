@@ -41,6 +41,7 @@ import {
   createTestEntry,
   createTestFeed,
   createTestSubscription,
+  createTestTag,
   createTestUser,
   createTestUserEntries,
 } from "./helpers";
@@ -322,6 +323,23 @@ describe("unread counters (triggers + reconciliation)", () => {
     await expect(
       countEntries(db, userId, { subscriptionId: subId, starredOnly: true })
     ).rejects.toThrow(/one list at a time/);
+  });
+
+  it("reconcileCounters restores a tag list's missing rows", async () => {
+    const userId = await createTestUser();
+    const feedId = await createTestFeed();
+    const subId = await createTestSubscription(userId, feedId);
+    const tagId = await createTestTag(userId, { subscriptionIds: [subId] });
+    await createTestEntry(feedId, { userIds: [userId] });
+    await db.delete(tagEntries).where(eq(tagEntries.userId, userId));
+
+    expect((await reconcileCounters(db)).tagEntriesFixed).toBe(1);
+    expect(
+      await db
+        .select({ listId: tagEntries.listId })
+        .from(tagEntries)
+        .where(eq(tagEntries.userId, userId))
+    ).toEqual([{ listId: tagId }]);
   });
 
   it("reconcileCounters detects and repairs corruption", async () => {

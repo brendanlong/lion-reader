@@ -28,6 +28,7 @@ import {
   entryFeedTitleSql,
   entryOriginOn,
   filterableSubscriptionWhere,
+  verifySubscriptionOwnership,
   VISIBLE_MEMBERSHIPS,
   VISIBLE_ROW,
 } from "./entry-filters";
@@ -239,7 +240,7 @@ const entryListSelectFields = {
 /**
  * The rows a list has of its own, which carry its sort key and copies of each
  * article's state: one subscription's memberships (the `subscriptionId`
- * filter, already checked by `buildEntrySubscriptionFilter`, or Saved's), or a
+ * filter, which the caller checks is the user's, or Saved's), or a
  * tag's or Uncategorized's `tag_entries`. Null for All and Starred, which
  * read `user_entries` itself. Joined on the user too: a list id alone
  * (Uncategorized's is the user's id) must never reach another user's rows
@@ -410,11 +411,14 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
-    paged: true,
-  });
-  if (subscriptionFilter === null) return null;
+  // Only a subscription filter needs checking: a tag's or Uncategorized's
+  // rows are the user's by the join on them.
+  if (
+    params.subscriptionId &&
+    !(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))
+  ) {
+    return null;
+  }
 
   // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
   // joins them, which can't fan out, and pages through their index: walking
@@ -425,9 +429,6 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   // filtered page reads the index of its matches.
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
   const listRows = await listRowsOf(db, params);
-  if (subscriptionFilter && !listRows) {
-    conditions.push(subscriptionFilter);
-  }
   if (listRows) {
     conditions.push(...listRowStateConditions(listRows.table, params));
   }
