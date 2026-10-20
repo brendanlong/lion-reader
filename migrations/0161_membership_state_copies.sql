@@ -5,8 +5,9 @@
 SET LOCAL lock_timeout = '5s';
 
 -- Existing rows take each column's first default without a rewrite. Most are
--- read, so `read` starts true for them and the backfill below touches only the
--- unread, starred and spam ones; new rows default to false.
+-- read, so `read` starts true for them and the backfill (0162, in its own
+-- transaction so this one's exclusive lock is brief) touches only the unread,
+-- starred and spam ones; new rows default to false.
 ALTER TABLE subscription_entries
   ADD COLUMN read boolean NOT NULL DEFAULT true,
   ADD COLUMN starred boolean NOT NULL DEFAULT false,
@@ -68,15 +69,3 @@ CREATE TRIGGER user_entries_copy_state_trigger
   AFTER UPDATE ON user_entries
   REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
   FOR EACH STATEMENT EXECUTE FUNCTION user_entries_copy_state();
---> statement-breakpoint
--- The triggers above lock user_entries and subscription_entries, so nothing
--- changes a row's state while this runs.
-UPDATE subscription_entries se
-SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
-FROM user_entries ue
-WHERE ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-  AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam);
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS idx_subscription_entries_unread_timeline
-  ON subscription_entries (subscription_id, published_or_fetched_at DESC, entry_id DESC)
-  WHERE NOT read AND NOT is_spam;
