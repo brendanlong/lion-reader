@@ -577,17 +577,43 @@ fn handle_input(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send
 /// with a literal `#` always decodes to a fragment, so this can only ever
 /// under-match, never mistake a URL for a fragment.
 ///
-/// Whether an attribute *name* can hold an id or an id reference. Pure name
-/// test so the caller can skip reading the value. The `aria-` prefix check
-/// guards the list scan, which would otherwise run for every attribute.
-fn is_idref_attr(name: &str) -> bool {
-    matches!(name, "id" | "name" | "headers" | "href")
-        || (name.starts_with("aria-") && ARIA_IDREF_ATTRS.contains(&name))
+/// The duplicate-tracking bit of an attribute that can hold an id or an id
+/// reference, or None for any other attribute. Pure name test so the caller can
+/// skip reading the value. The `aria-` prefix check guards the list scan, which
+/// would otherwise run for every attribute.
+fn idref_bit(name: &str) -> Option<u64> {
+    let index = match name {
+        "id" => 0,
+        "name" => 1,
+        "headers" => 2,
+        "href" => 3,
+        _ if name.starts_with("aria-") => {
+            ARIA_IDREF_ATTRS.iter().position(|a| *a == name)? + FIRST_ARIA_BIT
+        }
+        _ => return None,
+    };
+    Some(1 << index)
+}
+
+const ALIGN_BIT: u64 = 1 << 4;
+const FIRST_ARIA_BIT: usize = 5;
+const _: () = assert!(FIRST_ARIA_BIT + ARIA_IDREF_ATTRS.len() <= 64);
+
+/// Inverse of [`idref_bit`] and [`ALIGN_BIT`], by bit index.
+fn rewritable_attr_name(index: u32) -> &'static str {
+    match index {
+        0 => "id",
+        1 => "name",
+        2 => "headers",
+        3 => "href",
+        4 => "align",
+        i => ARIA_IDREF_ATTRS[i as usize - FIRST_ARIA_BIT],
+    }
 }
 
 /// The namespaced form of an id-defining or id-referencing attribute, or None
 /// when this particular value needs no rewrite. Only called for names that
-/// passed [`is_idref_attr`]. `name` must be lowercased, as lol_html gives it for
+/// have an [`idref_bit`]. `name` must be lowercased, as lol_html gives it for
 /// HTML elements.
 fn namespaced_value(name: &str, value: &str) -> Option<String> {
     match name {
@@ -599,46 +625,37 @@ fn namespaced_value(name: &str, value: &str) -> Option<String> {
     }
 }
 
-/// The value an attribute's first copy should end up with. lol_html keeps
-/// duplicate attributes, and a browser reads only the first copy, so later
-/// copies are never rewritten (rewriting one would overwrite the first copy,
-/// which `set_attribute` updates). A duplicate instead forces
-/// remove-all-then-set, so no raw copy survives for parsers that read the last.
-struct Rewrite {
-    name: String,
-    value: String,
-    /// Skips no-op writes: `set_attribute` makes lol_html re-serialize the
-    /// whole start tag, so an already-prefixed value (a re-sanitized summary)
-    /// or an empty id must not pay for one.
-    changed: bool,
-    duplicate: bool,
-}
-
-impl Rewrite {
-    fn new(name: String, original: String, rewritten: Option<String>) -> Self {
-        let (value, changed) = match rewritten {
-            Some(value) if value != original => (value, true),
-            _ => (original, false),
+/// Collapses each attribute in `duplicates` (a set of [`idref_bit`]s and
+/// [`ALIGN_BIT`]) to its first copy, rewritten. lol_html keeps duplicate
+/// attributes and `set_attribute` updates only the first copy, so the rewrite
+/// alone would leave a raw copy for parsers that read the last one. Must run
+/// before `rewrites` is applied, so that `get_attribute` sees the original
+/// first copy of a value that needed no rewrite.
+#[cold]
+#[inline(never)]
+fn collapse_duplicates(
+    el: &mut Element,
+    rewrites: &mut Vec<(String, String)>,
+    to_remove: &[String],
+    mut duplicates: u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    while duplicates != 0 {
+        let name = rewritable_attr_name(duplicates.trailing_zeros());
+        duplicates &= duplicates - 1;
+        if to_remove.iter().any(|n| n == name) {
+            continue;
+        }
+        let value = match rewrites.iter().position(|(n, _)| n == name) {
+            Some(i) => rewrites.swap_remove(i).1,
+            None => match el.get_attribute(name) {
+                Some(value) => value,
+                None => continue,
+            },
         };
-        Rewrite {
-            name,
-            value,
-            changed,
-            duplicate: false,
-        }
+        el.remove_attribute(name);
+        el.set_attribute(name, &value)?;
     }
-}
-
-/// Whether `name` is a later copy of an attribute already in `rewrites`, and if
-/// so, flags that entry as duplicated.
-fn mark_duplicate_rewrite(rewrites: &mut [Rewrite], name: &str) -> bool {
-    match rewrites.iter_mut().find(|r| r.name == name) {
-        Some(first) => {
-            first.duplicate = true;
-            true
-        }
-        None => false,
-    }
+    Ok(())
 }
 
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -664,9 +681,13 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     // second walk of the attribute list, measurably slowed every element down —
     // including elements with no id at all. Only attributes that survive the
     // allow-list are considered, and a rewrite whose name is also in `to_remove`
-    // (a duplicate copy failed a check) is skipped, so a rewrite can never
-    // resurrect an attribute the filter just dropped.
-    let mut rewrites: Vec<Rewrite> = Vec::new();
+    // (another copy failed a check) is skipped, so a rewrite can never
+    // resurrect an attribute the filter just dropped. Only the first copy of an
+    // attribute is rewritten, as a browser reads only that one; `seen` and
+    // `duplicates` hold `idref_bit`s and `ALIGN_BIT`.
+    let mut rewrites: Vec<(String, String)> = Vec::new();
+    let mut seen: u64 = 0;
+    let mut duplicates: u64 = 0;
     // A browser reads only the first `class`, but `set_attribute` would update
     // only the first copy too, leaving a raw duplicate for API clients that
     // parse differently — so a duplicate forces remove-all-then-set.
@@ -689,15 +710,18 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         // Name test before `attr.value()`, which allocates. `align` is never an
         // idref, so this arm can settle it and skip the rest of the loop body.
         if name == "align" {
-            if mark_duplicate_rewrite(&mut rewrites, &name) {
+            if seen & ALIGN_BIT != 0 {
+                duplicates |= ALIGN_BIT;
                 continue;
             }
+            seen |= ALIGN_BIT;
             let value = attr.value();
             match canonical_align(&value) {
                 None => to_remove.push(name),
-                Some(canonical) => {
-                    rewrites.push(Rewrite::new(name, value, Some(canonical.to_string())))
+                Some(canonical) if canonical != value => {
+                    rewrites.push((name, canonical.to_string()))
                 }
+                Some(_) => {}
             }
             continue;
         }
@@ -723,21 +747,29 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
         }
         // Name test before `attr.value()`, which allocates: most attributes
         // (`class`, `alt`, `width`, …) hold no id and must not pay for a copy.
-        if is_idref_attr(&name) && !mark_duplicate_rewrite(&mut rewrites, &name) {
+        if let Some(bit) = idref_bit(&name) {
+            if seen & bit != 0 {
+                duplicates |= bit;
+                continue;
+            }
+            seen |= bit;
             let value = attr.value();
-            let rewritten = namespaced_value(&name, &value);
-            rewrites.push(Rewrite::new(name, value, rewritten));
+            if let Some(rewritten) = namespaced_value(&name, &value) {
+                // Skip no-op writes: `set_attribute` makes lol_html re-serialize
+                // the whole start tag, so an already-prefixed value (a
+                // re-sanitized summary) or an empty id must not pay for one.
+                if rewritten != value {
+                    rewrites.push((name, rewritten));
+                }
+            }
         }
     }
-    for rewrite in rewrites {
-        if to_remove.contains(&rewrite.name) {
-            continue;
-        }
-        if rewrite.duplicate {
-            el.remove_attribute(&rewrite.name);
-            el.set_attribute(&rewrite.name, &rewrite.value)?;
-        } else if rewrite.changed {
-            el.set_attribute(&rewrite.name, &rewrite.value)?;
+    if duplicates != 0 {
+        collapse_duplicates(el, &mut rewrites, &to_remove, duplicates)?;
+    }
+    for (name, value) in rewrites {
+        if !to_remove.contains(&name) {
+            el.set_attribute(&name, &value)?;
         }
     }
     for name in to_remove {
