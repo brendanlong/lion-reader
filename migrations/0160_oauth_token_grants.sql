@@ -1,24 +1,29 @@
 -- One row per authorization (an authorization-code exchange or a Wallabag
 -- password grant). Every access and refresh token minted from it, across all
--- rotations, points at it, and validation requires it unrevoked: revoking the
--- grant kills the whole chain, including a successor a racing rotation commits
--- afterwards (#2042).
+-- rotations, points at it with ON DELETE CASCADE, and the grant points at the
+-- consent grant it came from the same way, so revoking is a DELETE that takes
+-- everything downstream with it (#2042). The foreign keys' row locks serialize
+-- that DELETE with an exchange or rotation inserting into the same grant.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
--- Refresh tokens first, the order the previous release's rotation takes them.
+-- In the order the previous release takes them: consent, refresh, access.
+LOCK TABLE oauth_consent_grants IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
 LOCK TABLE oauth_refresh_tokens, oauth_access_tokens IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 CREATE TABLE oauth_token_grants (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  consent_grant_id uuid REFERENCES oauth_consent_grants(id) ON DELETE CASCADE,
   client_id text NOT NULL,
   scopes text[] NOT NULL,
   resource text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  revoked_at timestamptz
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 --> statement-breakpoint
 CREATE INDEX idx_oauth_token_grants_user_client ON oauth_token_grants (user_id, client_id);
+--> statement-breakpoint
+CREATE INDEX idx_oauth_token_grants_consent ON oauth_token_grants (consent_grant_id);
 --> statement-breakpoint
 ALTER TABLE oauth_access_tokens ADD COLUMN grant_id uuid;
 --> statement-breakpoint
@@ -27,10 +32,13 @@ ALTER TABLE oauth_refresh_tokens ADD COLUMN grant_id uuid;
 
 -- Backfill one grant per rotation chain, keyed by the chain's first refresh
 -- token (rotation copies scopes and resource, so the first token's are the
--- chain's), then point every later token in the chain at it.
-INSERT INTO oauth_token_grants (id, user_id, client_id, scopes, resource, created_at)
-SELECT r.id, r.user_id, r.client_id, r.scopes, r.resource, r.created_at
+-- chain's), linked to the client's live consent grant, then point every later
+-- token in the chain at it.
+INSERT INTO oauth_token_grants (id, user_id, consent_grant_id, client_id, scopes, resource, created_at)
+SELECT r.id, r.user_id, c.id, r.client_id, r.scopes, r.resource, r.created_at
 FROM oauth_refresh_tokens r
+LEFT JOIN oauth_consent_grants c
+  ON c.user_id = r.user_id AND c.client_id = r.client_id AND c.revoked_at IS NULL
 WHERE NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens p WHERE p.replaced_by_id = r.id);
 --> statement-breakpoint
 WITH RECURSIVE chain (id, grant_id) AS (
@@ -50,28 +58,22 @@ WHERE r.access_token_id = a.id;
 --> statement-breakpoint
 
 -- An access token whose refresh token is already gone gets a grant of its own.
-INSERT INTO oauth_token_grants (id, user_id, client_id, scopes, resource, created_at)
-SELECT a.id, a.user_id, a.client_id, a.scopes, a.resource, a.created_at
+INSERT INTO oauth_token_grants (id, user_id, consent_grant_id, client_id, scopes, resource, created_at)
+SELECT a.id, a.user_id, c.id, a.client_id, a.scopes, a.resource, a.created_at
 FROM oauth_access_tokens a
+LEFT JOIN oauth_consent_grants c
+  ON c.user_id = a.user_id AND c.client_id = a.client_id AND c.revoked_at IS NULL
 WHERE a.grant_id IS NULL;
 --> statement-breakpoint
 UPDATE oauth_access_tokens SET grant_id = id WHERE grant_id IS NULL;
 --> statement-breakpoint
 
--- A chain with no live token left was already revoked or has run out; marking
--- it revoked keeps reuse detection from flagging a client that presents one of
--- its tokens. A chain whose consent is gone could no longer rotate (only
--- Wallabag's password grant has no consent), and the grant now stands in for
--- that check.
-UPDATE oauth_token_grants g
-SET revoked_at = now()
-WHERE (
-    g.client_id <> 'wallabag'
-    AND NOT EXISTS (
-      SELECT 1 FROM oauth_consent_grants c
-      WHERE c.user_id = g.user_id AND c.client_id = g.client_id AND c.revoked_at IS NULL
-    )
-  )
+-- Drop the chains that can't be used again: those with no live token left,
+-- and those of a client whose consent is gone, which the previous release
+-- refused to rotate (only Wallabag's password grant has no consent).
+CREATE TEMPORARY TABLE dead_grants ON COMMIT DROP AS
+SELECT g.id FROM oauth_token_grants g
+WHERE (g.client_id <> 'wallabag' AND g.consent_grant_id IS NULL)
   OR (
     NOT EXISTS (
       SELECT 1 FROM oauth_refresh_tokens r
@@ -82,6 +84,20 @@ WHERE (
       WHERE a.grant_id = g.id AND a.revoked_at IS NULL AND a.expires_at > now()
     )
   );
+--> statement-breakpoint
+DELETE FROM oauth_refresh_tokens WHERE grant_id IN (SELECT id FROM dead_grants);
+--> statement-breakpoint
+DELETE FROM oauth_access_tokens WHERE grant_id IN (SELECT id FROM dead_grants);
+--> statement-breakpoint
+DELETE FROM oauth_token_grants WHERE id IN (SELECT id FROM dead_grants);
+--> statement-breakpoint
+
+-- Revoking consent is now a DELETE; a revoked row's chains went above.
+DELETE FROM oauth_consent_grants WHERE revoked_at IS NOT NULL;
+--> statement-breakpoint
+ALTER TABLE oauth_token_grants
+  ADD CONSTRAINT oauth_token_grants_consent_unless_wallabag
+    CHECK (consent_grant_id IS NOT NULL OR client_id = 'wallabag');
 --> statement-breakpoint
 ALTER TABLE oauth_access_tokens
   ALTER COLUMN grant_id SET NOT NULL,
@@ -100,18 +116,34 @@ CREATE INDEX idx_oauth_refresh_tokens_grant ON oauth_refresh_tokens (grant_id);
 
 -- The previous release inserts tokens without a grant_id and links a rotation
 -- only by stamping replaced_by_id on the predecessor. Until it's gone, these
--- triggers give its rows grants: a new access token gets a fresh grant, the
--- refresh token inserted with it joins that grant, and once a rotation stamps
+-- triggers give its rows grants: a new access token gets a fresh grant linked
+-- to the client's live consent (the CHECK refuses one with none), the refresh
+-- token inserted with it joins that grant, and once a rotation stamps
 -- replaced_by_id the successor pair moves into its predecessor's grant (the
--- emptied grant is left for retention), born revoked if that grant is, since
--- the previous release reads only the rows. Dropped in #2053.
+-- emptied grant is left for retention). Dropped in #2053.
+CREATE FUNCTION oauth_new_token_grant(p_user uuid, p_client text, p_scopes text[], p_resource text)
+    RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  grant_id uuid := uuidv7();
+BEGIN
+  INSERT INTO oauth_token_grants (id, user_id, consent_grant_id, client_id, scopes, resource)
+  VALUES (
+    grant_id, p_user,
+    (SELECT id FROM oauth_consent_grants
+     WHERE user_id = p_user AND client_id = p_client AND revoked_at IS NULL),
+    p_client, p_scopes, p_resource
+  );
+  RETURN grant_id;
+END;
+$$;
+--> statement-breakpoint
 CREATE FUNCTION oauth_access_tokens_default_grant() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  NEW.grant_id := uuidv7();
-  INSERT INTO oauth_token_grants (id, user_id, client_id, scopes, resource)
-  VALUES (NEW.grant_id, NEW.user_id, NEW.client_id, NEW.scopes, NEW.resource);
+  NEW.grant_id := oauth_new_token_grant(NEW.user_id, NEW.client_id, NEW.scopes, NEW.resource);
   RETURN NEW;
 END;
 $$;
@@ -125,12 +157,10 @@ CREATE FUNCTION oauth_refresh_tokens_default_grant() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  NEW.grant_id := (SELECT grant_id FROM oauth_access_tokens WHERE id = NEW.access_token_id);
-  IF NEW.grant_id IS NULL THEN
-    NEW.grant_id := uuidv7();
-    INSERT INTO oauth_token_grants (id, user_id, client_id, scopes, resource)
-    VALUES (NEW.grant_id, NEW.user_id, NEW.client_id, NEW.scopes, NEW.resource);
-  END IF;
+  NEW.grant_id := COALESCE(
+    (SELECT grant_id FROM oauth_access_tokens WHERE id = NEW.access_token_id),
+    oauth_new_token_grant(NEW.user_id, NEW.client_id, NEW.scopes, NEW.resource)
+  );
   RETURN NEW;
 END;
 $$;
@@ -146,18 +176,12 @@ CREATE FUNCTION oauth_refresh_tokens_join_predecessor_grant() RETURNS trigger
 DECLARE
   successor_grant uuid;
   successor_access uuid;
-  grant_revoked_at timestamptz;
 BEGIN
   SELECT grant_id, access_token_id INTO successor_grant, successor_access
   FROM oauth_refresh_tokens WHERE id = NEW.replaced_by_id;
   IF successor_grant <> NEW.grant_id THEN
-    SELECT revoked_at INTO grant_revoked_at FROM oauth_token_grants WHERE id = NEW.grant_id;
-    UPDATE oauth_refresh_tokens
-    SET grant_id = NEW.grant_id, revoked_at = COALESCE(revoked_at, grant_revoked_at)
-    WHERE id = NEW.replaced_by_id;
-    UPDATE oauth_access_tokens
-    SET grant_id = NEW.grant_id, revoked_at = COALESCE(revoked_at, grant_revoked_at)
-    WHERE id = successor_access;
+    UPDATE oauth_refresh_tokens SET grant_id = NEW.grant_id WHERE id = NEW.replaced_by_id;
+    UPDATE oauth_access_tokens SET grant_id = NEW.grant_id WHERE id = successor_access;
   END IF;
   RETURN NULL;
 END;

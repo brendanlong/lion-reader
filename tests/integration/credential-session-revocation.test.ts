@@ -15,15 +15,16 @@ import { db } from "../../src/server/db";
 import { sessions, users } from "../../src/server/db/schema";
 import { createSession, validateSession } from "../../src/server/auth/session";
 import { linkOAuthAccount } from "../../src/server/services/oauth-accounts";
-import {
-  createTokens,
-  rotateRefreshToken,
-  validateAccessToken,
-} from "../../src/server/oauth/service";
+import { rotateRefreshToken, validateAccessToken } from "../../src/server/oauth/service";
 import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { createAuthContext, createTestOAuthLink, createTestUser } from "./helpers";
+import {
+  createAuthContext,
+  createTestOAuthLink,
+  createTestUser,
+  createTestOAuthTokens,
+} from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -229,7 +230,7 @@ describe("password changes sign out Wallabag apps", () => {
   // attacker a Wallabag refresh chain that renews itself indefinitely unless the
   // password change kills it.
   async function mintWallabagTokens(userId: string) {
-    return createTokens({
+    return createTestOAuthTokens({
       clientId: WALLABAG_CLIENT_ID,
       userId,
       scopes: ["reader:full-access"],
@@ -240,7 +241,7 @@ describe("password changes sign out Wallabag apps", () => {
     const userId = await createUser({ passwordHash: await argon2.hash("old-password") });
     const current = await createSession(db, { userId });
     const wallabag = await mintWallabagTokens(userId);
-    const otherClient = await createTokens({
+    const otherClient = await createTestOAuthTokens({
       clientId: "some-mcp-client",
       userId,
       scopes: ["mcp"],

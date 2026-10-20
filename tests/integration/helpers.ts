@@ -34,7 +34,9 @@ import {
   oauthClients,
   oauthTokenGrants,
 } from "../../src/server/db/schema";
-import { createTokens } from "../../src/server/oauth/service";
+import { createTokens, type TokenPair } from "../../src/server/oauth/service";
+import { recordConsent } from "../../src/server/oauth/grants";
+import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { generateToken, hashToken } from "../../src/server/oauth/utils";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { insertUserEntriesWithMemberships } from "../../src/server/services/subscription-entries";
@@ -395,10 +397,13 @@ export async function createTestTokenGrant(
   overrides: Partial<typeof oauthTokenGrants.$inferInsert> = {}
 ): Promise<string> {
   const id = overrides.id ?? generateUuidv7();
+  const clientId = overrides.clientId ?? "test-client";
   await db.insert(oauthTokenGrants).values({
     id,
     userId,
-    clientId: "test-client",
+    clientId,
+    consentGrantId:
+      clientId === WALLABAG_CLIENT_ID ? null : await recordConsent(userId, clientId, ["mcp"]),
     scopes: ["mcp"],
     ...overrides,
   });
@@ -425,13 +430,27 @@ export async function createTestOAuthLink(
 }
 
 /**
+ * Mints a token pair the way a finished authorization does, recording the
+ * user's consent first unless the client is Wallabag's, which has none.
+ */
+export async function createTestOAuthTokens(
+  params: Omit<Parameters<typeof createTokens>[0], "consentGrantId">
+): Promise<TokenPair> {
+  const consentGrantId =
+    params.clientId === WALLABAG_CLIENT_ID
+      ? null
+      : await recordConsent(params.userId, params.clientId, params.scopes);
+  return createTokens({ ...params, consentGrantId });
+}
+
+/**
  * An OAuth access token without the access-token prefix, as releases before the
- * prefix minted them: `createTokens`, then the row re-keyed to a bare token.
+ * prefix minted them: minted, then the row re-keyed to a bare token.
  */
 export async function createTestUnprefixedAccessToken(
-  params: Parameters<typeof createTokens>[0]
+  params: Parameters<typeof createTestOAuthTokens>[0]
 ): Promise<string> {
-  const { accessToken } = await createTokens(params);
+  const { accessToken } = await createTestOAuthTokens(params);
   const unprefixed = generateToken();
   await db
     .update(oauthAccessTokens)
@@ -495,5 +514,49 @@ export function createUnauthContext(headers: Headers = new Headers()): Context {
     scopes: [],
     sessionToken: null,
     headers,
+  };
+}
+
+// ============================================================================
+// Concurrency
+// ============================================================================
+
+/** Resolves once a query matching the `ILIKE` pattern is waiting for a lock. */
+export async function waitForLockWaiter(pattern: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await db.execute(sql`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND wait_event_type = 'Lock'
+        AND query ILIKE ${pattern}
+    `);
+    if ((result.rows[0] as { waiting: number }).waiting > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("nothing ever waited on the lock");
+}
+
+/**
+ * Runs `work` in a transaction left open until `commit` is called, so another
+ * operation can be started against its uncommitted writes.
+ */
+export async function holdTransaction(
+  work: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<unknown>
+): Promise<{ commit: () => Promise<void> }> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => (started = resolve));
+  const done = db.transaction(async (tx) => {
+    await work(tx);
+    started();
+    await gate;
+  });
+  await ready;
+  return {
+    commit: async () => {
+      release();
+      await done;
+    },
   };
 }

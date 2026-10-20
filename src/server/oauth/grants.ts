@@ -3,11 +3,10 @@
  * and the Settings → Connected Apps listing and revocation.
  */
 
-import { eq, and, isNull, desc, max } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, desc, max } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
-  oauthAuthorizationCodes,
   oauthAccessTokens,
   oauthConsentGrants,
   oauthTokenGrants,
@@ -15,7 +14,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
-import { revokeTokenGrants } from "./service";
+import { deleteTokenGrants } from "./service";
 import { logger } from "@/lib/logger";
 
 /**
@@ -48,14 +47,27 @@ export async function hasConsent(
 }
 
 /**
- * Records user consent for a client.
+ * Records user consent for a client and returns the consent grant's id.
+ * Re-consenting to a live grant keeps it, and the token grants under it.
  */
 export async function recordConsent(
   userId: string,
   clientId: string,
   scopes: string[]
-): Promise<void> {
+): Promise<string> {
+  // A row the previous release revoked must not come back to life with its
+  // token grants (#2053).
   await db
+    .delete(oauthConsentGrants)
+    .where(
+      and(
+        eq(oauthConsentGrants.userId, userId),
+        eq(oauthConsentGrants.clientId, clientId),
+        isNotNull(oauthConsentGrants.revokedAt)
+      )
+    );
+
+  const [grant] = await db
     .insert(oauthConsentGrants)
     .values({
       id: generateUuidv7(),
@@ -65,12 +77,10 @@ export async function recordConsent(
     })
     .onConflictDoUpdate({
       target: [oauthConsentGrants.userId, oauthConsentGrants.clientId],
-      set: {
-        scopes,
-        updatedAt: new Date(),
-        revokedAt: null, // Clear any previous revocation
-      },
-    });
+      set: { scopes, updatedAt: new Date() },
+    })
+    .returning({ id: oauthConsentGrants.id });
+  return grant.id;
 }
 
 /**
@@ -141,73 +151,39 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
 }
 
 /**
- * Revokes the user's consent for a client and kills everything outstanding it
- * could still trade for access.
- *
- * Every part matters: dropping only the consent grant would leave live token
- * grants (and their refresh chains renewing themselves indefinitely), dropping
- * only the token grants would let the client walk back through /oauth/authorize
- * silently since consent is what suppresses the prompt, and leaving an
- * unredeemed authorization code would buy it a fresh hour-long access token
- * plus a 30-day refresh chain minutes after the user said no.
+ * Revokes the user's consent for a client: deleting the consent grant deletes
+ * every token grant under it, and with them every token. The client can't walk
+ * back in silently either, since consent is what suppresses the prompt, and an
+ * unredeemed authorization code is worthless without it
+ * (`exchangeAuthorizationCode`).
  *
  * Returns false if the user has no active grant for the client.
  */
 export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
-  const now = new Date();
+  const deleted = await db
+    .delete(oauthConsentGrants)
+    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
+    .returning({ id: oauthConsentGrants.id });
 
-  // One transaction, consent row first: exchangeAuthorizationCode relies on it.
-  const revoked = await db.transaction(async (tx) => {
-    const revokedConsent = await tx
-      .update(oauthConsentGrants)
-      .set({ revokedAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(oauthConsentGrants.userId, userId),
-          eq(oauthConsentGrants.clientId, clientId),
-          isNull(oauthConsentGrants.revokedAt)
-        )
-      )
-      .returning({ id: oauthConsentGrants.id });
-
-    if (revokedConsent.length === 0) {
-      return false;
-    }
-
-    await tx
-      .update(oauthAuthorizationCodes)
-      .set({ usedAt: now })
-      .where(
-        and(
-          eq(oauthAuthorizationCodes.userId, userId),
-          eq(oauthAuthorizationCodes.clientId, clientId),
-          isNull(oauthAuthorizationCodes.usedAt)
-        )
-      );
-
-    await revokeUserClientTokens(userId, clientId, tx, now);
-    return true;
-  });
-
-  if (revoked) {
-    logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
+  if (deleted.length === 0) {
+    return false;
   }
 
-  return revoked;
+  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
+  return true;
 }
 
 /**
- * Revokes every grant a user holds for one client, and with them every token.
+ * Deletes every token grant a user holds for one client, and with them every
+ * token.
  */
 export async function revokeUserClientTokens(
   userId: string,
   clientId: string,
-  executor: DbOrTx = db,
-  now: Date = new Date()
+  executor: DbOrTx = db
 ): Promise<void> {
-  await revokeTokenGrants(
+  await deleteTokenGrants(
     and(eq(oauthTokenGrants.userId, userId), eq(oauthTokenGrants.clientId, clientId))!,
-    executor,
-    now
+    executor
   );
 }

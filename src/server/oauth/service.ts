@@ -5,7 +5,7 @@
  * codes and tokens.
  */
 
-import { eq, and, arrayContains, isNull, isNotNull, gt, inArray, or, type SQL } from "drizzle-orm";
+import { eq, and, arrayContains, isNull, gt, inArray, or, type SQL } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthAuthorizationCodes,
@@ -27,6 +27,7 @@ import {
   getRefreshTokenExpiry,
   getAuthCodeExpiry,
 } from "./utils";
+import { isForeignKeyViolation } from "@/server/db/errors";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -104,7 +105,8 @@ interface AuthCodeExchange {
 
 /**
  * Redeems an authorization code for a new grant and its first token pair.
- * Returns null if the code isn't redeemable or PKCE fails.
+ * Returns null if the code isn't redeemable, PKCE fails, or the user no longer
+ * consents to the client.
  *
  * Consumption is a single atomic UPDATE ... WHERE used_at IS NULL, so of two
  * concurrent token requests presenting the same code exactly one succeeds
@@ -112,12 +114,10 @@ interface AuthCodeExchange {
  * verification, so a failed PKCE attempt also burns the code — that's the
  * safe direction (an attacker who stole a code can't retry verifiers).
  *
- * The exchange holds a share lock on the user's consent grant until the new
- * grant commits, and a Connected Apps revoke updates that row first and kills
- * codes and grants in the same transaction, so the two serialize: the revoke
- * either sees this exchange's grant or commits before it, and the exchange then
- * finds no consent. Checking consent at /oauth/authorize alone isn't enough,
- * since a code issued just after a revoke would outlive it.
+ * The new grant references the consent grant, so a Connected Apps revoke
+ * (which deletes the consent) either cascades to it or makes the insert fail
+ * its foreign key; checking consent at /oauth/authorize alone wouldn't stop a
+ * code issued just after a revoke.
  */
 export async function exchangeAuthorizationCode(
   code: string,
@@ -125,79 +125,72 @@ export async function exchangeAuthorizationCode(
   redirectUri: string,
   codeVerifier: string
 ): Promise<AuthCodeExchange | null> {
-  const codeHash = hashToken(code);
-
-  return db.transaction(async (tx) => {
-    const [pending] = await tx
-      .select({ userId: oauthAuthorizationCodes.userId, scopes: oauthAuthorizationCodes.scopes })
-      .from(oauthAuthorizationCodes)
-      .where(eq(oauthAuthorizationCodes.codeHash, codeHash))
-      .limit(1);
-    const consent =
-      pending &&
-      (await tx
-        .select({ id: oauthConsentGrants.id })
-        .from(oauthConsentGrants)
-        .where(
-          and(
-            eq(oauthConsentGrants.userId, pending.userId),
-            eq(oauthConsentGrants.clientId, clientId),
-            isNull(oauthConsentGrants.revokedAt),
-            arrayContains(oauthConsentGrants.scopes, pending.scopes)
-          )
-        )
-        .for("share"));
-    if (pending && consent?.length === 0) {
-      logger.warn("OAuth code exchange rejected: user revoked this client's consent", {
-        component: "oauth",
-        clientId,
-        userId: pending.userId,
-      });
-      return null;
-    }
-
-    const [authCode] = await tx
-      .update(oauthAuthorizationCodes)
-      .set({ usedAt: new Date() })
-      .where(
-        and(
-          eq(oauthAuthorizationCodes.codeHash, codeHash),
-          eq(oauthAuthorizationCodes.clientId, clientId),
-          eq(oauthAuthorizationCodes.redirectUri, redirectUri),
-          isNull(oauthAuthorizationCodes.usedAt),
-          gt(oauthAuthorizationCodes.expiresAt, new Date())
-        )
+  const [authCode] = await db
+    .update(oauthAuthorizationCodes)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(oauthAuthorizationCodes.codeHash, hashToken(code)),
+        eq(oauthAuthorizationCodes.clientId, clientId),
+        eq(oauthAuthorizationCodes.redirectUri, redirectUri),
+        isNull(oauthAuthorizationCodes.usedAt),
+        gt(oauthAuthorizationCodes.expiresAt, new Date())
       )
-      .returning();
+    )
+    .returning();
 
-    if (!authCode) {
-      // The atomic claim matched nothing: the code is unknown, already used,
-      // expired, or the client_id / redirect_uri don't match what was stored.
-      logger.warn("OAuth code exchange rejected: code claim failed", {
-        clientId,
-        redirectUri,
-      });
-      return null;
-    }
+  if (!authCode) {
+    // The atomic claim matched nothing: the code is unknown, already used,
+    // expired, or the client_id / redirect_uri don't match what was stored.
+    logger.warn("OAuth code exchange rejected: code claim failed", { clientId, redirectUri });
+    return null;
+  }
 
-    // Returning (not throwing) commits the claim, burning the code.
-    if (!validatePkceS256(codeVerifier, authCode.codeChallenge)) {
-      logger.warn("OAuth code exchange rejected: PKCE verification failed", { clientId });
-      return null;
-    }
+  if (!validatePkceS256(codeVerifier, authCode.codeChallenge)) {
+    logger.warn("OAuth code exchange rejected: PKCE verification failed", { clientId });
+    return null;
+  }
 
-    const tokens = await createTokens(
-      {
-        clientId,
-        userId: authCode.userId,
-        scopes: authCode.scopes,
-        resource: authCode.resource,
-      },
-      tx
+  const [consent] = await db
+    .select({ id: oauthConsentGrants.id })
+    .from(oauthConsentGrants)
+    .where(
+      and(
+        eq(oauthConsentGrants.userId, authCode.userId),
+        eq(oauthConsentGrants.clientId, clientId),
+        isNull(oauthConsentGrants.revokedAt),
+        arrayContains(oauthConsentGrants.scopes, authCode.scopes)
+      )
     );
 
+  const rejectRevoked = (): null => {
+    logger.warn("OAuth code exchange rejected: user revoked this client's consent", {
+      component: "oauth",
+      clientId,
+      userId: authCode.userId,
+    });
+    return null;
+  };
+  if (!consent) {
+    return rejectRevoked();
+  }
+
+  try {
+    const tokens = await createTokens({
+      clientId,
+      userId: authCode.userId,
+      consentGrantId: consent.id,
+      scopes: authCode.scopes,
+      resource: authCode.resource,
+    });
     return { userId: authCode.userId, resource: authCode.resource, tokens };
-  });
+  } catch (error) {
+    // The consent was deleted after the lookup above.
+    if (isForeignKeyViolation(error)) {
+      return rejectRevoked();
+    }
+    throw error;
+  }
 }
 
 // ============================================================================
@@ -207,28 +200,28 @@ export async function exchangeAuthorizationCode(
 interface CreateTokensParams {
   clientId: string;
   userId: string;
+  /** The consent behind a code exchange; null only for the Wallabag password grant. */
+  consentGrantId: string | null;
   scopes: string[];
   resource?: string | null;
 }
 
-type TokenGrant = Omit<typeof oauthTokenGrants.$inferSelect, "createdAt" | "revokedAt">;
+type TokenGrant = Omit<typeof oauthTokenGrants.$inferSelect, "createdAt">;
 
 /**
  * Starts a new authorization (a code exchange or a Wallabag password grant):
  * a grant and its first access/refresh token pair.
  */
-export async function createTokens(
-  params: CreateTokensParams,
-  executor: DbOrTx = db
-): Promise<TokenPair> {
+export async function createTokens(params: CreateTokensParams): Promise<TokenPair> {
   const grant: TokenGrant = {
     id: generateUuidv7(),
     clientId: params.clientId,
     userId: params.userId,
+    consentGrantId: params.consentGrantId,
     scopes: params.scopes,
     resource: params.resource ?? null,
   };
-  return executor.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.insert(oauthTokenGrants).values(grant);
     return (await insertTokenPair(tx, grant)).tokens;
   });
@@ -285,49 +278,16 @@ async function insertTokenPair(
 }
 
 /**
- * Revokes the matching live grants, which ends every token minted from them,
- * including one a racing rotation commits afterwards. Returns how many grants
- * it revoked.
- *
- * It also stamps the token rows of every matching revoked grant, not just the
- * ones it revokes, only because the previous release checks nothing else
- * (#2053): repeating a revoke then catches rows that release committed into an
- * already-revoked grant.
+ * Deletes the matching grants, and with them every token minted from them.
+ * A rotation inserting into one of them waits for the delete or makes it wait
+ * (see rotateRefreshToken), so its successor can't survive.
  */
-export async function revokeTokenGrants(
-  condition: SQL,
-  executor: DbOrTx = db,
-  now: Date = new Date()
-): Promise<number> {
-  return executor.transaction(async (tx) => {
-    const revoked = await tx
-      .update(oauthTokenGrants)
-      .set({ revokedAt: now })
-      .where(and(condition, isNull(oauthTokenGrants.revokedAt)))
-      .returning({ id: oauthTokenGrants.id });
-
-    const revokedGrants = tx
-      .select({ id: oauthTokenGrants.id })
-      .from(oauthTokenGrants)
-      .where(and(condition, isNotNull(oauthTokenGrants.revokedAt)));
-    await tx
-      .update(oauthRefreshTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          inArray(oauthRefreshTokens.grantId, revokedGrants),
-          isNull(oauthRefreshTokens.revokedAt)
-        )
-      );
-    await tx
-      .update(oauthAccessTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(inArray(oauthAccessTokens.grantId, revokedGrants), isNull(oauthAccessTokens.revokedAt))
-      );
-
-    return revoked.length;
-  });
+export async function deleteTokenGrants(condition: SQL, executor: DbOrTx = db): Promise<number> {
+  const deleted = await executor
+    .delete(oauthTokenGrants)
+    .where(condition)
+    .returning({ id: oauthTokenGrants.id });
+  return deleted.length;
 }
 
 /**
@@ -339,13 +299,11 @@ export async function isAccessTokenActive(tokenId: string): Promise<boolean> {
   const rows = await db
     .select({ id: oauthAccessTokens.id })
     .from(oauthAccessTokens)
-    .innerJoin(oauthTokenGrants, eq(oauthTokenGrants.id, oauthAccessTokens.grantId))
     .where(
       and(
         eq(oauthAccessTokens.id, tokenId),
         isNull(oauthAccessTokens.revokedAt),
-        gt(oauthAccessTokens.expiresAt, new Date()),
-        isNull(oauthTokenGrants.revokedAt)
+        gt(oauthAccessTokens.expiresAt, new Date())
       )
     )
     .limit(1);
@@ -354,8 +312,7 @@ export async function isAccessTokenActive(tokenId: string): Promise<boolean> {
 }
 
 /**
- * Validates an access token and returns the token data. The token must be
- * unrevoked and unexpired, and so must its grant.
+ * Validates an access token and returns the token data.
  */
 export async function validateAccessToken(token: string): Promise<OAuthTokenData | null> {
   const tokenHash = hashToken(token);
@@ -373,8 +330,7 @@ export async function validateAccessToken(token: string): Promise<OAuthTokenData
       and(
         eq(oauthAccessTokens.tokenHash, tokenHash),
         isNull(oauthAccessTokens.revokedAt),
-        gt(oauthAccessTokens.expiresAt, new Date()),
-        isNull(oauthTokenGrants.revokedAt)
+        gt(oauthAccessTokens.expiresAt, new Date())
       )
     )
     .limit(1);
@@ -415,23 +371,6 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
 }
 
 /**
- * Serializes a rotation with anything that could revoke the chain while its
- * successor is uncommitted, for the previous release's sake only (#2053): that
- * release validates only token rows, so a sweep must not miss the successor.
- * The user row is what that release's password change and Wallabag sign-out
- * lock before sweeping, and the grant row is what `revokeTokenGrants` updates
- * before stamping rows. Lock order: user, grant, refresh token, access token.
- */
-async function lockForRotation(tx: DbOrTx, userId: string, grantId: string): Promise<void> {
-  await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("share");
-  await tx
-    .select({ id: oauthTokenGrants.id })
-    .from(oauthTokenGrants)
-    .where(eq(oauthTokenGrants.id, grantId))
-    .for("share");
-}
-
-/**
  * Validates a refresh token and rotates it: the presented token and its access
  * token are revoked and a new pair is minted in the same grant.
  *
@@ -439,12 +378,14 @@ async function lockForRotation(tx: DbOrTx, userId: string, grantId: string): Pro
  * NULL, so concurrent requests with the same token can't both rotate it.
  * Presenting an already-rotated (revoked but unexpired) token *outside* a short
  * grace window is treated as rotation reuse — evidence the token leaked — and
- * revokes its grant (see handlePossibleRefreshTokenReuse).
+ * deletes its grant (see handlePossibleRefreshTokenReuse).
  *
  * The claim and the new pair commit together, so a failure leaves the presented
- * token valid to retry. A revocation that lands mid-rotation revokes the grant
- * the successor is born into, so on this release nothing else needs to be
- * serialized (see lockForRotation for the previous release).
+ * token valid to retry. The grant row is key-share locked first, as inserting
+ * the successor would lock it anyway: a delete of the grant then either waits
+ * for this rotation and cascades to its successor, or commits first and the
+ * claim finds nothing. Taking it before the claim keeps the lock order (grant,
+ * then tokens) a cascading delete uses, so the two can't deadlock.
  */
 export async function rotateRefreshToken(
   refreshToken: string,
@@ -460,33 +401,35 @@ export async function rotateRefreshToken(
     .limit(1);
 
   const tokens = await db.transaction(async (tx): Promise<TokenPair | null> => {
-    if (owner) {
-      await lockForRotation(tx, owner.userId, owner.grantId);
+    if (!owner) {
+      return null;
+    }
+
+    // The previous release's password change and Wallabag sign-out lock the
+    // user row, then revoke token rows a successor uncommitted here would
+    // escape (#2053).
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, owner.userId)).for("share");
+    const [grant] = await tx
+      .select()
+      .from(oauthTokenGrants)
+      .where(eq(oauthTokenGrants.id, owner.grantId))
+      .for("key share");
+    if (!grant) {
+      return null;
     }
 
     const [claimed] = await tx
       .update(oauthRefreshTokens)
       .set({ revokedAt: now })
-      .from(oauthTokenGrants)
       .where(
         and(
-          eq(oauthTokenGrants.id, oauthRefreshTokens.grantId),
-          isNull(oauthTokenGrants.revokedAt),
           eq(oauthRefreshTokens.tokenHash, tokenHash),
           eq(oauthRefreshTokens.clientId, clientId),
           isNull(oauthRefreshTokens.revokedAt),
           gt(oauthRefreshTokens.expiresAt, now)
         )
       )
-      .returning({
-        id: oauthRefreshTokens.id,
-        accessTokenId: oauthRefreshTokens.accessTokenId,
-        grantId: oauthTokenGrants.id,
-        grantClientId: oauthTokenGrants.clientId,
-        grantUserId: oauthTokenGrants.userId,
-        grantScopes: oauthTokenGrants.scopes,
-        grantResource: oauthTokenGrants.resource,
-      });
+      .returning({ id: oauthRefreshTokens.id, accessTokenId: oauthRefreshTokens.accessTokenId });
 
     if (!claimed) {
       return null;
@@ -501,13 +444,7 @@ export async function rotateRefreshToken(
 
     // The successor inherits the grant's own audience. Wallabag shares this
     // path with a null resource, so never stamp the MCP identifier here.
-    const created = await insertTokenPair(tx, {
-      id: claimed.grantId,
-      clientId: claimed.grantClientId,
-      userId: claimed.grantUserId,
-      scopes: claimed.grantScopes,
-      resource: claimed.grantResource,
-    });
+    const created = await insertTokenPair(tx, grant);
 
     // Only the previous release's reuse detection follows this link (#2053).
     await tx
@@ -519,9 +456,9 @@ export async function rotateRefreshToken(
   });
 
   if (!tokens) {
-    // The claim matched nothing: the token was unknown, expired, already
-    // rotated, or its grant was revoked. A rotated token is either a genuine
-    // reuse (leak) or a benign concurrent refresh racing the winner —
+    // Nothing was claimed: the token was unknown, expired, already rotated, or
+    // its grant was deleted. A rotated token is either a genuine reuse (leak)
+    // or a benign concurrent refresh racing the winner —
     // handlePossibleRefreshTokenReuse tells them apart.
     await handlePossibleRefreshTokenReuse(tokenHash, clientId, now);
   }
@@ -545,9 +482,8 @@ const REFRESH_ROTATION_REUSE_GRACE_MS = 10_000;
 
 /**
  * Rotation-reuse detection: if a rotation attempt failed because the token was
- * already revoked (but is otherwise valid and unexpired) while its grant is
- * still live, someone is replaying a rotated refresh token. Revoke the grant so
- * the chain is dead no matter which copy the replayer holds.
+ * already rotated (revoked but unexpired), someone is replaying it. Delete its
+ * grant so the chain is dead no matter which copy the replayer holds.
  *
  * The blast radius is deliberately the grant, **not** every token the user holds
  * for this client. Revoking user+client-wide is over-broad: because every
@@ -568,25 +504,17 @@ async function handlePossibleRefreshTokenReuse(
       userId: oauthRefreshTokens.userId,
       revokedAt: oauthRefreshTokens.revokedAt,
       expiresAt: oauthRefreshTokens.expiresAt,
-      grantId: oauthTokenGrants.id,
-      grantRevokedAt: oauthTokenGrants.revokedAt,
+      grantId: oauthRefreshTokens.grantId,
     })
     .from(oauthRefreshTokens)
-    .innerJoin(oauthTokenGrants, eq(oauthTokenGrants.id, oauthRefreshTokens.grantId))
     .where(
       and(eq(oauthRefreshTokens.tokenHash, tokenHash), eq(oauthRefreshTokens.clientId, clientId))
     )
     .limit(1);
 
   if (!presented || !presented.revokedAt || presented.expiresAt <= now) {
-    // Unknown or merely expired token — not reuse, nothing to do
-    return;
-  }
-
-  // The grant itself was revoked (a password change, a Connected Apps revoke,
-  // an earlier reuse sweep): a client still presenting its token is out of
-  // date, not evidence of a leak.
-  if (presented.grantRevokedAt) {
+    // Unknown (including a deleted grant's) or merely expired token — not
+    // reuse, nothing to do
     return;
   }
 
@@ -608,9 +536,9 @@ async function handlePossibleRefreshTokenReuse(
     return;
   }
 
-  await revokeTokenGrants(eq(oauthTokenGrants.id, presented.grantId), db, now);
+  await deleteTokenGrants(eq(oauthTokenGrants.id, presented.grantId));
 
-  logger.warn("OAuth refresh token reuse detected; revoked its grant", {
+  logger.warn("OAuth refresh token reuse detected; deleted its grant", {
     component: "oauth",
     userId: presented.userId,
     clientId,
@@ -623,7 +551,7 @@ async function handlePossibleRefreshTokenReuse(
  *
  * The token may be an access token or a refresh token; both tables are checked
  * regardless of any `token_type_hint` (the RFC allows extending the search).
- * Either one revokes its whole grant (RFC 7009 §2.1: the server SHOULD
+ * Either one deletes its whole grant (RFC 7009 §2.1: the server SHOULD
  * invalidate related tokens, and MAY revoke the refresh token behind an access
  * token).
  *
@@ -634,7 +562,7 @@ async function handlePossibleRefreshTokenReuse(
 export async function revokeClientToken(clientId: string, token: string): Promise<void> {
   const tokenHash = hashToken(token);
 
-  await revokeTokenGrants(
+  await deleteTokenGrants(
     and(
       eq(oauthTokenGrants.clientId, clientId),
       or(

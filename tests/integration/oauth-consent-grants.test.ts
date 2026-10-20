@@ -13,13 +13,24 @@ import crypto from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
-import { users, oauthClients, oauthAccessTokens } from "../../src/server/db/schema";
-import { createTestUser, createTestOAuthClient, createAuthContext } from "./helpers";
+import {
+  users,
+  oauthClients,
+  oauthAccessTokens,
+  oauthConsentGrants,
+} from "../../src/server/db/schema";
+import {
+  createTestUser,
+  createTestOAuthClient,
+  createAuthContext,
+  createTestOAuthTokens,
+  holdTransaction,
+  waitForLockWaiter,
+} from "./helpers";
 import { createCaller } from "../../src/server/trpc/root";
 import { hasConsent, recordConsent } from "../../src/server/oauth/grants";
 import {
   createAuthorizationCode,
-  createTokens,
   rotateRefreshToken,
   validateAccessToken,
   exchangeAuthorizationCode,
@@ -98,7 +109,7 @@ describe("oauthGrants.list", () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Used Client");
     await recordConsent(userId, clientId, ["mcp"]);
-    const { accessToken } = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const { accessToken } = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const caller = await callerFor(userId);
     expect((await caller.oauthGrants.list())[0].lastUsedAt).toBeNull();
@@ -115,7 +126,7 @@ describe("oauthGrants.list", () => {
     // a write per speech chunk.
     const userId = await createUser();
     const clientId = await createRegisteredClient("Busy Client");
-    const { accessToken } = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const { accessToken } = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
     const tokenRow = eq(oauthAccessTokens.tokenHash, hashToken(accessToken));
     const lastUsedAt = async () =>
       (
@@ -164,7 +175,7 @@ describe("oauthGrants.revoke", () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Revocable Client");
     await recordConsent(userId, clientId, ["mcp"]);
-    const { accessToken, refreshToken } = await createTokens({
+    const { accessToken, refreshToken } = await createTestOAuthTokens({
       clientId,
       userId,
       scopes: ["mcp"],
@@ -184,7 +195,7 @@ describe("oauthGrants.revoke", () => {
     const keptClientId = await createRegisteredClient("Kept Client");
     await recordConsent(userId, revokedClientId, ["mcp"]);
     await recordConsent(userId, keptClientId, ["mcp"]);
-    const kept = await createTokens({ clientId: keptClientId, userId, scopes: ["mcp"] });
+    const kept = await createTestOAuthTokens({ clientId: keptClientId, userId, scopes: ["mcp"] });
 
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId: revokedClientId });
@@ -198,7 +209,11 @@ describe("oauthGrants.revoke", () => {
     const otherUserId = await createUser();
     const clientId = await createRegisteredClient("Shared Client");
     await recordConsent(otherUserId, clientId, ["mcp"]);
-    const otherTokens = await createTokens({ clientId, userId: otherUserId, scopes: ["mcp"] });
+    const otherTokens = await createTestOAuthTokens({
+      clientId,
+      userId: otherUserId,
+      scopes: ["mcp"],
+    });
 
     const caller = await callerFor(userId);
     await expect(caller.oauthGrants.revoke({ clientId })).rejects.toThrow(TRPCError);
@@ -257,6 +272,28 @@ describe("oauthGrants.revoke closes the paths back in", () => {
       codeChallenge: CODE_CHALLENGE,
     });
     expect(await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)).toBeNull();
+  });
+
+  it("refuses a code exchange that waited on an uncommitted revoke", async () => {
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Client Waiting On A Revoke");
+    await recordConsent(userId, clientId, ["mcp"]);
+    const code = await createAuthorizationCode({
+      clientId,
+      userId,
+      redirectUri: REDIRECT_URI,
+      scopes: ["mcp"],
+      codeChallenge: CODE_CHALLENGE,
+    });
+
+    const held = await holdTransaction((tx) =>
+      tx.delete(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId))
+    );
+    const exchange = exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    await waitForLockWaiter('%insert into "oauth_token_grants"%');
+    await held.commit();
+
+    expect(await exchange).toBeNull();
   });
 
   it("leaves nothing usable when the revoke races a code exchange", async () => {

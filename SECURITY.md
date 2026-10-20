@@ -99,7 +99,7 @@ fetches user-influenced URLs and must never be usable to reach internal services
   and linking/unlinking a social provider (`src/server/services/oauth-accounts.ts`
   says why a failed revoke doesn't undo the change). The one exception is the
   email-match link inside `processOAuthCallback`, an ordinary sign-in; it says why.
-- **Setting or changing the password revokes the user's Wallabag token grants** in
+- **Setting or changing the password deletes the user's Wallabag token grants** in
   the same transaction.
 - **A long-lived authenticated connection re-checks its credential periodically**
   and closes once it's revoked or expired, as the SSE stream does on every heartbeat
@@ -138,10 +138,13 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - PKCE mandatory; auth codes single-use, expiring, and client/redirect bound;
   `redirect_uri` exact-match; refresh rotation with reuse detection; client secrets
   hashed; RFC 8707 audience enforced at use.
-- **Every token belongs to an `oauth_token_grants` row, and validation and rotation
-  require it unrevoked.** Revoke the grant, never only token rows: a rotation
-  racing the revoke commits its successor into the same grant, so only the grant
-  is sure to kill it.
+- **Revoking is deleting, down a foreign-key chain:** consent grant → token grant
+  (`oauth_token_grants`, one per authorization) → its tokens, each `ON DELETE
+CASCADE`. Delete the grant (or the consent), never only token rows: a rotation or
+  code exchange racing the delete inserts into the same grant, and the foreign
+  key's row lock is what makes the cascade catch it or the insert fail. Only
+  Wallabag's token grants have no consent grant (a `CHECK`), so every other one
+  can be revoked from Connected Apps.
 - **The consent POST re-validates scopes/redirect/client server-side — never trust
   the form.**
 - **OAuth access tokens are accepted only by the resource their audience names.**

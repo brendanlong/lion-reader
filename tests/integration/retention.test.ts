@@ -336,32 +336,17 @@ describe("runRetentionCleanup", () => {
     expect(refresh).not.toContain(expiredRefresh);
   });
 
-  it("deletes long-revoked token grants with their tokens, and grants with no tokens left", async () => {
+  it("deletes token grants with no tokens left", async () => {
     const userId = await createTestUser({ emailPrefix: "retention" });
-    const liveExpiry = new Date(Date.now() + 30 * DAY_MS);
-
-    const longRevoked = await createTestTokenGrant(userId, {
-      revokedAt: new Date(Date.now() - 31 * DAY_MS),
-    });
-    const cascaded = await createRefreshToken(userId, liveExpiry, { grantId: longRevoked });
-    const recentlyRevoked = await createTestTokenGrant(userId, {
-      revokedAt: new Date(Date.now() - DAY_MS),
-    });
-    await createRefreshToken(userId, liveExpiry, { grantId: recentlyRevoked });
     const live = await createTestTokenGrant(userId);
     await createAccessToken(userId, new Date(Date.now() + 60 * 60 * 1000), { grantId: live });
     await createTestTokenGrant(userId);
 
     const result = await runRetentionCleanup(db);
 
-    expect(result.oauthTokenGrants).toBe(2);
+    expect(result.oauthTokenGrants).toBe(1);
     const grants = await db.select({ id: oauthTokenGrants.id }).from(oauthTokenGrants);
-    expect(grants.map((g) => g.id).sort()).toEqual([recentlyRevoked, live].sort());
-    const refresh = await db
-      .select({ id: oauthRefreshTokens.id })
-      .from(oauthRefreshTokens)
-      .where(eq(oauthRefreshTokens.id, cascaded));
-    expect(refresh).toEqual([]);
+    expect(grants).toEqual([{ id: live }]);
   });
 
   it("handles refresh-token rotation chains (replaced_by_id) without FK failures", async () => {
@@ -447,33 +432,13 @@ describe("runRetentionCleanup", () => {
     // Recently registered, still mid-onboarding: kept despite no tokens.
     const recent = await createClient("dcr-recent", recentDate);
 
-    // Old but has a live access token: kept.
-    const withLiveAccess = await createClient("dcr-live-access", old);
-    await createAccessToken(userId, new Date(Date.now() + 60 * 60 * 1000), {
-      clientId: withLiveAccess,
-    });
-
-    // Old but has a live refresh token: kept.
-    const withLiveRefresh = await createClient("dcr-live-refresh", old);
-    await createRefreshToken(userId, new Date(Date.now() + 30 * DAY_MS), {
-      clientId: withLiveRefresh,
-    });
-
     // Old but has an active consent grant (tokens all expired): kept.
     const withConsent = await createClient("dcr-consent", old);
     await createConsentGrant(userId, withConsent);
 
-    // Old with only dead tokens (expired access, revoked refresh) and a revoked
-    // consent grant: nothing live, so deleted.
-    const withDeadGrants = await createClient("dcr-dead", old);
-    await createAccessToken(userId, new Date(Date.now() - 2 * DAY_MS), {
-      clientId: withDeadGrants,
-    });
-    await createRefreshToken(userId, new Date(Date.now() + 30 * DAY_MS), {
-      clientId: withDeadGrants,
-      revokedAt: new Date(Date.now() - DAY_MS),
-    });
-    await createConsentGrant(userId, withDeadGrants, {
+    // Old with a consent grant the previous release revoked: deleted.
+    const withRevokedConsent = await createClient("dcr-revoked", old);
+    await createConsentGrant(userId, withRevokedConsent, {
       revokedAt: new Date(Date.now() - DAY_MS),
     });
 
@@ -483,9 +448,9 @@ describe("runRetentionCleanup", () => {
     const remaining = (await db.select({ clientId: oauthClients.clientId }).from(oauthClients)).map(
       (r) => r.clientId
     );
-    expect(remaining.sort()).toEqual([recent, withLiveAccess, withLiveRefresh, withConsent].sort());
+    expect(remaining.sort()).toEqual([recent, withConsent].sort());
     expect(remaining).not.toContain(orphaned);
-    expect(remaining).not.toContain(withDeadGrants);
+    expect(remaining).not.toContain(withRevokedConsent);
   });
 
   it("prunes entry tombstones past the sync horizon and keeps recent ones", async () => {

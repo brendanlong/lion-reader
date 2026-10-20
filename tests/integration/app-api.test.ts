@@ -33,7 +33,6 @@ import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route"
 import { MAX_CLOUD_SPEECH_CHARS } from "../../src/lib/narration/constants";
 import { createSession, revokeUserSession } from "../../src/server/auth/session";
 import { recordConsent, revokeUserClientTokens } from "../../src/server/oauth/grants";
-import { createTokens } from "../../src/server/oauth/service";
 import {
   APP_CLIENT_ID,
   getAppRedirectUri,
@@ -53,6 +52,7 @@ import {
   createTestSubscription,
   createTestUnprefixedAccessToken,
   createTestUser,
+  createTestOAuthTokens,
 } from "./helpers";
 
 const API = "http://localhost:3000/api/v1";
@@ -74,7 +74,7 @@ async function createUser(): Promise<string> {
 }
 
 async function appToken(userId: string): Promise<string> {
-  const tokens = await createTokens({
+  const tokens = await createTestOAuthTokens({
     clientId: APP_CLIENT_ID,
     userId,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -138,7 +138,7 @@ describe("app token authentication", () => {
 
   it("rejects an MCP-audience token, even with reader:full-access", async () => {
     const userId = await createUser();
-    const { accessToken } = await createTokens({
+    const { accessToken } = await createTestOAuthTokens({
       clientId: APP_CLIENT_ID,
       userId,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -151,7 +151,7 @@ describe("app token authentication", () => {
   it("rejects another client's token bound to the app audience", async () => {
     const userId = await createUser();
     const clientId = await createTestOAuthClient({ scopes: ["reader:full-access"] });
-    const { accessToken } = await createTokens({
+    const { accessToken } = await createTestOAuthTokens({
       clientId,
       userId,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -178,7 +178,7 @@ describe("app token authentication", () => {
     expect(accepted.status).toBe(200);
     await accepted.body?.cancel();
 
-    const { accessToken: mcpAudience } = await createTokens({
+    const { accessToken: mcpAudience } = await createTestOAuthTokens({
       clientId: APP_CLIENT_ID,
       userId,
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
@@ -213,7 +213,7 @@ describe("app token authentication", () => {
 
   it("rejects the app's token without reader:full-access", async () => {
     const userId = await createUser();
-    const { accessToken } = await createTokens({
+    const { accessToken } = await createTestOAuthTokens({
       clientId: APP_CLIENT_ID,
       userId,
       scopes: [OAUTH_SCOPES.MCP],

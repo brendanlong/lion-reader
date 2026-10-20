@@ -8,7 +8,7 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { getDb, createConfirmedUser, loginAs, closeTestConnections } from "./helpers";
 import {
@@ -45,8 +45,9 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
     scopes: ["mcp"],
     isPublic: true,
   });
+  const consentGrantId = generateUuidv7();
   await db.insert(oauthConsentGrants).values({
-    id: generateUuidv7(),
+    id: consentGrantId,
     userId: user.id,
     clientId,
     scopes: ["mcp"],
@@ -55,6 +56,7 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
   await db.insert(oauthTokenGrants).values({
     id: grantId,
     userId: user.id,
+    consentGrantId,
     clientId,
     scopes: ["mcp"],
   });
@@ -87,17 +89,16 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
 
   await expect(page.getByText("You haven't authorized any applications.")).toBeVisible();
 
-  const liveGrants = await db
+  const consent = await db
     .select({ id: oauthConsentGrants.id })
     .from(oauthConsentGrants)
-    .where(and(eq(oauthConsentGrants.userId, user.id), isNull(oauthConsentGrants.revokedAt)));
-  expect(liveGrants).toHaveLength(0);
-
-  const [grant] = await db
-    .select({ revokedAt: oauthTokenGrants.revokedAt })
+    .where(eq(oauthConsentGrants.userId, user.id));
+  expect(consent).toHaveLength(0);
+  const tokenGrants = await db
+    .select({ id: oauthTokenGrants.id })
     .from(oauthTokenGrants)
     .where(eq(oauthTokenGrants.id, grantId));
-  expect(grant.revokedAt).not.toBeNull();
+  expect(tokenGrants).toHaveLength(0);
 
   // The code the client was already holding must be worthless at the real token
   // endpoint — otherwise it trades for a fresh hour of access and a 30-day

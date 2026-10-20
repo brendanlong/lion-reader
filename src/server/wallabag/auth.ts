@@ -59,6 +59,7 @@ export async function passwordGrant(
   const tokens = await createTokens({
     clientId: WALLABAG_CLIENT_ID,
     userId: login.user.id,
+    consentGrantId: null,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
 

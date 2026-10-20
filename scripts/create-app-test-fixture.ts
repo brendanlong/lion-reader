@@ -12,6 +12,7 @@ import { entries, feeds, subscriptions, users } from "../src/server/db/schema";
 import { insertUserEntriesWithMemberships } from "../src/server/services/subscription-entries";
 import { generateUuidv7 } from "../src/lib/uuidv7";
 import { createTokens } from "../src/server/oauth/service";
+import { recordConsent } from "../src/server/oauth/grants";
 import { APP_CLIENT_ID, getAppResourceIdentifier } from "../src/server/oauth/app-client";
 import { getIssuer } from "../src/server/oauth/config";
 import { OAUTH_SCOPES } from "../src/server/oauth/utils";
@@ -62,10 +63,12 @@ async function main(): Promise<void> {
     entryIds.push(id);
   }
 
+  const scopes = [OAUTH_SCOPES.READER_FULL_ACCESS];
   const tokens = await createTokens({
     clientId: APP_CLIENT_ID,
     userId,
-    scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    consentGrantId: await recordConsent(userId, APP_CLIENT_ID, scopes),
+    scopes,
     resource: getAppResourceIdentifier(),
   });
   process.stdout.write(

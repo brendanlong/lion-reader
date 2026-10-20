@@ -371,8 +371,9 @@ export const oauthAuthorizationCodes = pgTable(
 
 /**
  * One authorization: an authorization-code exchange or a Wallabag password
- * grant. Every token minted from it, across rotations, belongs to it, and is
- * valid only while it's unrevoked, so revoking the grant ends the whole chain.
+ * grant. Every token minted from it, across rotations, belongs to it with
+ * ON DELETE CASCADE, and it belongs to its consent grant the same way, so
+ * revoking is deleting the grant (or the consent) and the whole chain goes.
  */
 export const oauthTokenGrants = pgTable(
   "oauth_token_grants",
@@ -381,13 +382,23 @@ export const oauthTokenGrants = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // Null only for the Wallabag password grant, which has no consent screen.
+    consentGrantId: uuid("consent_grant_id").references(() => oauthConsentGrants.id, {
+      onDelete: "cascade",
+    }),
     clientId: text("client_id").notNull(),
     scopes: text("scopes").array().notNull(),
     resource: text("resource"), // RFC 8707 audience
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
-  (table) => [index("idx_oauth_token_grants_user_client").on(table.userId, table.clientId)]
+  (table) => [
+    index("idx_oauth_token_grants_user_client").on(table.userId, table.clientId),
+    index("idx_oauth_token_grants_consent").on(table.consentGrantId),
+    check(
+      "oauth_token_grants_consent_unless_wallabag",
+      sql`${table.consentGrantId} IS NOT NULL OR ${table.clientId} = 'wallabag'`
+    ),
+  ]
 );
 
 /**
@@ -472,6 +483,7 @@ export const oauthConsentGrants = pgTable(
     scopes: text("scopes").array().notNull(), // Approved scopes
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Set only by the previous release, which revoked instead of deleting (#2053).
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (table) => [

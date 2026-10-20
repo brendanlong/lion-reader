@@ -8,7 +8,6 @@ import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, subscriptionEntries, subscriptions, users } from "../../src/server/db/schema";
-import { createTokens } from "../../src/server/oauth/service";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { unsubscribe } from "../../src/server/services/subscription-updates";
@@ -22,7 +21,13 @@ import {
   POST as addEntryTags,
 } from "../../src/app/api/wallabag/api/entries/[entry]/tags/route";
 import { DELETE as removeEntryTag } from "../../src/app/api/wallabag/api/entries/[entry]/tags/[tag]/route";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+  createTestOAuthTokens,
+} from "./helpers";
 
 interface WallabagTagJson {
   id: number;
@@ -46,7 +51,7 @@ afterAll(async () => {
 async function createUser(): Promise<TestUser> {
   const id = await createTestUser({ emailPrefix: "wallabag-tags" });
   createdUserIds.push(id);
-  const { accessToken } = await createTokens({
+  const { accessToken } = await createTestOAuthTokens({
     clientId: "wallabag",
     userId: id,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
