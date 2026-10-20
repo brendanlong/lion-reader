@@ -298,7 +298,7 @@ export default function ApiTokensSettingsContent() {
             {inactiveTokens.map((token) => (
               <div
                 key={token.id}
-                className="border-edge bg-surface-subtle rounded-lg border p-4 opacity-60"
+                className="border-edge bg-surface rounded-lg border p-4 opacity-60"
               >
                 <div className="flex items-center gap-2">
                   <div className="control-outline bg-surface-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-full">

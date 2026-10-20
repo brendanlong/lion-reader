@@ -128,6 +128,7 @@
   --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
   --surface-selected: #fafafa; /* zinc-50 - the selected card of a pick-one list, with border-control-selected */
   --surface-pressed: #e4e4e7; /* zinc-200 - press feedback (active:bg-surface-pressed), a step past the hover fill */
+  --surface-raised: #ffffff; /* white - a control sitting on a surface-muted fill, e.g. a copy button on a code block */
   --fill-muted: #e4e4e7; /* zinc-200 - settings skeleton pulses, e-paper skeleton bars, toggle-off/progress/range tracks, thin dividers */
 
   /* Borders: `edge` for card outlines, `edge-strong` for dividers/note boxes
@@ -233,6 +234,7 @@
   --color-surface-subtle: var(--surface-subtle);
   --color-surface-selected: var(--surface-selected);
   --color-surface-pressed: var(--surface-pressed);
+  --color-surface-raised: var(--surface-raised);
   --color-fill-muted: var(--fill-muted);
   --color-edge: var(--edge);
   --color-edge-strong: var(--edge-strong);
@@ -318,6 +320,7 @@
   --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
   --surface-selected: #27272a; /* zinc-800 */
   --surface-pressed: #3f3f46; /* zinc-700 */
+  --surface-raised: #3f3f46; /* zinc-700 - lighter than surface-muted, so it reads as raised */
   --fill-muted: #3f3f46; /* zinc-700 */
   --edge: #27272a; /* zinc-800 */
   --edge-strong: #3f3f46; /* zinc-700 */
@@ -462,6 +465,7 @@
   --surface-subtle: var(--epaper-paper);
   --surface-selected: var(--epaper-paper);
   --surface-pressed: var(--epaper-paper);
+  --surface-raised: var(--epaper-paper);
 
   /* The one non-text gray: tracks, skeleton bars and the read-entry hairline,
      which must read as "present but not structural" next to the black edges. */
@@ -566,6 +570,7 @@
     --surface-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
     --surface-selected: #27272a; /* zinc-800 */
     --surface-pressed: #3f3f46; /* zinc-700 */
+    --surface-raised: #3f3f46; /* zinc-700 */
     --fill-muted: #3f3f46; /* zinc-700 */
     --edge: #27272a; /* zinc-800 */
     --edge-strong: #3f3f46; /* zinc-700 */

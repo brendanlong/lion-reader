@@ -8,9 +8,9 @@
  * `<label>` with its text so the whole label is the touch target.
  */
 
-import type { InputHTMLAttributes } from "react";
+import type { ComponentProps } from "react";
 
-type CheckboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type">;
+type CheckboxProps = Omit<ComponentProps<"input">, "type">;
 
 export function Checkbox({ className = "", ...props }: CheckboxProps) {
   return <input type="checkbox" className={`h-4 w-4 shrink-0 ${className}`} {...props} />;

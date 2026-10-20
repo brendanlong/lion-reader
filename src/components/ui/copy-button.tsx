@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 
 const BUTTON_CLASSES =
-  "ui-text-xs rounded border border-edge-input bg-surface font-medium text-muted transition-colors hover:bg-surface-muted hover:text-body";
+  "ui-text-xs rounded border border-edge-input bg-surface-raised font-medium text-muted transition-colors hover:border-edge-emphasis hover:text-body";
 
 interface CopyButtonProps {
   /** Text to copy to the clipboard. */

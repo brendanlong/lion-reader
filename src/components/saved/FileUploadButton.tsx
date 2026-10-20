@@ -206,7 +206,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             onDrop={handleDrop}
             className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
               isDragging
-                ? "bg-surface-muted epaper:border-edge border-edge-emphasis"
+                ? "bg-surface-muted border-control-selected"
                 : selectedFile
                   ? "border-success bg-success-subtle"
                   : "border-edge-input epaper:border-fill-muted hover:bg-surface-muted hover:border-edge-emphasis"

@@ -3,12 +3,11 @@
  *
  * The app themes color through semantic tokens (see src/components/CLAUDE.md) —
  * `text-muted`, `bg-surface`, `border-edge`, `text-danger`, `bg-primary-solid`,
- * etc. — so a raw `text-blue-500` / `bg-zinc-700` / `bg-white` bypasses theming
- * (including e-paper, which `dark:` pairs never reach) and reintroduces the
- * drift issues #1169/#1178 cleaned up.
+ * etc. — so a raw `text-blue-500` / `bg-zinc-700` / `bg-white` bypasses theming,
+ * including e-paper, which `dark:` pairs never reach.
  *
- * The baseline (`raw-color-baseline.json`) holds the only exceptions, each
- * because the color must NOT follow the theme:
+ * The baseline (`raw-color-baseline.json`) holds the only exceptions: colors
+ * that can't come from our token palette.
  *
  *   - Brand buttons: third-party colors we don't own — the Apple sign-in button
  *     (black/white per Apple's guidelines), the Chrome/Firefox store links
@@ -45,7 +44,7 @@ const PROPS =
   "text|bg|border|border-[trblxyse]|ring-offset|ring|divide|from|via|to|fill|stroke|placeholder|caret|accent|decoration|outline";
 // Optional variant chain (dark:, hover:, active:, prose-headings:, …) + property-color-shade + optional /opacity.
 const RE = new RegExp(
-  `(?:[a-z][\\w-]*:)*(?:${PROPS})-(?:(?:${COLORS})-\\d{2,3}|white|black)(?:/\\d{1,3})?(?![\\w-])`,
+  `(?<![\\w-])(?:[a-z][\\w-]*:)*(?:${PROPS})-(?:(?:${COLORS})-\\d{2,3}|white|black)(?:/\\d{1,3})?(?![\\w-])`,
   "g"
 );
 
