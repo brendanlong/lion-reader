@@ -624,6 +624,11 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     // allow-list are considered, so `to_remove` and `rewrites` stay disjoint and
     // a rewrite can never resurrect an attribute the filter just dropped.
     let mut rewrites: Vec<(String, String)> = Vec::new();
+    // A browser reads only the first `class`, but `set_attribute` would update
+    // only the first copy too, leaving a raw duplicate for API clients that
+    // parse differently — so a duplicate forces remove-all-then-set.
+    let mut first_class: Option<String> = None;
+    let mut duplicate_class = false;
     for attr in el.attributes() {
         let name = attr.name();
         if !attr_allowed(&tag, &name) {
@@ -631,11 +636,10 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             continue;
         }
         if name == "class" {
-            let value = attr.value();
-            match filter_classes(&value) {
-                None => to_remove.push(name),
-                Some(kept) if kept != value => rewrites.push((name, kept)),
-                Some(_) => {}
+            if first_class.is_none() {
+                first_class = Some(attr.value());
+            } else {
+                duplicate_class = true;
             }
             continue;
         }
@@ -691,6 +695,16 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
     }
     for (name, value) in rewrites {
         el.set_attribute(&name, &value)?;
+    }
+    if let Some(value) = first_class {
+        match filter_classes(&value) {
+            None => el.remove_attribute("class"),
+            Some(kept) if kept != value || duplicate_class => {
+                el.remove_attribute("class");
+                el.set_attribute("class", &kept)?;
+            }
+            Some(_) => {}
+        }
     }
 
     if tag == "a" {
@@ -1622,7 +1636,7 @@ mod tests {
                             !matches!(s, "http" | "https" | "mailto" | "tel")
                                 && !crate::urls::is_data_image(value)
                         });
-                    if attr.to_ascii_lowercase().starts_with("on") || bad_url {
+                    if attr.to_ascii_lowercase().starts_with("on") || attr == "class" || bad_url {
                         return Some(format!("<svg:{tag} {attr}={value:?}>"));
                     }
                 }
@@ -1652,6 +1666,11 @@ mod tests {
                     || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"));
                 if !allowed {
                     return Some(format!("<{tag} {attr}>"));
+                }
+                if attr == "class"
+                    && crate::classes::filter_classes(value).as_deref() != Some(value)
+                {
+                    return Some(format!("<{tag} class={value:?}>"));
                 }
                 if let Some(schemes) = url_schemes_for(tag, attr) {
                     if !is_image_url_allowed(value, schemes) {
@@ -1693,6 +1712,8 @@ mod tests {
             "</p>",
             "<foo>",
             "</foo>",
+            r#"<p class="fixed footnote-content" class="absolute katex-html">"#,
+            r#"<p class=" katex-html  hidden ">"#,
             "<!--c-->",
             "<!doctype html>",
             "<center>",
@@ -1764,6 +1785,7 @@ mod tests {
             "</math>",
             "<![CDATA[",
             "]]>",
+            r#"<svg class="fixed"><a class="absolute inset-0" href="https://e.com">x</a></svg>"#,
             "<svg></svg>",
             "<svg><text>t</text></svg>",
             "<svg><title>t</title></svg>",

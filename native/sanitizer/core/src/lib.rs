@@ -140,6 +140,11 @@ mod tests {
             run("<div class=\"fixed footnote-content\tkatex-html opacity-0\">x</div>"),
             r#"<div class="footnote-content katex-html">x</div>"#
         );
+        // Only the first copy counts in a browser; no copy may keep its raw value.
+        assert_eq!(
+            run(r#"<p class="hidden katex-html" class="fixed footnote-content">x</p>"#),
+            r#"<p class="katex-html">x</p>"#
+        );
         let out = run(r#"<svg class="fixed inset-0"><circle class="hidden" r="1"/></svg>"#);
         assert!(!out.contains("class"), "{out}");
     }

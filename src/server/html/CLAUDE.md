@@ -21,7 +21,7 @@ Every allow-list or transform change needs a security review, and the property t
 - **Any recursive walk over parsed content goes behind the `MAX_DOM_DEPTH` check** (`core/src/limits.rs`), which must stay iterative: a stack overflow kills the process on every read of that entry and `catch_unwind` can't catch it.
 - **Every stage stays linear in the input** (`limits.rs` says why). Shapes that crash go in `pipeline_survives_deep_and_repeated_markup`, which fuzzes in a child process so an overflow is reported, not fatal; shapes that are slow get a timed test like `many_small_svgs_sanitize_in_linear_time`.
 - **Id namespacing** (`core/src/idrefs.rs`, #1425): an id may be renamed only if every reference to it is renamed in the same pass, so adding an id-referencing attribute to any allow-list means adding it to `idrefs.rs`. When writing a value back, match that pass's own escaping (raw for lol_html, decoded for the SVG pass), or the rewrite stops being idempotent.
-- **`class` is allow-listed** (`core/src/classes.rs` says why): add a name only when a reader stylesheet styles it, never a pattern.
+- **`class` is allow-listed by exact name** (`core/src/classes.rs`), never by pattern: a source class otherwise picks up the app's Tailwind utilities.
 - **Iframe embeds** (`core/src/embeds.rs`) are the only copy of the provider rules (#1541); TS code that synthesizes an embed reads them through the exported `normalizeEmbed` (see `youtube-embed.ts`), and a unit test round-trips the synthesized embeds through the sanitizer.
 - A start tag whose attribute the pass rewrites (an `id`, a `#fragment` href) is re-serialized; everything else passes through byte-identical, so don't assert byte-identity on markup carrying one.
 

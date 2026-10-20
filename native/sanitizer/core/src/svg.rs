@@ -23,7 +23,6 @@
 
 use scraper::{ElementRef, Html};
 
-use crate::classes::filter_classes;
 use crate::idrefs::{prefix_fragment_href, prefix_func_iris, prefix_id, SVG_FUNC_IRI_ATTRS};
 use crate::limits::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::scanner::{find_top_level_ranges, Recovery};
@@ -115,7 +114,6 @@ const ALLOWED_SVG_ATTRS: &[&str] = &[
     "begin",
     "bias",
     "by",
-    "class",
     "clip",
     "clippathunits",
     "clip-path",
@@ -372,12 +370,7 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
         // Namespace ids and the references that reach them, so an SVG's
         // gradients/clip paths/masks keep resolving after the rename and can't
         // collide with the app's own ids (see idrefs.rs).
-        let value = if attr_lower == "class" {
-            let Some(kept) = filter_classes(value) else {
-                continue;
-            };
-            kept
-        } else if attr_lower == "id" {
+        let value = if attr_lower == "id" {
             prefix_id(value)
         } else if attr_lower == "href" || attr_lower == "xlink:href" {
             prefix_fragment_href(value).unwrap_or_else(|| value.to_string())
