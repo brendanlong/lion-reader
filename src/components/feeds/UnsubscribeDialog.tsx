@@ -105,7 +105,7 @@ function EmailUnsubscribeDialog({
             checked={blockSender}
             disabled={!emailSender}
             onChange={(e) => setBlockSender(e.target.checked)}
-            className="text-accent border-edge-input mt-0.5 h-4 w-4 rounded dark:bg-zinc-800"
+            className="text-accent border-edge-input bg-surface mt-0.5 h-4 w-4 rounded"
           />
           <span className="ui-text-sm text-body">
             Also block{" "}
