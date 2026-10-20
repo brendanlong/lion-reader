@@ -231,9 +231,10 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
  * for every row probed.
  *
  * `paged` keeps it a per-row lookup (`OFFSET 0` stops Postgres turning it into
- * a semi-join) for a page read newest first: walking the user's timeline stops
- * after a page, while a semi-join reads every member of a tag's subscriptions
- * first and sorts them. Counts and bulk updates, which read every match, leave
+ * a semi-join) for a page: walking the user's timeline stops after a page,
+ * while a semi-join reads every member of a tag's subscriptions first and
+ * sorts them. Only search and showSpam tag lists page this way; other lists
+ * join their own rows. Counts and bulk updates, which read every match, leave
  * the choice to the planner.
  */
 export function buildEntriesInSubscriptionsCondition(
@@ -331,8 +332,8 @@ export async function buildEntrySubscriptionFilter(
  * same filter logic.
  */
 export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {
-  // The read, starred and spam filters are literals, not `= $n`: a generic plan
-  // can only use a partial index (`WHERE NOT read …`) for a literal predicate.
+  // Literal filters, for the partial indexes ("Ordering & Pagination" in
+  // src/server/CLAUDE.md).
   const conditions: SQL[] = [];
 
   if (params.unreadOnly) {

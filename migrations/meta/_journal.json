@@ -1149,6 +1149,27 @@
       "when": 1792444645053,
       "tag": "0164_bounded_list_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1792444646053,
+      "tag": "0165_membership_state_copies",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1792444647053,
+      "tag": "0166_membership_state_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1792444648053,
+      "tag": "0167_tag_entries",
+      "breakpoints": true
     }
   ]
 }

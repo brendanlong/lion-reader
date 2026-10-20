@@ -1,8 +1,9 @@
 /**
  * Unread-counter reconciliation (issue #1117, step 5a).
  *
- * The counters (see `services/counts.ts`) and `user_entries.active_memberships`
- * are maintained by triggers. This sweep recomputes them from their
+ * The counters (see `services/counts.ts`), `user_entries.active_memberships`,
+ * the memberships' copies of their row's state and the tag lists' rows
+ * (`tag_entries`) are maintained by triggers. This sweep recomputes them from their
  * definitions and fixes any drift, serving two purposes:
  *
  * 1. Detection: nonzero fixes mean a trigger bug or an untracked write path —
@@ -35,6 +36,10 @@ import { logger } from "@/lib/logger";
 export interface ReconcileCountersResult {
   /** user_entries rows whose active_memberships was wrong. */
   userEntriesFixed: number;
+  /** Memberships whose copy of their row's read, starred or spam was wrong. */
+  membershipsFixed: number;
+  /** Tag and Uncategorized rows missing, extra, or with a wrong copy of state. */
+  tagEntriesFixed: number;
   subscriptionsFixed: number;
   usersFixed: number;
   tagsFixed: number;
@@ -67,6 +72,53 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
       GROUP BY ue2.user_id, ue2.entry_id
     ) t
     WHERE ue.user_id = t.user_id AND ue.entry_id = t.entry_id AND ue.active_memberships <> t.n
+  `);
+
+  const membershipsResult = await db.execute(sql`
+    UPDATE subscription_entries se
+    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+    FROM user_entries ue
+    WHERE ue.user_id = se.user_id AND ue.entry_id = se.entry_id
+      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
+  `);
+
+  // What reached_tag_lists gives for every membership, inlined over the whole
+  // table.
+  const reached = sql`
+    SELECT DISTINCT COALESCE(t.id, se.user_id) AS list_id, se.user_id, se.entry_id
+    FROM subscription_entries se
+    JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
+    LEFT JOIN subscription_tags st ON st.subscription_id = s.id
+    LEFT JOIN tags t ON t.id = st.tag_id AND t.user_id = s.user_id AND t.deleted_at IS NULL
+    WHERE NOT se.is_spam
+      AND (t.id IS NOT NULL OR (st.subscription_id IS NULL AND s.type <> 'saved'))
+  `;
+  const tagEntriesExtra = await db.execute(sql`
+    DELETE FROM tag_entries te
+    WHERE NOT EXISTS (
+      SELECT 1 FROM (${reached}) r
+      WHERE r.user_id = te.user_id AND r.entry_id = te.entry_id AND r.list_id = te.list_id
+    )
+  `);
+  const tagEntriesMissing = await db.execute(sql`
+    INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred)
+    SELECT r.user_id, r.entry_id, r.list_id, ue.published_or_fetched_at, ue.read, ue.starred
+    FROM (${reached}) r
+    JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM tag_entries te
+      WHERE te.user_id = r.user_id AND te.entry_id = r.entry_id AND te.list_id = r.list_id
+    )
+    -- Held while copied, or a read committing meanwhile misses the new row.
+    FOR NO KEY UPDATE OF ue
+    ON CONFLICT DO NOTHING
+  `);
+  const tagEntriesStale = await db.execute(sql`
+    UPDATE tag_entries te
+    SET read = ue.read, starred = ue.starred
+    FROM user_entries ue
+    WHERE ue.user_id = te.user_id AND ue.entry_id = te.entry_id
+      AND (te.read, te.starred) IS DISTINCT FROM (ue.read, ue.starred)
   `);
 
   const subscriptionsResult = await db.execute(sql`
@@ -137,6 +189,11 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
 
   const result: ReconcileCountersResult = {
     userEntriesFixed: userEntriesResult.rowCount ?? 0,
+    membershipsFixed: membershipsResult.rowCount ?? 0,
+    tagEntriesFixed:
+      (tagEntriesExtra.rowCount ?? 0) +
+      (tagEntriesMissing.rowCount ?? 0) +
+      (tagEntriesStale.rowCount ?? 0),
     subscriptionsFixed: subscriptionsResult.rowCount ?? 0,
     usersFixed: usersResult.rowCount ?? 0,
     tagsFixed: tagsResult.rowCount ?? 0,

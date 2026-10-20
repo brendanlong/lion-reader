@@ -222,11 +222,11 @@ async function changeSubscriptionTags(
   // One transaction, or a crash or concurrent call between the delete and the
   // insert could leave a partial tag set (#952).
   const after = await db.transaction(async (tx) => {
-    // Subscription row first: the counter triggers lock subscriptions, then
-    // users, then tags, and the tag changes below reach users and tags. The
-    // row is read under the lock, so the event can't revert a concurrent
-    // rename.
-    await lockSubscriptionRow(tx, userId, subscriptionId);
+    // Members' rows, then the subscription row: retagging moves the members'
+    // tag rows (tag_entries), and the counter triggers lock subscriptions,
+    // then users, then tags. The row is read under the lock, so the event
+    // can't revert a concurrent rename.
+    await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
 
     let changed: boolean;
     if ("set" in change) {

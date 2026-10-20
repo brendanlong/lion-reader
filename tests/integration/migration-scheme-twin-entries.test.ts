@@ -79,7 +79,7 @@ async function expectCountersMatchRecount(userId: string, subscriptionId: string
     .from(subscriptions)
     .where(eq(subscriptions.id, subscriptionId));
   const [subActual] = await db
-    .select({ unread: sql<number>`count(*) filter (where not read)::int` })
+    .select({ unread: sql<number>`count(*) filter (where not ${userEntries.read})::int` })
     .from(userEntries)
     .innerJoin(
       subscriptionEntries,

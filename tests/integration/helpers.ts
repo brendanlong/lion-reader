@@ -268,8 +268,9 @@ export async function createTestUserEntries(
     ))
   `);
   await db.execute(sql`
-    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-    SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
+    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
+                                      read, starred, is_spam)
+    SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.is_spam
     FROM unnest(${userIds}::uuid[], ${entryIds}::uuid[]) AS c(user_id, entry_id)
     JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
     JOIN entries e ON e.id = ue.entry_id

@@ -963,6 +963,11 @@ export const subscriptionEntries = pgTable(
     entryId: uuid("entry_id").notNull(),
     // The user_entries row's sort key, which never changes.
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
+    // Trigger-kept copies of the user_entries row's state ("Subscription
+    // Attribution" in src/server/CLAUDE.md).
+    read: boolean("read").notNull().default(false),
+    starred: boolean("starred").notNull().default(false),
+    isSpam: boolean("is_spam").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.subscriptionId, table.entryId] }),
@@ -981,6 +986,32 @@ export const subscriptionEntries = pgTable(
       table.entryId.desc()
     ),
     index("idx_subscription_entries_user_entry").on(table.userId, table.entryId),
+  ]
+);
+
+/**
+ * A tag's or Uncategorized's list rows, kept by triggers ("Subscription
+ * Attribution" in src/server/CLAUDE.md). `list_id` is the tag's id, or the
+ * user's for Uncategorized; spam has none.
+ */
+export const tagEntries = pgTable(
+  "tag_entries",
+  {
+    userId: uuid("user_id").notNull(),
+    entryId: uuid("entry_id").notNull(),
+    listId: uuid("list_id").notNull(),
+    publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
+    read: boolean("read").notNull(),
+    starred: boolean("starred").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.entryId, table.listId] }),
+    foreignKey({
+      columns: [table.userId, table.entryId],
+      foreignColumns: [userEntries.userId, userEntries.entryId],
+    })
+      .onDelete("cascade")
+      .onUpdate("cascade"),
   ]
 );
 

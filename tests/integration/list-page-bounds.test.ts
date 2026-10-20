@@ -35,26 +35,15 @@ const DEEP = 500;
  * row's entry and memberships, and some slack. A walk reads thousands.
  */
 const ROW_BUDGET = 8 * (LIMIT + 1);
-const BIG_TABLES = new Set(["user_entries", "subscription_entries", "entries"]);
+const BIG_TABLES = new Set(["user_entries", "subscription_entries", "tag_entries", "entries"]);
 
 const STEP_MS = 60_000;
 const START = new Date("2024-01-01T00:00:00Z");
 const MIDDLE = new Date(START.getTime() + (NOISE / 2) * STEP_MS);
 
-type ListName = "all" | "starred" | "subscription" | "tag" | "uncategorized" | "recentlyRead";
+type ListName =
+  "all" | "starred" | "subscription" | "tag" | "denseTag" | "uncategorized" | "recentlyRead";
 type Filter = "all" | "unread";
-
-/**
- * Lists still read more than their page, with the issue that bounds them. A
- * case here must fail; when a fix makes it pass, delete its entry.
- */
-const KNOWN_UNBOUNDED: Partial<Record<`${ListName}/${Filter}`, string>> = {
-  "subscription/unread": "#2066",
-  "tag/all": "#2066",
-  "tag/unread": "#2066",
-  "uncategorized/all": "#2066",
-  "uncategorized/unread": "#2066",
-};
 
 let userId: string;
 let otherUserId: string;
@@ -63,15 +52,27 @@ const scopes: Record<ListName, Partial<ListEntriesParams>> = {
   starred: { starredOnly: true },
   subscription: {},
   tag: {},
+  denseTag: {},
   uncategorized: { uncategorized: true },
   recentlyRead: { sortBy: "readChanged" },
 };
+/** The cases whose lists are long enough for a page `DEEP` rows in. */
+const LONG: ReadonlySet<`${ListName}/${Filter}`> = new Set([
+  "all/all",
+  "all/unread",
+  "starred/all",
+  "subscription/all",
+  "denseTag/all",
+  "denseTag/unread",
+  "recentlyRead/all",
+]);
 const createdFeeds: string[] = [];
 
 interface PlanNode {
   "Node Type": string;
   "Relation Name"?: string;
   "Index Name"?: string;
+  "Plan Rows": number;
   "Actual Rows": number;
   "Actual Loops": number;
   "Rows Removed by Filter"?: number;
@@ -97,6 +98,7 @@ function describePlan(node: PlanNode, depth = 0): string {
     "  ".repeat(depth) + node["Node Type"],
     node["Index Name"] ?? node["Relation Name"],
     `rows=${node["Actual Rows"]}`,
+    `estimate=${node["Plan Rows"]}`,
     node["Rows Removed by Filter"] ? `removed=${node["Rows Removed by Filter"]}` : undefined,
     `loops=${node["Actual Loops"]}`,
   ]
@@ -177,7 +179,9 @@ beforeAll(async () => {
   const unreadFeed = await feed();
   const unreadSubscription = await createTestSubscription(userId, unreadFeed);
   await seedSubscription(unreadFeed, NOISE, halfStep, STEP_MS, () => ({}));
-  await createTestTag(userId, { subscriptionIds: [bigSubscription, unreadSubscription] });
+  const denseTag = await createTestTag(userId, {
+    subscriptionIds: [bigSubscription, unreadSubscription],
+  });
 
   // A feed the user left, interleaved with the big one: invisible rows, half
   // unread and half read just now (Recently Read's noise).
@@ -223,10 +227,12 @@ beforeAll(async () => {
 
   scopes.subscription = { subscriptionId: bigSubscription };
   scopes.tag = { tagId: sparseTag };
+  scopes.denseTag = { tagId: denseTag };
   // As autovacuum leaves a table: no dead index entries, a current visibility map.
   await db.execute(sql`VACUUM ANALYZE user_entries`);
   await db.execute(sql`VACUUM ANALYZE subscription_entries`);
   await db.execute(sql`VACUUM ANALYZE entries`);
+  await db.execute(sql`VACUUM ANALYZE tag_entries`);
 }, 120_000);
 
 afterAll(async () => {
@@ -242,16 +248,13 @@ const CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
       list,
       filter,
       sortOrder,
-      known: KNOWN_UNBOUNDED[`${list}/${filter}`],
     }))
   )
 );
 
 describe("entry list pages read a bounded number of rows", () => {
-  for (const { list, filter, sortOrder, known } of CASES) {
-    const name = `${list}, ${filter}, ${sortOrder}${known ? ` (unbounded until ${known})` : ""}`;
-    const test = known ? it.fails : it;
-    test(name, async () => {
+  for (const { list, filter, sortOrder } of CASES) {
+    it(`${list}, ${filter}, ${sortOrder}`, async () => {
       const params: ListEntriesParams = {
         userId,
         ...scopes[list],
@@ -266,8 +269,9 @@ describe("entry list pages read a bounded number of rows", () => {
         ROW_BUDGET
       );
 
-      const cursor = await deepCursor(params);
-      if (cursor) {
+      if (LONG.has(`${list}/${filter}`)) {
+        const cursor = await deepCursor(params);
+        expect(cursor).toBeDefined();
         const deep = await explainPage({ ...params, cursor });
         expect(bigTableRowsRead(deep.plan), describePlan(deep.plan)).toBeLessThanOrEqual(
           ROW_BUDGET

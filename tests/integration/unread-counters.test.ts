@@ -13,7 +13,15 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptionEntries,
+  subscriptions,
+  tagEntries,
+  userEntries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   createSubscription,
@@ -33,6 +41,7 @@ import {
   createTestEntry,
   createTestFeed,
   createTestSubscription,
+  createTestTag,
   createTestUser,
   createTestUserEntries,
 } from "./helpers";
@@ -66,6 +75,8 @@ async function expectNoDrift() {
   const result = await reconcileCounters(db);
   expect(result).toEqual({
     userEntriesFixed: 0,
+    membershipsFixed: 0,
+    tagEntriesFixed: 0,
     subscriptionsFixed: 0,
     usersFixed: 0,
     tagsFixed: 0,
@@ -314,6 +325,23 @@ describe("unread counters (triggers + reconciliation)", () => {
     ).rejects.toThrow(/one list at a time/);
   });
 
+  it("reconcileCounters restores a tag list's missing rows", async () => {
+    const userId = await createTestUser();
+    const feedId = await createTestFeed();
+    const subId = await createTestSubscription(userId, feedId);
+    const tagId = await createTestTag(userId, { subscriptionIds: [subId] });
+    await createTestEntry(feedId, { userIds: [userId] });
+    await db.delete(tagEntries).where(eq(tagEntries.userId, userId));
+
+    expect((await reconcileCounters(db)).tagEntriesFixed).toBe(1);
+    expect(
+      await db
+        .select({ listId: tagEntries.listId })
+        .from(tagEntries)
+        .where(eq(tagEntries.userId, userId))
+    ).toEqual([{ listId: tagId }]);
+  });
+
   it("reconcileCounters detects and repairs corruption", async () => {
     const userId = await createTestUser();
     const feedId = await createTestFeed();
@@ -336,14 +364,40 @@ describe("unread counters (triggers + reconciliation)", () => {
       .update(userEntries)
       .set({ activeMemberships: 5 })
       .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+    await db
+      .update(subscriptionEntries)
+      .set({ read: true, starred: false })
+      .where(eq(subscriptionEntries.subscriptionId, subId));
+    // The article's Uncategorized row with a stale state, and a row for a
+    // list it isn't in.
+    await db.update(tagEntries).set({ read: true }).where(eq(tagEntries.userId, userId));
+    await db.execute(sql`
+      INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred)
+      SELECT user_id, entry_id, ${generateUuidv7()}, published_or_fetched_at, read, starred
+      FROM tag_entries WHERE user_id = ${userId}
+    `);
 
     const result = await reconcileCounters(db);
     expect(result.userEntriesFixed).toBe(1);
+    expect(result.membershipsFixed).toBe(1);
+    expect(result.tagEntriesFixed).toBe(2);
     expect(result.subscriptionsFixed).toBeGreaterThanOrEqual(1);
     expect(result.usersFixed).toBeGreaterThanOrEqual(1);
 
     expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
     expect(await userCounters(userId)).toEqual({ savedUnread: 0, starredUnread: 1 });
+    expect(
+      await db
+        .select({ read: subscriptionEntries.read, starred: subscriptionEntries.starred })
+        .from(subscriptionEntries)
+        .where(eq(subscriptionEntries.subscriptionId, subId))
+    ).toEqual([{ read: false, starred: true }]);
+    expect(
+      await db
+        .select({ listId: tagEntries.listId, read: tagEntries.read })
+        .from(tagEntries)
+        .where(eq(tagEntries.userId, userId))
+    ).toEqual([{ listId: userId, read: false }]);
     await expectNoDrift();
   });
 });

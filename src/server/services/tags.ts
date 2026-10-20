@@ -12,7 +12,10 @@ import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema
 import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { isUserManagedSubscription } from "@/server/services/subscriptions";
+import {
+  isUserManagedSubscription,
+  lockSubscriptionMembers,
+} from "@/server/services/subscriptions";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { toSyncTag } from "@/server/services/subscription-sync-events";
 import {
@@ -359,7 +362,24 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   // (which would silently drop subscriptions from "Uncategorized" while the tag
   // is invisible in listTags).
   const updatedAt = await db.transaction(async (tx) => {
-    // Associations first (scoped to the user's live tag): removing them
+    // The tagged subscriptions' members, then the subscriptions, in the lock
+    // order: dropping the associations moves the members' tag rows
+    // (tag_entries), and a membership added meanwhile must wait for that.
+    const tagged = inArray(
+      subscriptions.id,
+      tx
+        .select({ id: subscriptionTags.subscriptionId })
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.tagId, tagId))
+    );
+    await lockSubscriptionMembers(tx, userId, tagged);
+    await tx
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), tagged))
+      .orderBy(subscriptions.id)
+      .for("no key update");
+    // Then the associations (scoped to the user's live tag): removing them
     // recomputes the user's counters, which locks the users row before the
     // tags rows, and tombstoning the tag first would invert that order.
     // They aren't synced, so a hard delete is fine.

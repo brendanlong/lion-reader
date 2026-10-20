@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, isNotNull, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgSelect } from "drizzle-orm/pg-core";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
@@ -13,6 +13,7 @@ import {
   feeds,
   subscriptionEntries,
   subscriptions,
+  tagEntries,
   tags,
   visibleEntries,
 } from "@/server/db/schema";
@@ -27,6 +28,7 @@ import {
   entryFeedTitleSql,
   entryOriginOn,
   filterableSubscriptionWhere,
+  verifySubscriptionOwnership,
   VISIBLE_MEMBERSHIPS,
   VISIBLE_ROW,
 } from "./entry-filters";
@@ -236,18 +238,45 @@ const entryListSelectFields = {
 };
 
 /**
- * The one subscription a list shows, when it shows exactly one: the
- * `subscriptionId` filter (already checked by `buildEntrySubscriptionFilter`)
- * or, for Saved, the saved subscription.
+ * The rows a list has of its own, which carry its sort key and copies of each
+ * article's state: one subscription's memberships (the `subscriptionId`
+ * filter, which the caller checks is the user's, or Saved's), or a
+ * tag's or Uncategorized's `tag_entries`, which hold no spam, so a showSpam
+ * tag list filters the timeline instead. Null for All and Starred, which read
+ * `user_entries` itself. Joined on the user too: a list id alone
+ * (Uncategorized's is the user's id) must never reach another user's rows
+ * (SECURITY.md §7).
  */
-async function singleSubscriptionOf(
-  db: typeof dbType,
-  params: ListEntriesParams
-): Promise<string | null> {
-  if (params.tagId || params.uncategorized) return null;
-  if (params.subscriptionId) return params.subscriptionId;
-  if (params.type === "saved") return getSavedSubscriptionId(db, params.userId);
-  return null;
+async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "query">) {
+  const subscriptionId =
+    params.subscriptionId ??
+    (params.type === "saved" && !params.tagId && !params.uncategorized
+      ? await getSavedSubscriptionId(db, params.userId)
+      : null);
+  const tagListId = params.showSpam
+    ? null
+    : (params.tagId ?? (params.uncategorized ? params.userId : null));
+  const rows = subscriptionId
+    ? {
+        table: subscriptionEntries,
+        inList: eq(subscriptionEntries.subscriptionId, subscriptionId),
+        isSpam: subscriptionEntries.isSpam,
+      }
+    : tagListId
+      ? { table: tagEntries, inList: eq(tagEntries.listId, tagListId), isSpam: null }
+      : null;
+  if (!rows) return null;
+  const { table } = rows;
+  return {
+    table,
+    isSpam: rows.isSpam,
+    on: and(
+      rows.inList,
+      eq(table.userId, visibleEntries.userId),
+      eq(table.entryId, visibleEntries.id)
+    )!,
+    savedOnly: !params.subscriptionId && !params.tagId && !params.uncategorized,
+  };
 }
 
 // ============================================================================
@@ -350,6 +379,21 @@ export async function listGreaderItemRefs(
   };
 }
 
+/** The read, starred and spam filters, on a list row's copies of them. */
+function listRowStateConditions(
+  rows: { table: typeof subscriptionEntries | typeof tagEntries; isSpam: AnyColumn | null },
+  params: Omit<ListEntriesParams, "query">
+): SQL[] {
+  const { table } = rows;
+  const conditions: SQL[] = [];
+  if (params.unreadOnly) conditions.push(sql`NOT ${table.read}`);
+  else if (params.readOnly) conditions.push(sql`${table.read}`);
+  if (params.starredOnly) conditions.push(sql`${table.starred}`);
+  else if (params.unstarredOnly) conditions.push(sql`NOT ${table.starred}`);
+  if (!params.showSpam && rows.isSpam) conditions.push(sql`NOT ${rows.isSpam}`);
+  return conditions;
+}
+
 /**
  * `cursor` and `offset` are two different ways to page and must not be
  * combined: the cursor predicate would narrow the window and offset would then
@@ -376,31 +420,52 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
-    paged: true,
-  });
-  if (subscriptionFilter === null) return null;
+  // A subscription filter must be the user's; a tag's or Uncategorized's rows
+  // are by the join on them, and without rows (showSpam) its filter is.
+  const listRows = await listRowsOf(db, params);
+  if (listRows) {
+    if (
+      params.subscriptionId &&
+      !(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))
+    ) {
+      return null;
+    }
+  } else {
+    const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
+      paged: true,
+    });
+    if (subscriptionFilter === null) return null;
+    if (subscriptionFilter) conditions.push(subscriptionFilter);
+  }
 
-  // One subscription's list (a subscription filter, or Saved) joins that
-  // subscription's memberships, which can't fan out. Sorted by the timeline,
-  // it walks them (idx_subscription_entries_timeline, whose sort key is the
-  // row's) rather than the user's timeline, which may hold them sparsely.
-  // Sorted otherwise, the join still lets Postgres start from the
-  // memberships when they're few, where an EXISTS filter left it walking the
-  // user's whole history for a sparse page (Wallabag's Saved by `archived`).
+  // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
+  // joins them, which can't fan out, and pages through their index: walking
+  // the user's timeline instead reads every article outside the list. Sorted
+  // otherwise, the join still lets Postgres start from the list's rows when
+  // they're few (Wallabag's Saved by `archived`).
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
-  const single = await singleSubscriptionOf(db, params);
-  if (subscriptionFilter && !single) {
-    conditions.push(subscriptionFilter);
+  if (listRows) {
+    conditions.push(...listRowStateConditions(listRows, params));
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).
-  // Saved is the saved subscription's list, which `single` already is.
+  // Saved is the saved subscription's list, which `listRows` already is. A
+  // list's rows filter read, starred and spam on their copies alone: the
+  // triggers write those in the article's own transaction, and filtering both
+  // would have Postgres multiply two identical selectivities, guess a page
+  // holds fewer rows than it does, and sort the whole list instead.
   conditions.push(
     ...buildEntryFilterConditions(
-      single && !params.subscriptionId && params.type === "saved"
-        ? { ...params, type: undefined }
+      listRows
+        ? {
+            ...params,
+            type: listRows.savedOnly ? undefined : params.type,
+            unreadOnly: undefined,
+            readOnly: undefined,
+            starredOnly: undefined,
+            unstarredOnly: undefined,
+            showSpam: true,
+          }
         : params
     )
   );
@@ -413,19 +478,16 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   }
 
   // Sort column: the timeline ("published"), or when read state last changed
-  // ("readChanged"/"archived"). Each list's page must read about its own size
-  // in rows, whatever else the user has: `list-page-bounds.test.ts` holds every
-  // list and filter to that, so a new one needs an index there.
+  // ("readChanged"/"archived").
   const sortColumn = !timelineSort
     ? visibleEntries.readChangedAt
-    : single
-      ? subscriptionEntries.publishedOrFetchedAt
+    : listRows
+      ? listRows.table.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
-  const idColumn = single && timelineSort ? subscriptionEntries.entryId : visibleEntries.id;
+  const idColumn = listRows && timelineSort ? listRows.table.entryId : visibleEntries.id;
 
-  // A row comparison, which Postgres reads as a bound on the index; the
-  // equivalent `a < x OR (a = x AND b < y)` is a filter, so every page would
-  // read the list from its top (#2067). The timestamp goes to Postgres as text
+  // A row comparison, never the `OR` form (#2067; "Ordering & Pagination" in
+  // src/server/CLAUDE.md). The timestamp goes to Postgres as text
   // (::timestamptz) to keep its microseconds.
   if (params.cursor) {
     const { ts, id } = timelineCursor.decode(params.cursor);
@@ -454,21 +516,11 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     sortTs: sql`${sortColumn}`.mapWith(parseTimestamptzOrNull),
 
     // visible_entries emits exactly one row per (user, entry), and so does a
-    // join on one subscription's memberships, so no DISTINCT ON dedup is
-    // needed and the (sortColumn, id) keyset cursor resumes cleanly over
-    // unique rows.
+    // join on a list's rows (one per list and article), so no DISTINCT ON
+    // dedup is needed and the (sortColumn, id) keyset cursor resumes cleanly
+    // over unique rows.
     apply: <T extends PgSelect>(query: T) =>
-      (single
-        ? query.innerJoin(
-            subscriptionEntries,
-            and(
-              eq(subscriptionEntries.subscriptionId, single),
-              eq(subscriptionEntries.userId, visibleEntries.userId),
-              eq(subscriptionEntries.entryId, visibleEntries.id)
-            )
-          )
-        : query
-      )
+      (listRows ? query.innerJoin(listRows.table, listRows.on) : query)
         .where(and(...conditions))
         .orderBy(...orderByClause)
         .limit(limit + 1)
