@@ -66,7 +66,6 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
     tokenHash: crypto.randomBytes(32).toString("hex"),
     clientId,
     userId: user.id,
-    scopes: ["mcp"],
     expiresAt: new Date(Date.now() + 3600_000),
   });
 

@@ -12,7 +12,7 @@
 
 import { describe, it, expect, afterAll, vi } from "vitest";
 import * as argon2 from "argon2";
-import { eq, inArray, sql } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { oauthClients, users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -30,7 +30,6 @@ import {
   createTestOAuthClient,
   createTestUser,
   createTestOAuthTokens,
-  waitForLockWaiter,
 } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -350,75 +349,6 @@ describe("oauthGrants.revokeWallabag", () => {
     expect(await rotateRefreshToken(mine.refreshToken, WALLABAG_CLIENT_ID)).toBeNull();
     expect(await validateAccessToken(mcp.accessToken)).not.toBeNull();
     expect(await validateAccessToken(theirs.accessToken)).not.toBeNull();
-  });
-});
-
-/**
- * Runs a password change the way the previous release's `me.changePassword`
- * does — update the user row, then sweep its Wallabag token rows, in one
- * transaction — but holds the transaction open between the two until
- * `release` is called, so a concurrent token issue can be started inside the
- * window.
- */
-async function heldPasswordChange(
-  userId: string,
-  newHash: string
-): Promise<{ release: () => void; done: Promise<void> }> {
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => (release = resolve));
-  let updated!: () => void;
-  const rowUpdated = new Promise<void>((resolve) => (updated = resolve));
-  const done = db.transaction(async (tx) => {
-    await tx
-      .update(users)
-      .set({ passwordHash: newHash, updatedAt: new Date() })
-      .where(eq(users.id, userId));
-    updated();
-    await gate;
-    for (const table of [sql`oauth_refresh_tokens`, sql`oauth_access_tokens`]) {
-      await tx.execute(sql`
-        UPDATE ${table} SET revoked_at = now()
-        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID} AND revoked_at IS NULL
-      `);
-    }
-  });
-  await rowUpdated;
-  return { release, done };
-}
-
-/** Access or refresh tokens for the Wallabag client that would still work. */
-async function liveWallabagTokens(userId: string): Promise<number> {
-  const result = await db.execute(sql`
-    SELECT
-      (SELECT count(*) FROM oauth_access_tokens
-        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID}
-          AND revoked_at IS NULL AND expires_at > now())
-      + (SELECT count(*) FROM oauth_refresh_tokens
-        WHERE user_id = ${userId} AND client_id = ${WALLABAG_CLIENT_ID}
-          AND revoked_at IS NULL AND expires_at > now())
-      AS live
-  `);
-  return Number((result.rows[0] as { live: string | number }).live);
-}
-
-// The previous release's password change sweeps only token rows (#2053).
-describe("token issue racing a password change", () => {
-  it("a refresh during a password change waits for it, then finds its token revoked", async () => {
-    const user = await createUser();
-    const tokens = await createTestOAuthTokens({
-      clientId: WALLABAG_CLIENT_ID,
-      userId: user.id,
-      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
-    });
-
-    const change = await heldPasswordChange(user.id, "new-hash");
-    const rotation = rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID);
-    await waitForLockWaiter('%from "users"%for share%');
-    change.release();
-    await change.done;
-
-    expect(await rotation).toBeNull();
-    expect(await liveWallabagTokens(user.id)).toBe(0);
   });
 });
 

@@ -5,17 +5,7 @@
  * codes and tokens.
  */
 
-import {
-  eq,
-  and,
-  arrayContains,
-  isNull,
-  gt,
-  inArray,
-  or,
-  type SQL,
-  type SQLWrapper,
-} from "drizzle-orm";
+import { eq, and, arrayContains, isNull, gt, inArray, or, type SQL } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthAuthorizationCodes,
@@ -232,31 +222,21 @@ export async function createTokens(params: CreateTokensParams): Promise<TokenPai
   };
   return db.transaction(async (tx) => {
     await tx.insert(oauthTokenGrants).values(grant);
-    return (await insertTokenPair(tx, grant)).tokens;
+    return insertTokenPair(tx, grant);
   });
 }
 
-/**
- * Mints an access/refresh token pair in `grant`. The rows repeat the grant's
- * scopes and resource only because the previous release reads them there
- * (#2053).
- */
-async function insertTokenPair(
-  executor: DbOrTx,
-  grant: TokenGrant
-): Promise<{ tokens: TokenPair; refreshTokenId: string }> {
+/** Mints an access/refresh token pair in `grant`. */
+async function insertTokenPair(executor: DbOrTx, grant: TokenGrant): Promise<TokenPair> {
   const accessToken = generateAccessToken();
   const refreshToken = generateToken();
   const accessTokenId = generateUuidv7();
-  const refreshTokenId = generateUuidv7();
   const accessTokenExpiry = getAccessTokenExpiry();
 
   const tokenColumns = {
     grantId: grant.id,
     clientId: grant.clientId,
     userId: grant.userId,
-    scopes: grant.scopes,
-    resource: grant.resource,
   };
 
   await executor.insert(oauthAccessTokens).values({
@@ -268,21 +248,18 @@ async function insertTokenPair(
 
   await executor.insert(oauthRefreshTokens).values({
     ...tokenColumns,
-    id: refreshTokenId,
+    id: generateUuidv7(),
     tokenHash: hashToken(refreshToken),
     accessTokenId,
     expiresAt: getRefreshTokenExpiry(),
   });
 
   return {
-    tokens: {
-      accessToken,
-      refreshToken,
-      tokenType: "Bearer",
-      expiresIn: Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000),
-      scope: grant.scopes.join(" "),
-    },
-    refreshTokenId,
+    accessToken,
+    refreshToken,
+    tokenType: "Bearer",
+    expiresIn: Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000),
+    scope: grant.scopes.join(" "),
   };
 }
 
@@ -292,35 +269,11 @@ async function insertTokenPair(
  * (see rotateRefreshToken), so its successor can't survive.
  */
 export async function deleteTokenGrants(condition: SQL, executor: DbOrTx = db): Promise<number> {
-  return executor.transaction(async (tx) => {
-    await lockUsersAgainstPreviousReleaseRotation(
-      tx,
-      tx.select({ id: oauthTokenGrants.userId }).from(oauthTokenGrants).where(condition)
-    );
-    const deleted = await tx
-      .delete(oauthTokenGrants)
-      .where(condition)
-      .returning({ id: oauthTokenGrants.id });
-    return deleted.length;
-  });
-}
-
-/**
- * Locks the users rows before a delete cascades to their tokens. The previous
- * release's rotation share-locks the user, claims the refresh token and only
- * then locks the grant, the reverse of a cascading delete; serializing on the
- * user row first keeps the two from deadlocking (#2053).
- */
-export async function lockUsersAgainstPreviousReleaseRotation(
-  tx: DbOrTx,
-  userIds: string[] | SQLWrapper
-): Promise<void> {
-  await tx
-    .select({ id: users.id })
-    .from(users)
-    .where(inArray(users.id, userIds))
-    .orderBy(users.id)
-    .for("no key update");
+  const deleted = await executor
+    .delete(oauthTokenGrants)
+    .where(condition)
+    .returning({ id: oauthTokenGrants.id });
+  return deleted.length;
 }
 
 /**
@@ -429,7 +382,6 @@ export async function rotateRefreshToken(
 
   const [owner] = await db
     .select({
-      userId: oauthRefreshTokens.userId,
       grantId: oauthRefreshTokens.grantId,
       accessTokenId: oauthRefreshTokens.accessTokenId,
     })
@@ -442,10 +394,6 @@ export async function rotateRefreshToken(
       return null;
     }
 
-    // The previous release's password change and Wallabag sign-out lock the
-    // user row, then revoke token rows a successor uncommitted here would
-    // escape (#2053).
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, owner.userId)).for("share");
     const [grant] = await tx
       .select()
       .from(oauthTokenGrants)
@@ -477,7 +425,7 @@ export async function rotateRefreshToken(
           gt(oauthRefreshTokens.expiresAt, now)
         )
       )
-      .returning({ id: oauthRefreshTokens.id, accessTokenId: oauthRefreshTokens.accessTokenId });
+      .returning({ accessTokenId: oauthRefreshTokens.accessTokenId });
 
     if (!claimed) {
       return null;
@@ -492,15 +440,7 @@ export async function rotateRefreshToken(
 
     // The successor inherits the grant's own audience. Wallabag shares this
     // path with a null resource, so never stamp the MCP identifier here.
-    const created = await insertTokenPair(tx, grant);
-
-    // Only the previous release's reuse detection follows this link (#2053).
-    await tx
-      .update(oauthRefreshTokens)
-      .set({ replacedById: created.refreshTokenId })
-      .where(eq(oauthRefreshTokens.id, claimed.id));
-
-    return created.tokens;
+    return insertTokenPair(tx, grant);
   });
 
   if (!tokens) {

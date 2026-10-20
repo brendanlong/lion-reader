@@ -1128,6 +1128,13 @@
       "when": 1792444444053,
       "tag": "0161_drop_entries_is_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792444544053,
+      "tag": "0162_drop_oauth_token_compat",
+      "breakpoints": true
     }
   ]
 }

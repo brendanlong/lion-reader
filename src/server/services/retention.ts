@@ -125,8 +125,8 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     .delete(oauthAuthorizationCodes)
     .where(lt(oauthAuthorizationCodes.expiresAt, expiryCutoff));
 
-  // Refresh tokens reference access tokens with ON DELETE SET NULL, and
-  // replaced_by_id is also SET NULL, so bulk deletes can't fail on FK order.
+  // Refresh tokens reference access tokens with ON DELETE SET NULL, so bulk
+  // deletes can't fail on FK order.
   const expiredAccessTokens = await db
     .delete(oauthAccessTokens)
     .where(

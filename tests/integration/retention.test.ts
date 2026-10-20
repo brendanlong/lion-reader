@@ -67,7 +67,6 @@ async function createAccessToken(
     tokenHash: `hash-${id}`,
     clientId,
     userId,
-    scopes: ["mcp"],
     expiresAt,
     revokedAt: options.revokedAt ?? null,
     createdAt: new Date(),
@@ -82,7 +81,6 @@ async function createRefreshToken(
     clientId?: string;
     revokedAt?: Date;
     accessTokenId?: string;
-    replacedById?: string;
     grantId?: string;
   } = {}
 ): Promise<string> {
@@ -94,11 +92,9 @@ async function createRefreshToken(
     tokenHash: `hash-${id}`,
     clientId,
     userId,
-    scopes: ["mcp"],
     expiresAt,
     revokedAt: options.revokedAt ?? null,
     accessTokenId: options.accessTokenId ?? null,
-    replacedById: options.replacedById ?? null,
     createdAt: new Date(),
   });
   return id;
@@ -330,33 +326,6 @@ describe("runRetentionCleanup", () => {
     expect(result.oauthTokenGrants).toBe(1);
     const grants = await db.select({ id: oauthTokenGrants.id }).from(oauthTokenGrants);
     expect(grants).toEqual([{ id: live }]);
-  });
-
-  it("handles refresh-token rotation chains (replaced_by_id) without FK failures", async () => {
-    const userId = await createTestUser({ emailPrefix: "retention" });
-
-    // Rotation: old token revoked long ago points at its expired replacement.
-    // Both are deletable; the replaced_by_id FK is ON DELETE SET NULL so the
-    // deletion order can't matter.
-    const newToken = await createRefreshToken(userId, new Date(Date.now() - 2 * DAY_MS), {
-      revokedAt: new Date(Date.now() - 31 * DAY_MS),
-    });
-    await createRefreshToken(userId, new Date(Date.now() - 2 * DAY_MS), {
-      revokedAt: new Date(Date.now() - 32 * DAY_MS),
-      replacedById: newToken,
-    });
-    // A live token pointing at a deletable one must survive with the pointer nulled.
-    const survivor = await createRefreshToken(userId, new Date(Date.now() + 30 * DAY_MS), {
-      replacedById: newToken,
-    });
-
-    const result = await runRetentionCleanup(db);
-
-    expect(result.oauthRefreshTokens).toBe(2);
-    const remaining = await db
-      .select({ id: oauthRefreshTokens.id, replacedById: oauthRefreshTokens.replacedById })
-      .from(oauthRefreshTokens);
-    expect(remaining).toEqual([{ id: survivor, replacedById: null }]);
   });
 
   it("deletes subscriber-less fetch_feed jobs but keeps subscribed, running, or fresh ones", async () => {
