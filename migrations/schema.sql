@@ -567,7 +567,6 @@ CREATE TABLE public.entries (
     greader_item_id bigint NOT NULL,
     is_placeholder boolean DEFAULT false NOT NULL,
     search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, "left"(((COALESCE(title, ''::text) || ' '::text) || COALESCE(NULLIF(content_cleaned, ''::text), content_original, ''::text)), 300000))) STORED,
-    is_backfill boolean DEFAULT false NOT NULL,
     owner_subscription_id uuid,
     owner_user_id uuid,
     pushed_at timestamp with time zone,
