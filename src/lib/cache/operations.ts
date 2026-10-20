@@ -327,6 +327,12 @@ function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: E
  * `starred` are set only by the catch-up (the entry may have changed state on
  * another device while this client was offline): a brand-new entry is
  * unread and unstarred.
+ *
+ * A live web entry carries its feed's own title (a feed's channel is shared by
+ * every subscriber), so the user's custom title for a stored subscription
+ * replaces it. Only a custom one: the payload's is newer than a stored feed
+ * title, which no event updates when the feed renames itself. The saved
+ * subscription is never stored, so saved articles keep their own.
  */
 export function applyNewEntry(
   utils: TRPCClientUtils,
@@ -341,6 +347,12 @@ export function applyNewEntry(
     read: item.entry.read ?? false,
     starred: item.entry.starred ?? false,
   });
+  const subscription = item.subscriptionId
+    ? db.subscriptions.rows.getSynced(item.subscriptionId)
+    : undefined;
+  if (subscription && subscription.title !== subscription.originalTitle) {
+    row.feedTitle = subscription.title;
+  }
   addServerEntryToLists(db, row);
   learnNewSavedSubscription(utils, db, row);
 }

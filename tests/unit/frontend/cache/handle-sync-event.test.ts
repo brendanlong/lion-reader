@@ -299,6 +299,30 @@ describe("handleSyncEvent - new_entry", () => {
     feedTitle: "Saved Articles",
   };
 
+  it("shows a stored subscription's custom title, else the payload's feed title (#2048)", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionUpdatedEvent({ id: "sub-1", title: "My Name For It" })
+    );
+    const event = (entryId: string, subscriptionId: string) =>
+      createNewEntryEvent({
+        entryId,
+        subscriptionId,
+        subscriptionIds: [subscriptionId],
+        entry: { ...LIVE_PAYLOAD, type: "web", feedTitle: "Feed's Own Title" },
+      });
+
+    handleSyncEvent(utils, queryClient, event("entry-renamed", "sub-1"));
+    // sub-2 isn't renamed: its stored feed title may predate the feed renaming itself.
+    handleSyncEvent(utils, queryClient, event("entry-not-renamed", "sub-2"));
+    handleSyncEvent(utils, queryClient, event("entry-unknown", "sub-not-loaded"));
+
+    expect(storedEntry("entry-renamed")?.feedTitle).toBe("My Name For It");
+    expect(storedEntry("entry-not-renamed")?.feedTitle).toBe("Feed's Own Title");
+    expect(storedEntry("entry-unknown")?.feedTitle).toBe("Feed's Own Title");
+  });
+
   it("puts a new saved article in Saved by its membership in the saved subscription", () => {
     const saved = { type: "saved", unreadOnly: true, limit: 25 };
     const all = { unreadOnly: true, limit: 25 };
@@ -318,7 +342,10 @@ describe("handleSyncEvent - new_entry", () => {
 
     expect(listIds(saved)).toEqual(["entry-live"]);
     expect(listIds(all)).toEqual(["entry-live"]);
-    expect(storedEntry("entry-live")?.subscriptionIds).toEqual([SEEDED_SAVED_SUBSCRIPTION_ID]);
+    expect(storedEntry("entry-live")).toMatchObject({
+      subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
+      feedTitle: "Saved Articles",
+    });
   });
 
   it("takes the payload's type and the event's memberships", () => {

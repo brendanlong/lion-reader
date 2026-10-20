@@ -2,7 +2,10 @@
  * An entry's `feedTitle` is its source as the user sees it: their custom
  * title for the subscription, else the feed's own. Every read that hands it to
  * a client (the web app, the Android app, MCP, Google Reader's item origin)
- * must agree, or a renamed feed shows its original name on its articles.
+ * must agree, or a renamed feed shows its original name on its articles. Live
+ * `new_entry` events are the exception: a web feed's channel is shared, so
+ * they carry the feed's own title and the web client swaps in the stored
+ * subscription's (`applyNewEntry`).
  *
  * A second user subscribed to the same feed without renaming it guards the
  * other direction: the custom title is per-user and never leaks.
@@ -10,23 +13,13 @@
 
 import { describe, it, expect, beforeEach, afterAll, beforeAll } from "vitest";
 import Redis from "ioredis";
-import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import * as entriesService from "../../src/server/services/entries";
 import * as entryStateService from "../../src/server/services/entry-state";
-import {
-  getUserEventsChannel,
-  publishFeedEvent,
-  publishUserEvent,
-} from "../../src/server/redis/pubsub";
-import { subscriptionCreatedEvent } from "../../src/server/services/subscription-sync-events";
-import { getSubscription } from "../../src/server/services/subscriptions";
-import { updateSubscription } from "../../src/server/services/subscription-updates";
-import { toNewEntryListData, type NewEntryListData } from "../../src/lib/events/schemas";
+import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { subscribeAndDrain, waitForMessage } from "../utils/pubsub";
-import { openSseStream, publishUntil, type SseStream } from "../utils/sse";
 import {
   createAuthContext,
   createTestEntry,
@@ -37,21 +30,6 @@ import {
 
 const FEED_TITLE = "Original Feed Name";
 const CUSTOM_TITLE = "My Name For It";
-
-function publishNewEntry(
-  feedId: string,
-  entryId: string,
-  entry: NewEntryListData
-): Promise<number> {
-  return publishFeedEvent({
-    type: "new_entry",
-    feedId,
-    entryId,
-    updatedAt: new Date(),
-    feedType: "web",
-    entry: { ...entry, type: "web" },
-  });
-}
 
 let subscriber: Redis;
 
@@ -156,73 +134,5 @@ describe("entry feedTitle is the user's subscription title", () => {
 
     expect(await read(renamer, entryId)).toBe(CUSTOM_TITLE);
     expect(await read(other, entryId)).toBe(FEED_TITLE);
-  });
-
-  it("live new_entry events carry each subscriber's own title, following renames", async () => {
-    const { feedId, renamer, other, subscriptionId, entryId } = await seed();
-    // Feed channels are shared by every subscriber, so the publisher stamps
-    // the feed's own title; each stream must swap in its user's.
-    const payload = toNewEntryListData({ type: "web", fetchedAt: new Date() }, FEED_TITLE);
-    const renamerStream = await openSseStream(renamer);
-    const otherStream = await openSseStream(other);
-    const titlesFor = (stream: SseStream, id: string) =>
-      stream
-        .events("new_entry")
-        .filter((event) => event.entryId === id)
-        .map((event) => (event.entry as { feedTitle: string | null }).feedTitle);
-
-    try {
-      await publishUntil(
-        () => publishNewEntry(feedId, entryId, payload),
-        () =>
-          titlesFor(renamerStream, entryId).length > 0 && titlesFor(otherStream, entryId).length > 0
-      );
-      expect(new Set(titlesFor(renamerStream, entryId))).toEqual(new Set([CUSTOM_TITLE]));
-      expect(new Set(titlesFor(otherStream, entryId))).toEqual(new Set([FEED_TITLE]));
-
-      // A subscription created with a custom title applies to its feed's events.
-      const secondFeedId = await createTestFeed({ title: FEED_TITLE });
-      const secondSubscriptionId = await createTestSubscription(renamer, secondFeedId, {
-        customTitle: "Second Name",
-      });
-      const secondEntryId = await createTestEntry(secondFeedId, { userIds: [renamer] });
-      await publishUserEvent({
-        ...subscriptionCreatedEvent(await getSubscription(db, renamer, secondSubscriptionId)),
-        userId: renamer,
-        feedId: secondFeedId,
-        updatedAt: new Date(),
-      });
-      await publishUntil(
-        () => publishNewEntry(secondFeedId, secondEntryId, payload),
-        () => titlesFor(renamerStream, secondEntryId).length > 0
-      );
-      expect(new Set(titlesFor(renamerStream, secondEntryId))).toEqual(new Set(["Second Name"]));
-
-      // Clearing the custom title falls back to the feed's.
-      await updateSubscription(db, renamer, subscriptionId, { customTitle: null });
-      const laterEntryId = await createTestEntry(feedId, { userIds: [renamer, other] });
-      await publishNewEntry(feedId, laterEntryId, payload);
-      await renamerStream.waitFor("new_entry", (event) => event.entryId === laterEntryId);
-      expect(titlesFor(renamerStream, laterEntryId)).toEqual([FEED_TITLE]);
-
-      // The feed renaming itself mid-stream shows its new title, for a
-      // subscription whose title an event set (renamer) and one loaded on
-      // connect (other).
-      const renamedTitle = "Renamed By The Feed";
-      await db.update(feeds).set({ title: renamedTitle }).where(eq(feeds.id, feedId));
-      const renamedEntryId = await createTestEntry(feedId, { userIds: [renamer, other] });
-      await publishNewEntry(
-        feedId,
-        renamedEntryId,
-        toNewEntryListData({ type: "web", fetchedAt: new Date() }, renamedTitle)
-      );
-      await renamerStream.waitFor("new_entry", (event) => event.entryId === renamedEntryId);
-      await otherStream.waitFor("new_entry", (event) => event.entryId === renamedEntryId);
-      expect(titlesFor(renamerStream, renamedEntryId)).toEqual([renamedTitle]);
-      expect(titlesFor(otherStream, renamedEntryId)).toEqual([renamedTitle]);
-    } finally {
-      await renamerStream.close();
-      await otherStream.close();
-    }
   });
 });
