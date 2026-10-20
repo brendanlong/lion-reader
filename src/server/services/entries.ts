@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, sql, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, isNotNull, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgSelect } from "drizzle-orm/pg-core";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
@@ -241,8 +241,9 @@ const entryListSelectFields = {
  * The rows a list has of its own, which carry its sort key and copies of each
  * article's state: one subscription's memberships (the `subscriptionId`
  * filter, which the caller checks is the user's, or Saved's), or a
- * tag's or Uncategorized's `tag_entries`. Null for All and Starred, which
- * read `user_entries` itself. Joined on the user too: a list id alone
+ * tag's or Uncategorized's `tag_entries`, which hold no spam, so a showSpam
+ * tag list filters the timeline instead. Null for All and Starred, which read
+ * `user_entries` itself. Joined on the user too: a list id alone
  * (Uncategorized's is the user's id) must never reach another user's rows
  * (SECURITY.md §7).
  */
@@ -252,16 +253,23 @@ async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "qu
     (params.type === "saved" && !params.tagId && !params.uncategorized
       ? await getSavedSubscriptionId(db, params.userId)
       : null);
-  const tagListId = params.tagId ?? (params.uncategorized ? params.userId : null);
+  const tagListId = params.showSpam
+    ? null
+    : (params.tagId ?? (params.uncategorized ? params.userId : null));
   const rows = subscriptionId
-    ? { table: subscriptionEntries, inList: eq(subscriptionEntries.subscriptionId, subscriptionId) }
+    ? {
+        table: subscriptionEntries,
+        inList: eq(subscriptionEntries.subscriptionId, subscriptionId),
+        isSpam: subscriptionEntries.isSpam,
+      }
     : tagListId
-      ? { table: tagEntries, inList: eq(tagEntries.listId, tagListId) }
+      ? { table: tagEntries, inList: eq(tagEntries.listId, tagListId), isSpam: null }
       : null;
   if (!rows) return null;
   const { table } = rows;
   return {
     table,
+    isSpam: rows.isSpam,
     on: and(
       rows.inList,
       eq(table.userId, visibleEntries.userId),
@@ -373,15 +381,16 @@ export async function listGreaderItemRefs(
 
 /** The read, starred and spam filters, on a list row's copies of them. */
 function listRowStateConditions(
-  rows: typeof subscriptionEntries | typeof tagEntries,
+  rows: { table: typeof subscriptionEntries | typeof tagEntries; isSpam: AnyColumn | null },
   params: Omit<ListEntriesParams, "query">
 ): SQL[] {
+  const { table } = rows;
   const conditions: SQL[] = [];
-  if (params.unreadOnly) conditions.push(sql`NOT ${rows.read}`);
-  else if (params.readOnly) conditions.push(sql`${rows.read}`);
-  if (params.starredOnly) conditions.push(sql`${rows.starred}`);
-  else if (params.unstarredOnly) conditions.push(sql`NOT ${rows.starred}`);
-  if (!params.showSpam) conditions.push(sql`NOT ${rows.isSpam}`);
+  if (params.unreadOnly) conditions.push(sql`NOT ${table.read}`);
+  else if (params.readOnly) conditions.push(sql`${table.read}`);
+  if (params.starredOnly) conditions.push(sql`${table.starred}`);
+  else if (params.unstarredOnly) conditions.push(sql`NOT ${table.starred}`);
+  if (!params.showSpam && rows.isSpam) conditions.push(sql`NOT ${rows.isSpam}`);
   return conditions;
 }
 
@@ -411,13 +420,22 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Only a subscription filter needs checking: a tag's or Uncategorized's
-  // rows are the user's by the join on them.
-  if (
-    params.subscriptionId &&
-    !(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))
-  ) {
-    return null;
+  // A subscription filter must be the user's; a tag's or Uncategorized's rows
+  // are by the join on them, and without rows (showSpam) its filter is.
+  const listRows = await listRowsOf(db, params);
+  if (listRows) {
+    if (
+      params.subscriptionId &&
+      !(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))
+    ) {
+      return null;
+    }
+  } else {
+    const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
+      paged: true,
+    });
+    if (subscriptionFilter === null) return null;
+    if (subscriptionFilter) conditions.push(subscriptionFilter);
   }
 
   // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
@@ -428,9 +446,8 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   // article's state are filtered too (the article's own still apply), so a
   // filtered page reads the index of its matches.
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
-  const listRows = await listRowsOf(db, params);
   if (listRows) {
-    conditions.push(...listRowStateConditions(listRows.table, params));
+    conditions.push(...listRowStateConditions(listRows, params));
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).

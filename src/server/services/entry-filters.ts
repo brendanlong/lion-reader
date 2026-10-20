@@ -231,9 +231,11 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
  * for every row probed.
  *
  * `paged` keeps it a per-row lookup (`OFFSET 0` stops Postgres turning it into
- * a semi-join) for search, whose matches are usually far fewer than a tag's
- * members. Counts and bulk updates, which read every match, leave the choice
- * to the planner. (List pages join their list's own rows instead.)
+ * a semi-join) for a page: walking the user's timeline stops after a page,
+ * while a semi-join reads every member of a tag's subscriptions first and
+ * sorts them. Only search and showSpam tag lists page this way; other lists
+ * join their own rows. Counts and bulk updates, which read every match, leave
+ * the choice to the planner.
  */
 export function buildEntriesInSubscriptionsCondition(
   subscriptionIds: string[] | SQLWrapper,

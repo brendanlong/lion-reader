@@ -20,10 +20,12 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
+import { listEntries } from "../../src/server/services/entries";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { expectNoMessage, subscribeAndDrain } from "../utils/pubsub";
 import {
   createAuthContext,
+  createTestEmailSubscription,
   createTestEntry,
   createTestMembership,
   createTestFeed,
@@ -953,6 +955,21 @@ describe("Tags API", () => {
 
       const caller = createCaller(await createAuthContext(userId));
       expect((await caller.entries.list({ tagId })).items).toHaveLength(0);
+    });
+
+    it("lists a tagged sender's spam only when spam is shown", async () => {
+      const userId = await createTestUser();
+      const senderId = await createTestEmailSubscription(userId);
+      const spamId = await createTestEntry(senderId, {
+        type: "email",
+        isSpam: true,
+        userIds: [userId],
+      });
+      const tagId = await createTestTag(userId, { subscriptionIds: [senderId] });
+
+      const list = (showSpam: boolean) => listEntries(db, { userId, tagId, showSpam });
+      expect((await list(false)).items).toHaveLength(0);
+      expect((await list(true)).items.map((item) => item.id)).toEqual([spamId]);
     });
 
     it("combines tagId and feedId filters", async () => {

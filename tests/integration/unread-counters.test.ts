@@ -372,8 +372,8 @@ describe("unread counters (triggers + reconciliation)", () => {
     // list it isn't in.
     await db.update(tagEntries).set({ read: true }).where(eq(tagEntries.userId, userId));
     await db.execute(sql`
-      INSERT INTO tag_entries (list_id, user_id, entry_id, published_or_fetched_at, read, starred, is_spam)
-      SELECT ${generateUuidv7()}, user_id, entry_id, published_or_fetched_at, read, starred, is_spam
+      INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred)
+      SELECT user_id, entry_id, ${generateUuidv7()}, published_or_fetched_at, read, starred
       FROM tag_entries WHERE user_id = ${userId}
     `);
 

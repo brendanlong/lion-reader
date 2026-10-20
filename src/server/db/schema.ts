@@ -992,28 +992,26 @@ export const subscriptionEntries = pgTable(
 /**
  * A tag's or Uncategorized's list rows, kept by triggers ("Subscription
  * Attribution" in src/server/CLAUDE.md). `list_id` is the tag's id, or the
- * user's for Uncategorized.
+ * user's for Uncategorized; spam has none.
  */
 export const tagEntries = pgTable(
   "tag_entries",
   {
-    listId: uuid("list_id").notNull(),
     userId: uuid("user_id").notNull(),
     entryId: uuid("entry_id").notNull(),
+    listId: uuid("list_id").notNull(),
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
     read: boolean("read").notNull(),
     starred: boolean("starred").notNull(),
-    isSpam: boolean("is_spam").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.listId, table.entryId] }),
+    primaryKey({ columns: [table.userId, table.entryId, table.listId] }),
     foreignKey({
       columns: [table.userId, table.entryId],
       foreignColumns: [userEntries.userId, userEntries.entryId],
     })
       .onDelete("cascade")
       .onUpdate("cascade"),
-    index("idx_tag_entries_user_entry").on(table.userId, table.entryId),
   ]
 );
 

@@ -145,7 +145,7 @@ interface ListOptions {
   userId: string;
   /** One subscription's list, walked through its memberships' timeline. */
   single?: string;
-  /** A tag's (its id) or Uncategorized's (the user's id) list, through its tag_entries. */
+  /** A tag's (its id) or Uncategorized's (the user's id) list, through its tag_entries (no spam). */
   tagList?: string;
   where?: string[];
   unreadOnly?: boolean;
@@ -181,7 +181,7 @@ function listEntriesSql(o: ListOptions): string {
   where.push("NOT ve.is_spam");
   // The list's rows' copies of the filters too.
   if (rows && (o.unreadOnly ?? true)) where.push(`NOT ${rows.alias}.read`);
-  if (rows) where.push(`NOT ${rows.alias}.is_spam`);
+  if (o.single) where.push("NOT se.is_spam");
   if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
   if (o.cursor) {
     where.push(`(${sortColumn}, ${idColumn}) < (${ts(o.cursor.ts)}, ${q(o.cursor.id)}::uuid)`);
