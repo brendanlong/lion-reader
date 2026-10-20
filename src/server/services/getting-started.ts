@@ -67,12 +67,14 @@ export async function createGettingStartedArticle(
       title: GETTING_STARTED_TITLE,
       excerpt: GETTING_STARTED_EXCERPT,
       keepRelativeUrls: true,
-      // A commit whose acknowledgement is lost throws here though the article
-      // exists; the key makes the retry that the released claim allows find it.
-      idempotencyKey: "getting-started",
+      // The insert can throw after it commits (a lost commit acknowledgement, or
+      // sanitizing the result), and the claim is then released; the key makes
+      // the retry find the article. The colon keeps it out of the key space
+      // callers can use.
+      idempotencyKey: "onboarding:getting-started",
     });
   } catch (err) {
-    // Nothing was inserted, so hand the user back to the backfill.
+    // Hand the user back to the backfill; the key covers an insert that committed.
     await db
       .update(users)
       .set({ gettingStartedAt: null })

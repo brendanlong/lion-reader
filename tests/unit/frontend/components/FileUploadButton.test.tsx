@@ -132,6 +132,35 @@ describe("FileUploadButton drop zone accessibility", () => {
     await waitFor(() => expect(callsFor("saved.uploadFile")).toHaveLength(1));
   });
 
+  it("retries a file with its key, and gives another file a new one (#2070)", async () => {
+    const { callsFor } = renderWithTrpc(<FileUploadButton />, {
+      handlers: {
+        "saved.uploadFile": () => {
+          throw new Error("Network went away");
+        },
+      },
+    });
+    openDialog();
+    const keys = () =>
+      callsFor("saved.uploadFile").map(
+        (call) => (call.input as { idempotencyKey: string }).idempotencyKey
+      );
+
+    await uploadMarkdownFile();
+    await waitFor(() => expect(keys()).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Upload" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(keys()).toHaveLength(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Upload" })).toBeEnabled());
+    await uploadMarkdownFile();
+    await waitFor(() => expect(keys()).toHaveLength(3));
+
+    const [first, retry, other] = keys();
+    expect(first).toMatch(/^[A-Za-z0-9_-]{1,128}$/);
+    expect(retry).toBe(first);
+    expect(other).not.toBe(first);
+  });
+
   it("offers and accepts plain text files (#1773)", async () => {
     renderWithTrpc(<FileUploadButton />, { handlers });
     openDialog();
