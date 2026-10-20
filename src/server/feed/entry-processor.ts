@@ -24,10 +24,7 @@ import {
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
 import { logger } from "@/lib/logger";
-import { isDeadlock } from "../db/errors";
-
-/** Tries of a fan-out that keeps losing deadlocks (see createUserEntriesForFeed). */
-const FANOUT_ATTEMPTS = 3;
+import { retryDeadlocks } from "../db/errors";
 
 /**
  * Result of processing a single entry.
@@ -644,16 +641,9 @@ export async function createUserEntriesForFeed(
   // entries can deadlock (they insert many rows each). Retry the loser: a poll
   // has already stamped last_seen_at, so an unchanged next poll wouldn't fan
   // these entries out again, and a push's subscribers would wait for a poll.
-  let added: FanOutLink[];
-  for (let attempt = 1; ; attempt++) {
-    try {
-      added = await fanOut();
-      break;
-    } catch (err) {
-      if (attempt >= FANOUT_ATTEMPTS || !isDeadlock(err)) throw err;
-      logger.warn("Fan-out lost a deadlock; retrying", { feedId, attempt });
-    }
-  }
+  const added = await retryDeadlocks(fanOut, (attempt) =>
+    logger.warn("Fan-out lost a deadlock; retrying", { feedId, attempt })
+  );
 
   logger.debug("Created user entries for feed", {
     feedId,

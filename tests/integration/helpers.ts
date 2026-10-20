@@ -17,7 +17,7 @@
  * `afterAll` (deleting a user cascades to its subscriptions and user_entries).
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { PgInsertValue } from "drizzle-orm/pg-core";
 import { db } from "../../src/server/db";
 import {
@@ -40,6 +40,7 @@ import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { generateToken, hashToken } from "../../src/server/oauth/utils";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { insertUserEntriesWithMemberships } from "../../src/server/services/subscription-entries";
+import { deleteUser } from "../../src/server/services/users";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -78,6 +79,17 @@ export async function createTestUser(options: CreateTestUserOptions = {}): Promi
     ...overrides,
   });
   return userId;
+}
+
+/**
+ * Deletes the users matching `where` (all users by default) through
+ * `deleteUser`. Tests whose signups leave `runPostSignupTasks` running must
+ * clean up this way: a raw `DELETE FROM users` can deadlock against those
+ * tasks, which `deleteUser` retries (#2092).
+ */
+export async function deleteUsers(where?: SQL): Promise<void> {
+  const rows = await db.select({ id: users.id }).from(users).where(where);
+  for (const { id } of rows) await deleteUser(db, id);
 }
 
 // ============================================================================

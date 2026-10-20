@@ -22,7 +22,7 @@ import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { createSession, revokeUserSession } from "../../src/server/auth/session";
 import { OAUTH_STATE_COOKIE_NAME } from "../../src/server/auth/oauth/state-cookie";
 import type { OAuthLinkTarget } from "../../src/server/auth/oauth/config";
-import { createTestUser } from "./helpers";
+import { createTestUser, deleteUsers } from "./helpers";
 
 const APP_URL = "http://localhost:3000";
 const GOOGLE_CLIENT_ID = "test-google-client-id";
@@ -210,9 +210,9 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       delete process.env[key];
     }
     if (createdUserIds.length > 0) {
-      await db.delete(users).where(inArray(users.id, createdUserIds));
+      await deleteUsers(inArray(users.id, createdUserIds));
     }
-    await db.delete(users).where(eq(users.email, PROVIDER_EMAIL));
+    await deleteUsers(eq(users.email, PROVIDER_EMAIL));
   });
 
   /** Starts a link flow the way `auth.linkAuthUrl` does, returning its state. */

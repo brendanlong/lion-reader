@@ -9,6 +9,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
+import { retryDeadlocks } from "@/server/db/errors";
 
 /**
  * Deletes a user account and all associated data.
@@ -23,10 +24,26 @@ import { logger } from "@/lib/logger";
  * - Entries belonging to orphaned feeds (cascaded from feed deletion)
  * - The user's emails and saved articles cascade from their owners (#1846)
  *
+ * Retried on deadlock (#2092): the cascade locks the users row before the
+ * user's subscriptions and user_entries rows, the reverse of the order writes
+ * lock them in, so a write in flight for this user can deadlock against it.
+ * No order fixes that: a write that inserts a row referencing the user (a
+ * saved article, a subscription) key-share locks the users row before touching
+ * the user's other rows.
+ *
  * @param db - Database instance
  * @param userId - The user ID to delete
  */
 export async function deleteUser(db: Database, userId: string): Promise<void> {
+  await retryDeadlocks(
+    () => deleteUserOnce(db, userId),
+    (attempt) => logger.warn("Account deletion lost a deadlock; retrying", { userId, attempt })
+  );
+
+  logger.info("User account deleted", { userId });
+}
+
+async function deleteUserOnce(db: Database, userId: string): Promise<void> {
   await db.transaction(async (tx) => {
     // Step 1: The web feeds the user subscribes to may become orphaned.
     const candidates = await tx
@@ -67,6 +84,4 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
       );
     }
   });
-
-  logger.info("User account deleted", { userId });
 }
