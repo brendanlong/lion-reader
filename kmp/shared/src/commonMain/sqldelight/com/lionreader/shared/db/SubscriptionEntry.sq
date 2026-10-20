@@ -7,6 +7,10 @@
 CREATE TABLE subscription_entry (
   subscription_id TEXT NOT NULL,
   entry_id TEXT NOT NULL,
+  -- The entry's position in the collection, as the server last reported it
+  -- (#2064): what Entry.sq's selectTimelineByPosition orders by, lower first.
+  -- Null if it has none.
+  position REAL,
   PRIMARY KEY (subscription_id, entry_id)
 );
 
@@ -25,6 +29,13 @@ INSERT OR IGNORE INTO subscription_entry(subscription_id, entry_id) VALUES (?, ?
 
 deleteForEntry:
 DELETE FROM subscription_entry WHERE entry_id = ?;
+
+-- The entry's memberships but :kept, which keep their positions.
+deleteForEntryExcept:
+DELETE FROM subscription_entry WHERE entry_id = :entryId AND subscription_id NOT IN :kept;
+
+setPosition:
+UPDATE subscription_entry SET position = ? WHERE subscription_id = ? AND entry_id = ?;
 
 deleteForSubscription:
 DELETE FROM subscription_entry WHERE subscription_id = ?;

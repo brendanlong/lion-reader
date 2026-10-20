@@ -73,7 +73,7 @@ class MembershipMigrationTest {
         val db = LionReaderDatabase(driver)
         val reader = Reader(db, { NOW }, Dispatchers.Unconfined) {}
         suspend fun list(scope: ListScope) =
-            reader.timeline(scope, false, false, emptySet(), 100).first().map { it.id }
+            reader.timeline(scope, false, ListSort.NEWEST, emptySet(), 100).first().map { it.id }
 
         assertEquals(listOf("s2", "s1"), list(ListScope.Saved))
         assertEquals(listOf("c"), list(ListScope.Subscription("col-1")))
@@ -114,6 +114,7 @@ class MembershipMigrationTest {
             false,
             null,
             listOf("saved-sub"),
+            rankings = null,
         )
         assertEquals(listOf("s2", "s1", "s3"), list(ListScope.Saved))
     }

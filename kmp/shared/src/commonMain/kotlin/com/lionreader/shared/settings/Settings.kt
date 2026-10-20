@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.lionreader.shared.api.CloudSpeechPause
+import com.lionreader.shared.data.ListSort
+import com.lionreader.shared.data.SortField
 import com.lionreader.shared.sync.RetentionPolicy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -61,8 +63,16 @@ data class AppSettings(
     val textSize: TextSize = TextSize.MEDIUM,
     val justify: Boolean = false,
     val unreadOnly: Boolean = true,
-    /** Lists run oldest first (Recently Read: earliest read first), as the web's sort toggle. */
+    /**
+     * Lists by date run oldest first (Recently Read: earliest read first), as the web's sort
+     * toggle. One choice for every list, unlike [listSorts].
+     */
     val oldestFirst: Boolean = false,
+    /**
+     * The lists the user ordered by score or position (#2064), each by its `ListScope.sortKey`:
+     * those orders fit some lists (an ebook's chapters) and not others. The rest go by date.
+     */
+    val listSorts: Map<String, ListSort> = emptyMap(),
     val retentionDays: Int = 30,
     val syncInterval: SyncInterval = SyncInterval.THIRTY_MINUTES,
     /** A sync when the app comes on screen (see `HomeViewModel.refreshOnOpen`). */
@@ -120,6 +130,24 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         Stored(booleanPreferencesKey("justify"), { justify }) { copy(justify = it) },
         Stored(booleanPreferencesKey("unread_only"), { unreadOnly }) { copy(unreadOnly = it) },
         Stored(booleanPreferencesKey("oldest_first"), { oldestFirst }) { copy(oldestFirst = it) },
+        // "HIGHEST tag:id"; an order this app doesn't know (a newer one's) is left out.
+        Stored(
+            stringSetPreferencesKey("list_sorts"),
+            { listSorts.map { (key, sort) -> "${sort.name} $key" }.toSet() },
+        ) { stored ->
+            copy(
+                listSorts =
+                    stored
+                        .mapNotNull { line ->
+                            val (name, key) =
+                                line.split(" ", limit = 2).takeIf { it.size == 2 }
+                                    ?: return@mapNotNull null
+                            val sort = ListSort.entries.find { it.name == name }
+                            sort?.takeIf { it.field != SortField.DATE }?.let { key to it }
+                        }
+                        .toMap()
+            )
+        },
         Stored(intPreferencesKey("retention_days"), { retentionDays }) {
             copy(retentionDays = it)
         },

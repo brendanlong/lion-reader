@@ -104,49 +104,103 @@ class Reader(
     private val onLocalChange: () -> Unit,
 ) {
     /**
-     * One list, newest first unless [oldestFirst]. Entries in [keepIds] stay even once read (with
+     * One list, in [sort] (Recently Read by when it was read, either way round; Position only in a
+     * subscription's list, by date elsewhere). Entries in [keepIds] stay even once read (with
      * [unreadOnly]) or unstarred (in Starred), so an entry the user just read or swiped doesn't
      * vanish from under them (the web keeps list membership until the list is reloaded).
      */
     fun timeline(
         scope: ListScope,
         unreadOnly: Boolean,
-        oldestFirst: Boolean,
+        sort: ListSort,
         keepIds: Collection<String>,
         limit: Long,
     ): Flow<List<TimelineItem>> {
         val queries = db.entryQueries
         val filter = ScopeFilter(scope)
         val unread = if (unreadOnly) 1L else 0L
+        val subscriptionId = filter.subscriptionId
         val query =
-            if (scope == ListScope.RecentlyRead) {
-                // Read and unread alike: it's the list of what was read.
-                if (oldestFirst) queries.selectRecentlyReadOldestFirst(limit, ::timelineItem)
-                else queries.selectRecentlyRead(limit, ::timelineItem)
-            } else if (oldestFirst) {
-                queries.selectTimelineOldestFirst(
-                    subscriptionId = filter.subscriptionId,
-                    tagId = filter.tagId,
-                    starredOnly = filter.starredOnly,
-                    uncategorizedOnly = filter.uncategorizedOnly,
-                    unreadOnly = unread,
-                    keepIds = keepIds,
-                    limit = limit,
-                    mapper = ::timelineItem,
-                )
-            } else {
-                queries.selectTimeline(
-                    subscriptionId = filter.subscriptionId,
-                    tagId = filter.tagId,
-                    starredOnly = filter.starredOnly,
-                    uncategorizedOnly = filter.uncategorizedOnly,
-                    unreadOnly = unread,
-                    keepIds = keepIds,
-                    limit = limit,
-                    mapper = ::timelineItem,
-                )
+            when {
+                scope == ListScope.RecentlyRead ->
+                    // Read and unread alike: it's the list of what was read.
+                    if (sort == ListSort.OLDEST) {
+                        queries.selectRecentlyReadOldestFirst(limit, ::timelineItem)
+                    } else {
+                        queries.selectRecentlyRead(limit, ::timelineItem)
+                    }
+                sort.field == SortField.POSITION && subscriptionId != null ->
+                    queries.selectTimelineByPosition(
+                        subscriptionId = subscriptionId,
+                        unreadOnly = unread,
+                        keepIds = keepIds,
+                        lastFirst = (sort == ListSort.LAST).toLong(),
+                        limit = limit,
+                        mapper = ::timelineItem,
+                    )
+                sort.field == SortField.SCORE ->
+                    queries.selectTimelineByScore(
+                        subscriptionId = subscriptionId,
+                        tagId = filter.tagId,
+                        starredOnly = filter.starredOnly,
+                        uncategorizedOnly = filter.uncategorizedOnly,
+                        unreadOnly = unread,
+                        keepIds = keepIds,
+                        lowestFirst = (sort == ListSort.LOWEST).toLong(),
+                        limit = limit,
+                        mapper = ::timelineItem,
+                    )
+                sort == ListSort.OLDEST ->
+                    queries.selectTimelineOldestFirst(
+                        subscriptionId = subscriptionId,
+                        tagId = filter.tagId,
+                        starredOnly = filter.starredOnly,
+                        uncategorizedOnly = filter.uncategorizedOnly,
+                        unreadOnly = unread,
+                        keepIds = keepIds,
+                        limit = limit,
+                        mapper = ::timelineItem,
+                    )
+                else ->
+                    queries.selectTimeline(
+                        subscriptionId = subscriptionId,
+                        tagId = filter.tagId,
+                        starredOnly = filter.starredOnly,
+                        uncategorizedOnly = filter.uncategorizedOnly,
+                        unreadOnly = unread,
+                        keepIds = keepIds,
+                        limit = limit,
+                        mapper = ::timelineItem,
+                    )
             }
         return query.asFlow().mapToList(context)
+    }
+
+    /**
+     * Which orders besides date [timeline]'s list has values for, on the device: Score if any of
+     * its entries has one, Position if any of a subscription's does (only a collection's do).
+     * Recently Read has neither: it's ordered by when entries were read.
+     */
+    fun sortable(
+        scope: ListScope,
+        unreadOnly: Boolean,
+        keepIds: Collection<String>,
+    ): Flow<Sortable> {
+        if (scope == ListScope.RecentlyRead) return flowOf(Sortable.DATE_ONLY)
+        val filter = ScopeFilter(scope)
+        return db.entryQueries
+            .sortable(
+                subscriptionId = filter.subscriptionId,
+                tagId = filter.tagId,
+                starredOnly = filter.starredOnly,
+                uncategorizedOnly = filter.uncategorizedOnly,
+                unreadOnly = unreadOnly.toLong(),
+                keepIds = keepIds,
+            ) { score, position ->
+                Sortable(score = score, position = position)
+            }
+            .asFlow()
+            .mapToOne(context)
     }
 
     /** How long [timeline]'s list is with no limit: all of it on the device. */

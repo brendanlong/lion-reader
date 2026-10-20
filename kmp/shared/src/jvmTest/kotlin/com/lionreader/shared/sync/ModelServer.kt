@@ -53,6 +53,8 @@ import kotlinx.serialization.json.jsonObject
  *   `subscriptionIds` (a feed or Saved, plus [collection] if the entry's in it), and joining or
  *   leaving the collection is a state change. Saved is a subscription the list doesn't show, whose
  *   id `/subscriptions` reports once the first save has created it;
+ * - an entry's score and its position in [collection] (#2064) travel with its state: setting either
+ *   is a state change, and lists (sorted by score on request) and entries carry both;
  * - requests over the real endpoints' size limits ([ServerLimits]) get a 400.
  *
  * Counts aren't modeled on the wire: the app counts its own entries.
@@ -76,6 +78,9 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         var stateSeq: Long,
         var deletedSeq: Long? = null,
         val collections: MutableSet<String> = mutableSetOf(),
+        var score: Double? = null,
+        /** By collection, for those of [collections] that give it one. */
+        val positions: MutableMap<String, Double> = mutableMapOf(),
     ) {
         val updatedSeq: Long
             get() = maxOf(createdSeq, metadataSeq, stateSeq)
@@ -180,9 +185,25 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         entry.metadataSeq = ++seq
     }
 
-    /** Adds the entry to [collection], or takes it out. */
+    /** Adds the entry to [collection], or takes it out (and its position with it). */
     fun toggleCollection(entry: Entry) {
-        if (!entry.collections.remove(collection)) entry.collections += collection
+        if (entry.collections.remove(collection)) entry.positions.remove(collection)
+        else entry.collections += collection
+        entry.stateSeq = ++seq
+    }
+
+    /** Sets or clears the entry's score, as an assistant over MCP does. */
+    fun setScore(entry: Entry, score: Double?) {
+        if (entry.score == score) return
+        entry.score = score
+        entry.stateSeq = ++seq
+    }
+
+    /** Sets or clears the entry's position in [collection], if it's in it. */
+    fun setPosition(entry: Entry, position: Double?) {
+        if (collection !in entry.collections || entry.positions[collection] == position) return
+        if (position == null) entry.positions.remove(collection)
+        else entry.positions[collection] = position
         entry.stateSeq = ++seq
     }
 
@@ -284,8 +305,11 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 "/entries" -> {
                     val limit = params["limit"]?.toInt() ?: 100
                     if (limit !in 1..ServerLimits.ENTRIES_PAGE_SIZE) return@run badRequest(request)
+                    if (params["sortBy"] == "score" && params["sortOrder"] != "highest") {
+                        return@run badRequest(request)
+                    }
                     list(
-                        params["sortBy"] == "readChanged",
+                        params["sortBy"],
                         params["starredOnly"] == "true",
                         params["type"],
                         params["subscriptionId"],
@@ -374,6 +398,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.memberships,
                                 e.origin,
                                 if (e.read) null else e.eventEntry(),
+                                score = e.score,
+                                positions = e.positions.toMap(),
                             )
                         )
                     }
@@ -402,7 +428,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     }
 
     private fun list(
-        recentlyRead: Boolean,
+        sortBy: String?,
         starredOnly: Boolean,
         type: String?,
         subscriptionId: String?,
@@ -415,10 +441,13 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 // Saved is the Saved subscription's list.
                 .filter { type != "saved" || savedSubscriptionId in it.memberships }
                 .filter { subscriptionId == null || subscriptionId in it.memberships }
-                .filter { !recentlyRead || it.readChangedAt != null }
+                .filter { sortBy != "readChanged" || it.readChangedAt != null }
                 .sortedWith(
-                    if (recentlyRead) recentlyReadOrder
-                    else compareByDescending<Entry> { it.published }.thenByDescending { it.id }
+                    when (sortBy) {
+                        "readChanged" -> recentlyReadOrder
+                        "score" -> highestScoreOrder
+                        else -> newestOrder
+                    }
                 )
         val offset = cursor?.toInt() ?: 0
         val page = matching.drop(offset).take(limit)
@@ -483,6 +512,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             read = read,
             starred = starred,
             readChangedAt = readChangedAt?.let { time(it) },
+            score = score,
+            positions = positions.toMap(),
         )
 
     private fun Entry.full() =
@@ -498,6 +529,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             starred = starred,
             content = content,
             readChangedAt = readChangedAt?.let { time(it) },
+            score = score,
+            positions = positions.toMap(),
         )
 
     private fun <T> encode(serializer: KSerializer<T>, value: T) =
@@ -514,6 +547,41 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
 
     private val recentlyReadOrder =
         compareByDescending<Entry> { it.readChangedAt }.thenByDescending { it.id }
+
+    private val newestOrder = compareByDescending<Entry> { it.published }.thenByDescending { it.id }
+
+    /**
+     * The server's order by a value an entry may lack (`planEntryPage`): those with one by it, ties
+     * by date the same way round, then the rest newest first, whichever the direction.
+     */
+    private fun rankedOrder(descending: Boolean, value: (Entry) -> Double?): Comparator<Entry> {
+        val valued =
+            compareBy<Entry>({ value(it) }, { it.published }, { it.id }).let {
+                if (descending) it.reversed() else it
+            }
+        return Comparator { a, b ->
+            val (x, y) = value(a) to value(b)
+            when {
+                x != null && y != null -> valued.compare(a, b)
+                x != null -> -1
+                y != null -> 1
+                else -> newestOrder.compare(a, b)
+            }
+        }
+    }
+
+    private val highestScoreOrder = rankedOrder(descending = true) { it.score }
+
+    /** All, highest score first, as the server lists it. */
+    fun byScore(lowestFirst: Boolean = false): List<String> =
+        visible.sortedWith(rankedOrder(!lowestFirst) { it.score }).map { it.id }
+
+    /** [collection]'s articles, first position first, as the server lists them. */
+    fun byPosition(lastFirst: Boolean = false): List<String> =
+        visible
+            .filter { collection in it.collections }
+            .sortedWith(rankedOrder(lastFirst) { it.positions[collection] })
+            .map { it.id }
 
     private companion object {
         val WRITES = setOf("/entries/mark-read", "/entries/starred")

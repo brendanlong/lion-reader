@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlinx.coroutines.Dispatchers
@@ -63,7 +64,7 @@ class MarkReadOnArrivalTest {
                 .timeline(
                     ListScope.RecentlyRead,
                     unreadOnly = false,
-                    oldestFirst = false,
+                    sort = ListSort.NEWEST,
                     emptySet(),
                     10,
                 )

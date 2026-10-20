@@ -12,7 +12,9 @@ import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagRef
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
+import com.lionreader.shared.data.Sortable
 import com.lionreader.shared.db.LionReaderDatabase
 import io.ktor.http.HttpStatusCode
 import kotlin.test.AfterTest
@@ -81,7 +83,8 @@ class SyncEngineTest {
         unreadOnly: Boolean = false,
         oldestFirst: Boolean = false,
         limit: Long = 1000,
-    ) = reader.timeline(scope, unreadOnly, oldestFirst, emptySet(), limit).first().map { it.id }
+        sort: ListSort = if (oldestFirst) ListSort.OLDEST else ListSort.NEWEST,
+    ) = reader.timeline(scope, unreadOnly, sort, emptySet(), limit).first().map { it.id }
 
     private fun minutesAgo(minutes: Int) =
         Instant.fromEpochMilliseconds(NOW - minutes * 60_000L).toString()
@@ -705,7 +708,8 @@ class SyncEngineTest {
         for (scope in scopes) {
             for (unreadOnly in listOf(false, true)) {
                 for (keepIds in listOf(emptySet(), setOf("b", "d"))) {
-                    val all = reader.timeline(scope, unreadOnly, false, keepIds, 1000).first()
+                    val all =
+                        reader.timeline(scope, unreadOnly, ListSort.NEWEST, keepIds, 1000).first()
                     assertEquals(
                         all.size.toLong(),
                         reader.timelineCount(scope, unreadOnly, keepIds).first(),
@@ -1012,7 +1016,7 @@ class SyncEngineTest {
 
         engine.sync()
 
-        val sources = reader.timeline(ListScope.All, false, false, emptySet(), 10).first()
+        val sources = reader.timeline(ListScope.All, false, ListSort.NEWEST, emptySet(), 10).first()
         assertEquals(
             mapOf("saved" to "Example", "no-site" to "Saved Articles", "web" to "Rust Weekly"),
             sources.associate { it.id to it.source },
@@ -1297,5 +1301,157 @@ class SyncEngineTest {
 
         assertEquals(1, db.outboxQueries.countStates().executeAsOne())
         assertEquals(false, reader.entry("a").first()?.read)
+    }
+
+    // ---- Orders by score and position (#2064) ----------------------------
+
+    /** As the server sends an entry with its score, in no collection or ordered in none. */
+    private fun scored(id: String, score: Double?, ageDays: Long, read: Boolean = false) =
+        entry(id, ageDays, read).copy(score = score, positions = emptyMap())
+
+    @Test
+    fun byScoreHighestOrLowestFirstThenTheUnscoredNewestFirst() = runTest {
+        serve(
+            scored("a", 2.0, ageDays = 1, read = true),
+            scored("b", 2.0, ageDays = 3),
+            scored("c", 5.0, ageDays = 2),
+            scored("d", null, ageDays = 1),
+            scored("e", null, ageDays = 4),
+            scored("f", -1.0, ageDays = 5),
+            // Same score and time as b: the id breaks the tie, flipped with the rest.
+            scored("g", 2.0, ageDays = 3),
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("c", "a", "g", "b", "f", "d", "e"), timeline(sort = ListSort.HIGHEST))
+        assertEquals(listOf("f", "b", "g", "a", "c", "d", "e"), timeline(sort = ListSort.LOWEST))
+        assertEquals(listOf("c", "a", "g"), timeline(sort = ListSort.HIGHEST, limit = 3))
+        assertEquals(
+            listOf("c", "g", "b", "f", "d", "e"),
+            timeline(unreadOnly = true, sort = ListSort.HIGHEST),
+        )
+        // Counted as by date.
+        assertEquals(6, reader.timelineCount(ListScope.All, true, emptySet()).first())
+    }
+
+    @Test
+    fun byPositionInEachCollectionFirstOrLastThenTheRestNewestFirst() = runTest {
+        server.subscriptions += subscription("sub-1")
+        for (id in listOf("col-1", "col-2")) {
+            server.subscriptions +=
+                Subscription(id, COLLECTION_TYPE, title = id, tags = emptyList())
+        }
+        fun placed(id: String, ageDays: Long, vararg positions: Pair<String, Double>) =
+            entry(id, ageDays).copy(positions = positions.toMap())
+        serve(
+            placed("p1", 2, "col-1" to 1.0, "col-2" to 1.0),
+            placed("p2", 1, "col-1" to 2.0),
+            placed("p3", 3, "col-1" to 2.0),
+            placed("p4", 1),
+            placed("p5", 5),
+            // Last in one collection, first in the other.
+            placed("x", 4, "col-1" to 3.0, "col-2" to 0.0),
+        )
+        server.collections["col-1"] = mutableSetOf("p1", "p2", "p3", "p4", "p5", "x")
+        server.collections["col-2"] = mutableSetOf("p1", "x")
+        engine.sync(downloadContent = false)
+
+        val col1 = ListScope.Subscription("col-1")
+        assertEquals(
+            listOf("p1", "p3", "p2", "x", "p4", "p5"),
+            timeline(col1, sort = ListSort.FIRST),
+        )
+        assertEquals(
+            listOf("x", "p2", "p3", "p1", "p4", "p5"),
+            timeline(col1, sort = ListSort.LAST),
+        )
+        assertEquals(
+            listOf("x", "p1"),
+            timeline(ListScope.Subscription("col-2"), sort = ListSort.FIRST),
+        )
+    }
+
+    @Test
+    fun stateChangesSetAndClearScoresAndPositions() = runTest {
+        server.subscriptions += subscription("sub-1")
+        server.subscriptions +=
+            Subscription("col-1", COLLECTION_TYPE, title = "Col", tags = emptyList())
+        serve(scored("a", null, ageDays = 1), scored("b", null, ageDays = 2))
+        server.collections["col-1"] = mutableSetOf("a", "b")
+        engine.sync(downloadContent = false)
+        val col1 = ListScope.Subscription("col-1")
+        assertEquals(listOf("a", "b"), timeline(sort = ListSort.HIGHEST))
+
+        fun changed(score: Double?, positions: Map<String, Double>?) =
+            server
+                .stateChanged("b", read = false, starred = false)
+                .copy(score = score, positions = positions)
+        server.queueChanges(events = listOf(changed(4.0, mapOf("col-1" to 1.0))))
+        engine.sync(downloadContent = false)
+        assertEquals(listOf("b", "a"), timeline(sort = ListSort.HIGHEST))
+        assertEquals(listOf("b", "a"), timeline(col1, sort = ListSort.FIRST))
+
+        // A server a release behind says nothing of them: they stay.
+        server.queueChanges(events = listOf(changed(null, null)))
+        engine.sync(downloadContent = false)
+        assertEquals(listOf("b", "a"), timeline(sort = ListSort.HIGHEST))
+        assertEquals(listOf("b", "a"), timeline(col1, sort = ListSort.FIRST))
+
+        server.queueChanges(events = listOf(changed(null, emptyMap())))
+        engine.sync(downloadContent = false)
+        assertEquals(listOf("a", "b"), timeline(sort = ListSort.HIGHEST))
+        assertEquals(listOf("a", "b"), timeline(col1, sort = ListSort.FIRST))
+    }
+
+    @Test
+    fun aListOffersTheOrdersItHasValuesFor() = runTest {
+        server.subscriptions += subscription("sub-1")
+        server.subscriptions +=
+            Subscription("col-1", COLLECTION_TYPE, title = "Col", tags = emptyList())
+        serve(
+            scored("a", 1.0, ageDays = 1, read = true),
+            entry("b", ageDays = 2).copy(positions = mapOf("col-1" to 1.0)),
+        )
+        server.collections["col-1"] = mutableSetOf("b")
+        engine.sync(downloadContent = false)
+
+        suspend fun sortable(scope: ListScope, unreadOnly: Boolean = false) =
+            reader.sortable(scope, unreadOnly, emptySet()).first()
+        assertEquals(Sortable(score = true, position = false), sortable(ListScope.All))
+        assertEquals(
+            Sortable(score = true, position = false),
+            sortable(ListScope.Subscription("sub-1")),
+        )
+        assertEquals(
+            Sortable(score = false, position = true),
+            sortable(ListScope.Subscription("col-1")),
+        )
+        // With the list's filters: a's read.
+        assertEquals(Sortable.DATE_ONLY, sortable(ListScope.All, unreadOnly = true))
+        assertEquals(
+            Sortable(score = true, position = false),
+            reader.sortable(ListScope.All, true, setOf("a")).first(),
+        )
+        assertEquals(Sortable.DATE_ONLY, sortable(ListScope.RecentlyRead))
+    }
+
+    @Test
+    fun aDatabaseOlderThanScoresListsTheScoredEntriesOnce() = runTest {
+        serve(scored("a", null, ageDays = 1), scored("b", 1.0, ageDays = 2))
+        engine.sync(downloadContent = false)
+        // As 10.sqm leaves a database: no scores, none listed.
+        driver.execute(null, "UPDATE entry SET score = NULL", 0)
+        db.appMetadataQueries.delete("scores_listed")
+        // Scored on the server, never on the device: listing scores doesn't add it.
+        serve(scored("z", 9.0, ageDays = 1))
+
+        engine.sync(downloadContent = false)
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("b", "a"), timeline(sort = ListSort.HIGHEST))
+        assertEquals(
+            1,
+            server.requests.count { it.url.parameters["sortBy"] == "score" },
+        )
     }
 }

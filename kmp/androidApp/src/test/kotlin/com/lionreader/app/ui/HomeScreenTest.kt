@@ -42,6 +42,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.home.HomeViewModel
@@ -296,7 +297,7 @@ class HomeScreenTest {
 
         scrollTimelineTo(40)
         composeRule.onNodeWithContentDescription("List options").performClick()
-        composeRule.onNodeWithText("Oldest first").performClick()
+        composeRule.onNodeWithText("Oldest").performClick()
         composeRule.onNodeWithText("Article 59").assertIsDisplayed()
         assertEquals((59 downTo 0).map { "e$it" }, model.shownIds())
     }
@@ -650,5 +651,62 @@ class HomeScreenTest {
 
         composeRule.onNodeWithText("Uncategorized").performClick()
         assertEquals(ListScope.Uncategorized, model.scope.value)
+    }
+
+    /**
+     * The list's order changes off the main thread's queue, which Robolectric holds until idled.
+     */
+    private fun awaitList(ids: List<String>) = composeRule.waitUntil {
+        shadowOf(Looper.getMainLooper()).idle()
+        model.shownIds() == ids
+    }
+
+    private fun choose(option: String) {
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText(option).performClick()
+    }
+
+    @Test
+    fun scoreAndPositionAreOfferedWhereAListHasThemAndKeptPerList() {
+        // By date: Delta, Bravo, Alpha, Charlie.
+        seed("a", "Alpha", read = false, sortAt = 2, subscription = "col")
+        seed("b", "Bravo", read = false, sortAt = 3, subscription = "col")
+        seed("c", "Charlie", read = false, sortAt = 1, subscription = "col")
+        seed("d", "Delta", read = false, sortAt = 4, subscription = "col")
+        db.entryQueries.updateScore(5.0, "a")
+        db.entryQueries.updateScore(1.0, "b")
+        db.subscriptionEntryQueries.setPosition(1.0, "col", "c")
+        show()
+
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Date").assert(isSelected())
+        // Only a collection's list has positions.
+        composeRule.onNodeWithText("Position").assertDoesNotExist()
+        composeRule.onNodeWithText("Score").performClick()
+        awaitList(listOf("a", "b", "d", "c"))
+        choose("Lowest")
+        awaitList(listOf("b", "a", "d", "c"))
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Lowest").assert(isSelected())
+        Espresso.pressBack()
+
+        // Another list goes by date until it's ordered otherwise.
+        model.select(ListScope.Subscription("col"))
+        awaitList(listOf("d", "b", "a", "c"))
+        choose("Position")
+        awaitList(listOf("c", "d", "b", "a"))
+        assertEquals(
+            mapOf("all" to ListSort.LOWEST, "subscription:col" to ListSort.FIRST),
+            settings.value.listSorts,
+        )
+
+        // Without scores, All is by date, and by score again once they're back.
+        model.select(ListScope.All)
+        awaitList(listOf("b", "a", "d", "c"))
+        db.entryQueries.updateScore(null, "a")
+        db.entryQueries.updateScore(null, "b")
+        awaitList(listOf("d", "b", "a", "c"))
+        db.entryQueries.updateScore(1.0, "c")
+        awaitList(listOf("c", "d", "b", "a"))
     }
 }

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.lionreader.shared.data.ListSort
 import java.lang.reflect.Modifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,6 +21,7 @@ class SettingsStorageTest {
             justify = true,
             unreadOnly = false,
             oldestFirst = true,
+            listSorts = mapOf("all" to ListSort.HIGHEST, "subscription:col" to ListSort.LAST),
             retentionDays = 7,
             syncInterval = SyncInterval.HOUR,
             syncOnOpen = false,
@@ -101,6 +103,17 @@ class SettingsStorageTest {
         assertEquals(AppSettings().theme, prefs.toSettings().theme)
     }
 
+    /** A list's order a newer app knows is left out, and the date order isn't kept per list. */
+    @Test
+    fun onlyKnownOrdersBesidesDateAreKeptPerList() {
+        val prefs =
+            mutablePreferencesOf(
+                stringSetPreferencesKey("list_sorts") to
+                    setOf("LOWEST tag:t 1", "RANDOM all", "OLDEST starred", "FIRST")
+            )
+        assertEquals(mapOf("tag:t 1" to ListSort.LOWEST), prefs.toSettings().listSorts)
+    }
+
     @Test
     fun storedValuesKeepTheirKeys() {
         val prefs = mutablePreferencesOf()
@@ -114,6 +127,7 @@ class SettingsStorageTest {
                 "justify",
                 "unread_only",
                 "oldest_first",
+                "list_sorts",
                 "retention_days",
                 "sync_interval",
                 "sync_on_open",

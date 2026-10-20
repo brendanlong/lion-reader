@@ -251,6 +251,16 @@ class FakeServer {
                         .sortedByDescending {
                             if (recentlyRead) it.readChangedAt else it.publishedAt ?: it.fetchedAt
                         }
+                        // Highest first, then the unscored (only this order is asked for).
+                        .let { newest ->
+                            if (params["sortBy"] != "score") newest
+                            else
+                                newest.sortedWith(
+                                    compareBy<FullEntry, Double?>(nullsLast()) {
+                                        it.score?.unaryMinus()
+                                    }
+                                )
+                        }
                 // Newest first, paged like the server (the cursor is an offset here).
                 val offset = params["cursor"]?.toInt() ?: 0
                 val limit = params["limit"]?.toInt() ?: 100
@@ -406,4 +416,6 @@ fun FullEntry.listItem() =
         feedTitle = feedTitle,
         siteName = siteName,
         readChangedAt = readChangedAt,
+        score = score,
+        positions = positions,
     )
