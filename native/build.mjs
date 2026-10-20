@@ -9,7 +9,7 @@
  * machines, CI, and the Alpine Docker builder.
  */
 import { execSync } from "node:child_process";
-import { copyFileSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +19,18 @@ if (!crate || !existsSync(join(dir, "Cargo.toml"))) {
   throw new Error("Usage: node native/build.mjs <crate> [--debug]");
 }
 const debug = process.argv.includes("--debug");
+
+/**
+ * Copies `from` over `to` by renaming a fresh copy into place. Copying onto the
+ * existing file would rewrite it in place, under any running process that has
+ * it loaded (a dev server, a test run), which then crashes when it next touches
+ * the changed pages. copyFileSync keeps the executable bit.
+ */
+function replaceFile(from, to) {
+  const temp = `${to}.${process.pid}.tmp`;
+  copyFileSync(from, temp);
+  renameSync(temp, to);
+}
 const profile = debug ? "debug" : "release";
 
 execSync(`cargo build${debug ? "" : " --release"}`, { cwd: dir, stdio: "inherit" });
@@ -29,8 +41,7 @@ if (existsSync(join(dir, "src", "main.rs"))) {
   if (!existsSync(built)) {
     throw new Error(`cargo build did not produce ${built}`);
   }
-  // copyFileSync keeps the executable bit.
-  copyFileSync(built, join(dir, name));
+  replaceFile(built, join(dir, name));
   console.log(`Built native ${crate} (${profile}) -> ${name}`);
   process.exit(0);
 }
@@ -45,5 +56,5 @@ const built = join(dir, "target", profile, artifact);
 if (!existsSync(built)) {
   throw new Error(`cargo build did not produce ${built}`);
 }
-copyFileSync(built, join(dir, `${crate}.node`));
+replaceFile(built, join(dir, `${crate}.node`));
 console.log(`Built native ${crate} (${profile}) -> ${crate}.node`);
