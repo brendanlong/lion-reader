@@ -442,18 +442,32 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   // joins them, which can't fan out, and pages through their index: walking
   // the user's timeline instead reads every article outside the list. Sorted
   // otherwise, the join still lets Postgres start from the list's rows when
-  // they're few (Wallabag's Saved by `archived`). The rows' copies of each
-  // article's state are filtered too (the article's own still apply), so a
-  // filtered page reads the index of its matches.
+  // they're few (Wallabag's Saved by `archived`).
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
   if (listRows) {
     conditions.push(...listRowStateConditions(listRows, params));
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).
-  // Saved is the saved subscription's list, which `listRows` already is.
+  // Saved is the saved subscription's list, which `listRows` already is. A
+  // list's rows filter read, starred and spam on their copies alone: the
+  // triggers write those in the article's own transaction, and filtering both
+  // would have Postgres multiply two identical selectivities, guess a page
+  // holds fewer rows than it does, and sort the whole list instead.
   conditions.push(
-    ...buildEntryFilterConditions(listRows?.savedOnly ? { ...params, type: undefined } : params)
+    ...buildEntryFilterConditions(
+      listRows
+        ? {
+            ...params,
+            type: listRows.savedOnly ? undefined : params.type,
+            unreadOnly: undefined,
+            readOnly: undefined,
+            starredOnly: undefined,
+            unstarredOnly: undefined,
+            showSpam: true,
+          }
+        : params
+    )
   );
 
   // Recently Read: exclude entries that were never explicitly read-state-changed.

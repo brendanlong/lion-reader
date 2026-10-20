@@ -72,6 +72,7 @@ interface PlanNode {
   "Node Type": string;
   "Relation Name"?: string;
   "Index Name"?: string;
+  "Plan Rows": number;
   "Actual Rows": number;
   "Actual Loops": number;
   "Rows Removed by Filter"?: number;
@@ -97,6 +98,7 @@ function describePlan(node: PlanNode, depth = 0): string {
     "  ".repeat(depth) + node["Node Type"],
     node["Index Name"] ?? node["Relation Name"],
     `rows=${node["Actual Rows"]}`,
+    `estimate=${node["Plan Rows"]}`,
     node["Rows Removed by Filter"] ? `removed=${node["Rows Removed by Filter"]}` : undefined,
     `loops=${node["Actual Loops"]}`,
   ]
