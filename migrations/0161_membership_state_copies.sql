@@ -22,29 +22,38 @@ ALTER TABLE subscription_entries
 --> statement-breakpoint
 ALTER TABLE subscription_entries ALTER COLUMN read SET DEFAULT false;
 --> statement-breakpoint
--- A new membership takes its row's state. The rows are share-locked, in key
--- order, so a read or star committing meanwhile either comes first (and is
--- copied) or waits and then reaches the new membership through
--- user_entries_copy_state. This fires before the counter trigger (triggers
--- fire in name order), keeping user_entries ahead of subscriptions in the lock
--- order.
+-- A new membership takes its row's state. The rows are locked in key order
+-- (NO KEY UPDATE, not SHARE: the counter trigger may then update them, and
+-- two share lockers upgrading deadlock), so a read or star committing
+-- meanwhile either comes first and is copied, or waits and then reaches the
+-- new membership through user_entries_copy_state. This fires before the
+-- counter trigger (triggers fire in name order), keeping user_entries ahead of
+-- subscriptions in the lock order.
+--
+-- These trigger functions EXECUTE their statements: a static one keeps the
+-- plan of the connection's first call, sized for its transition table, and a
+-- plan for one row turns quadratic on thousands.
 CREATE FUNCTION subscription_entries_copy_state() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM 1
-  FROM user_entries ue
-  JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
-    ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
-  ORDER BY ue.user_id, ue.entry_id
-  FOR SHARE OF ue;
+  EXECUTE $q$
+    SELECT 1
+    FROM user_entries ue
+    JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
+      ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
+    ORDER BY ue.user_id, ue.entry_id
+    FOR NO KEY UPDATE OF ue
+  $q$;
 
-  UPDATE subscription_entries se
-  SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
-  FROM changed_rows c
-  JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
-  WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
-    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam);
+  EXECUTE $q$
+    UPDATE subscription_entries se
+    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+    FROM changed_rows c
+    JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+    WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
+      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
+  $q$;
   RETURN NULL;
 END;
 $$;
@@ -56,18 +65,23 @@ CREATE TRIGGER subscription_entries_copy_state_trigger
 --> statement-breakpoint
 -- A read or star change reaches the row's memberships. The statement holds the
 -- user_entries rows, so it locks memberships after them, and this fires before
--- the counter trigger locks subscriptions and users.
+-- the counter trigger locks subscriptions and users. EXCEPT finds the changed
+-- rows by hashing or sorting, never a nested loop over the transition tables.
 CREATE FUNCTION user_entries_copy_state() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  UPDATE subscription_entries se
-  SET read = n.read, starred = n.starred, is_spam = n.is_spam
-  FROM new_rows n
-  JOIN old_rows o ON o.user_id = n.user_id AND o.entry_id = n.entry_id
-  WHERE (n.read, n.starred, n.is_spam) IS DISTINCT FROM (o.read, o.starred, o.is_spam)
-    AND se.user_id = n.user_id AND se.entry_id = n.entry_id
-    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam);
+  EXECUTE $q$
+    UPDATE subscription_entries se
+    SET read = n.read, starred = n.starred, is_spam = n.is_spam
+    FROM (
+      SELECT user_id, entry_id, read, starred, is_spam FROM new_rows
+      EXCEPT
+      SELECT user_id, entry_id, read, starred, is_spam FROM old_rows
+    ) n
+    WHERE se.user_id = n.user_id AND se.entry_id = n.entry_id
+      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam)
+  $q$;
   RETURN NULL;
 END;
 $$;

@@ -230,24 +230,28 @@ $$;
 
 CREATE FUNCTION public.subscription_entries_copy_state() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $_$
 BEGIN
-  PERFORM 1
-  FROM user_entries ue
-  JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
-    ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
-  ORDER BY ue.user_id, ue.entry_id
-  FOR SHARE OF ue;
+  EXECUTE $q$
+    SELECT 1
+    FROM user_entries ue
+    JOIN (SELECT DISTINCT user_id, entry_id FROM changed_rows) c
+      ON c.user_id = ue.user_id AND c.entry_id = ue.entry_id
+    ORDER BY ue.user_id, ue.entry_id
+    FOR NO KEY UPDATE OF ue
+  $q$;
 
-  UPDATE subscription_entries se
-  SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
-  FROM changed_rows c
-  JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
-  WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
-    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam);
+  EXECUTE $q$
+    UPDATE subscription_entries se
+    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+    FROM changed_rows c
+    JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+    WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
+      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
+  $q$;
   RETURN NULL;
 END;
-$$;
+$_$;
 
 CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
     LANGUAGE plpgsql
@@ -349,18 +353,22 @@ $$;
 
 CREATE FUNCTION public.user_entries_copy_state() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $_$
 BEGIN
-  UPDATE subscription_entries se
-  SET read = n.read, starred = n.starred, is_spam = n.is_spam
-  FROM new_rows n
-  JOIN old_rows o ON o.user_id = n.user_id AND o.entry_id = n.entry_id
-  WHERE (n.read, n.starred, n.is_spam) IS DISTINCT FROM (o.read, o.starred, o.is_spam)
-    AND se.user_id = n.user_id AND se.entry_id = n.entry_id
-    AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam);
+  EXECUTE $q$
+    UPDATE subscription_entries se
+    SET read = n.read, starred = n.starred, is_spam = n.is_spam
+    FROM (
+      SELECT user_id, entry_id, read, starred, is_spam FROM new_rows
+      EXCEPT
+      SELECT user_id, entry_id, read, starred, is_spam FROM old_rows
+    ) n
+    WHERE se.user_id = n.user_id AND se.entry_id = n.entry_id
+      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam)
+  $q$;
   RETURN NULL;
 END;
-$$;
+$_$;
 
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql

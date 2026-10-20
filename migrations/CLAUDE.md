@@ -6,5 +6,6 @@
 - Never `CREATE INDEX CONCURRENTLY` in a migration — each runs in a transaction. If production needs a concurrent build, apply it by hand first, then journal a plain `CREATE INDEX IF NOT EXISTS`. Heavy migrations on production: `docs/fly-postgres-ops.md`.
 - App code uses `generateUuidv7()`; SQL that inserts rows uses `uuidv7()` (Postgres 18+).
 - `CREATE OR REPLACE FUNCTION` resets every setting the new definition doesn't repeat: copy the function's `SET` lines from `schema.sql`.
+- PL/pgSQL caches a static statement's plan per connection, sized for its first call: a trigger function `EXECUTE`s statements over transition tables, and one taking array arguments sets `plan_cache_mode = force_custom_plan`, or a plan for one row runs for minutes on thousands.
 - Test with `pnpm test:integration`.
 - Read @schema.sql and keep it current with `pnpm db:schema`.
