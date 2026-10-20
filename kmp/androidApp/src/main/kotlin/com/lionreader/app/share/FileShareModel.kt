@@ -20,9 +20,8 @@ sealed interface FileShareState {
 
 /**
  * Copies a shared file ([copySharedFile]) and queues its save, once per dialog: a view model, so a
- * rotation mid-copy neither loses the file nor saves it twice. The copy runs in the app's scope, so
- * closing the dialog mid-copy still saves the file, and a share delivered again after process death
- * follows the save already queued for it ([SaveWorker.enqueue] keeps it).
+ * rotation mid-copy neither loses the file nor copies it twice. The copy runs in the app's scope,
+ * so closing the dialog mid-copy (a slow cloud provider) still saves the file.
  */
 class FileShareModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow<FileShareState>(FileShareState.Copying)
@@ -34,15 +33,12 @@ class FileShareModel(application: Application) : AndroidViewModel(application) {
         started = true
         val app = getApplication<Application>()
         app.graph.appScope.launch(Dispatchers.IO) {
-            val queued = SaveWorker.pendingFileSave(app, sharedFileCopy(app, uri))
             _state.value =
-                if (queued != null) FileShareState.Saving(queued)
-                else
-                    when (val result = copySharedFile(app, uri, sharedType)) {
-                        is CopyResult.Copied ->
-                            FileShareState.Saving(SaveWorker.enqueue(app, result.file))
-                        is CopyResult.Failed -> FileShareState.Failed(result.message)
-                    }
+                when (val result = copySharedFile(app, uri, sharedType)) {
+                    is CopyResult.Copied ->
+                        FileShareState.Saving(SaveWorker.enqueue(app, result.file))
+                    is CopyResult.Failed -> FileShareState.Failed(result.message)
+                }
         }
     }
 }

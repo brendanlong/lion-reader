@@ -22,9 +22,12 @@ class LionReaderApiTest {
     fun uploadsAFileAsBase64() = runTest {
         val pdf = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, -1)
 
-        assertEquals("Uploaded", api.uploadFile("Paper.pdf", pdf).title)
+        assertEquals("Uploaded", api.uploadFile("Paper.pdf", pdf, "share-1").title)
 
-        assertEquals(listOf(UploadFileRequest("JVBERi0A/w==", "Paper.pdf")), server.uploads)
+        assertEquals(
+            listOf(UploadFileRequest("JVBERi0A/w==", "Paper.pdf", "share-1")),
+            server.uploads,
+        )
     }
 
     @Test

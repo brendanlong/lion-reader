@@ -42,7 +42,10 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                             ?: return Result.failure(
                                 workDataOf(ERROR to "The shared file is no longer available.")
                             )
-                    connection.saveFile(inputData.getString(FILENAME) ?: file.name, bytes).also {
+                    // The copy is named for the share (sharedFileCopy), so its name makes every
+                    // upload of this share one save.
+                    val filename = inputData.getString(FILENAME) ?: file.name
+                    connection.saveFile(filename, bytes, idempotencyKey = file.name).also {
                         if (it != SaveOutcome.Retry) withContext(Dispatchers.IO) { file.delete() }
                     }
                 }
@@ -76,30 +79,18 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         fun enqueue(context: Context, url: String): UUID =
             enqueue(context, workName(url), workDataOf(URL to url), ExistingWorkPolicy.REPLACE)
 
-        /** The unique work name for saving the shared file copied to [copy] ([sharedFileCopy]). */
-        private fun workName(copy: File) = "save-file:${copy.path}"
-
         /**
-         * The work name of a save of [copy] that hasn't finished, if there is one. Blocking: call
-         * it off the main thread.
-         */
-        fun pendingFileSave(context: Context, copy: File): String? {
-            val name = workName(copy)
-            val infos = WorkManager.getInstance(context).getWorkInfosForUniqueWork(name).get()
-            return name.takeIf { infos.any { !it.state.isFinished } }
-        }
-
-        /**
-         * Queues the upload of [file] and returns its work name. A save of the same copy that's
-         * already queued is kept: unlike a URL's, an upload isn't idempotent.
+         * Queues the upload of [file] and returns its work name, which is the copy's: sharing the
+         * same file again replaces a pending save, like a link's, and the server keeps it to one
+         * article (see `saveFile`).
          */
         fun enqueue(context: Context, file: CopiedFile): String {
-            val name = workName(File(file.path))
+            val name = "save-file:${file.path}"
             enqueue(
                 context,
                 name,
                 workDataOf(FILE to file.path, FILENAME to file.filename),
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.REPLACE,
             )
             return name
         }

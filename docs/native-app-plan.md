@@ -7,15 +7,14 @@ work. Each phase below adds the server pieces it needs alongside its client code
 
 ## Remaining phases
 
-1. **Share target, retries**: an idempotency key for uploads (below).
-2. **Narration**: AI-normalized text (device and cloud voices are done). Piper voices wait on sherpa-onnx 2.0,
+1. **Narration**: AI-normalized text (device and cloud voices are done). Piper voices wait on sherpa-onnx 2.0,
    which drops espeak-ng (GPL-3.0, compiled into today's library), and on
    licensing: of the web's four voices only `en_GB-alba-medium` (CC BY 4.0) is
    clear for any use. The runtime also adds about 24 MB per ABI.
-3. **Release**: the Play Console listing and its 14-day closed test (new
+2. **Release**: the Play Console listing and its 14-day closed test (new
    personal developer accounts need one before production); signed builds on
    `android-v*` tags are set up (see `docs/DEPLOYMENT.md`).
-4. **Later**: iOS (SwiftUI over the shared core, a Share Extension,
+3. **Later**: iOS (SwiftUI over the shared core, a Share Extension,
    AVAudioSession; macOS CI runners + TestFlight with existing iOS users as
    testers), then maybe desktop.
 
@@ -36,10 +35,6 @@ reader assets (scripts, fonts, `appearance.json`) are bundled from
 ### Share targets
 
 - iOS later: a Share Extension writing into the shared outbox via an App Group.
-- Server: an idempotency key for uploads, so a retry after a lost response
-  doesn't save the file twice. An existing upload's response still needs its
-  list item (memberships included), which is why it isn't a one-line guid
-  change.
 
 ### Narration
 

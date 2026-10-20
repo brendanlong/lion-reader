@@ -188,13 +188,18 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     /**
      * Saves a file as a saved article: the server converts it by its [filename]'s extension (a PDF,
-     * Word document, HTML, Markdown or text file) and rejects anything else.
+     * Word document, HTML, Markdown or text file) and rejects anything else. Retrying with the same
+     * [idempotencyKey] (letters, digits, `-` and `_`) returns the article already saved.
      */
-    suspend fun uploadFile(filename: String, bytes: ByteArray): SavedArticle =
+    suspend fun uploadFile(
+        filename: String,
+        bytes: ByteArray,
+        idempotencyKey: String,
+    ): SavedArticle =
         post(
                 SaveArticleResponse.serializer(),
                 "/saved/upload",
-                UploadFileRequest(Base64.encode(bytes), filename),
+                UploadFileRequest(Base64.encode(bytes), filename, idempotencyKey),
                 UploadFileRequest.serializer(),
             )
             .article

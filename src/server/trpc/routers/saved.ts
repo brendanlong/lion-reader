@@ -213,6 +213,14 @@ export const savedRouter = createTRPCRouter({
           ),
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
+        /**
+         * Makes the upload idempotent: retrying with the same key returns the
+         * article the first attempt saved instead of saving another.
+         */
+        idempotencyKey: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{1,128}$/, "Invalid idempotency key")
+          .optional(),
         collectionIds: saveCollectionIdsSchema,
       })
     )

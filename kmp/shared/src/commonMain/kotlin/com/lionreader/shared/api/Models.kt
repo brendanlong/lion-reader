@@ -329,8 +329,16 @@ data class SpeechRequest(
 
 @Serializable data class SaveArticleRequest(val url: String)
 
-/** [content] is the file, Base64-encoded; the server picks the converter by [filename]. */
-@Serializable data class UploadFileRequest(val content: String, val filename: String)
+/**
+ * [content] is the file, Base64-encoded; the server picks the converter by [filename]. A repeat
+ * with the same [idempotencyKey] returns the article the first one saved.
+ */
+@Serializable
+data class UploadFileRequest(
+    val content: String,
+    val filename: String,
+    val idempotencyKey: String? = null,
+)
 
 @Serializable data class SavedArticle(val id: String, val title: String? = null)
 

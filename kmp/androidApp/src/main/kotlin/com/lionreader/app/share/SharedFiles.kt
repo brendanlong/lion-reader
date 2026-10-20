@@ -12,11 +12,10 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
- * A copy this old with no save queued for it was left behind (by a save cancelled outside
- * [deleteSharedFileCopies], or the app dying mid-copy), and is deleted. Younger ones may still be
- * being written.
+ * Copies this old are deleted: left by the app dying mid-copy, or by a save still waiting for a
+ * network after a month, which then fails saying the file is gone.
  */
-private val ABANDONED_AFTER_MILLIS = TimeUnit.DAYS.toMillis(1)
+private val ABANDONED_AFTER_MILLIS = TimeUnit.DAYS.toMillis(30)
 
 private fun sharedFilesDir(context: Context) = File(context.filesDir, "shared-files")
 
@@ -36,7 +35,7 @@ sealed interface CopyResult {
 
 /**
  * Where a shared file is copied: named after its URI, so the same share delivered again (the dialog
- * recreated after process death) is recognized as the same save.
+ * recreated after process death) is the same save. The name is its upload's idempotency key.
  */
 fun sharedFileCopy(context: Context, uri: Uri): File {
     val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray())
@@ -84,11 +83,14 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
 
     val copy = sharedFileCopy(context, uri)
     deleteAbandoned(context)
+    // Written beside the copy and renamed over it, so an upload reading an earlier copy of the
+    // same share never sees it half rewritten.
+    val partial = File(copy.path + ".partial")
     return try {
         val input = resolver.openInputStream(uri) ?: throw IOException("No stream")
         var tooLarge = false
         input.use { source ->
-            copy.outputStream().use { sink ->
+            partial.outputStream().use { sink ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
                 while (true) {
@@ -104,13 +106,15 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
             }
         }
         if (tooLarge) {
-            copy.delete()
+            partial.delete()
             CopyResult.Failed("That file is too large to save.")
+        } else if (!partial.renameTo(copy)) {
+            throw IOException("Couldn't rename the copy")
         } else {
             CopyResult.Copied(CopiedFile(copy.path, filename))
         }
     } catch (_: Exception) {
-        copy.delete()
+        partial.delete()
         CopyResult.Failed("Lion Reader couldn't read the shared file.")
     }
 }
@@ -126,6 +130,6 @@ private fun deleteAbandoned(context: Context) {
     val cutoff = System.currentTimeMillis() - ABANDONED_AFTER_MILLIS
     sharedFilesDir(context)
         .listFiles()
-        ?.filter { it.lastModified() < cutoff && SaveWorker.pendingFileSave(context, it) == null }
+        ?.filter { it.lastModified() < cutoff }
         ?.forEach { it.delete() }
 }

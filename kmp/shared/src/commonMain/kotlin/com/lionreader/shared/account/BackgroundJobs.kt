@@ -56,11 +56,18 @@ suspend fun ServerConnection.saveLink(url: String): SaveOutcome =
     save("Lion Reader couldn't save this link.") { api.saveArticle(url).title }
 
 /**
- * Saves a shared file (`uploadFile`) the way [saveLink] saves a link. A retry after a lost response
- * can save it twice: unlike a URL, an upload has nothing to recognize it by.
+ * Saves a shared file (`uploadFile`) the way [saveLink] saves a link. [idempotencyKey] stands in
+ * for the URL that makes saving a link idempotent: the same share uploaded again (a retry after a
+ * lost response) returns the article already saved.
  */
-suspend fun ServerConnection.saveFile(filename: String, bytes: ByteArray): SaveOutcome =
-    save("Lion Reader couldn't save this file.") { api.uploadFile(filename, bytes).title }
+suspend fun ServerConnection.saveFile(
+    filename: String,
+    bytes: ByteArray,
+    idempotencyKey: String,
+): SaveOutcome =
+    save("Lion Reader couldn't save this file.") {
+        api.uploadFile(filename, bytes, idempotencyKey).title
+    }
 
 private suspend fun ServerConnection.save(
     rejected: String,
