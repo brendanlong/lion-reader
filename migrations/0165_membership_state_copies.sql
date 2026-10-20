@@ -12,7 +12,7 @@ LOCK TABLE subscription_entries IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 
 -- Existing rows take each column's first default without a rewrite. Most are
--- read, so `read` starts true for them and the backfill (0162, in its own
+-- read, so `read` starts true for them and the backfill (0166, in its own
 -- transaction so this one's exclusive lock is brief) touches only the unread,
 -- starred and spam ones; new rows default to false.
 ALTER TABLE subscription_entries

@@ -1,4 +1,4 @@
--- Fills migration 0161's copies for memberships that existed before its
+-- Fills migration 0165's copies for memberships that existed before its
 -- triggers. A share lock on user_entries holds every row's state still while
 -- this runs (writes wait; reads don't), and the triggers keep up from here.
 SET LOCAL lock_timeout = '5s';
