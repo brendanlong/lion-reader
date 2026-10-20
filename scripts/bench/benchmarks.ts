@@ -145,6 +145,8 @@ interface ListOptions {
   userId: string;
   /** One subscription's list, walked through its memberships' timeline. */
   single?: string;
+  /** A tag's (its id) or Uncategorized's (the user's id) list, through its tag_entries. */
+  tagList?: string;
   where?: string[];
   unreadOnly?: boolean;
   limit?: number;
@@ -161,25 +163,32 @@ interface ListOptions {
  */
 function listEntriesSql(o: ListOptions): string {
   const timelineSort = o.sortBy !== "readChanged" && o.sortBy !== "archived";
+  // The list's own rows (`listRowsOf`): one subscription's memberships, or a
+  // tag's or Uncategorized's tag_entries.
+  const rows = o.single
+    ? { join: "subscription_entries se", alias: "se", list: `se.subscription_id = ${q(o.single)}` }
+    : o.tagList
+      ? { join: "tag_entries te", alias: "te", list: `te.list_id = ${q(o.tagList)}` }
+      : undefined;
   const sortColumn = !timelineSort
     ? "ve.read_changed_at"
-    : o.single
-      ? "se.published_or_fetched_at"
+    : rows
+      ? `${rows.alias}.published_or_fetched_at`
       : "ve.published_or_fetched_at";
-  const idColumn = o.single && timelineSort ? "se.entry_id" : "ve.id";
+  const idColumn = rows && timelineSort ? `${rows.alias}.entry_id` : "ve.id";
   const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
   if (o.unreadOnly ?? true) where.push("NOT ve.read");
   where.push("NOT ve.is_spam");
-  // One subscription's list also filters on its memberships' copies.
-  if (o.single && (o.unreadOnly ?? true)) where.push("NOT se.read");
-  if (o.single) where.push("NOT se.is_spam");
+  // The list's rows' copies of the filters too.
+  if (rows && (o.unreadOnly ?? true)) where.push(`NOT ${rows.alias}.read`);
+  if (rows) where.push(`NOT ${rows.alias}.is_spam`);
   if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
   if (o.cursor) {
     where.push(`(${sortColumn}, ${idColumn}) < (${ts(o.cursor.ts)}, ${q(o.cursor.id)}::uuid)`);
   }
-  const join = o.single
-    ? `\nINNER JOIN subscription_entries se ON se.subscription_id = ${q(o.single)}
-  AND se.user_id = ve.user_id AND se.entry_id = ve.id`
+  const join = rows
+    ? `\nINNER JOIN ${rows.join} ON ${rows.list}
+  AND ${rows.alias}.user_id = ve.user_id AND ${rows.alias}.entry_id = ve.id`
     : "";
   const select = o.refs
     ? `SELECT ve.id, ve.greader_item_id, subscriptions.greader_stream_id, ve.fetched_at, ${sortColumn} AS sort_ts
@@ -211,33 +220,14 @@ LIMIT 1`,
   };
 }
 
-/** `buildTaggedSubscriptionIdsSubquery` (services/entry-filters.ts). */
-const taggedSubscriptionIds = (
-  userId: string,
-  tag: string
-): string => `SELECT subscription_tags.subscription_id
-FROM subscription_tags
-INNER JOIN tags ON subscription_tags.tag_id = tags.id AND tags.user_id = ${q(userId)} AND tags.deleted_at IS NULL
-INNER JOIN subscriptions ON subscriptions.id = subscription_tags.subscription_id AND subscriptions.unsubscribed_at IS NULL
-WHERE subscription_tags.tag_id = ${q(tag)}`;
-
-/** `buildUncategorizedSubscriptionIdsSubquery` (services/entry-filters.ts). */
-const uncategorizedSubscriptionIds = (userId: string): string => `SELECT subscriptions.id
-FROM subscriptions
-LEFT JOIN subscription_tags ON subscription_tags.subscription_id = subscriptions.id
-WHERE subscriptions.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
-  AND subscription_tags.subscription_id IS NULL`;
-
 /** `buildEntriesInSubscriptionsCondition` (services/entry-filters.ts). */
 function entriesInSubscriptions(
-  ids: string[] | { subquery: string },
-  columns: { userId: string; entryId: string },
-  paged = false
+  ids: string[],
+  columns: { userId: string; entryId: string }
 ): string {
-  const idsSql = Array.isArray(ids) ? `IN (${list(ids)})` : `= ANY(ARRAY(${ids.subquery}))`;
   return `EXISTS (SELECT 1 FROM subscription_entries
   WHERE subscription_entries.user_id = ${columns.userId} AND subscription_entries.entry_id = ${columns.entryId}
-    AND subscription_entries.subscription_id ${idsSql}${paged ? " OFFSET 0" : ""})`;
+    AND subscription_entries.subscription_id IN (${list(ids)}))`;
 }
 
 /** `getSavedSubscriptionId` (services/subscriptions.ts): Saved lists walk the saved subscription. */
@@ -247,7 +237,6 @@ const savedSubscriptionSql: Statement = {
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`,
 };
 
-const VE_COLUMNS = { userId: "ve.user_id", entryId: "ve.id" };
 const UE_COLUMNS = { userId: "user_entries.user_id", entryId: "user_entries.entry_id" };
 
 /** `getUserUnreadCounts` (services/counts.ts). */
@@ -806,16 +795,9 @@ ORDER BY unread_count DESC, id LIMIT 1`
     name: "ssr.list_tag",
     kind: "read",
     source: "services/entries.ts listEntries (/tag/:id; the tag also holds a collection)",
-    prepare: async () => {
-      const filter = entriesInSubscriptions(
-        { subquery: taggedSubscriptionIds(U0, tagId(0, 1)) },
-        VE_COLUMNS,
-        true
-      );
-      return {
-        statements: [{ label: "list", sql: listEntriesSql({ userId: U0, where: [filter] }) }],
-      };
-    },
+    prepare: async () => ({
+      statements: [{ label: "list", sql: listEntriesSql({ userId: U0, tagList: tagId(0, 1) }) }],
+    }),
   },
   {
     name: "ssr.list_starred",
@@ -842,16 +824,9 @@ ORDER BY unread_count DESC, id LIMIT 1`
     name: "ssr.list_uncategorized",
     kind: "read",
     source: "services/entries.ts listEntries (/uncategorized; includes untagged collections)",
-    prepare: async () => {
-      const filter = entriesInSubscriptions(
-        { subquery: uncategorizedSubscriptionIds(U0) },
-        VE_COLUMNS,
-        true
-      );
-      return {
-        statements: [{ label: "list", sql: listEntriesSql({ userId: U0, where: [filter] }) }],
-      };
-    },
+    prepare: async () => ({
+      statements: [{ label: "list", sql: listEntriesSql({ userId: U0, tagList: U0 }) }],
+    }),
   },
   {
     name: "ssr.list_recently_read",
