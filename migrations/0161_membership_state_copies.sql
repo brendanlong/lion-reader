@@ -4,6 +4,13 @@
 -- Triggers keep the copies; app code never writes them.
 SET LOCAL lock_timeout = '5s';
 
+-- Up front, in the lock order (src/server/CLAUDE.md), so a write already
+-- holding one of these can't deadlock with the migration.
+LOCK TABLE user_entries IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
+LOCK TABLE subscription_entries IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
+
 -- Existing rows take each column's first default without a rewrite. Most are
 -- read, so `read` starts true for them and the backfill (0162, in its own
 -- transaction so this one's exclusive lock is brief) touches only the unread,
