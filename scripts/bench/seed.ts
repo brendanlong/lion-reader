@@ -419,8 +419,8 @@ function buildPlan() {
     }
   }
 
-  // A sparse tag (`SPARSE_TAG`): U0's one more, holding only its tagged web
-  // feed with the fewest entries, which keeps its other tags. A tag list that
+  // A sparse tag (`SPARSE_TAG`): an extra tag of U0's, holding only its
+  // quietest tagged web feed, which keeps its other tags. A tag list that
   // walks the user's timeline instead of its own rows reads all of U0's
   // history for a page of it (#1946).
   const webFeeds = new Set(feeds.filter((f) => f.kind === "web").map((f) => f.id));

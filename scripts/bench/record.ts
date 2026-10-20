@@ -6,33 +6,31 @@
  */
 
 import { drizzle } from "drizzle-orm/node-postgres";
-import { pool, type Database } from "@/server/db";
-import * as schema from "@/server/db/schema";
+import { dbConfig, pool, type Database } from "@/server/db";
 import type { Statement } from "./benchmarks";
 
 /**
  * Runs `fn` and returns every query it sent, labelled `label.0`, `label.1`, …
- * in the order they started. Functions that run queries in parallel can start
- * them in a different order between runs; a benchmark sums its statements, so
- * that only reorders the per-statement rows.
+ * in SQL order: functions that run queries in parallel start them in an order
+ * that can differ between runs, and each label must name the same statement in
+ * every run so results can be compared statement by statement.
  */
 export async function recordStatements(
   label: string,
   fn: (db: Database) => Promise<unknown>
 ): Promise<Statement[]> {
-  const statements: Statement[] = [];
+  const sent: Array<{ sql: string; params: unknown[] }> = [];
   const db = drizzle(pool, {
-    schema,
-    logger: {
-      logQuery: (sql, params) =>
-        statements.push({ label: `${label}.${statements.length}`, sql, params }),
-    },
+    ...dbConfig,
+    logger: { logQuery: (sql, params) => sent.push({ sql, params }) },
   });
   await fn(db);
-  return statements;
+  return sent
+    .sort((a, b) => a.sql.localeCompare(b.sql))
+    .map((s, i) => ({ label: `${label}.${i}`, ...s }));
 }
 
-/** Closes the app pool `recordStatements` opened, so the process can exit. */
+/** Closes the app's pool (`@/server/db`), so the process can exit. */
 export async function closeRecording(): Promise<void> {
   await pool.end();
 }

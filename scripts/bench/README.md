@@ -11,10 +11,9 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
 - `benchmarks.ts` holds the benchmarks. A read records the statements its
   service function actually sends (`record.ts`), so it can't drift from the
   app; add new reads that way. A write still reproduces its function's SQL by
-  hand and cites it (its later statements depend on earlier results, and it
-  must run inside the runner's rolled-back transaction): **change a write
-  benchmark together with the function it mirrors**. Keep names stable so
-  comparisons line up.
+  hand and cites it, because the services open their own transactions and
+  recording one would commit it: **change a write benchmark together with the
+  function it mirrors**. Keep names stable so comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.
 - `baseline.json` is a run of master after phase 7 of #1846 (2026-10-13), for
@@ -24,6 +23,7 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
 ## Running
 
 ```bash
+pnpm build:native      # once per checkout: the reads run the app's code, sanitizer included
 pnpm services          # as a background task: throwaway Postgres + Redis
 pnpm bench:db:seed     # ~3 minutes; refuses to wipe a database that isn't a benchmark one
 pnpm bench:db          # ~6 minutes; prints a table, writes scripts/bench/results/<time>-<sha>.json

@@ -19,7 +19,11 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
-import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
+import {
+  isStreamError,
+  resolveStreamListParams,
+  STREAM_ITEM_IDS_PAGE,
+} from "@/server/google-reader/stream-filters";
 import { entryFeedStreamId } from "@/server/google-reader/format";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
@@ -38,10 +42,13 @@ export const GET = withClientErrors(async (request: Request): Promise<Response> 
     return errorResponse("Missing required parameter: s (stream ID)", 400);
   }
 
-  const listParams = await resolveStreamListParams(db, session.user, streamIdStr, searchParams, {
-    defaultCount: 1000,
-    maxCount: 10000,
-  });
+  const listParams = await resolveStreamListParams(
+    db,
+    session.user,
+    streamIdStr,
+    searchParams,
+    STREAM_ITEM_IDS_PAGE
+  );
   if (isStreamError(listParams)) return errorResponse(listParams.message, listParams.status);
 
   const result = await entriesService.listGreaderItemRefs(db, listParams);

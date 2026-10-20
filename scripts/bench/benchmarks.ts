@@ -13,18 +13,25 @@ import type { ClientBase } from "pg";
 
 import { db as appDb } from "@/server/db";
 import {
-  countTotalEntries,
+  countUserLists,
   listEntries,
   listGreaderItemRefs,
   type ListEntriesParams,
 } from "@/server/services/entries";
 import { getEntries, getFullEntry } from "@/server/services/entry-reads";
-import { getUserUnreadCounts } from "@/server/services/counts";
 import { collectSyncChanges, collectSyncEvents, currentSyncCursors } from "@/server/services/sync";
 import { getSubscription } from "@/server/services/subscriptions";
 import { listTags } from "@/server/services/tags";
 import { getGreaderUnreadCounts } from "@/server/google-reader/subscriptions";
-import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
+import {
+  isStreamError,
+  resolveStreamListParams,
+  STREAM_CONTENTS_PAGE,
+  STREAM_ITEM_IDS_PAGE,
+} from "@/server/google-reader/stream-filters";
+import { listWallabagEntries } from "@/server/wallabag/entries";
+import { parseEntryListParams } from "@/server/wallabag/parse";
+import { Temporal } from "temporal-polyfill";
 import { recordStatements } from "./record";
 
 import {
@@ -63,7 +70,7 @@ export interface PreparedBenchmark {
 export interface Benchmark {
   name: string;
   kind: "read" | "write";
-  /** The service function(s) whose SQL this reproduces. */
+  /** The service function(s) whose SQL this records (reads) or reproduces (writes). */
   source: string;
   /** Resolves ids from the seeded data and builds the statements, once per run. */
   prepare: (db: ClientBase) => Promise<PreparedBenchmark>;
@@ -459,23 +466,20 @@ const appList = (params: Partial<ListEntriesParams> = {}): ListEntriesParams => 
 /** How deep the deep-page benchmarks start. */
 const DEEP_ROWS = 500;
 
-/**
- * The list's params with a cursor `rows` into it, paged with the app's own
- * query (`rows` a multiple of 100).
- */
-async function deep(params: ListEntriesParams, rows = DEEP_ROWS): Promise<ListEntriesParams> {
+/** The list's params with a cursor `depth` rows into it, paged with the app's own query. */
+async function deep(params: ListEntriesParams, depth = DEEP_ROWS): Promise<ListEntriesParams> {
   let cursor: string | undefined;
-  for (let read = 0; read < rows; read += 100) {
-    const page = await listEntries(appDb, { ...params, limit: 100, cursor });
-    if (!page.nextCursor) throw new Error(`list shorter than ${rows}: ${JSON.stringify(params)}`);
+  for (let read = 0; read < depth; read += 100) {
+    const page = await listEntries(appDb, {
+      ...params,
+      limit: Math.min(100, depth - read),
+      cursor,
+    });
+    if (!page.nextCursor) throw new Error(`list shorter than ${depth}: ${JSON.stringify(params)}`);
     cursor = page.nextCursor;
   }
   return { ...params, cursor };
 }
-
-/** The stream routes' page sizes (`resolveStreamListParams`'s `page`). */
-const GREADER_CONTENTS_PAGE = { defaultCount: 20, maxCount: 300 };
-const GREADER_IDS_PAGE = { defaultCount: 1000, maxCount: 10000 };
 
 /** A read benchmark of one `listEntries` page. */
 function listBenchmark(
@@ -507,7 +511,9 @@ ORDER BY unread_count DESC, id LIMIT 1`
 
 /** The sync cursors `back` changes before U0's newest, as a client would hold them. */
 async function syncCursors(db: ClientBase, back: number) {
+  // As the app sends them: Temporal's ISO form, microseconds kept.
   const iso = (col: string) => `to_json(${col}) #>> '{}'`;
+  const instant = (ts: string) => Temporal.Instant.from(ts).toString();
   const entries = await one<{ ts: string; id: string }>(
     db,
     `SELECT ${iso("changed_at")} AS ts, entry_id AS id FROM user_entries WHERE user_id = ${q(U0)}
@@ -523,10 +529,10 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
     `SELECT ${iso("max(updated_at)")} AS ts FROM tags WHERE user_id = ${q(U0)}`
   );
   return {
-    entries: entries.ts,
+    entries: instant(entries.ts),
     entriesAfterId: entries.id,
-    subscriptions: subscriptions.ts,
-    tags: tags.ts,
+    subscriptions: instant(subscriptions.ts),
+    tags: instant(tags.ts),
   };
 }
 
@@ -557,18 +563,14 @@ async function greaderStream(
   });
 }
 
-/** The Wallabag entries route's page and total for saved articles (`perPage` 30). */
-async function wallabagEntries(
-  filter: { updatedAfter?: Date },
-  sortBy: ListEntriesParams["sortBy"]
-) {
-  const shared = { type: "saved" as const, showSpam: false, ...filter };
-  return recordStatements("wallabag", async (app) => {
-    await Promise.all([
-      listEntries(app, { ...shared, userId: U0, limit: 30, offset: 0, sortBy }),
-      countTotalEntries(app, U0, shared),
-    ]);
-  });
+/** The Wallabag entries route (`listWallabagEntries`) for the query string `query`. */
+function wallabagEntries(query: Record<string, string>): Promise<Statement[]> {
+  const url = new URL(
+    `https://bench.invalid/api/wallabag/api/entries?${new URLSearchParams(query)}`
+  );
+  return recordStatements("wallabag", (app) =>
+    listWallabagEntries(app, U0, parseEntryListParams(url))
+  );
 }
 
 const READS: Benchmark[] = [
@@ -583,9 +585,9 @@ const READS: Benchmark[] = [
   {
     name: "ssr.entries_count",
     kind: "read",
-    source: "services/counts.ts getUserUnreadCounts (entries.countLists, once per SSR)",
+    source: "services/entries.ts countUserLists (entries.countLists, once per SSR)",
     prepare: async () => ({
-      statements: await recordStatements("counts", (app) => getUserUnreadCounts(app, U0)),
+      statements: await recordStatements("counts", (app) => countUserLists(app, U0)),
     }),
   },
   {
@@ -669,9 +671,8 @@ const READS: Benchmark[] = [
   {
     name: "wallabag.entries_archived",
     kind: "read",
-    source:
-      "wallabag entries route: listEntries + countTotalEntries (type saved, sort archived, perPage 30)",
-    prepare: async () => ({ statements: await wallabagEntries({}, "archived") }),
+    source: "wallabag/entries.ts listWallabagEntries (sort archived, perPage 30, detail full)",
+    prepare: async () => ({ statements: await wallabagEntries({ sort: "archived" }) }),
   },
   {
     name: "search",
@@ -729,13 +730,11 @@ const READS: Benchmark[] = [
   {
     name: "wallabag.entries_since",
     kind: "read",
-    source:
-      "wallabag entries route: listEntries + countTotalEntries (type saved, since a week ago, perPage 30)",
+    source: "wallabag/entries.ts listWallabagEntries (since a week ago, perPage 30, detail full)",
     prepare: async () => ({
-      statements: await wallabagEntries(
-        { updatedAfter: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        "published"
-      ),
+      statements: await wallabagEntries({
+        since: String(Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60),
+      }),
     }),
   },
   {
@@ -749,7 +748,7 @@ const READS: Benchmark[] = [
         `SELECT greader_stream_id::text AS stream FROM subscriptions WHERE id = ${q(subA)}`
       );
       return {
-        statements: await greaderStream(`feed/${stream}`, {}, GREADER_CONTENTS_PAGE, true),
+        statements: await greaderStream(`feed/${stream}`, {}, STREAM_CONTENTS_PAGE, true),
       };
     },
   },
@@ -764,7 +763,7 @@ const READS: Benchmark[] = [
         `SELECT greader_stream_id::text AS stream FROM subscriptions WHERE id = ${q(savedSubscriptionId(0))}`
       );
       return {
-        statements: await greaderStream(`feed/${stream}`, {}, GREADER_CONTENTS_PAGE, true),
+        statements: await greaderStream(`feed/${stream}`, {}, STREAM_CONTENTS_PAGE, true),
       };
     },
   },
@@ -777,7 +776,7 @@ const READS: Benchmark[] = [
       statements: await greaderStream(
         "user/-/state/com.google/reading-list",
         { xt: "user/-/state/com.google/read", n: "10000" },
-        GREADER_IDS_PAGE,
+        STREAM_ITEM_IDS_PAGE,
         false
       ),
     }),
