@@ -14,7 +14,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
-import { deleteTokenGrants, lockUsersAgainstPreviousReleaseRotation } from "./service";
+import { deleteTokenGrants } from "./service";
 import { logger } from "@/lib/logger";
 
 /**
@@ -142,13 +142,10 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
  * Returns false if the user has no active grant for the client.
  */
 export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
-  const deleted = await db.transaction(async (tx) => {
-    await lockUsersAgainstPreviousReleaseRotation(tx, [userId]);
-    return tx
-      .delete(oauthConsentGrants)
-      .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
-      .returning({ id: oauthConsentGrants.id });
-  });
+  const deleted = await db
+    .delete(oauthConsentGrants)
+    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
+    .returning({ id: oauthConsentGrants.id });
 
   if (deleted.length === 0) {
     return false;

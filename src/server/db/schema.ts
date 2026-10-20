@@ -414,11 +414,9 @@ export const oauthAccessTokens = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    scopes: text("scopes").array().notNull(),
     grantId: uuid("grant_id")
       .notNull()
       .references(() => oauthTokenGrants.id, { onDelete: "cascade" }),
-    resource: text("resource"), // RFC 8707 audience
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -445,19 +443,15 @@ export const oauthRefreshTokens = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    scopes: text("scopes").array().notNull(),
     grantId: uuid("grant_id")
       .notNull()
       .references(() => oauthTokenGrants.id, { onDelete: "cascade" }),
-    resource: text("resource"), // RFC 8707 audience, carried through rotation
     accessTokenId: uuid("access_token_id").references(() => oauthAccessTokens.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    // Read only by the previous release's reuse detection; drop with it (#2053).
-    replacedById: uuid("replaced_by_id"),
   },
   (table) => [
     index("idx_oauth_refresh_tokens_user").on(table.userId),
@@ -483,8 +477,6 @@ export const oauthConsentGrants = pgTable(
     scopes: text("scopes").array().notNull(), // Approved scopes
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-    // Set only by the previous release, and a trigger then deletes the row (#2053).
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (table) => [
     unique("uq_oauth_consent_user_client").on(table.userId, table.clientId),
