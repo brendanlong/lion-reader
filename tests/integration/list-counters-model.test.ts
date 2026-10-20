@@ -8,7 +8,9 @@
  * newsletters through the ingest path with unsubscribing and resubscribing,
  * saving (upload and by URL, including a user's first save) and deleting saved
  * articles, deleting feeds, mark-all-read, statements moving rows both ways,
- * deleting tags, collections and users — through the code the app runs. After every step it checks that:
+ * deleting tags, collections and users — plus scoring, whose copies on
+ * memberships and tag rows the reconcile check covers — through the code the
+ * app runs. After every step it checks that:
  *   1. every counter and the set of visible articles equal what #1846's rules
  *      give, computed here from the base facts (memberships, subscriptions,
  *      tags, read/starred/spam) rather than through any app or trigger code
@@ -57,6 +59,7 @@ import {
   migrateSubscriptionsToExistingFeed,
 } from "../../src/server/services/subscribe";
 import { setSubscriptionTags } from "../../src/server/services/subscription-updates";
+import { setEntryScores } from "../../src/server/services/entry-scores";
 import { deleteTag } from "../../src/server/services/tags";
 import { deleteSavedArticle, saveArticle, uploadArticle } from "../../src/server/services/saved";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
@@ -395,6 +398,18 @@ const OPS: Array<[number, Op]> = [
       const starred = rng.chance(0.5);
       await updateEntryStarred(db, w.userId, id, starred);
       return `${starred ? "star" : "unstar"} ${id}`;
+    },
+  ],
+  [
+    // Moves no counter, but its copies on memberships and tag rows must
+    // follow every other operation (the reconcile check finds stale ones).
+    2,
+    async (w, rng) => {
+      const id = rng.pick(await visibleEntryIds(w));
+      if (!id) return "score: nothing visible";
+      const score = rng.chance(0.3) ? null : rng.pick([1, 2.5, -1]);
+      await setEntryScores(db, w.userId, [{ entryId: id, score }]);
+      return `score ${id} ${score}`;
     },
   ],
   [

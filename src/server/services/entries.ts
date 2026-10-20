@@ -33,6 +33,13 @@ import {
   VISIBLE_ROW,
 } from "./entry-filters";
 import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
+import {
+  ENTRY_SORT_DIRECTIONS,
+  isRankedSort,
+  type EntrySortBy,
+  type EntrySortOrder,
+  type RankedSortBy,
+} from "@/lib/entry-sort";
 
 // ============================================================================
 // Types
@@ -50,14 +57,17 @@ export interface ListEntriesParams {
   readOnly?: boolean;
   starredOnly?: boolean;
   unstarredOnly?: boolean;
-  sortOrder?: "newest" | "oldest";
+  /** One of `sortBy`'s two directions (`ENTRY_SORT_DIRECTIONS`); its first by default. */
+  sortOrder?: EntrySortOrder;
   // Which column to sort by (default: published). "published" = publish/fetch
-  // time (index-backed); "readChanged" = read-state-change time (the recently-read
-  // view, which also excludes never-read entries); "archived" = read-state-change
-  // time WITHOUT the recently-read exclusion (Wallabag sort=archived). All three
-  // are served by an existing index. There is no "updated" sort: the Wallabag
-  // route approximates sort=updated as the default published sort.
-  sortBy?: "published" | "readChanged" | "archived";
+  // time; "readChanged" = read-state-change time (the recently-read view, which
+  // also excludes never-read entries); "archived" = read-state-change time
+  // WITHOUT the recently-read exclusion (Wallabag sort=archived); "score" and
+  // "position" (one subscription's list only) = the user's score or the
+  // collection's position, then date (#2064). Each is served by an index.
+  // There is no "updated" sort: the Wallabag route approximates sort=updated
+  // as the default published sort.
+  sortBy?: EntrySortBy | "archived";
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
@@ -118,6 +128,8 @@ export const entryListItemSchema = z.object({
   starred: z.boolean(),
   /** When read state last changed (Recently Read's order); null if it never has. */
   readChangedAt: z.date().nullable(),
+  /** How much the user wants the article (#2064): higher sorts first; null for none. */
+  score: z.number().nullable(),
   /** The later of the entry's and the user's state's updated_at, for cache freshness. */
   updatedAt: z.date(),
   /**
@@ -130,6 +142,17 @@ export const entryListItemSchema = z.object({
 });
 
 export type EntryListItem = z.infer<typeof entryListItemSchema>;
+
+/**
+ * Which ranked sorts a list has values for, so a client offers only those
+ * (Date always applies).
+ */
+export const entrySortableSchema = z.object({
+  score: z.boolean(),
+  position: z.boolean(),
+});
+
+export type EntrySortable = z.infer<typeof entrySortableSchema>;
 
 // ============================================================================
 // Constants
@@ -162,6 +185,7 @@ interface EntryListRow {
   read: boolean;
   starred: boolean;
   readChangedAt: Date | null;
+  score: number | null;
   siteName: string | null;
   feedTitle: string | null;
 }
@@ -184,6 +208,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     read: row.read,
     starred: row.starred,
     readChangedAt: row.readChangedAt,
+    score: row.score,
     updatedAt: row.updatedAt,
     entryUpdatedAt: row.entryUpdatedAt,
     feedTitle: row.feedTitle,
@@ -202,6 +227,15 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
 // NaN comparison.
 const timelineCursor = createCursorCodec(
   z.object({
+    ts: z.string().refine((ts) => !Number.isNaN(Date.parse(ts))),
+    id: cursorUuid,
+  })
+);
+
+/** A ranked sort's: the row's value, null once the page is in the rows without one. */
+const rankedCursor = createCursorCodec(
+  z.object({
+    value: z.number().finite().nullable(),
     ts: z.string().refine((ts) => !Number.isNaN(Date.parse(ts))),
     id: cursorUuid,
   })
@@ -230,6 +264,7 @@ const entryListSelectFields = {
   read: visibleEntries.read,
   starred: visibleEntries.starred,
   readChangedAt: visibleEntries.readChangedAt,
+  score: visibleEntries.score,
   updatedAt: visibleEntries.updatedAt,
   entryUpdatedAt: visibleEntries.entryUpdatedAt,
   subscriptionId: subscriptions.id,
@@ -287,12 +322,13 @@ async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "qu
  * Lists entries with filters and pagination.
  *
  * If query is provided, performs full-text search across title and content.
- * Otherwise, returns entries filtered by metadata and sorted by time.
+ * Otherwise, returns entries filtered by metadata and sorted by `sortBy`, and
+ * its first page says which ranked sorts the list has values for.
  */
 export async function listEntries(
   db: typeof dbType,
   params: ListEntriesParams
-): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
+): Promise<{ items: EntryListItem[]; nextCursor?: string; sortable?: EntrySortable }> {
   // If query is provided, delegate to search implementation (indexed full-text
   // search over the stored entries.search_vector column — see searchEntries).
   if (params.query) {
@@ -307,21 +343,23 @@ export async function listEntries(
   const page = await planEntryPage(db, params);
   if (!page) return { items: [] };
 
-  const rows = await page.apply(
-    db
-      .select({
-        ...entryListSelectFields,
-        feedTitle: entryFeedTitleSql(),
-        sortTs: page.sortTs,
-      })
-      .from(visibleEntries)
-      .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
-      .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
-      .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
-      .$dynamic()
-  );
-  const { items, nextCursor } = page.paginate(rows);
-  return { items: items.map(toEntryListItem), nextCursor };
+  const [{ items, nextCursor }, sortable] = await Promise.all([
+    page.read(() =>
+      db
+        .select({
+          ...entryListSelectFields,
+          feedTitle: entryFeedTitleSql(),
+          ...page.sortFields,
+        })
+        .from(visibleEntries)
+        .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+        .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+        .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
+        .$dynamic()
+    ),
+    params.cursor || params.offset ? undefined : page.sortable(),
+  ]);
+  return { items: items.map(toEntryListItem), nextCursor, ...(sortable && { sortable }) };
 }
 
 /** An entry as Google Reader's item lists key it (`listGreaderItemRefs`). */
@@ -353,21 +391,20 @@ export async function listGreaderItemRefs(
   const page = await planEntryPage(db, params);
   if (!page) return { items: [] };
 
-  const rows = await page.apply(
+  const { items, nextCursor } = await page.read(() =>
     db
       .select({
         id: visibleEntries.id,
         itemId: visibleEntries.greaderItemId,
         originStreamId: subscriptions.greaderStreamId,
         fetchedAt: visibleEntries.fetchedAt,
-        sortTs: page.sortTs,
+        ...page.sortFields,
       })
       .from(visibleEntries)
       .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
       .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
       .$dynamic()
   );
-  const { items, nextCursor } = page.paginate(rows);
   return {
     items: items.map((row) => ({
       id: row.id,
@@ -405,18 +442,96 @@ function assertOnePaging(params: { cursor?: string; offset?: number }): void {
   }
 }
 
+/** The columns a page's rows are ordered by, in their index's order. */
+type SortKeys = readonly [value: AnyColumn, ts: AnyColumn, id: AnyColumn];
+
 /**
- * One `listEntries` page's filters, order and window, for a select over
- * `visible_entries` to `apply`, and `paginate` to split its rows into the
- * page and the next cursor. Null when the page is empty without a query (a
- * subscription filter the user can't use).
+ * The ORDER BY of a scan of an index on (`keys`), every column `DESC` or
+ * every column `ASC`, with `NULLS LAST`: spelled exactly as the scan returns
+ * rows, read forward or backward, or Postgres sorts the whole range instead.
+ */
+function indexScanOrder(keys: SortKeys, indexDesc: boolean, forward: boolean): SQL[] {
+  const direction = sql.raw(indexDesc === forward ? "DESC" : "ASC");
+  const nulls = sql.raw(forward ? "NULLS LAST" : "NULLS FIRST");
+  const [value, ts, id] = keys;
+  return [sql`${value} ${direction} ${nulls}`, sql`${ts} ${direction}`, sql`${id} ${direction}`];
+}
+
+/** The row comparison selecting rows after `bound` in a scan's order. */
+function afterInScan(columns: AnyColumn[], bound: SQL[], descending: boolean): SQL {
+  return sql`(${sql.join(columns, sql`, `)}) ${sql.raw(descending ? "<" : ">")} (${sql.join(bound, sql`, `)})`;
+}
+
+/**
+ * A ranked sort's rows and their index: one subscription's memberships for a
+ * position, the list's rows (or `user_entries`) for a score, whose copies
+ * sort each list's index. Score indexes are `DESC`, position ones `ASC`.
+ */
+function rankedSortKeys(
+  sortBy: RankedSortBy,
+  listRows: ListRows | null
+): { keys: SortKeys; indexDesc: boolean } {
+  if (sortBy === "position") {
+    return {
+      keys: [
+        subscriptionEntries.position,
+        subscriptionEntries.publishedOrFetchedAt,
+        subscriptionEntries.entryId,
+      ],
+      indexDesc: false,
+    };
+  }
+  const { table } = listRows ?? {};
+  return {
+    keys: table
+      ? [table.score, table.publishedOrFetchedAt, table.entryId]
+      : [visibleEntries.score, visibleEntries.publishedOrFetchedAt, visibleEntries.id],
+    indexDesc: true,
+  };
+}
+
+type ListRows = NonNullable<Awaited<ReturnType<typeof listRowsOf>>>;
+
+/** A row of a page, with the sort key `planEntryPage`'s `sortFields` selects. */
+interface PageRow {
+  id: string;
+  sortTs: Temporal.Instant | null;
+  sortValue: number | null;
+}
+
+/**
+ * The sort and its direction, validated: each sort has its own pair of
+ * directions (`ENTRY_SORT_DIRECTIONS`), and position orders only one
+ * subscription's list.
+ */
+function resolveSort(params: Omit<ListEntriesParams, "query">) {
+  const sortBy = params.sortBy ?? "published";
+  const directions = ENTRY_SORT_DIRECTIONS[sortBy === "archived" ? "readChanged" : sortBy];
+  const sortOrder = params.sortOrder ?? directions[0];
+  if (!(directions as readonly string[]).includes(sortOrder)) {
+    throw errors.validation(`Sort by ${sortBy} is ${directions.join(" or ")}, not ${sortOrder}`);
+  }
+  if (sortBy === "position" && !params.subscriptionId) {
+    throw errors.validation("Only a collection's list (subscriptionId) can sort by position");
+  }
+  if (isRankedSort(sortBy) && params.offset) {
+    throw errors.validation(`A list sorted by ${sortBy} pages by cursor, not offset`);
+  }
+  return { sortBy, reversed: sortOrder === directions[1] };
+}
+
+/**
+ * One `listEntries` page's filters, order and window: `read` runs it over a
+ * select on `visible_entries` (which must select `sortFields`), and
+ * `sortable` says which ranked sorts the list has values for. Null when the
+ * page is empty without a query (a subscription filter the user can't use).
  */
 async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, "query">) {
   assertOnePaging(params);
 
   const effectiveMaxLimit = params.maxLimit ?? MAX_ENTRIES_PAGE_SIZE;
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
-  const sortOrder = params.sortOrder ?? "newest";
+  const { sortBy, reversed } = resolveSort(params);
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
@@ -443,7 +558,7 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   // the user's timeline instead reads every article outside the list. Sorted
   // otherwise, the join still lets Postgres start from the list's rows when
   // they're few (Wallabag's Saved by `archived`).
-  const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
+  const timelineSort = sortBy !== "readChanged" && sortBy !== "archived";
   if (listRows) {
     conditions.push(...listRowStateConditions(listRows, params));
   }
@@ -473,74 +588,165 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   // Recently Read: exclude entries that were never explicitly read-state-changed.
   // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
   // "archived" sort orders by the same column but keeps unarchived entries.
-  if (params.sortBy === "readChanged") {
+  if (sortBy === "readChanged") {
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
-  // Sort column: the timeline ("published"), or when read state last changed
-  // ("readChanged"/"archived").
+  // Sort column: the timeline ("published", and the date ranked sorts break
+  // ties by), or when read state last changed ("readChanged"/"archived").
   const sortColumn = !timelineSort
     ? visibleEntries.readChangedAt
     : listRows
       ? listRows.table.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
   const idColumn = listRows && timelineSort ? listRows.table.entryId : visibleEntries.id;
+  const ranked = isRankedSort(sortBy) ? rankedSortKeys(sortBy, listRows) : null;
 
-  // A row comparison, never the `OR` form (#2067; "Ordering & Pagination" in
-  // src/server/CLAUDE.md). The timestamp goes to Postgres as text
-  // (::timestamptz) to keep its microseconds.
-  if (params.cursor) {
-    const { ts, id } = timelineCursor.decode(params.cursor);
-    conditions.push(
-      sortOrder === "newest"
-        ? sql`(${sortColumn}, ${idColumn}) < (${ts}::timestamptz, ${id}::uuid)`
-        : sql`(${sortColumn}, ${idColumn}) > (${ts}::timestamptz, ${id}::uuid)`
-    );
-  }
+  const joinRows = <T extends PgSelect>(query: T) =>
+    listRows ? query.innerJoin(listRows.table, listRows.on) : query;
 
-  const orderByClause =
-    sortOrder === "newest" ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)];
+  const paginate = <R extends PageRow>(rows: R[]): { items: R[]; nextCursor?: string } => {
+    if (rows.length <= limit) return { items: rows };
+    const items = rows.slice(0, limit);
+    const last = items[items.length - 1];
+    // sortTs is only null for the offset-paginated "archived" sort (which
+    // ignores nextCursor).
+    if (last?.sortTs == null) return { items };
+    const position = { ts: last.sortTs.toString(), id: last.id };
+    return {
+      items,
+      nextCursor: ranked
+        ? rankedCursor.encode({ value: last.sortValue, ...position })
+        : timelineCursor.encode(position),
+    };
+  };
 
-  return {
-    // Full-precision sort key for cursor encoding. The pool hands back
-    // Postgres's raw microsecond string for timestamptz (see parseTimestamptz);
-    // mapWith decodes it to a Temporal.Instant so the cursor never loses the
-    // microseconds a JS Date would truncate — which corrupted keyset pagination
-    // (#680, #683).
-    //
-    // Null-tolerant: the "archived" sort (Wallabag) orders by readChangedAt
-    // WITHOUT the readChanged view's isNotNull filter, so a row can have a null
-    // sort key. That path is offset-paginated and ignores nextCursor. For the
-    // cursor-paginated sorts (published is NOT NULL; readChanged filters
-    // non-null) the sort key is always present.
-    sortTs: sql`${sortColumn}`.mapWith(parseTimestamptzOrNull),
+  /**
+   * A ranked sort's page: the rows with a value, in the requested direction,
+   * then those without, newest first, each one range of the index. The
+   * cursor says which range the page starts in.
+   */
+  const readRanked = async <T extends PgSelect>(
+    { keys, indexDesc }: NonNullable<typeof ranked>,
+    build: () => T
+  ): Promise<{ items: Awaited<T>; nextCursor?: string }> => {
+    const [value, ts, id] = keys;
+    const cursor = params.cursor ? rankedCursor.decode(params.cursor) : undefined;
+    const tsBound = cursor && [sql`${cursor.ts}::timestamptz`, sql`${cursor.id}::uuid`];
+    const rows: PageRow[] = [];
 
+    if (cursor?.value !== null) {
+      const forward = !reversed;
+      const valued = [...conditions, isNotNull(value)];
+      if (cursor && tsBound) {
+        valued.push(
+          afterInScan(
+            [value, ts, id],
+            [sql`${cursor.value}::float8`, ...tsBound],
+            indexDesc === forward
+          )
+        );
+      }
+      const page = await joinRows(build())
+        .where(and(...valued))
+        .orderBy(...indexScanOrder(keys, indexDesc, forward))
+        .limit(limit + 1);
+      rows.push(...(page as PageRow[]));
+    }
+    if (rows.length <= limit) {
+      // Newest first: the scan of an ASC index runs backward.
+      const unvalued = [...conditions, isNull(value)];
+      if (cursor?.value === null && tsBound) {
+        unvalued.push(afterInScan([ts, id], tsBound, true));
+      }
+      const page = await joinRows(build())
+        .where(and(...unvalued))
+        .orderBy(...indexScanOrder(keys, indexDesc, indexDesc))
+        .limit(limit + 1 - rows.length);
+      rows.push(...(page as PageRow[]));
+    }
+    const { items, nextCursor } = paginate(rows);
+    return { items: items as Awaited<T>, nextCursor };
+  };
+
+  const readByDate = async <T extends PgSelect>(
+    build: () => T
+  ): Promise<{ items: Awaited<T>; nextCursor?: string }> => {
+    const descending = !reversed;
+    const page = [...conditions];
+    // A row comparison, never the `OR` form (#2067; "Ordering & Pagination" in
+    // src/server/CLAUDE.md). The timestamp goes to Postgres as text
+    // (::timestamptz) to keep its microseconds.
+    if (params.cursor) {
+      const { ts, id } = timelineCursor.decode(params.cursor);
+      page.push(
+        afterInScan([sortColumn, idColumn], [sql`${ts}::timestamptz`, sql`${id}::uuid`], descending)
+      );
+    }
     // visible_entries emits exactly one row per (user, entry), and so does a
     // join on a list's rows (one per list and article), so no DISTINCT ON
     // dedup is needed and the (sortColumn, id) keyset cursor resumes cleanly
     // over unique rows.
-    apply: <T extends PgSelect>(query: T) =>
-      (listRows ? query.innerJoin(listRows.table, listRows.on) : query)
-        .where(and(...conditions))
-        .orderBy(...orderByClause)
-        .limit(limit + 1)
-        .offset(params.offset ?? 0),
+    const rows = await joinRows(build())
+      .where(and(...page))
+      .orderBy(
+        ...(descending ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)])
+      )
+      .limit(limit + 1)
+      .offset(params.offset ?? 0);
+    const { items, nextCursor } = paginate(rows as PageRow[]);
+    return { items: items as Awaited<T>, nextCursor };
+  };
 
-    paginate: <R extends { id: string; sortTs: Temporal.Instant | null }>(
-      rows: R[]
-    ): { items: R[]; nextCursor?: string } => {
-      if (rows.length <= limit) return { items: rows };
-      const items = rows.slice(0, limit);
-      const last = items[items.length - 1];
-      // sortTs is only null for the offset-paginated "archived" sort (which
-      // ignores nextCursor).
-      return {
-        items,
-        nextCursor:
-          last?.sortTs != null
-            ? timelineCursor.encode({ ts: last.sortTs.toString(), id: last.id })
-            : undefined,
-      };
+  /** Whether any of the list's rows (with its filters) has a value for `sort`. */
+  const hasValues = async (sort: RankedSortBy): Promise<boolean> => {
+    const { keys, indexDesc } = rankedSortKeys(sort, listRows);
+    const rows = await joinRows(
+      db
+        .select({ one: sql`1` })
+        .from(visibleEntries)
+        .$dynamic()
+    )
+      .where(and(...conditions, isNotNull(keys[0])))
+      .orderBy(...indexScanOrder(keys, indexDesc, true))
+      .limit(1);
+    return rows.length > 0;
+  };
+
+  return {
+    sortFields: {
+      // Full-precision sort key for cursor encoding. The pool hands back
+      // Postgres's raw microsecond string for timestamptz (see parseTimestamptz);
+      // mapWith decodes it to a Temporal.Instant so the cursor never loses the
+      // microseconds a JS Date would truncate — which corrupted keyset pagination
+      // (#680, #683).
+      //
+      // Null-tolerant: the "archived" sort (Wallabag) orders by readChangedAt
+      // WITHOUT the readChanged view's isNotNull filter, so a row can have a null
+      // sort key. That path is offset-paginated and ignores nextCursor. For the
+      // cursor-paginated sorts (published is NOT NULL; readChanged filters
+      // non-null) the sort key is always present.
+      sortTs: sql`${sortColumn}`.mapWith(parseTimestamptzOrNull),
+      sortValue: ranked ? sql<number | null>`${ranked.keys[0]}`.mapWith(Number) : sql<null>`NULL`,
+    },
+
+    read: <T extends PgSelect>(build: () => T) =>
+      ranked ? readRanked(ranked, build) : readByDate(build),
+
+    /**
+     * Which ranked sorts the list has values for, with its filters (Date
+     * always applies): a score anywhere in it, a position in one
+     * subscription's list. Undefined for Recently Read, which sorts by
+     * nothing else.
+     */
+    sortable: async (): Promise<EntrySortable | undefined> => {
+      if (!timelineSort) return undefined;
+      const position = !!params.subscriptionId && listRows?.table === subscriptionEntries;
+      const [score, positioned] = await Promise.all([
+        hasValues("score"),
+        position ? hasValues("position") : false,
+      ]);
+      return { score, position: positioned };
     },
   };
 }

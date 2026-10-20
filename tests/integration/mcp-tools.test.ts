@@ -185,6 +185,62 @@ describe("MCP tool argument validation", () => {
 });
 
 describe("MCP tool results", () => {
+  it("orders a collection by set_collection_positions' entryIds, and lists by score", async () => {
+    const feedId = await createTestFeed();
+    await createTestSubscription(userId, feedId);
+    const older = await createTestEntry(feedId, {
+      userIds: [userId],
+      fetchedAt: new Date("2025-01-01T00:00:00Z"),
+    });
+    const newer = await createTestEntry(feedId, {
+      userIds: [userId],
+      fetchedAt: new Date("2025-01-02T00:00:00Z"),
+    });
+    const { id: collectionId } = (await tool("create_collection").handler(db, userId, {
+      name: "MCP book",
+    })) as { id: string };
+    await tool("add_to_collection").handler(db, userId, {
+      collectionId,
+      entryIds: [older, newer],
+    });
+    const listIds = async (args: Record<string, unknown>) =>
+      (
+        (await tool("list_entries").handler(db, userId, args)) as { items: { id: string }[] }
+      ).items.map((item) => item.id);
+
+    await tool("set_collection_positions").handler(db, userId, {
+      collectionId,
+      entryIds: [older, newer],
+    });
+    expect(await listIds({ subscriptionId: collectionId, sortBy: "position" })).toEqual([
+      older,
+      newer,
+    ]);
+
+    await tool("set_entry_scores").handler(db, userId, {
+      scores: [
+        { entryId: older, score: 2 },
+        { entryId: newer, score: 1 },
+      ],
+    });
+    expect(await listIds({ subscriptionId: collectionId, sortBy: "score" })).toEqual([
+      older,
+      newer,
+    ]);
+    expect(
+      await listIds({ subscriptionId: collectionId, sortBy: "score", sortOrder: "lowest" })
+    ).toEqual([newer, older]);
+
+    for (const args of [
+      { collectionId },
+      { collectionId, entryIds: [older], positions: [{ entryId: older, position: 1 }] },
+    ]) {
+      await expect(
+        tool("set_collection_positions").handler(db, userId, args)
+      ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+    }
+  });
+
   it("returns save results without the article body (#1835)", async () => {
     const result = (await tool("upload_article").handler(db, userId, {
       title: "MCP upload",

@@ -34,12 +34,14 @@ import {
 import { getAppErrorCode } from "@/server/errors";
 import * as entriesService from "@/server/services/entries";
 import * as entryReadsService from "@/server/services/entry-reads";
+import * as entryScoresService from "@/server/services/entry-scores";
 import * as entryStateService from "@/server/services/entry-state";
 import * as subscriptionUpdatesService from "@/server/services/subscription-updates";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
 import * as collectionsService from "@/server/services/collections";
+import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 
 // ============================================================================
 // Types
@@ -149,12 +151,68 @@ const listEntriesArgs = entryListInputSchema().extend({
   readOnly: z.boolean().optional().describe("Show only read entries"),
   starredOnly: entryList.starredOnly.describe("Show only starred entries"),
   unstarredOnly: z.boolean().optional().describe("Show only unstarred entries"),
-  sortOrder: entryList.sortOrder.describe("Sort order (default: newest)"),
+  sortBy: entryList.sortBy.describe(
+    "What to sort by (default published): published (date), readChanged (when last marked " +
+      "read or unread; only entries ever marked), score (set_entry_scores) or position (a " +
+      "collection's order, set_collection_positions; needs subscriptionId). Entries without " +
+      "a score or position come after those with one, newest first. The first page's " +
+      "`sortable` says whether the list has any scores or positions."
+  ),
+  sortOrder: entryList.sortOrder.describe(
+    "Direction of sortBy: newest/oldest for dates, highest/lowest for score, first/last for " +
+      "position (default: the first of each)"
+  ),
   limit: entryList.limit.describe(
     `Number of entries per page (max ${entriesService.MAX_ENTRIES_PAGE_SIZE})`
   ),
   cursor: entryList.cursor.describe("Pagination cursor from previous response"),
 });
+
+const setEntryScoresArgs = z.object({
+  scores: z
+    .array(
+      z.object({
+        entryId: uuidSchema.describe("Entry ID"),
+        score: z
+          .number()
+          .finite()
+          .nullable()
+          .describe("Any number; higher sorts first. Null clears the score."),
+      })
+    )
+    .min(1)
+    .max(entryScoresService.MAX_ENTRY_SCORE_BATCH)
+    .describe("The entries to score"),
+});
+
+const collectionPositionsArgs = z
+  .object({
+    collectionId: uuidSchema.describe("The collection's subscription ID"),
+    entryIds: z
+      .array(uuidSchema)
+      .min(1)
+      .max(MAX_COLLECTION_ENTRIES)
+      .optional()
+      .describe("Entry IDs in order: they get positions 1, 2, 3, …"),
+    positions: z
+      .array(
+        z.object({
+          entryId: uuidSchema.describe("Entry ID"),
+          position: z
+            .number()
+            .finite()
+            .nullable()
+            .describe("Any number; lower sorts first. Null clears the position."),
+        })
+      )
+      .min(1)
+      .max(MAX_COLLECTION_ENTRIES)
+      .optional()
+      .describe("Entries and their positions, to move a few without renumbering the rest"),
+  })
+  .refine((args) => (args.entryIds === undefined) !== (args.positions === undefined), {
+    message: "Pass exactly one of entryIds and positions",
+  });
 
 const getEntryArgs = z.object({
   entryId: uuidSchema.describe("Entry ID"),
@@ -372,7 +430,7 @@ function buildTools(): Tool[] {
     {
       name: "list_entries",
       description:
-        "List feed entries with filters and pagination, sorted by time (or by relevance when `query` is given for full-text search). Returns summaries (title, snippet) without full content.",
+        "List feed entries with filters and pagination, sorted by time, score or a collection's position (see sortBy), or by relevance when `query` is given for full-text search. Returns summaries (title, snippet, score) without full content.",
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);
@@ -439,6 +497,21 @@ function buildTools(): Tool[] {
         );
 
         return entry;
+      },
+    },
+
+    {
+      name: "set_entry_scores",
+      description:
+        "Set or clear scores on entries, to prioritize the user's reading: lists sorted by " +
+        "score (list_entries sortBy: score) show higher scores first, then unscored " +
+        "entries. A score is the user's, so it applies in every list the entry is in. " +
+        `Max ${entryScoresService.MAX_ENTRY_SCORE_BATCH} per call. Returns the entries whose ` +
+        "score changed and the IDs not found.",
+      inputSchema: toInputSchema(setEntryScoresArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(setEntryScoresArgs, args);
+        return entryScoresService.setEntryScores(db, userId, params.scores);
       },
     },
 
@@ -616,6 +689,28 @@ function buildTools(): Tool[] {
           params.entryIds
         );
         return { entryIds };
+      },
+    },
+
+    {
+      name: "set_collection_positions",
+      description:
+        "Set the order of articles in a collection (e.g. a book's chapters): a list sorted " +
+        "by position (list_entries with the collection's subscriptionId and sortBy: " +
+        "position) shows lower positions first, then articles without one. Pass entryIds " +
+        "in order to number them 1, 2, 3, …, or positions to set (or clear, with null) a " +
+        "few, e.g. 2.5 to place one between 2 and 3. Returns the IDs whose position " +
+        "changed and those not in the collection.",
+      inputSchema: toInputSchema(collectionPositionsArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(collectionPositionsArgs, args);
+        return collectionsService.setCollectionPositions(
+          db,
+          userId,
+          params.collectionId,
+          params.positions ??
+            (params.entryIds ?? []).map((entryId, i) => ({ entryId, position: i + 1 }))
+        );
       },
     },
 

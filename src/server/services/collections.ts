@@ -264,6 +264,8 @@ export async function addEntriesToCollection(
             read: visibleEntries.read,
             starred: visibleEntries.starred,
             isSpam: visibleEntries.isSpam,
+            score: visibleEntries.score,
+            position: sql<number | null>`NULL::double precision`.as("position"),
           })
           .from(visibleEntries)
           .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)))
@@ -304,6 +306,71 @@ export async function removeEntriesFromCollection(
   });
 
   return finishMembershipChange(db, userId, subscriptionId, removed, false);
+}
+
+export interface CollectionPosition {
+  entryId: string;
+  /** Any finite number (lower sorts first), or null to clear it. */
+  position: number | null;
+}
+
+/**
+ * Sets or clears articles' positions in a collection (#2064), its order when
+ * sorted by position. An article named twice takes its last position;
+ * articles that aren't in the collection are skipped and returned.
+ */
+export async function setCollectionPositions(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  positions: CollectionPosition[]
+): Promise<{ changedIds: string[]; notInCollectionIds: string[] }> {
+  if (positions.length > MAX_COLLECTION_ENTRIES) {
+    throw errors.validation(`Maximum ${MAX_COLLECTION_ENTRIES} positions per request`);
+  }
+  if (positions.some(({ position }) => position !== null && !Number.isFinite(position))) {
+    throw errors.validation("A position must be a finite number or null");
+  }
+  const byEntry = new Map(positions.map(({ entryId, position }) => [entryId, position]));
+  const entryIds = [...byEntry.keys()];
+
+  const { members, changed } = await db.transaction(async (tx) => {
+    // The memberships come after their user_entries rows in the lock order,
+    // as a mark-read's copy trigger takes them.
+    await lockUserEntryRows(tx, userId, entryIds);
+    await assertOwnedCollections(tx, userId, [subscriptionId]);
+    if (entryIds.length === 0) return { members: [], changed: [] };
+    const values = [...byEntry].map(
+      ([entryId, position]) => sql`(${entryId}::uuid, ${position}::double precision)`
+    );
+    const members = await tx
+      .select({ entryId: subscriptionEntries.entryId })
+      .from(subscriptionEntries)
+      .where(
+        and(
+          eq(subscriptionEntries.subscriptionId, subscriptionId),
+          eq(subscriptionEntries.userId, userId),
+          inArray(subscriptionEntries.entryId, entryIds)
+        )
+      );
+    const updated = await tx.execute<{ entry_id: string }>(sql`
+      UPDATE ${subscriptionEntries}
+      SET position = v.position
+      FROM (VALUES ${sql.join(values, sql`, `)}) AS v(entry_id, position)
+      WHERE ${subscriptionEntries.subscriptionId} = ${subscriptionId}::uuid
+        AND ${subscriptionEntries.userId} = ${userId}::uuid
+        AND ${subscriptionEntries.entryId} = v.entry_id
+        AND ${subscriptionEntries.position} IS DISTINCT FROM v.position
+      RETURNING ${subscriptionEntries.entryId}
+    `);
+    return { members, changed: updated.rows };
+  });
+
+  const found = new Set(members.map((row) => row.entryId));
+  return {
+    changedIds: changed.map((row) => row.entry_id),
+    notInCollectionIds: entryIds.filter((id) => !found.has(id)),
+  };
 }
 
 /**

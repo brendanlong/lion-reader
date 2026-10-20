@@ -323,6 +323,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       read: state.read,
       starred: state.starred,
       readChangedAt: state.readChangedAt,
+      score: null,
       updatedAt: state.updatedAt,
       // Demo entries never change, only their state does.
       entryUpdatedAt: entry.publishedAt ?? entry.fetchedAt,
@@ -477,6 +478,8 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         sortBy === "readChanged"
           ? (state.readChangedAt?.getTime() ?? 0)
           : (state.entry.publishedAt ?? state.entry.fetchedAt).getTime();
+      // Demo articles have no scores or positions, so those sorts list them
+      // newest first, as the service lists articles without one.
       const direction = input.sortOrder === "oldest" ? 1 : -1;
       const compare = (a: { key: number; id: string }, b: { key: number; id: string }) =>
         direction * (a.key - b.key) || a.id.localeCompare(b.id);
@@ -500,6 +503,8 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       return {
         items: page.map(toListItem),
         nextCursor: hasMore && last ? encodeCursor(position(last)) : undefined,
+        ...(!input.cursor &&
+          sortBy !== "readChanged" && { sortable: { score: false, position: false } }),
       };
     },
 

@@ -20,6 +20,7 @@ import {
   MAX_SAVE_COLLECTIONS,
 } from "@/lib/collections";
 import { ENTRY_TYPES } from "@/lib/entry-types";
+import { ENTRY_SORT_BYS, ENTRY_SORT_ORDERS } from "@/lib/entry-sort";
 import { MAX_ENTRIES_PAGE_SIZE } from "@/server/services/entries";
 import { MAX_SUBSCRIPTIONS_PAGE_SIZE } from "@/server/services/subscriptions";
 import { TAG_NAME_MAX_LENGTH } from "@/server/services/tags";
@@ -60,7 +61,8 @@ export const entryListInputSchema = () =>
     type: z.enum(ENTRY_TYPES).optional(),
     unreadOnly: z.boolean().optional(),
     starredOnly: z.boolean().optional(),
-    sortOrder: z.enum(["newest", "oldest"]).optional(),
+    sortBy: z.enum(ENTRY_SORT_BYS).optional(),
+    sortOrder: z.enum(ENTRY_SORT_ORDERS).optional(),
     cursor: z.string().optional(),
     limit: z.number().int().min(1).max(MAX_ENTRIES_PAGE_SIZE).optional(),
   });

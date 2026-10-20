@@ -5321,12 +5321,29 @@
           },
           {
             "in": "query",
+            "name": "sortBy",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "published",
+                "readChanged",
+                "score",
+                "position"
+              ]
+            }
+          },
+          {
+            "in": "query",
             "name": "sortOrder",
             "schema": {
               "type": "string",
               "enum": [
                 "newest",
-                "oldest"
+                "oldest",
+                "highest",
+                "lowest",
+                "first",
+                "last"
               ]
             }
           },
@@ -5359,17 +5376,6 @@
                   "saved"
                 ]
               }
-            }
-          },
-          {
-            "in": "query",
-            "name": "sortBy",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "published",
-                "readChanged"
-              ]
             }
           }
         ],
@@ -5454,6 +5460,12 @@
                               "null"
                             ]
                           },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
                           "updatedAt": {
                             "type": "string"
                           },
@@ -5487,6 +5499,7 @@
                           "read",
                           "starred",
                           "readChangedAt",
+                          "score",
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
@@ -5497,6 +5510,22 @@
                     },
                     "nextCursor": {
                       "type": "string"
+                    },
+                    "sortable": {
+                      "type": "object",
+                      "properties": {
+                        "score": {
+                          "type": "boolean"
+                        },
+                        "position": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "score",
+                        "position"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -5818,6 +5847,12 @@
                             "null"
                           ]
                         },
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "updatedAt": {
                           "type": "string"
                         },
@@ -5902,6 +5937,7 @@
                         "read",
                         "starred",
                         "readChangedAt",
+                        "score",
                         "updatedAt",
                         "entryUpdatedAt",
                         "feedTitle",
@@ -6099,6 +6135,12 @@
                               "null"
                             ]
                           },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
                           "updatedAt": {
                             "type": "string"
                           },
@@ -6189,6 +6231,7 @@
                           "read",
                           "starred",
                           "readChangedAt",
+                          "score",
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
@@ -7420,6 +7463,12 @@
                             "null"
                           ]
                         },
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
                         "updatedAt": {
                           "type": "string"
                         },
@@ -7504,6 +7553,7 @@
                         "read",
                         "starred",
                         "readChangedAt",
+                        "score",
                         "updatedAt",
                         "entryUpdatedAt",
                         "feedTitle",
