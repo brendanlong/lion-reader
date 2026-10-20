@@ -281,6 +281,41 @@ export async function createTestUserEntries(
 }
 
 /**
+ * Inserts `count` entries owned by `owner` (as `createTestEntry`), the i-th
+ * fetched and published at `start + i * stepMs`, in one statement. Returns
+ * their ids oldest first.
+ */
+export async function createTestEntryBatch(
+  owner: string,
+  count: number,
+  {
+    type = "web",
+    start,
+    stepMs = 1000,
+    isSpam = false,
+  }: { type?: "web" | "email" | "saved"; start: Date; stepMs?: number; isSpam?: boolean }
+): Promise<string[]> {
+  const result = await db.execute<{ id: string }>(sql`
+    INSERT INTO entries (id, owner_feed_id, owner_subscription_id, owner_user_id, type, guid,
+                         title, content_hash, is_spam, fetched_at, published_at, created_at,
+                         updated_at, last_seen_at)
+    SELECT x.id,
+           CASE WHEN ${type} = 'web' THEN ${owner}::uuid END,
+           CASE WHEN ${type} = 'email' THEN ${owner}::uuid END,
+           CASE WHEN ${type} = 'saved' THEN ${owner}::uuid END,
+           ${type}::feed_type, 'guid-' || x.id, 'Entry ' || x.id, 'hash-' || x.id, ${isSpam},
+           x.at, x.at, x.at, x.at, CASE WHEN ${type} = 'web' THEN x.at END
+    FROM (
+      SELECT uuidv7() AS id, ${start.toISOString()}::timestamptz + make_interval(secs => i * ${stepMs}::float8 / 1000) AS at, i
+      FROM generate_series(0, ${count - 1}::int) AS i
+    ) x
+    ORDER BY x.i
+    RETURNING id
+  `);
+  return result.rows.map((row) => row.id);
+}
+
+/**
  * Puts a user's article in `subscriptionId` (#1846), as a redirect merge
  * copies an old feed's articles into the survivor, creating the user's row
  * (unread unless `read`) if they have none.

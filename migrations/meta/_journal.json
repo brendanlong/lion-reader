@@ -1142,6 +1142,13 @@
       "when": 1792444644053,
       "tag": "0163_drop_oauth_token_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792444645053,
+      "tag": "0164_bounded_list_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -331,18 +331,20 @@ export async function buildEntrySubscriptionFilter(
  * same filter logic.
  */
 export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {
+  // The read, starred and spam filters are literals, not `= $n`: a generic plan
+  // can only use a partial index (`WHERE NOT read …`) for a literal predicate.
   const conditions: SQL[] = [];
 
   if (params.unreadOnly) {
-    conditions.push(eq(visibleEntries.read, false));
+    conditions.push(sql`NOT ${visibleEntries.read}`);
   } else if (params.readOnly) {
-    conditions.push(eq(visibleEntries.read, true));
+    conditions.push(sql`${visibleEntries.read}`);
   }
 
   if (params.starredOnly) {
-    conditions.push(eq(visibleEntries.starred, true));
+    conditions.push(sql`${visibleEntries.starred}`);
   } else if (params.unstarredOnly) {
-    conditions.push(eq(visibleEntries.starred, false));
+    conditions.push(sql`NOT ${visibleEntries.starred}`);
   }
 
   if (params.type === "saved") {
@@ -359,7 +361,7 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
   }
 
   if (!params.showSpam) {
-    conditions.push(eq(visibleEntries.isSpam, false));
+    conditions.push(sql`NOT ${visibleEntries.isSpam}`);
   }
 
   // Timestamp filters (used by Google Reader API ot/nt parameters).

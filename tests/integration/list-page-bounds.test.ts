@@ -1,0 +1,246 @@
+/**
+ * Every page of every entry list must cost about its page size, however much
+ * data the user has (#2066). Each list is planned with EXPLAIN ANALYZE over a
+ * seed whose noise (rows the list must not return) is spread across the whole
+ * timeline, so a page that walks an index and filters, or sorts a whole set,
+ * reads thousands of rows where a bounded page reads a few dozen.
+ */
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { db, pool } from "../../src/server/db";
+import * as schema from "../../src/server/db/schema";
+import { subscriptions, users } from "../../src/server/db/schema";
+import { listEntries, type ListEntriesParams } from "../../src/server/services/entries";
+import {
+  createTestEmailSubscription,
+  createTestEntryBatch,
+  createTestFeed,
+  createTestSubscription,
+  createTestTag,
+  createTestUser,
+  createTestUserEntries,
+} from "./helpers";
+
+const LIMIT = 20;
+/** Rows of each noise set: far more than any bounded page reads. */
+const NOISE = 2000;
+/** Rows of each sparse list, placed in the middle of the timeline. */
+const SPARSE = 30;
+/** How deep the second page tested starts. */
+const DEEP = 500;
+/**
+ * The most rows a page may read across the big tables: the page itself, each
+ * row's entry and memberships, and some slack. A walk reads thousands.
+ */
+const ROW_BUDGET = 8 * (LIMIT + 1);
+const BIG_TABLES = new Set(["user_entries", "subscription_entries", "entries"]);
+
+const STEP_MS = 60_000;
+const START = new Date("2024-01-01T00:00:00Z");
+const MIDDLE = new Date(START.getTime() + (NOISE / 2) * STEP_MS);
+
+type ListName = "all" | "starred" | "subscription" | "tag" | "uncategorized" | "recentlyRead";
+type Filter = "all" | "unread";
+
+/**
+ * Lists still read more than their page, with the issue that bounds them. A
+ * case here must fail; when a fix makes it pass, delete its entry.
+ */
+const KNOWN_UNBOUNDED: Partial<Record<`${ListName}/${Filter}`, string>> = {
+  "subscription/unread": "#2066",
+  "tag/all": "#2066",
+  "tag/unread": "#2066",
+  "uncategorized/all": "#2066",
+  "uncategorized/unread": "#2066",
+};
+
+let userId: string;
+const scopes: Record<ListName, Partial<ListEntriesParams>> = {
+  all: {},
+  starred: { starredOnly: true },
+  subscription: {},
+  tag: {},
+  uncategorized: { uncategorized: true },
+  recentlyRead: { sortBy: "readChanged" },
+};
+const createdFeeds: string[] = [];
+
+interface PlanNode {
+  "Node Type": string;
+  "Relation Name"?: string;
+  "Actual Rows": number;
+  "Actual Loops": number;
+  "Rows Removed by Filter"?: number;
+  "Rows Removed by Index Recheck"?: number;
+  Plans?: PlanNode[];
+}
+
+/** Rows the plan read from the big tables, counting those it discarded. */
+function bigTableRowsRead(node: PlanNode): number {
+  const own =
+    node["Relation Name"] && BIG_TABLES.has(node["Relation Name"])
+      ? (node["Actual Rows"] +
+          (node["Rows Removed by Filter"] ?? 0) +
+          (node["Rows Removed by Index Recheck"] ?? 0)) *
+        node["Actual Loops"]
+      : 0;
+  return own + (node.Plans ?? []).reduce((sum, child) => sum + bigTableRowsRead(child), 0);
+}
+
+/** Runs `listEntries` and returns its page with the plan of its list query. */
+async function explainPage(params: ListEntriesParams) {
+  const queries: { query: string; params: unknown[] }[] = [];
+  const recording = drizzle(pool, {
+    schema,
+    logger: { logQuery: (query, queryParams) => queries.push({ query, params: queryParams }) },
+  });
+  const page = await listEntries(recording, params);
+  const list = queries.findLast((q) => q.query.includes('"visible_entries"'));
+  if (!list) throw new Error("listEntries ran no list query");
+  const result = await pool.query<{ "QUERY PLAN": [{ Plan: PlanNode }] }>(
+    `EXPLAIN (ANALYZE, FORMAT JSON) ${list.query}`,
+    list.params
+  );
+  return { page, plan: result.rows[0]["QUERY PLAN"][0].Plan };
+}
+
+/** A cursor `DEEP` rows into the list, or undefined if it's shorter. */
+async function deepCursor(params: ListEntriesParams): Promise<string | undefined> {
+  let cursor: string | undefined;
+  for (let read = 0; read < DEEP; read += 100) {
+    const page = await listEntries(db, { ...params, limit: 100, cursor });
+    if (!page.nextCursor) return undefined;
+    cursor = page.nextCursor;
+  }
+  return cursor;
+}
+
+/** Inserts `count` entries for the user in `subscriptionId`, from `start`. */
+async function seedSubscription(
+  owner: string,
+  count: number,
+  start: Date,
+  stepMs: number,
+  rows: (i: number) => { read?: boolean; starred?: boolean; readChangedAt?: Date | null },
+  options: { type?: "web" | "email"; isSpam?: boolean } = {}
+): Promise<void> {
+  const ids = await createTestEntryBatch(owner, count, { start, stepMs, ...options });
+  await createTestUserEntries(
+    ids.map((entryId, i) => {
+      const { read = false, starred = false, readChangedAt = null } = rows(i);
+      return { userId, entryId, read, starred, readChangedAt };
+    })
+  );
+}
+
+beforeAll(async () => {
+  userId = await createTestUser({ emailPrefix: "list-bounds" });
+  const feed = async () => {
+    const id = await createTestFeed();
+    createdFeeds.push(id);
+    return id;
+  };
+  const halfStep = new Date(START.getTime() + STEP_MS / 2);
+  const sparseStep = STEP_MS / (SPARSE + 1);
+
+  // A big tagged feed, read except a few unread (some starred) in the middle,
+  // with its newer half starred: the noise for unread, starred+unread and
+  // per-subscription lists.
+  const bigFeed = await feed();
+  const bigSubscription = await createTestSubscription(userId, bigFeed);
+  const middleUnread = (i: number) => Math.abs(i - NOISE / 2) < 3;
+  await seedSubscription(bigFeed, NOISE, START, STEP_MS, (i) => ({
+    read: !middleUnread(i),
+    starred: i >= NOISE / 2 || middleUnread(i),
+    readChangedAt: middleUnread(i) ? null : new Date(START.getTime() + i * STEP_MS),
+  }));
+  // An unread feed under the same tag: the noise for unread lists of other
+  // tags and Uncategorized.
+  const unreadFeed = await feed();
+  const unreadSubscription = await createTestSubscription(userId, unreadFeed);
+  await seedSubscription(unreadFeed, NOISE, halfStep, STEP_MS, () => ({}));
+  await createTestTag(userId, { subscriptionIds: [bigSubscription, unreadSubscription] });
+
+  // A feed the user left, interleaved with the big one: invisible rows, half
+  // unread and half read just now (Recently Read's noise).
+  const goneFeed = await feed();
+  const goneSubscription = await createTestSubscription(userId, goneFeed);
+  await seedSubscription(goneFeed, NOISE, halfStep, STEP_MS, (i) => ({
+    read: i % 2 === 0,
+    readChangedAt: i % 2 === 0 ? new Date() : null,
+  }));
+  await db
+    .update(subscriptions)
+    .set({ unsubscribedAt: new Date() })
+    .where(eq(subscriptions.id, goneSubscription));
+
+  // Unread spam, hidden from lists by default.
+  const spamSender = await createTestEmailSubscription(userId);
+  await seedSubscription(spamSender, NOISE, halfStep, STEP_MS, () => ({}), {
+    type: "email",
+    isSpam: true,
+  });
+
+  // A sparse tag and a sparse Uncategorized, both in the middle.
+  const sparseFeed = await feed();
+  const sparseSubscription = await createTestSubscription(userId, sparseFeed);
+  await seedSubscription(sparseFeed, SPARSE, MIDDLE, sparseStep, (i) => ({ read: i % 2 === 0 }));
+  const sparseTag = await createTestTag(userId, { subscriptionIds: [sparseSubscription] });
+  const untaggedFeed = await feed();
+  await createTestSubscription(userId, untaggedFeed);
+  await seedSubscription(untaggedFeed, SPARSE, MIDDLE, sparseStep, (i) => ({
+    read: i % 2 === 0,
+  }));
+
+  scopes.subscription = { subscriptionId: bigSubscription };
+  scopes.tag = { tagId: sparseTag };
+  await db.execute(sql`ANALYZE user_entries`);
+  await db.execute(sql`ANALYZE subscription_entries`);
+  await db.execute(sql`ANALYZE entries`);
+}, 120_000);
+
+afterAll(async () => {
+  await db.delete(users).where(eq(users.id, userId));
+  for (const feedId of createdFeeds) {
+    await db.delete(schema.feeds).where(eq(schema.feeds.id, feedId));
+  }
+});
+
+const CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
+  (list === "recentlyRead" ? (["all"] as const) : (["all", "unread"] as const)).flatMap((filter) =>
+    (["newest", "oldest"] as const).map((sortOrder) => ({
+      list,
+      filter,
+      sortOrder,
+      known: KNOWN_UNBOUNDED[`${list}/${filter}`],
+    }))
+  )
+);
+
+describe("entry list pages read a bounded number of rows", () => {
+  for (const { list, filter, sortOrder, known } of CASES) {
+    const name = `${list}, ${filter}, ${sortOrder}${known ? ` (unbounded until ${known})` : ""}`;
+    const test = known ? it.fails : it;
+    test(name, async () => {
+      const params: ListEntriesParams = {
+        userId,
+        ...scopes[list],
+        unreadOnly: filter === "unread",
+        sortOrder,
+        limit: LIMIT,
+        showSpam: false,
+      };
+      const first = await explainPage(params);
+      expect(first.page.items.length).toBeGreaterThan(0);
+      expect(bigTableRowsRead(first.plan)).toBeLessThanOrEqual(ROW_BUDGET);
+
+      const cursor = await deepCursor(params);
+      if (cursor) {
+        const deep = await explainPage({ ...params, cursor });
+        expect(bigTableRowsRead(deep.plan)).toBeLessThanOrEqual(ROW_BUDGET);
+      }
+    });
+  }
+});
