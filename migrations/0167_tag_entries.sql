@@ -3,7 +3,7 @@
 -- non-spam entry has a tag's row while an active subscription with that tag
 -- holds it, and Uncategorized's while an untagged one other than saved does.
 -- Rows carry the user_entries row's read and starred like memberships do
--- (migration 0161), so a tag page reads an index of the tag's own rows instead
+-- (migration 0165), so a tag page reads an index of the tag's own rows instead
 -- of walking the user's timeline. Spam (never in a default list) has no rows,
 -- so a showSpam tag list filters the timeline as before. Triggers keep the
 -- rows; app code never writes them.
