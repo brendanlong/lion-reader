@@ -220,7 +220,10 @@ export function applyCollectionEntriesChange(
       // Its new membership places it in the collection's lists and those of
       // the collection's tags.
       const stored = db.entries.getSynced(entryId);
-      if (stored) insertEntryIntoLists(db, stored);
+      if (stored) {
+        insertEntryIntoLists(db, stored);
+        markEntrySortable(db, stored);
+      }
     }
   }
 }

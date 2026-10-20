@@ -204,4 +204,62 @@ describe("sortable", () => {
     });
     expect(result.current.sortable).toMatchObject({ score: false, position: false });
   });
+
+  it("is offered when a scored entry joins a loaded collection", async () => {
+    const input = { subscriptionId: COLLECTION, limit: 10 };
+    const scored = makeEntry("scored", "2024-06-01", { score: 2, subscriptionIds: ["sub-1"] });
+    const { queryClient, result } = renderList(input);
+    const utils = createRealTrpcUtils(queryClient);
+    act(() => {
+      seedList(queryClient, input, [], { score: false, position: false });
+      upsertServerEntries(getLocalDb(queryClient).entries, [scored]);
+    });
+    await waitFor(() => expect(result.current.sortable).toBeDefined());
+
+    act(() =>
+      handleSyncEvent(utils, queryClient, {
+        type: "collection_entries_changed",
+        subscriptionId: COLLECTION,
+        entryIds: ["scored"],
+        added: true,
+        counts: COUNTS,
+        timestamp: "2024-07-02T00:00:00Z",
+        updatedAt: "2024-07-02T00:00:00Z",
+      })
+    );
+    await waitFor(() => expect(result.current.sortable).toMatchObject({ score: true }));
+  });
+
+  it("keeps a stored score when an older server's unread flip sends none", async () => {
+    const input = { limit: 10 };
+    const entry = makeEntry("a", "2024-06-01", {
+      read: true,
+      score: 4,
+      positions: { [COLLECTION]: 1 },
+    });
+    const { queryClient } = renderList(input);
+    const utils = createRealTrpcUtils(queryClient);
+    act(() => seedList(queryClient, input, [entry]));
+    act(() =>
+      handleSyncEvent(utils, queryClient, {
+        ...stateChanged({ ...entry, read: false }, {}),
+        entry: {
+          type: "web",
+          url: null,
+          title: "a",
+          author: null,
+          summary: null,
+          publishedAt: "2024-06-01T00:00:00Z",
+          fetchedAt: "2024-06-01T00:00:00Z",
+          feedTitle: "Feed One",
+          siteName: null,
+        },
+      })
+    );
+    expect(getLocalDb(queryClient).entries.getSynced("a")).toMatchObject({
+      read: false,
+      score: 4,
+      positions: { [COLLECTION]: 1 },
+    });
+  });
 });

@@ -26,6 +26,7 @@ import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle, shownSortOrder } from "./SortToggle";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useListSortable } from "@/lib/hooks/useLocalEntries";
+import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
@@ -75,8 +76,11 @@ export function EntryPageLayout({
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
   // The sort the list can use (`buildEntriesListInput`), shown by Date while
   // its values are gone, keeping the choice in the URL for when they return.
+  // Read from the store only once it can render from it, or the server's and
+  // the hydrating client's first renders disagree.
   const listInput = useEntriesListInput();
-  const sortable = useListSortable(listInput);
+  const storedSortable = useListSortable(listInput);
+  const sortable = useCanRenderFromCache() ? storedSortable : undefined;
   const { openEntryId } = useEntryUrlState();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const pathname = useAppPathname();

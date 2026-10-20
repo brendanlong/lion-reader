@@ -81,7 +81,7 @@ function entryToReturnTo(
 
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
-  const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
+  const { showUnreadOnly, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
@@ -288,8 +288,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Search results and Recently Read can't be approximated from stored entries
   // (membership depends on the query; order on read time), so they show a
   // plain skeleton instead.
-  const isServerOrdered =
-    !!queryInput.query || (queryInput.sortBy !== undefined && queryInput.sortBy !== "published");
+  const isServerOrdered = !!queryInput.query || queryInput.sortBy === "readChanged";
   if (isLoading && entries.length === 0 && isServerOrdered) {
     return <EntryListSkeleton />;
   }
@@ -303,7 +302,8 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
           starredOnly: queryInput.starredOnly,
           type: queryInput.type,
           unreadOnly: showUnreadOnly,
-          sortOrder,
+          sortOrder: queryInput.sortOrder,
+          sortBy: queryInput.sortBy,
         }}
         onEntryClick={handleEntryClick}
       />

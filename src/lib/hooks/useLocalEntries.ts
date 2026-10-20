@@ -133,7 +133,6 @@ export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
       unreadOnly,
       type,
       sortOrder,
-      // Recently Read's order isn't reproducible; it shows the newest first.
       sortBy: isRankedSort(sortBy) ? sortBy : undefined,
     };
     const needsScope = !!tagId || !!uncategorized || type === "saved";

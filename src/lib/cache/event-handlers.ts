@@ -94,6 +94,12 @@ export function handleSyncEvent(
 
     case "entry_state_changed": {
       const state = { read: event.read, starred: event.starred };
+      // A server a release behind sends neither: keep what's stored.
+      const stored = getLocalDb(queryClient).entries.getSynced(event.entryId);
+      const ranks = {
+        score: event.score !== undefined ? event.score : (stored?.score ?? null),
+        positions: event.positions ?? stored?.positions ?? {},
+      };
       applyEntryStateChanges(utils, queryClient, {
         entries: [
           {
@@ -105,7 +111,9 @@ export function handleSyncEvent(
             updatedAt: new Date(event.updatedAt),
             // Sent with an unread flip; star/unstar of an unread entry falls
             // back to the stored row.
-            ...(event.entry && { listItem: toEntryRow(event, event.entry, state) }),
+            ...(event.entry && {
+              listItem: toEntryRow({ ...event, ...ranks }, event.entry, state),
+            }),
           },
         ],
         counts: event.counts,

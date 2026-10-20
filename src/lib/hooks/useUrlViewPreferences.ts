@@ -63,7 +63,7 @@ export interface UseUrlViewPreferencesResult {
  * @example
  * ```tsx
  * function AllEntriesPage() {
- *   const { showUnreadOnly, toggleShowUnreadOnly, sortOrder, toggleSortOrder } =
+ *   const { showUnreadOnly, toggleShowUnreadOnly } =
  *     useUrlViewPreferences();
  *
  *   // URL will update to /all?unreadOnly=false when toggled
