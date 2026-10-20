@@ -22,6 +22,7 @@ output "healthcheck_ping_urls" {
   description = "healthchecks.io ping URLs, by the env var that carries them."
   value = {
     for k, v in local.healthchecks : v.env_var => healthchecksio_check.this[k].ping_url
+    if v.env_var != null
   }
   sensitive = true
 }

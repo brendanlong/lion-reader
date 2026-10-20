@@ -146,10 +146,11 @@ Sentry for errors, Prometheus (`prom-client`, `/metrics` per process) for metric
 
 Alerting uses [healthchecks.io](https://healthchecks.io) dead-man's switches (declared in [`terraform/`](../terraform/README.md)), one **separate** check per signal so a dead worker is distinguishable from a fetch regression:
 
-| Check                | Env var                     | Pinged by                            | Signals                                                             |
-| -------------------- | --------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| Feed fetch health    | `FEED_HEALTH_HEARTBEAT_URL` | `monitor_feed_health` (every 15 min) | `/fail` when no feed fetched successfully lately (`feed/health.ts`) |
-| Worker liveness      | `WORKER_HEARTBEAT_URL`      | worker process (every 1 min)         | `/fail` if the job loop wedges; silence = worker dead               |
-| Discord bot liveness | `DISCORD_BOT_HEARTBEAT_URL` | discord-bot process (every 5 min)    | silence = bot dead or crash-looping                                 |
+| Check                 | Env var                     | Pinged by                            | Signals                                                                           |
+| --------------------- | --------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- |
+| Feed fetch health     | `FEED_HEALTH_HEARTBEAT_URL` | `monitor_feed_health` (every 15 min) | `/fail` when no feed fetched successfully lately (`feed/health.ts`)               |
+| Worker liveness       | `WORKER_HEARTBEAT_URL`      | worker process (every 1 min)         | `/fail` if the job loop wedges; silence = worker dead                             |
+| Discord bot liveness  | `DISCORD_BOT_HEARTBEAT_URL` | discord-bot process (every 5 min)    | silence = bot dead or crash-looping                                               |
+| Postgres base backups | — (set by Terraform)        | Cloudflare Worker (hourly)           | `/fail` when no base backup succeeded lately (`terraform/backup-health/check.ts`) |
 
-Each is optional (no URL, no pings).
+Each app-side check is optional (no URL, no pings). The backup check runs outside Fly so it still reports when the app is down.

@@ -2,8 +2,18 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/fixup-standalone.mjs", "src/lib/narration/app-reader.ts"],
-      "ignore": ["extension/**", "kmp/**", "src/lib/stubs/**", "service-worker/index.ts"],
+      "entry": [
+        "scripts/fixup-standalone.mjs",
+        "src/lib/narration/app-reader.ts",
+        "terraform/backup-health/index.ts"
+      ],
+      "ignore": [
+        "extension/**",
+        "kmp/**",
+        "src/lib/stubs/**",
+        "service-worker/index.ts",
+        "terraform/build/**"
+      ],
       "ignoreDependencies": ["mammoth"]
     },
     "native/sanitizer": {},
