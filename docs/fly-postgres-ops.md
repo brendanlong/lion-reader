@@ -352,11 +352,10 @@ Do this periodically — an untested backup isn't a backup.
 
 ### Monitoring
 
-The "Postgres base backups" healthchecks.io check alerts when no base backup has
-succeeded in the last 36 hours. An hourly Cloudflare Worker reads the barman catalog in
-the backup bucket with a read-only key (`terraform/backup-health.tf`). It watches base
-backups, not WAL: WAL only replays on top of a base backup, and base backups once failed
-for 14 days while WAL archiving stayed healthy.
+The "Postgres base backups" healthchecks.io check alerts when base backups stop
+succeeding. A Cloudflare Worker reads the backup bucket for it; what it checks and why is
+in `terraform/backup-health/check.ts`. Its alert body names the newest good backup; start
+from `fly ssh console -a lion-reader-pg -C 'flexctl backup list'`.
 
 A stalled WAL archive is the other silent failure, and nothing alerts on it: the DB looks
 healthy while PITR quietly stops advancing. Check by hand:

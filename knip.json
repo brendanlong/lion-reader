@@ -5,7 +5,7 @@
       "entry": [
         "scripts/fixup-standalone.mjs",
         "src/lib/narration/app-reader.ts",
-        "terraform/backup-health/worker.ts"
+        "terraform/backup-health/index.ts"
       ],
       "ignore": [
         "extension/**",

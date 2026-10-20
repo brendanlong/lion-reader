@@ -1,13 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { build } from "esbuild";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import worker, {
+import { bundleOptions } from "../../scripts/build-backup-health-worker.mjs";
+import {
   MAX_BACKUP_AGE_MS,
-  MAX_BACKUPS_READ,
+  SUBREQUEST_LIMIT,
   assessBackups,
   parseBackupInfo,
   parseBackupListPage,
+  type Env,
   type ScannedBackup,
-} from "../../terraform/backup-health/worker";
+} from "../../terraform/backup-health/check";
 
 const NOW = new Date("2026-08-15T12:00:00Z");
 const PREFIX = "lion-reader-pg/base/";
@@ -54,6 +57,20 @@ describe("parseBackupListPage", () => {
     });
   });
 
+  it.each([
+    [
+      "is cut off mid-document",
+      `<ListBucketResult><CommonPrefixes><Prefix>${PREFIX}a/</Prefix></CommonPrefixes>`,
+    ],
+    [
+      "is truncated with no continuation token",
+      "<ListBucketResult><IsTruncated>true</IsTruncated></ListBucketResult>",
+    ],
+    ["isn't a listing", "<Error><Code>InternalError</Code></Error>"],
+  ])("throws when the page %s", (_label, xml) => {
+    expect(() => parseBackupListPage(xml, PREFIX)).toThrow();
+  });
+
   it("returns no IDs for an empty listing", () => {
     const xml = "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>";
     expect(parseBackupListPage(xml, PREFIX)).toEqual({ ids: [], nextContinuationToken: null });
@@ -88,8 +105,27 @@ describe("assessBackups", () => {
   });
 });
 
-describe("scheduled handler", () => {
-  const env = {
+interface BundledWorker {
+  scheduled(controller: null, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): void;
+}
+
+/** The handler as deployed: the bundle Terraform uploads, built the same way. */
+describe("bundled Worker", () => {
+  let bundle: Record<string, unknown>;
+  let worker: BundledWorker;
+
+  beforeAll(async () => {
+    const result = await build({ ...bundleOptions, write: false });
+    const code = Buffer.from(result.outputFiles[0].contents).toString("base64");
+    bundle = await import(/* @vite-ignore */ `data:text/javascript;base64,${code}`);
+    worker = bundle.default as BundledWorker;
+  });
+
+  it("exports only the handler, since Workers rejects any other export", () => {
+    expect(Object.keys(bundle)).toEqual(["default"]);
+  });
+
+  const env: Env = {
     BACKUP_BUCKET_ENDPOINT: "https://storage.test",
     BACKUP_BUCKET: "backups",
     BACKUP_SERVER_NAME: "lion-reader-pg",
@@ -150,15 +186,15 @@ describe("scheduled handler", () => {
     expect(ping.url).toBe(env.HEARTBEAT_URL);
   });
 
-  it("stops after MAX_BACKUPS_READ backups and pings /fail", async () => {
+  it("reads backups until only the ping's subrequest is left, then pings /fail", async () => {
     const ids = Array.from(
-      { length: MAX_BACKUPS_READ + 5 },
+      { length: SUBREQUEST_LIMIT + 5 },
       (_, i) => `id${String(i).padStart(3, "0")}`
     );
     const { requests, ping } = await run((url) =>
       url.searchParams.has("list-type") ? listing(ids) : new Response("status=FAILED\n")
     );
-    expect(requests).toHaveLength(1 + MAX_BACKUPS_READ);
+    expect(requests).toHaveLength(SUBREQUEST_LIMIT - 1);
     expect(ping.url).toBe(`${env.HEARTBEAT_URL}/fail`);
   });
 

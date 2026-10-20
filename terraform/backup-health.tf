@@ -2,7 +2,7 @@
 # Cloudflare Worker reads the barman catalog in the Tigris backup bucket and
 # pings the backup_health healthchecks.io check. It runs outside Fly so it
 # keeps reporting when the app or its worker is down. What it checks and why:
-# backup-health/worker.ts.
+# backup-health/check.ts.
 #
 # `pnpm build:backup-health-worker` must run before plan; the missing file
 # fails the plan otherwise.

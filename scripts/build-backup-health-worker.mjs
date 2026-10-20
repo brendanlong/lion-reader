@@ -5,14 +5,19 @@
  */
 
 import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
 
-await build({
-  entryPoints: ["terraform/backup-health/worker.ts"],
-  outfile: "terraform/build/backup-health.js",
+/** @type {import("esbuild").BuildOptions} */
+export const bundleOptions = {
+  entryPoints: ["terraform/backup-health/index.ts"],
   bundle: true,
   format: "esm",
   platform: "browser",
   conditions: ["workerd", "worker", "browser"],
   target: "es2022",
   minify: true,
-});
+};
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await build({ ...bundleOptions, outfile: "terraform/build/backup-health.js" });
+}

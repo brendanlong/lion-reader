@@ -1,6 +1,7 @@
 /**
- * Cloudflare Worker that alerts when Postgres base backups stop succeeding
- * (#2091). Deployed and scheduled by ../backup-health.tf.
+ * The backup-health Worker's logic (entry point: ./index.ts). It alerts when
+ * Postgres base backups stop succeeding (#2091); ../backup-health.tf deploys
+ * and schedules it.
  *
  * It watches base backups, not WAL: WAL only replays on top of a base backup,
  * so a current WAL archive is still unrestorable once the newest base backup
@@ -15,9 +16,9 @@
  */
 
 import { AwsClient } from "aws4fetch";
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 
-interface Env {
+export interface Env {
   BACKUP_BUCKET_ENDPOINT: string;
   BACKUP_BUCKET: string;
   /** Top-level directory of the barman catalog: the Postgres app's name. */
@@ -27,19 +28,15 @@ interface Env {
   HEARTBEAT_URL: string;
 }
 
-interface ExecutionContext {
-  waitUntil(promise: Promise<unknown>): void;
-}
-
 /** One daily backup cycle plus slack for a slow or retried run. */
 export const MAX_BACKUP_AGE_MS = 36 * 60 * 60 * 1000;
 
 /**
- * Newest backups to read before giving up. The free Workers plan allows 50
- * subrequests per run, and the listing and the ping take two of them. Running
- * out means this many failures in a row, which is worth an alert in itself.
+ * Requests a run may make on the free Workers plan; one more is rejected. The
+ * scan reads backups until it would leave none for the ping. Running out means
+ * that many failures in a row, which is worth an alert in itself.
  */
-export const MAX_BACKUPS_READ = 40;
+export const SUBREQUEST_LIMIT = 50;
 
 const USER_AGENT = "LionReader-BackupHealth/1.0 (+https://github.com/brendanlong/lion-reader)";
 
@@ -92,11 +89,15 @@ interface ListBucketResult {
   NextContinuationToken?: string;
 }
 
-/** Parses one `ListObjectsV2` page listed with `delimiter=/` into backup IDs. */
+/**
+ * Parses one `ListObjectsV2` page listed with `delimiter=/` into backup IDs.
+ * Throws on a malformed page: S3 can fail mid-response after a 200 status.
+ */
 export function parseBackupListPage(
   xml: string,
   prefix: string
 ): { ids: string[]; nextContinuationToken: string | null } {
+  if (XMLValidator.validate(xml) !== true) throw new Error("Backup listing is not valid XML");
   const result = (xmlParser.parse(xml) as { ListBucketResult?: ListBucketResult }).ListBucketResult;
   const prefixes = result?.CommonPrefixes ?? [];
   const ids = (Array.isArray(prefixes) ? prefixes : [prefixes])
@@ -104,11 +105,12 @@ export function parseBackupListPage(
     .filter((p): p is string => typeof p === "string" && p.startsWith(prefix))
     .map((p) => p.slice(prefix.length).replace(/\/$/, ""))
     .filter((id) => id !== "");
-  const token = result?.NextContinuationToken;
-  return {
-    ids,
-    nextContinuationToken: result?.IsTruncated === "true" && token ? token : null,
-  };
+  if (!result) throw new Error("Backup listing has no ListBucketResult");
+  if (result.IsTruncated !== "true") return { ids, nextContinuationToken: null };
+  if (!result.NextContinuationToken) {
+    throw new Error("Backup listing is truncated but has no continuation token");
+  }
+  return { ids, nextContinuationToken: result.NextContinuationToken };
 }
 
 /**
@@ -156,21 +158,28 @@ async function scanBackups(env: Env): Promise<{ scanned: ScannedBackup[]; catalo
     secretAccessKey: env.BACKUP_SECRET_ACCESS_KEY,
     service: "s3",
     region: "auto",
+    // Every retry is a subrequest the budget below doesn't see; a failed run
+    // reports and the next hourly one tries again.
+    retries: 0,
   });
   const bucketUrl = `${env.BACKUP_BUCKET_ENDPOINT.replace(/\/$/, "")}/${env.BACKUP_BUCKET}`;
   const prefix = `${env.BACKUP_SERVER_NAME}/base/`;
   const headers = { "User-Agent": USER_AGENT };
+  // The heartbeat ping needs the last subrequest.
+  let requestsLeft = SUBREQUEST_LIMIT - 1;
 
   // delimiter=/ returns one entry per backup directory instead of every
   // (multi-GB) data object inside it.
   const ids: string[] = [];
   let continuationToken: string | null = null;
   do {
+    if (requestsLeft === 0) throw new Error("Backup listing needs more pages than a run can fetch");
     const url = new URL(bucketUrl);
     url.searchParams.set("list-type", "2");
     url.searchParams.set("prefix", prefix);
     url.searchParams.set("delimiter", "/");
     if (continuationToken) url.searchParams.set("continuation-token", continuationToken);
+    requestsLeft--;
     const response = await client.fetch(url.toString(), { headers });
     if (!response.ok) throw new Error(`Listing backups failed: HTTP ${response.status}`);
     const page = parseBackupListPage(await response.text(), prefix);
@@ -182,7 +191,7 @@ async function scanBackups(env: Env): Promise<{ scanned: ScannedBackup[]; catalo
   ids.sort().reverse();
 
   const scanned: ScannedBackup[] = [];
-  for (const id of ids.slice(0, MAX_BACKUPS_READ)) {
+  for (const id of ids.slice(0, requestsLeft)) {
     const response = await client.fetch(`${bucketUrl}/${prefix}${id}/backup.info`, { headers });
     if (response.status !== 404 && !response.ok) {
       throw new Error(`Reading backup ${id} failed: HTTP ${response.status}`);
@@ -194,7 +203,7 @@ async function scanBackups(env: Env): Promise<{ scanned: ScannedBackup[]; catalo
   return { scanned, catalogSize: ids.length };
 }
 
-async function checkAndPing(env: Env): Promise<void> {
+export async function checkAndPing(env: Env): Promise<void> {
   let assessment: Assessment;
   try {
     const { scanned, catalogSize } = await scanBackups(env);
@@ -214,11 +223,3 @@ async function checkAndPing(env: Env): Promise<void> {
   });
   if (!response.ok) throw new Error(`Healthcheck ping failed: HTTP ${response.status}`);
 }
-
-const worker = {
-  scheduled(_controller: unknown, env: Env, ctx: ExecutionContext): void {
-    ctx.waitUntil(checkAndPing(env));
-  },
-};
-
-export default worker;
