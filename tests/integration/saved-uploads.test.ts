@@ -411,4 +411,20 @@ describe("uploadArticle (Markdown)", () => {
     expect(article.author).toBe("Ada Lovelace");
     expect(article.excerpt).toBe("An explicit summary override.");
   });
+
+  it("returns the first article for a repeat with the same idempotency key", async () => {
+    const userId = await createUser();
+    const params = { content: "First body.", title: "Retried", idempotencyKey: "mcp-retry-1" };
+
+    const first = await uploadArticle(db, userId, params);
+    const retry = await uploadArticle(db, userId, { ...params, content: "Second body." });
+
+    expect(retry.id).toBe(first.id);
+    expect(retry.contentCleaned).toContain("First body.");
+    const rows = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(eq(entries.ownerUserId, userId));
+    expect(rows).toHaveLength(1);
+  });
 });

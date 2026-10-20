@@ -28,7 +28,12 @@ import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
-import { savedArticleUrlSchema, saveCollectionIdsSchema, uuidSchema } from "../validation";
+import {
+  savedArticleUrlSchema,
+  saveCollectionIdsSchema,
+  uploadIdempotencyKeySchema,
+  uuidSchema,
+} from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
 import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -213,14 +218,7 @@ export const savedRouter = createTRPCRouter({
           ),
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
-        /**
-         * Makes the upload idempotent: retrying with the same key returns the
-         * article the first attempt saved instead of saving another.
-         */
-        idempotencyKey: z
-          .string()
-          .regex(/^[A-Za-z0-9_-]{1,128}$/, "Invalid idempotency key")
-          .optional(),
+        idempotencyKey: uploadIdempotencyKeySchema,
         collectionIds: saveCollectionIdsSchema,
       })
     )

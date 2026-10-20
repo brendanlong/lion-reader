@@ -33,8 +33,8 @@ import {
  * getting_started_at IS NULL RETURNING`), so a signup racing the backfill job
  * can't produce two copies.
  *
- * The claim is released only when the **insert itself** fails — i.e. only while
- * there is definitely no article — so a retry can never add a second copy. Once
+ * The claim is released only when the **insert itself** fails, and the insert
+ * uses a fixed idempotency key, so a retry can never add a second copy. Once
  * the article exists the claim stands, which makes starring best-effort: an
  * unstarred article is a much better failure than a duplicate one, and the user
  * can star it themselves.
@@ -67,6 +67,9 @@ export async function createGettingStartedArticle(
       title: GETTING_STARTED_TITLE,
       excerpt: GETTING_STARTED_EXCERPT,
       keepRelativeUrls: true,
+      // A commit whose acknowledgement is lost throws here though the article
+      // exists; the key makes the retry that the released claim allows find it.
+      idempotencyKey: "getting-started",
     });
   } catch (err) {
     // Nothing was inserted, so hand the user back to the backfill.

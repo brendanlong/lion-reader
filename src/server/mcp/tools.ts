@@ -28,6 +28,7 @@ import {
   subscriptionTagIdsSchema,
   tagColorSchema,
   tagNameSchema,
+  uploadIdempotencyKeySchema,
   uuidSchema,
 } from "@/server/trpc/validation";
 import { getAppErrorCode } from "@/server/errors";
@@ -272,6 +273,11 @@ const uploadArticleArgs = z.object({
         "text (NOT Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since " +
         "it is rendered as literal text. Clipped to ~300 characters."
     ),
+  idempotencyKey: uploadIdempotencyKeySchema.describe(
+    "Optional key (letters, digits, _ and -; up to 128) unique to this article. Pass the " +
+      "same key when retrying a call that timed out or failed: if the first attempt saved " +
+      "the article, it's returned instead of saving a duplicate."
+  ),
   collectionIds: saveCollectionIdsArg,
 });
 
@@ -499,6 +505,7 @@ function buildTools(): Tool[] {
           title: params.title,
           author: params.author,
           excerpt: params.summary,
+          idempotencyKey: params.idempotencyKey,
           collectionIds: params.collectionIds,
         });
         return withoutContent(article);
