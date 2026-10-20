@@ -7,12 +7,12 @@
 -- Positions live on the membership alone. The indexes are in 0169.
 SET LOCAL lock_timeout = '5s';
 
--- In the lock order (src/server/CLAUDE.md), like 0165. The columns are
--- nullable without a default, so adding them rewrites nothing, and every
--- existing row's copy (NULL) is already right.
-LOCK TABLE user_entries IN SHARE ROW EXCLUSIVE MODE;
---> statement-breakpoint
-LOCK TABLE subscription_entries, tag_entries IN ACCESS EXCLUSIVE MODE;
+-- All three exclusively, up front and in the lock order (src/server/CLAUDE.md):
+-- altering user_entries needs its exclusive lock, and upgrading to it after
+-- the others deadlocks with a list read holding user_entries and waiting on
+-- them. Adding nullable columns without a default rewrites nothing, so the
+-- locks are brief, and every existing row's copy (NULL) is already right.
+LOCK TABLE user_entries, subscription_entries, tag_entries IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 ALTER TABLE user_entries ADD COLUMN score double precision;
 --> statement-breakpoint

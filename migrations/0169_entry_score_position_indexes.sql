@@ -6,6 +6,12 @@
 -- Every membership carries a position column, but only collections' are set.
 SET LOCAL lock_timeout = '5s';
 
+-- Every build's lock up front, in the lock order: taking each table's as its
+-- first build starts deadlocks with a fan-out holding subscription_entries
+-- and waiting on user_entries. Writes wait until the builds are done.
+LOCK TABLE user_entries, subscription_entries, tag_entries IN SHARE MODE;
+--> statement-breakpoint
+
 CREATE INDEX IF NOT EXISTS idx_user_entries_visible_score
   ON user_entries (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC)
   WHERE NOT is_spam AND (starred OR active_memberships > 0);
