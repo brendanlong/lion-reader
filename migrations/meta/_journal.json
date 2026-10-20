@@ -1135,6 +1135,13 @@
       "when": 1792444544053,
       "tag": "0162_drop_oauth_token_compat",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792444644053,
+      "tag": "0163_drop_oauth_token_columns",
+      "breakpoints": true
     }
   ]
 }
