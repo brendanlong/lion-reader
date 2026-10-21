@@ -22,7 +22,7 @@ vi.mock("next/navigation", () => ({
  * The slice of IndexedDB `takeSharedFile` uses, holding the service worker's
  * `pending` record. Requests complete on a later task, as the browser's do.
  */
-function stubSharedFile(record: { content: string; filename: string }) {
+function stubSharedFile(record: { content: string; filename: string; type?: string }) {
   const request = <T,>(result: T) => {
     const req: { result: T; onsuccess?: () => void } = { result };
     setTimeout(() => req.onsuccess?.());
@@ -65,6 +65,14 @@ describe("SavePage shared files", () => {
       content: "UEs=",
       filename: "tale.epub",
     });
+    expect(callsFor("saved.uploadFile")).toHaveLength(0);
+  });
+
+  it("imports an ebook shared without an extension, by its type", async () => {
+    stubSharedFile({ content: "UEs=", filename: "A Tale", type: "application/epub+zip" });
+    const { callsFor } = renderWithTrpc(<SavePage />, { handlers });
+
+    expect(await screen.findByText("A Tale (2 chapters)")).toBeInTheDocument();
     expect(callsFor("saved.uploadFile")).toHaveLength(0);
   });
 

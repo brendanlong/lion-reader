@@ -418,12 +418,15 @@ async function requestXml(client: AwsClient, url: string, init: RequestInit): Pr
 export async function deleteObjectsWithPrefix(prefix: string): Promise<number> {
   const client = requireS3Client();
   let deleted = 0;
-  // Each pass lists the first page again: what the last one listed is gone.
+  // Keys list in order, so each page starts after the last one's final key,
+  // whether or not deleting it took.
+  let startAfter: string | null = null;
   for (;;) {
     const query = new URLSearchParams({
       "list-type": "2",
       prefix,
       "max-keys": String(MAX_KEYS_PER_REQUEST),
+      ...(startAfter !== null && { "start-after": startAfter }),
     });
     const listing = await requestXml(client, getBucketRequestUrl(query.toString()), {
       method: "GET",
@@ -449,5 +452,6 @@ export async function deleteObjectsWithPrefix(prefix: string): Promise<number> {
       throw new Error(`S3 refused to delete ${failed.length} objects under ${prefix}`);
     }
     deleted += keys.length;
+    startAfter = keys[keys.length - 1];
   }
 }

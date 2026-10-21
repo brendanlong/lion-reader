@@ -11,6 +11,10 @@ import { storageConfig } from "@/server/config/env";
 export interface FakeS3 {
   /** Stored objects by key. */
   objects: Map<string, { body: Buffer; contentType: string | undefined }>;
+  /** Refuse PUTs with a 503. */
+  failPuts: boolean;
+  /** Report every key of a multi-object delete as failed. */
+  failDeletes: boolean;
   /** Points `storageConfig` at this server until {@link close}. */
   close(): Promise<void>;
 }
@@ -32,6 +36,7 @@ function xmlUnescape(text: string): string {
 
 export async function startFakeS3(): Promise<FakeS3> {
   const objects: FakeS3["objects"] = new Map();
+  const fake = { failPuts: false, failDeletes: false };
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -43,13 +48,18 @@ export async function startFakeS3(): Promise<FakeS3> {
         res.writeHead(404).end();
         return;
       }
-      if (req.method === "PUT" && key) {
+      if (req.method === "PUT" && key && fake.failPuts) {
+        res.writeHead(503).end();
+      } else if (req.method === "PUT" && key) {
         objects.set(key, { body: Buffer.concat(chunks), contentType: req.headers["content-type"] });
         res.writeHead(200).end();
       } else if (req.method === "GET" && url.searchParams.get("list-type") === "2") {
         const prefix = url.searchParams.get("prefix") ?? "";
         const max = Number(url.searchParams.get("max-keys") ?? 1000);
-        const keys = [...objects.keys()].filter((k) => k.startsWith(prefix)).sort();
+        const startAfter = url.searchParams.get("start-after") ?? "";
+        const keys = [...objects.keys()]
+          .filter((k) => k.startsWith(prefix) && k > startAfter)
+          .sort();
         const page = keys.slice(0, max);
         res
           .writeHead(200, { "Content-Type": "application/xml" })
@@ -61,10 +71,14 @@ export async function startFakeS3(): Promise<FakeS3> {
           );
       } else if (req.method === "POST" && url.searchParams.has("delete")) {
         const body = Buffer.concat(chunks).toString("utf8");
-        for (const match of body.matchAll(/<Key>(.*?)<\/Key>/g)) {
-          objects.delete(xmlUnescape(match[1]));
-        }
-        res.writeHead(200, { "Content-Type": "application/xml" }).end("<DeleteResult/>");
+        const keys = [...body.matchAll(/<Key>(.*?)<\/Key>/g)].map((match) => match[1]);
+        if (!fake.failDeletes) for (const k of keys) objects.delete(xmlUnescape(k));
+        const errors = fake.failDeletes
+          ? keys.map((k) => `<Error><Key>${k}</Key><Code>InternalError</Code></Error>`).join("")
+          : "";
+        res
+          .writeHead(200, { "Content-Type": "application/xml" })
+          .end(`<DeleteResult>${errors}</DeleteResult>`);
       } else {
         res.writeHead(400).end();
       }
@@ -83,11 +97,11 @@ export async function startFakeS3(): Promise<FakeS3> {
     publicUrlBase: `https://${BUCKET}.storage.test`,
   });
 
-  return {
+  return Object.assign(fake, {
     objects,
     async close() {
       Object.assign(storageConfig, previous);
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
-  };
+  });
 }

@@ -146,13 +146,21 @@ const JOB_DEFINITIONS = {
   backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
   // Process an OPML import in the background.
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
+  // Deletes a user's or an entry's stored objects (a deleted entry's images),
+  // unless `unlessEntryExists` names an entry that was saved after all; see
+  // src/server/services/stored-objects.ts. Throws until storage confirms, so
+  // it's retried. The prefix must be one of those two shapes, so a bad payload
+  // can't empty the bucket.
+  delete_stored_objects: {
+    payload: z.object({
+      prefix: z.string().regex(/^uploads\/[0-9a-f-]{36}\/([0-9a-f-]{36}\/)?$/),
+      unlessEntryExists: z.string().optional(),
+    }),
+    lane: "one_time",
+  },
   // Fetch full content for entries a WebSub push just created, off the hub's
   // callback request. `pending` marks the feed's one not-yet-claimed job, which
   // new entries are appended to — see enqueueFullContentFetch.
-  // Deletes the objects under a storage prefix, e.g. a deleted entry's images
-  // (src/server/services/stored-objects.ts). Enqueued in the transaction that
-  // deletes their owner; throws until storage confirms, so it's retried.
-  delete_stored_objects: { payload: z.object({ prefix: z.string() }), lane: "one_time" },
   fetch_full_content: {
     payload: z.object({
       feedId: z.string(),

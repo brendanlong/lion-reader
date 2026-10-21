@@ -23,11 +23,7 @@ import {
   selectExistingUpload,
   type SavedArticle,
 } from "@/server/services/saved";
-import {
-  enqueueStoredObjectsDeletion,
-  entryObjectsPrefix,
-  storeEntryImage,
-} from "@/server/services/stored-objects";
+import { guardUnsavedEntryObjects, storeEntryImage } from "@/server/services/stored-objects";
 import { isStorageAvailable } from "@/server/storage/s3";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { buildArticleFields } from "@/server/services/saved-content";
@@ -52,9 +48,9 @@ export interface ImportEbookResult {
 
 /**
  * Saves a chapter as an uploaded article. With storage, its images go to the
- * bucket under the article's id, so deleting the article deletes them; if the
- * chapter isn't saved as that article after all (it fails, or a concurrent
- * import of the same file saved it first), they're deleted again.
+ * bucket under the article's id, so deleting the article deletes them, behind
+ * a guard that deletes them if the chapter isn't saved as that article after
+ * all. An image storage refuses is inlined instead.
  */
 async function saveChapter(
   db: typeof dbType,
@@ -64,33 +60,36 @@ async function saveChapter(
   meta: { author: string | null; title: string; siteName: string }
 ): Promise<SavedArticle> {
   const entryId = generateUuidv7();
-  let storedImages = false;
+  let guarded = false;
   const store: ImageStore | undefined = isStorageAvailable()
-    ? (image) => {
-        storedImages = true;
-        return storeEntryImage(userId, entryId, image);
+    ? async (image) => {
+        if (!guarded) {
+          await guardUnsavedEntryObjects(db, userId, entryId);
+          guarded = true;
+        }
+        try {
+          return await storeEntryImage(userId, entryId, image);
+        } catch (error) {
+          logger.warn("Couldn't store an ebook image; inlining it", {
+            userId,
+            entryId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }
       }
     : undefined;
-  try {
-    const fields = await buildArticleFields(
-      {
-        html: await chapter.html(store),
-        contentUrl: null,
-        pluginContent: null,
-        // Already clean content, so Readability is skipped.
-        preCleanedContent: { title: chapter.title, summary: null, author: meta.author },
-      },
-      { providedTitle: meta.title, siteName: meta.siteName }
-    );
-    const { article } = await insertUploadedArticle(db, userId, fields, guid, entryId);
-    if (article.id !== entryId && storedImages) {
-      await enqueueStoredObjectsDeletion(db, entryObjectsPrefix(userId, entryId));
-    }
-    return article;
-  } catch (error) {
-    if (storedImages) await enqueueStoredObjectsDeletion(db, entryObjectsPrefix(userId, entryId));
-    throw error;
-  }
+  const fields = await buildArticleFields(
+    {
+      html: await chapter.html(store),
+      contentUrl: null,
+      pluginContent: null,
+      // Already clean content, so Readability is skipped.
+      preCleanedContent: { title: chapter.title, summary: null, author: meta.author },
+    },
+    { providedTitle: meta.title, siteName: meta.siteName }
+  );
+  return (await insertUploadedArticle(db, userId, fields, guid, entryId)).article;
 }
 
 async function openEbook(file: Buffer): Promise<Epub> {

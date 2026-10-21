@@ -26,7 +26,7 @@ import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-inp
 import {
   EBOOK_UPLOAD_EXTENSIONS,
   SUPPORTED_UPLOAD_EXTENSIONS,
-  isEbookFilename,
+  isEbookFile,
 } from "@/lib/upload-file-types";
 import {
   Dialog,
@@ -200,7 +200,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       // Remove the data URL prefix (e.g., "data:application/...;base64,")
       const base64Content = result.split(",")[1];
 
-      if (isEbookFilename(selectedFile.name)) {
+      if (isEbookFile(selectedFile.name, selectedFile.type)) {
         importEbookMutation.mutate({ content: base64Content, filename: selectedFile.name });
       } else {
         uploadMutation.mutate({

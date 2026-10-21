@@ -278,6 +278,27 @@ describe("openEpub", () => {
     ]);
   });
 
+  it("inlines images once the book has stored its budget's worth", async () => {
+    const limit = usageLimitsConfig.maxSavedArticleSizeBytes;
+    const image = Buffer.alloc(Math.floor(limit / 2));
+    const storable = Math.floor((limit * EPUB_MAX_INFLATION_FACTOR) / image.length);
+    let stored = 0;
+    const chapters = await readChapters(
+      buildEpub({
+        spine: Array.from({ length: storable + 1 }, (_, i) => ({
+          path: `${i}.xhtml`,
+          xhtml: chapterXhtml('<p><img src="pic.png"/></p>'),
+        })),
+        files: { "OEBPS/pic.png": image },
+        manifest: { "pic.png": "image/png" },
+      }),
+      async () => `https://bucket.test/${++stored}.png`
+    );
+
+    expect(stored).toBe(storable);
+    expect(chapters.at(-1)?.html).toContain("data:image/png;base64,");
+  });
+
   it("drops an image that would take the chapter past the saved-article size limit", async () => {
     const big = Buffer.alloc(usageLimitsConfig.maxSavedArticleSizeBytes);
     const [chapter] = await readChapters(

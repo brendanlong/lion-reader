@@ -95,8 +95,8 @@ export interface EpubImage {
   extension: string;
 }
 
-/** Stores a book image, returning the URL to show it at. */
-export type ImageStore = (image: EpubImage) => Promise<string>;
+/** Stores a book image, returning the URL to show it at, or null to inline it instead. */
+export type ImageStore = (image: EpubImage) => Promise<string | null>;
 
 export interface EpubChapter {
   /** The table of contents' label, else the chapter's first heading. */
@@ -104,7 +104,8 @@ export interface EpubChapter {
   /**
    * The chapter's HTML, with each image at the URL `store` gives it (once per
    * image), or inlined as a data URI without one. An SVG is always inlined:
-   * stored, it would run its scripts when opened from the bucket's origin.
+   * stored, it would run its scripts when opened from the bucket's origin. So
+   * is an image past the book's storage budget.
    */
   html(store?: ImageStore): Promise<string>;
 }
@@ -697,11 +698,20 @@ function imageMediaType(manifestType: string | undefined, path: string): string 
 
 const SVG_MEDIA_TYPE = "image/svg+xml";
 
+function dataUri(image: EpubImage): string {
+  return `data:${image.mediaType};base64,${image.data.toString("base64")}`;
+}
+
+function dataUriLength(image: EpubImage): number {
+  return `data:${image.mediaType};base64,`.length + 4 * Math.ceil(image.data.length / 3);
+}
+
 /**
  * Replaces a chapter's image marks with their URLs (see
- * {@link EpubChapter.html}), in order, while the chapter stays within the
- * saved-article size limit; images past it are dropped. The HTML holds no
- * relative URL, so nothing downstream changes its size.
+ * {@link EpubChapter.html}), in order. Each image counts as if inlined, so a
+ * chapter's images fit the saved-article size limit whether or not they're
+ * stored; images past it are dropped. The HTML holds no relative URL, so
+ * nothing downstream changes its size.
  */
 async function resolveImages(
   images: ImageReader,
@@ -712,7 +722,7 @@ async function resolveImages(
   let remaining =
     usageLimitsConfig.maxSavedArticleSizeBytes -
     segments.reduce((sum, segment, i) => sum + (i % 2 === 0 ? Buffer.byteLength(segment) : 0), 0);
-  const stored = new Map<number, string>();
+  const urls = new Map<number, string>();
   let resolved = "";
   for (const [i, segment] of segments.entries()) {
     if (i % 2 === 0) {
@@ -722,16 +732,17 @@ async function resolveImages(
     const index = Number(segment);
     const image = await images.read(index);
     if (image === null) continue;
-    let url = stored.get(index);
+    const cost = dataUriLength(image);
+    if (cost > remaining) continue;
+    let url = urls.get(index);
     if (url === undefined) {
-      url =
-        store && image.mediaType !== SVG_MEDIA_TYPE
-          ? await store(image)
-          : `data:${image.mediaType};base64,${image.data.toString("base64")}`;
-      stored.set(index, url);
+      if (store && image.mediaType !== SVG_MEDIA_TYPE && images.claimStorage(image)) {
+        url = (await store(image)) ?? undefined;
+      }
+      url ??= dataUri(image);
+      urls.set(index, url);
     }
-    if (url.length > remaining) continue;
-    remaining -= url.length;
+    remaining -= cost;
     resolved += url;
   }
   return resolved;
@@ -763,6 +774,20 @@ class ImageReader {
     private readonly zip: BudgetedZip,
     private readonly mediaTypes: Map<string, string>
   ) {}
+
+  /**
+   * Bytes of images one book may store, as many as it may inflate: an image
+   * shown in every chapter is stored for each, so this bounds what one upload
+   * writes to the bucket.
+   */
+  private storageRemaining = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_INFLATION_FACTOR;
+
+  /** Charges an image to the book's storage budget, if it fits. */
+  claimStorage(image: EpubImage): boolean {
+    if (image.data.length > this.storageRemaining) return false;
+    this.storageRemaining -= image.data.length;
+    return true;
+  }
 
   /** The {@link IMAGE_MARK} for an image in the archive. */
   mark(path: string): string {

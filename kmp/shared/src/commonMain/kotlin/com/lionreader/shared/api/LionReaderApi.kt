@@ -29,6 +29,12 @@ import kotlinx.serialization.json.jsonObject
 /** Longest a chunk of cloud speech may take to arrive; a slow provider's long chunk is ~20s. */
 private const val SPEECH_TIMEOUT_MILLIS = 180_000L
 
+/**
+ * Longest an ebook import may take: the server saves every chapter, and uploads its images, before
+ * it answers (War and Peace's 386 chapters take a few seconds; a request cut short is retried).
+ */
+private const val EBOOK_IMPORT_TIMEOUT_MILLIS = 300_000L
+
 /** Longest the speech stream may go quiet, before the first audio or between parts. */
 private const val SPEECH_STALL_MILLIS = 60_000L
 
@@ -221,12 +227,18 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
      * the same file again saves only the chapters still missing.
      */
     suspend fun importEbook(filename: String, bytes: ByteArray): ImportedEbook =
-        post(
-            ImportedEbook.serializer(),
-            "/collections/import-ebook",
-            ImportEbookRequest(Base64.encode(bytes), filename),
-            ImportEbookRequest.serializer(),
-        )
+        call(ImportedEbook.serializer()) {
+            method = HttpMethod.Post
+            url("$base/collections/import-ebook")
+            contentType(ContentType.Application.Json)
+            setBody(
+                ApiJson.encodeToString(
+                    ImportEbookRequest.serializer(),
+                    ImportEbookRequest(Base64.encode(bytes), filename),
+                )
+            )
+            timeout { requestTimeoutMillis = EBOOK_IMPORT_TIMEOUT_MILLIS }
+        }
 
     suspend fun summarizationAvailable(): Boolean =
         get(SummarizationAvailability.serializer(), "/summarization/available") {}.available

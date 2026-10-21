@@ -11,7 +11,14 @@ import { entries, jobs, users } from "../../src/server/db/schema";
 import { importEbook } from "../../src/server/services/ebooks";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { deleteUser } from "../../src/server/services/users";
-import { entryObjectsPrefix, userObjectsPrefix } from "../../src/server/services/stored-objects";
+import {
+  entryObjectsPrefix,
+  guardUnsavedEntryObjects,
+  storeEntryImage,
+  userObjectsPrefix,
+} from "../../src/server/services/stored-objects";
+import type { JobPayloads } from "../../src/server/jobs/queue";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { deleteObjectsWithPrefix, uploadObject } from "../../src/server/storage/s3";
 import { handleDeleteStoredObjects } from "../../src/server/jobs/handlers/delete-stored-objects";
 import { buildEpub, chapterXhtml } from "../utils/epub";
@@ -59,16 +66,25 @@ function keysUnder(prefix: string): string[] {
   return [...s3.objects.keys()].filter((key) => key.startsWith(prefix));
 }
 
-/** Runs the queued deletion of `prefix`, as the worker would. */
-async function runDeletionJob(prefix: string): Promise<void> {
+/**
+ * Runs the one queued `delete_stored_objects` job for `prefix` (the guard of an
+ * unsaved entry's objects, or a deletion), as the worker would.
+ */
+async function runQueuedJob(prefix: string, kind: "guard" | "deletion"): Promise<void> {
   const queued = await db
-    .select({ id: jobs.id })
+    .select({ payload: jobs.payload })
     .from(jobs)
     .where(
-      and(eq(jobs.type, "delete_stored_objects"), sql`${jobs.payload}->>'prefix' = ${prefix}`)
+      and(
+        eq(jobs.type, "delete_stored_objects"),
+        sql`${jobs.payload}->>'prefix' = ${prefix}`,
+        kind === "guard"
+          ? sql`${jobs.payload} ? 'unlessEntryExists'`
+          : sql`NOT ${jobs.payload} ? 'unlessEntryExists'`
+      )
     );
   expect(queued).toHaveLength(1);
-  await handleDeleteStoredObjects({ prefix });
+  await handleDeleteStoredObjects(queued[0].payload as JobPayloads["delete_stored_objects"]);
 }
 
 describe("ebook images in storage", () => {
@@ -100,10 +116,61 @@ describe("ebook images in storage", () => {
     const [deleted, kept] = entryIds;
 
     await deleteSavedArticle(db, userId, deleted);
-    await runDeletionJob(entryObjectsPrefix(userId, deleted));
+    await runQueuedJob(entryObjectsPrefix(userId, deleted), "deletion");
 
     expect(keysUnder(entryObjectsPrefix(userId, deleted))).toEqual([]);
     expect(keysUnder(entryObjectsPrefix(userId, kept))).toHaveLength(1);
+  });
+
+  it("keeps a saved chapter's images when its guard runs", async () => {
+    const { userId, entryIds } = await importBook();
+
+    for (const entryId of entryIds) {
+      await runQueuedJob(entryObjectsPrefix(userId, entryId), "guard");
+      expect(keysUnder(entryObjectsPrefix(userId, entryId))).toHaveLength(1);
+    }
+  });
+
+  it("deletes images stored for an entry that was never saved", async () => {
+    const userId = await createTestUser({ emailPrefix: "ebook-images" });
+    createdUserIds.push(userId);
+    const entryId = generateUuidv7();
+    await guardUnsavedEntryObjects(db, userId, entryId);
+    await storeEntryImage(userId, entryId, {
+      data: PNG,
+      mediaType: "image/png",
+      extension: ".png",
+    });
+
+    await runQueuedJob(entryObjectsPrefix(userId, entryId), "guard");
+
+    expect(keysUnder(entryObjectsPrefix(userId, entryId))).toEqual([]);
+  });
+
+  it("inlines an image storage refuses", async () => {
+    s3.failPuts = true;
+    try {
+      const { entryIds } = await importBook();
+      const [row] = await db
+        .select({ content: entries.contentOriginal })
+        .from(entries)
+        .where(eq(entries.id, entryIds[0]));
+      expect(row.content).toContain(`<img src="data:image/png;base64,${PNG.toString("base64")}">`);
+    } finally {
+      s3.failPuts = false;
+    }
+  });
+
+  it("fails a deletion storage refuses, so the job is retried", async () => {
+    const prefix = "uploads/refused/";
+    await uploadObject(`${prefix}a.png`, PNG, "image/png");
+    s3.failDeletes = true;
+    try {
+      await expect(deleteObjectsWithPrefix(prefix)).rejects.toThrow(/refused/);
+    } finally {
+      s3.failDeletes = false;
+    }
+    expect(keysUnder(prefix)).toHaveLength(1);
   });
 
   it("deletes more objects than one listing returns", async () => {
@@ -120,7 +187,7 @@ describe("ebook images in storage", () => {
     const { userId } = await importBook();
 
     await deleteUser(db, userId);
-    await runDeletionJob(userObjectsPrefix(userId));
+    await runQueuedJob(userObjectsPrefix(userId), "deletion");
 
     expect(keysUnder(userObjectsPrefix(userId))).toEqual([]);
   });
