@@ -22,11 +22,13 @@ import {
   booleanQueryParam,
   entryCountInputSchema,
   entryListInputSchema,
+  entryScoresSchema,
   uuidSchema,
 } from "../validation";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import * as entryReadsService from "@/server/services/entry-reads";
+import * as entryScoresService from "@/server/services/entry-scores";
 import * as entryStateService from "@/server/services/entry-state";
 import { toServerTime } from "@/server/services/client-time";
 import { countsAsOfSchema, unreadCountsSchema } from "@/lib/events/schemas";
@@ -453,6 +455,30 @@ export const entriesRouter = createTRPCRouter({
       );
       return { success: true, count: entries.length, entries, counts };
     }),
+
+  /**
+   * Set or clear entries' scores (#2064), the order of lists sorted by score.
+   * Entries the user can't see are skipped and returned.
+   */
+  setScores: readerProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/entries/scores",
+        tags: ["Entries"],
+        summary: "Set entry scores",
+      },
+    })
+    .input(z.object({ scores: entryScoresSchema }))
+    .output(
+      z.object({
+        changed: z.array(z.object({ entryId: z.string(), score: z.number().nullable() })),
+        notFoundIds: z.array(z.string()),
+      })
+    )
+    .mutation(({ ctx, input }) =>
+      entryScoresService.setEntryScores(ctx.db, ctx.session.user.id, input.scores)
+    ),
 
   /**
    * Fetch full article content from URL.

@@ -17,11 +17,13 @@ import { TEXT_AI_PROVIDERS } from "@/lib/ai/providers";
 import {
   COLLECTION_NAME_MAX_LENGTH,
   MAX_COLLECTION_BATCH,
+  MAX_COLLECTION_ENTRIES,
   MAX_SAVE_COLLECTIONS,
 } from "@/lib/collections";
 import { ENTRY_TYPES } from "@/lib/entry-types";
 import { ENTRY_SORT_BYS, ENTRY_SORT_ORDERS } from "@/lib/entry-sort";
 import { MAX_ENTRIES_PAGE_SIZE } from "@/server/services/entries";
+import { MAX_ENTRY_SCORE_BATCH } from "@/server/services/entry-scores";
 import { MAX_SUBSCRIPTIONS_PAGE_SIZE } from "@/server/services/subscriptions";
 import { TAG_NAME_MAX_LENGTH } from "@/server/services/tags";
 
@@ -139,6 +141,38 @@ export const collectionNameSchema = z
 
 /** The entries one add-to or remove-from-collection call names. */
 export const collectionEntryIdsSchema = z.array(uuidSchema).min(1).max(MAX_COLLECTION_BATCH);
+
+export const collectionPositionsSchema = z
+  .array(
+    z.object({
+      entryId: uuidSchema.describe("Entry ID"),
+      position: z
+        .number()
+        .finite()
+        .nullable()
+        .describe("Any number; lower sorts first. Null clears the position."),
+    })
+  )
+  .min(1)
+  .max(MAX_COLLECTION_ENTRIES);
+
+// ============================================================================
+// Entry Score Schemas
+// ============================================================================
+
+export const entryScoresSchema = z
+  .array(
+    z.object({
+      entryId: uuidSchema.describe("Entry ID"),
+      score: z
+        .number()
+        .finite()
+        .nullable()
+        .describe("Any number; higher sorts first. Null clears the score."),
+    })
+  )
+  .min(1)
+  .max(MAX_ENTRY_SCORE_BATCH);
 
 // ============================================================================
 // Saved Article Schemas
