@@ -31,6 +31,7 @@ import { errors } from "@/server/errors";
 import {
   savedArticleUrlSchema,
   saveCollectionIdsSchema,
+  uploadContentSchema,
   uploadIdempotencyKeySchema,
   uuidSchema,
 } from "../validation";
@@ -205,17 +206,7 @@ export const savedRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        // Base64 inflates by ~4/3; cap the encoded string so an oversized upload
-        // is rejected by validation before we spend memory/CPU decoding it. The
-        // service enforces the decoded byte length exactly (base64 length is only an
-        // upper bound on decoded size). Slack covers padding/newlines.
-        content: z
-          .string()
-          .min(1, "File content is required")
-          .max(
-            Math.ceil((usageLimitsConfig.maxSavedArticleSizeBytes * 4) / 3) + 1024,
-            "File content exceeds the maximum saved article size"
-          ),
+        content: uploadContentSchema,
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
         idempotencyKey: uploadIdempotencyKeySchema,

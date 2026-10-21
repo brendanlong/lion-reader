@@ -80,7 +80,7 @@ export function detectFileType(filename: string): SupportedFileType | null {
  */
 export function titleFromFilename(filename: string): string {
   // Remove extension
-  let title = filename.replace(/\.(docx|pdf|html?|md|markdown|txt)$/i, "");
+  let title = filename.replace(/\.(docx|pdf|html?|md|markdown|txt|epub)$/i, "");
 
   // Clean up common patterns
   title = title
