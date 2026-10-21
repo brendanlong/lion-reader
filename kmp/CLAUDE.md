@@ -48,7 +48,9 @@ class doing it.
   missing rule only fails at run time.
 - Generated files are regenerated, never edited:
   `assets/reader/narration.js` (`pnpm app:narration`, from
-  `src/lib/narration/app-reader.ts`), `assets/reader/appearance.json`
+  `src/lib/narration/app-reader.ts`), `assets/reader/reader-prose.css`
+  (`pnpm app:reader-css`, from `src/app/reader-prose.css`),
+  `assets/reader/appearance.json`
   (`pnpm app:appearance`, from `src/lib/appearance/config.ts`) and
   `ServerConstants.kt` (`pnpm app:server-constants`), all checked by unit
   tests; the fonts (`scripts/subset-fonts.py`) and launcher icon layers
