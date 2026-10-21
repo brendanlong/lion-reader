@@ -18,7 +18,7 @@
  */
 
 import { eq, sql, type SQL } from "drizzle-orm";
-import { db } from "../db";
+import { db, type DbOrTx } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { z } from "zod";
@@ -149,6 +149,10 @@ const JOB_DEFINITIONS = {
   // Fetch full content for entries a WebSub push just created, off the hub's
   // callback request. `pending` marks the feed's one not-yet-claimed job, which
   // new entries are appended to — see enqueueFullContentFetch.
+  // Deletes the objects under a storage prefix, e.g. a deleted entry's images
+  // (src/server/services/stored-objects.ts). Enqueued in the transaction that
+  // deletes their owner; throws until storage confirms, so it's retried.
+  delete_stored_objects: { payload: z.object({ prefix: z.string() }), lane: "one_time" },
   fetch_full_content: {
     payload: z.object({
       feedId: z.string(),
@@ -291,15 +295,19 @@ export interface FinishJobOptions {
  * (e.g., when a feed is first subscribed to).
  *
  * @param options Job creation options
+ * @param executor A transaction the job must commit with, if any
  * @returns The created job
  */
-export async function createJob<T extends JobType>(options: CreateJobOptions<T>): Promise<Job> {
+export async function createJob<T extends JobType>(
+  options: CreateJobOptions<T>,
+  executor: DbOrTx = db
+): Promise<Job> {
   const { type, payload, nextRunAt = new Date() } = options;
 
   const id = generateUuidv7();
   const now = new Date();
 
-  const [job] = await db
+  const [job] = await executor
     .insert(jobs)
     .values({
       id,

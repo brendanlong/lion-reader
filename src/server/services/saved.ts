@@ -22,6 +22,7 @@ import {
   publishEntryLeftCollections,
 } from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
+import { enqueueStoredObjectsDeletion, entryObjectsPrefix } from "./stored-objects";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
 import { detectFileType, getSupportedTypesDescription } from "@/server/file/process-upload";
@@ -176,6 +177,8 @@ export interface InsertedSavedArticle {
 // ============================================================================
 
 interface InsertSavedEntryParams {
+  /** The entry's id, when the caller needed it before saving (to key its stored images). */
+  id?: string;
   guid: string;
   url: string | null;
   title: string | null;
@@ -212,7 +215,7 @@ async function insertSavedEntry(
   params: InsertSavedEntryParams
 ): Promise<InsertedSavedArticle | null> {
   const now = new Date();
-  const entryId = generateUuidv7();
+  const entryId = params.id ?? generateUuidv7();
 
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
   // Saved articles and uploads are owned by the user (#1846).
@@ -343,7 +346,8 @@ export async function insertUploadedArticle(
   db: typeof dbType,
   userId: string,
   fields: UploadedArticleFields,
-  guid: string = `uploaded:${generateUuidv7()}`
+  guid: string = `uploaded:${generateUuidv7()}`,
+  id?: string
 ): Promise<InsertedSavedArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
@@ -352,6 +356,7 @@ export async function insertUploadedArticle(
 
   const saved = await insertSavedEntry(db, userId, {
     ...fields,
+    id,
     guid,
     url: null,
   });
@@ -473,7 +478,7 @@ const UPLOAD_MEMBERSHIPS = entryMemberships(UPLOAD_ROW);
  * The upload saved earlier under `guid`, shaped like a fresh upload's result,
  * list item included (with the collections it has been filed into since).
  */
-async function selectExistingUpload(
+export async function selectExistingUpload(
   db: typeof dbType,
   userId: string,
   guid: string
@@ -878,6 +883,7 @@ export async function deleteSavedArticle(
   await db.transaction(async (tx) => {
     await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.ownerUserId, userId)));
     await recordEntryTombstone(tx, userId, articleId);
+    await enqueueStoredObjectsDeletion(tx, entryObjectsPrefix(userId, articleId));
   });
   // The entry is gone, so its collections are named as subscriptions.
   const counts = await getBulkEntryRelatedCounts(

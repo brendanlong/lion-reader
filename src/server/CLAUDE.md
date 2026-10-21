@@ -57,6 +57,10 @@ Every badge reads one trigger-maintained counter (spam excluded; the list is in 
 
 Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`).
 
+## Stored Objects
+
+An object stored for a user's entry (an uploaded ebook's images) goes under that entry's prefix (`entryObjectsPrefix`, `services/stored-objects.ts`), so **hard-deleting an entry or a user must enqueue its prefix's deletion in the same transaction** (`enqueueStoredObjectsDeletion`): the bucket is public, so an object nothing deletes stays readable forever.
+
 ## Ordering & Pagination
 
 - The timeline sorts by `COALESCE(published_at, fetched_at)`, denormalized onto `user_entries.published_or_fetched_at` so one index serves filter and sort. UUIDv7 `id` is only the tiebreaker.

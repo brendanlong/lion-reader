@@ -8,17 +8,25 @@ import {
   EPUB_MAX_DOCUMENT_FACTOR,
   EPUB_MAX_INFLATION_FACTOR,
   openEpub,
-  type EpubChapter,
+  type ImageStore,
 } from "@/server/file/epub";
 import { usageLimitsConfig } from "@/server/config/env";
 import { getAppErrorCode } from "@/server/errors";
 import { buildEpub, chapterXhtml } from "../utils/epub";
 import { buildZip } from "../utils/docx";
 
-async function readChapters(epub: Buffer): Promise<EpubChapter[]> {
+interface ReadChapter {
+  title: string | null;
+  html: string;
+}
+
+/** The book's chapters, their images inlined or, with `store`, stored. */
+async function readChapters(epub: Buffer, store?: ImageStore): Promise<ReadChapter[]> {
   const book = await openEpub(epub);
-  const chapters: EpubChapter[] = [];
-  for await (const chapter of book.chapters()) chapters.push(chapter);
+  const chapters: ReadChapter[] = [];
+  for await (const chapter of book.chapters()) {
+    chapters.push({ title: chapter.title, html: await chapter.html(store) });
+  }
   return chapters;
 }
 
@@ -233,6 +241,41 @@ describe("openEpub", () => {
     const uri = `data:image/png;base64,${PNG.toString("base64")}`;
     expect(chapter.html).toContain(`<img alt="Pic" src="${uri}">`);
     expect(chapter.html).toContain(`<image xlink:href="${uri}"></image>`);
+  });
+
+  it("hands raster images to the store, once per chapter, and inlines SVG", async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const stored: string[] = [];
+    const store: ImageStore = async (image) => {
+      stored.push(`${image.mediaType} ${image.extension} ${image.data.toString("hex")}`);
+      return `https://bucket.test/${stored.length}${image.extension}`;
+    };
+    const chapters = await readChapters(
+      buildEpub({
+        spine: [
+          {
+            path: "a.xhtml",
+            xhtml: chapterXhtml(
+              '<p><img src="pic.png"/><img src="pic.png"/><img src="d.svg"/></p>'
+            ),
+          },
+          { path: "b.xhtml", xhtml: chapterXhtml('<p><img src="pic.png"/></p>') },
+        ],
+        files: { "OEBPS/pic.png": PNG, "OEBPS/d.svg": svg },
+        manifest: { "pic.png": "image/png", "d.svg": "image/svg+xml" },
+      }),
+      store
+    );
+
+    expect(stored).toEqual([
+      `image/png .png ${PNG.toString("hex")}`,
+      `image/png .png ${PNG.toString("hex")}`,
+    ]);
+    expect(chapters.map((chapter) => chapter.html)).toEqual([
+      `<p><img src="https://bucket.test/1.png"><img src="https://bucket.test/1.png">` +
+        `<img src="data:image/svg+xml;base64,${svg.toString("base64")}"></p>`,
+      '<p><img src="https://bucket.test/2.png"></p>',
+    ]);
   });
 
   it("drops an image that would take the chapter past the saved-article size limit", async () => {

@@ -9,7 +9,7 @@ import type { db as dbType } from "@/server/db";
 import { COLLECTION_NAME_MAX_LENGTH } from "@/lib/collections";
 import { logger } from "@/lib/logger";
 import { errors } from "@/server/errors";
-import { openEpub, type Epub, type EpubChapter } from "@/server/file/epub";
+import { openEpub, type Epub, type EpubChapter, type ImageStore } from "@/server/file/epub";
 import { titleFromFilename } from "@/server/file/process-upload";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
@@ -17,7 +17,19 @@ import {
   createCollection,
   maxCollectionPosition,
 } from "@/server/services/collections";
-import { assertUploadSize, insertUploadedArticle } from "@/server/services/saved";
+import {
+  assertUploadSize,
+  insertUploadedArticle,
+  selectExistingUpload,
+  type SavedArticle,
+} from "@/server/services/saved";
+import {
+  enqueueStoredObjectsDeletion,
+  entryObjectsPrefix,
+  storeEntryImage,
+} from "@/server/services/stored-objects";
+import { isStorageAvailable } from "@/server/storage/s3";
+import { generateUuidv7 } from "@/lib/uuidv7";
 import { buildArticleFields } from "@/server/services/saved-content";
 import type { Subscription } from "@/server/services/subscriptions";
 
@@ -36,6 +48,49 @@ export interface ImportEbookResult {
   /** The chapters' articles, in reading order. */
   entryIds: string[];
   counts: BulkUnreadCounts;
+}
+
+/**
+ * Saves a chapter as an uploaded article. With storage, its images go to the
+ * bucket under the article's id, so deleting the article deletes them; if the
+ * chapter isn't saved as that article after all (it fails, or a concurrent
+ * import of the same file saved it first), they're deleted again.
+ */
+async function saveChapter(
+  db: typeof dbType,
+  userId: string,
+  chapter: EpubChapter,
+  guid: string,
+  meta: { author: string | null; title: string; siteName: string }
+): Promise<SavedArticle> {
+  const entryId = generateUuidv7();
+  let storedImages = false;
+  const store: ImageStore | undefined = isStorageAvailable()
+    ? (image) => {
+        storedImages = true;
+        return storeEntryImage(userId, entryId, image);
+      }
+    : undefined;
+  try {
+    const fields = await buildArticleFields(
+      {
+        html: await chapter.html(store),
+        contentUrl: null,
+        pluginContent: null,
+        // Already clean content, so Readability is skipped.
+        preCleanedContent: { title: chapter.title, summary: null, author: meta.author },
+      },
+      { providedTitle: meta.title, siteName: meta.siteName }
+    );
+    const { article } = await insertUploadedArticle(db, userId, fields, guid, entryId);
+    if (article.id !== entryId && storedImages) {
+      await enqueueStoredObjectsDeletion(db, entryObjectsPrefix(userId, entryId));
+    }
+    return article;
+  } catch (error) {
+    if (storedImages) await enqueueStoredObjectsDeletion(db, entryObjectsPrefix(userId, entryId));
+    throw error;
+  }
 }
 
 async function openEbook(file: Buffer): Promise<Epub> {
@@ -88,24 +143,15 @@ export async function importEbook(
   const entryIds: string[] = [];
   let counts: BulkUnreadCounts | undefined;
   for (let next: IteratorResult<EpubChapter> = first; !next.done; next = await chapters.next()) {
-    const chapter = next.value;
     const index = entryIds.length + 1;
-    const fields = await buildArticleFields(
-      {
-        html: chapter.html,
-        contentUrl: null,
-        pluginContent: null,
-        // Already clean content, so Readability is skipped.
-        preCleanedContent: { title: chapter.title, summary: null, author: book.author },
-      },
-      { providedTitle: chapter.title ?? `${name} (${index})`, siteName: name }
-    );
-    const { article } = await insertUploadedArticle(
-      db,
-      userId,
-      fields,
-      `uploaded:epub:${fileHash}:${index}`
-    );
+    const guid = `uploaded:epub:${fileHash}:${index}`;
+    const article =
+      (await selectExistingUpload(db, userId, guid))?.article ??
+      (await saveChapter(db, userId, next.value, guid, {
+        author: book.author,
+        title: next.value.title ?? `${name} (${index})`,
+        siteName: name,
+      }));
     const added = await addEntriesToCollection(
       db,
       userId,

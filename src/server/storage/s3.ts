@@ -12,6 +12,9 @@ import { randomUUID } from "crypto";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit, ContentTooLargeError } from "@/server/http/fetch";
+import { createHash } from "node:crypto";
+import { escapeHtml } from "@/server/http/html";
+import { createSaxParser } from "@/server/html/sax";
 
 /**
  * Maximum size for images fetched from external URLs (20MB).
@@ -77,6 +80,16 @@ function getObjectRequestUrl(key: string): string {
   }
 
   return `https://${storageConfig.bucket}.s3.${storageConfig.region}.amazonaws.com/${key}`;
+}
+
+/** The request URL for a bucket-level operation (listing, multi-object delete). */
+function getBucketRequestUrl(query: string): string {
+  if (storageConfig.endpoint) {
+    const base = storageConfig.endpoint.replace(/\/$/, "");
+    return `${base}/${storageConfig.bucket}?${query}`;
+  }
+
+  return `https://${storageConfig.bucket}.s3.${storageConfig.region}.amazonaws.com/?${query}`;
 }
 
 // ============================================================================
@@ -350,5 +363,91 @@ export async function fetchAndUploadImage(
       });
     }
     return null;
+  }
+}
+
+// ============================================================================
+// Deletion
+// ============================================================================
+
+/** The most keys S3 lists, or deletes, in one request. */
+const MAX_KEYS_PER_REQUEST = 1000;
+
+/** The text of every element named `name` in an S3 XML response. */
+function elementTexts(xml: string, name: string): string[] {
+  const texts: string[] = [];
+  let current: string | null = null;
+  const parser = createSaxParser(
+    {
+      onopentag: (tag) => {
+        if (tag === name) current = "";
+      },
+      ontext: (text) => {
+        if (current !== null) current += text;
+      },
+      onclosetag: (tag) => {
+        if (tag === name && current !== null) {
+          texts.push(current);
+          current = null;
+        }
+      },
+    },
+    { xmlMode: true }
+  );
+  parser.write(xml);
+  parser.end();
+  return texts;
+}
+
+async function requestXml(client: AwsClient, url: string, init: RequestInit): Promise<string> {
+  const response = await client.fetch(url, init);
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `S3 ${init.method} failed with status ${response.status}: ${body.slice(0, 200)}`
+    );
+  }
+  return body;
+}
+
+/**
+ * Deletes every object whose key starts with `prefix`, returning how many.
+ * Throws if storage isn't configured or refuses any of them, so a caller can
+ * retry; deleting what's already gone is harmless.
+ */
+export async function deleteObjectsWithPrefix(prefix: string): Promise<number> {
+  const client = requireS3Client();
+  let deleted = 0;
+  // Each pass lists the first page again: what the last one listed is gone.
+  for (;;) {
+    const query = new URLSearchParams({
+      "list-type": "2",
+      prefix,
+      "max-keys": String(MAX_KEYS_PER_REQUEST),
+    });
+    const listing = await requestXml(client, getBucketRequestUrl(query.toString()), {
+      method: "GET",
+    });
+    const keys = elementTexts(listing, "Key");
+    if (keys.length === 0) return deleted;
+
+    const body =
+      "<Delete><Quiet>true</Quiet>" +
+      keys.map((key) => `<Object><Key>${escapeHtml(key)}</Key></Object>`).join("") +
+      "</Delete>";
+    // Quiet: the response lists only the keys that failed.
+    const result = await requestXml(client, getBucketRequestUrl("delete"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/xml",
+        "Content-MD5": createHash("md5").update(body).digest("base64"),
+      },
+      body,
+    });
+    const failed = elementTexts(result, "Error");
+    if (failed.length > 0) {
+      throw new Error(`S3 refused to delete ${failed.length} objects under ${prefix}`);
+    }
+    deleted += keys.length;
   }
 }

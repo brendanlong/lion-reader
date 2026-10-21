@@ -10,6 +10,7 @@ import type { Database } from "@/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
 import { retryDeadlocks } from "@/server/db/errors";
+import { enqueueStoredObjectsDeletion, userObjectsPrefix } from "@/server/services/stored-objects";
 
 /**
  * Deletes a user account and all associated data.
@@ -62,6 +63,7 @@ async function deleteUserOnce(db: Database, userId: string): Promise<void> {
     // - emails (owned by its subscriptions) and saved articles (owned by it)
     // - invites.used_by_user_id is set to NULL
     await tx.delete(users).where(eq(users.id, userId));
+    await enqueueStoredObjectsDeletion(tx, userObjectsPrefix(userId));
 
     // Step 3: Delete the candidates nobody else subscribes to or has entries
     // from (e.g. starred after unsubscribing), and their entries by cascade.

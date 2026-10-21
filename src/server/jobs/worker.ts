@@ -40,6 +40,7 @@ import { handleCleanup } from "./handlers/cleanup";
 import { handleReconcileCounters } from "./handlers/reconcile-counters";
 import { handleBackfillGettingStarted } from "./handlers/backfill-getting-started";
 import type { JobHandlerResult, JobMetadata, OneTimeJobHandlerResult } from "./handlers/types";
+import { handleDeleteStoredObjects } from "./handlers/delete-stored-objects";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
@@ -209,6 +210,7 @@ const JOB_HANDLERS: {
   },
   backfill_getting_started: handleBackfillGettingStarted,
   process_opml_import: async (payload) => finishOneTime(await handleProcessOpmlImport(payload)),
+  delete_stored_objects: async (payload) => finishOneTime(await handleDeleteStoredObjects(payload)),
   fetch_full_content: async (payload, job) =>
     finishOneTime(await handleFetchFullContent(payload, job.consecutiveFailures)),
 };

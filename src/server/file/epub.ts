@@ -87,10 +87,26 @@ const URL_ATTRIBUTES = new Set(["src", "href", "xlink:href", "poster", "srcset",
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const HEADING = /^h[1-6]$/;
 
+/** One of the book's images, as {@link ImageStore} receives it. */
+export interface EpubImage {
+  data: Buffer;
+  mediaType: string;
+  /** The file extension for its type, dot included. */
+  extension: string;
+}
+
+/** Stores a book image, returning the URL to show it at. */
+export type ImageStore = (image: EpubImage) => Promise<string>;
+
 export interface EpubChapter {
   /** The table of contents' label, else the chapter's first heading. */
   title: string | null;
-  html: string;
+  /**
+   * The chapter's HTML, with each image at the URL `store` gives it (once per
+   * image), or inlined as a data URI without one. An SVG is always inlined:
+   * stored, it would run its scripts when opened from the bucket's origin.
+   */
+  html(store?: ImageStore): Promise<string>;
 }
 
 export interface Epub {
@@ -669,34 +685,56 @@ const IMAGE_MEDIA_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
 };
 
+function imageExtension(mediaType: string): string {
+  return Object.entries(IMAGE_MEDIA_TYPES).find(([, type]) => type === mediaType)![0];
+}
+
 function imageMediaType(manifestType: string | undefined, path: string): string | null {
   const allowed = Object.values(IMAGE_MEDIA_TYPES);
   if (manifestType && allowed.includes(manifestType)) return manifestType;
   return IMAGE_MEDIA_TYPES[posix.extname(path).toLowerCase()] ?? null;
 }
 
+const SVG_MEDIA_TYPE = "image/svg+xml";
+
 /**
- * Inlines a chapter's images as data URIs, in order, while the chapter stays
- * within the saved-article size limit; images past it are dropped. The HTML
- * holds no relative URL, so nothing downstream changes its size.
+ * Replaces a chapter's image marks with their URLs (see
+ * {@link EpubChapter.html}), in order, while the chapter stays within the
+ * saved-article size limit; images past it are dropped. The HTML holds no
+ * relative URL, so nothing downstream changes its size.
  */
-async function inlineImages(images: ImageReader, html: string): Promise<string> {
+async function resolveImages(
+  images: ImageReader,
+  html: string,
+  store: ImageStore | undefined
+): Promise<string> {
   const segments = html.split(IMAGE_MARK);
   let remaining =
     usageLimitsConfig.maxSavedArticleSizeBytes -
     segments.reduce((sum, segment, i) => sum + (i % 2 === 0 ? Buffer.byteLength(segment) : 0), 0);
-  let inlined = "";
+  const stored = new Map<number, string>();
+  let resolved = "";
   for (const [i, segment] of segments.entries()) {
     if (i % 2 === 0) {
-      inlined += segment;
+      resolved += segment;
       continue;
     }
-    const uri = await images.dataUri(Number(segment));
-    if (uri === null || uri.length > remaining) continue;
-    remaining -= uri.length;
-    inlined += uri;
+    const index = Number(segment);
+    const image = await images.read(index);
+    if (image === null) continue;
+    let url = stored.get(index);
+    if (url === undefined) {
+      url =
+        store && image.mediaType !== SVG_MEDIA_TYPE
+          ? await store(image)
+          : `data:${image.mediaType};base64,${image.data.toString("base64")}`;
+      stored.set(index, url);
+    }
+    if (url.length > remaining) continue;
+    remaining -= url.length;
+    resolved += url;
   }
-  return inlined;
+  return resolved;
 }
 
 /**
@@ -719,7 +757,7 @@ function hasContent(html: string): boolean {
 class ImageReader {
   private readonly paths: string[] = [];
   private readonly indexes = new Map<string, number>();
-  private readonly uris = new Map<number, string | null>();
+  private readonly images = new Map<number, EpubImage | null>();
 
   constructor(
     private readonly zip: BudgetedZip,
@@ -736,15 +774,18 @@ class ImageReader {
     return `${IMAGE_MARK}${index}${IMAGE_MARK}`;
   }
 
-  async dataUri(index: number): Promise<string | null> {
+  async read(index: number): Promise<EpubImage | null> {
     const path = this.paths[index];
     if (path === undefined) return null;
-    if (!this.uris.has(index)) {
+    if (!this.images.has(index)) {
       const mediaType = imageMediaType(this.mediaTypes.get(path), path);
       const data = mediaType ? await this.zip.read(path) : null;
-      this.uris.set(index, data && `data:${mediaType};base64,${data.toString("base64")}`);
+      this.images.set(
+        index,
+        mediaType && data ? { data, mediaType, extension: imageExtension(mediaType) } : null
+      );
     }
-    return this.uris.get(index) ?? null;
+    return this.images.get(index) ?? null;
   }
 }
 
@@ -811,10 +852,10 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
   );
   const maxDocumentBytes = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_DOCUMENT_FACTOR;
 
-  async function toChapter(pending: PendingChapter): Promise<EpubChapter> {
+  function toChapter(pending: PendingChapter): EpubChapter {
     return {
       title: pending.label ?? pending.heading,
-      html: await inlineImages(images, pending.html),
+      html: (store) => resolveImages(images, pending.html, store),
     };
   }
 
@@ -827,14 +868,14 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
         // A finished chapter is handed over before the next document is read,
         // so it survives that document failing.
         builder.startDocument(starts.get(path));
-        for (const pending of builder.takeFinished()) yield await toChapter(pending);
+        for (const pending of builder.takeFinished()) yield toChapter(pending);
         await withConversionSlot(async () => {
           const xhtml = await zip.readText(path, maxDocumentBytes);
           if (xhtml) await builder.addDocument(path, xhtml, starts.get(path));
         });
-        for (const pending of builder.takeFinished()) yield await toChapter(pending);
+        for (const pending of builder.takeFinished()) yield toChapter(pending);
       }
-      for (const pending of builder.finish()) yield await toChapter(pending);
+      for (const pending of builder.finish()) yield toChapter(pending);
     },
   };
 }
