@@ -140,7 +140,8 @@ fun readerDocument(
         .lr-summary { margin: 0 0 1.5em; padding: 0.75em 1em; border-radius: 8px;
           border: 1px solid ${colors.border}; background: ${colors.codeBackground}; }
         .lr-summary > :last-child { margin-bottom: 0; }
-        .lr-narrating { background: color-mix(in srgb, ${colors.link} 18%, transparent);
+        /* Outranks reader-prose.css's card fills. */
+        .reader-prose .lr-narrating { background: color-mix(in srgb, ${colors.link} 18%, transparent);
           border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, ${colors.link} 18%, transparent); }
         .lr-summary-label { margin: 0 0 0.5em; color: ${colors.muted}; font-family: sans-serif;
           font-size: 0.875rem; font-weight: 600; }

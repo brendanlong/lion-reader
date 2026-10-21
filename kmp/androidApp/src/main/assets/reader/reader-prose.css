@@ -73,7 +73,7 @@
    off the summary's bottom corners so its hover fill meets the divider. The
    bottom margin collapses with the body's first top margin, so the body clears
    the divider even where paragraphs have no top margin (the Android reader). */
-.reader-prose details[open] summary {
+.reader-prose details[open] > summary {
   margin-bottom: 1em;
   border-bottom: 1px solid var(--edge-strong);
   border-bottom-left-radius: 0;
@@ -216,9 +216,10 @@
 /* =================================
    Video Embeds
 
-   The only iframes that survive sanitization are YouTube embeds (see
-   sanitize.ts). Feed-supplied width/height attributes are arbitrary, so make
-   the player fill the column at the standard 16:9 aspect instead.
+   The only iframes that survive sanitization are allow-listed embeds
+   (native/sanitizer/core/src/embeds.rs). Feed-supplied width/height attributes
+   are arbitrary, so make the player fill the column at the standard 16:9
+   aspect instead.
    ================================= */
 
 .reader-prose iframe {
