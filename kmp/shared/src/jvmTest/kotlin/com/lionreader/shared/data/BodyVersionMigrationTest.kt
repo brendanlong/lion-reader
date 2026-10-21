@@ -1,12 +1,12 @@
 package com.lionreader.shared.data
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.db.LionReaderDatabase
 import java.io.File
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /** 4.sqm: bodies and summaries already on the device count as current, not to download again. */
 class BodyVersionMigrationTest {
@@ -42,6 +42,19 @@ class BodyVersionMigrationTest {
         assertEquals(emptyList(), db.entryQueries.selectOutdatedBodies(10).executeAsList())
         // A summary of the current body: one arriving at this version keeps it.
         db.summaryQueries.deleteOutdated("a", 7)
-        assertTrue(db.entryQueries.selectById("a").executeAsOne().ai_summary != null)
+        // Raw: the queries read columns later versions add.
+        val summaries =
+            driver
+                .executeQuery(
+                    null,
+                    "SELECT count(*) FROM entry_summary WHERE entry_id = 'a'",
+                    { cursor ->
+                        cursor.next()
+                        QueryResult.Value(cursor.getLong(0))
+                    },
+                    0,
+                )
+                .value
+        assertEquals(1L, summaries)
     }
 }

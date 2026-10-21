@@ -1,0 +1,10 @@
+-- What lists sort by besides date (#2064): the user's score for each entry
+-- and each membership's position in its collection, as the server reports
+-- them (null: none). Neither is on the device yet, so the next sync lists the
+-- collections again (their members' positions) and the entries with a score
+-- (SyncEngine.listScores).
+ALTER TABLE entry ADD COLUMN score REAL;
+
+ALTER TABLE subscription_entry ADD COLUMN position REAL;
+
+DELETE FROM app_metadata WHERE key = 'collections_listed';

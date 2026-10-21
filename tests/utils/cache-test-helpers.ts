@@ -52,6 +52,8 @@ export interface SeededEntry {
   id: string;
   subscriptionId: string | null;
   subscriptionIds: string[];
+  positions: Record<string, number>;
+  score: number | null;
   type: EntryType;
   url: string | null;
   title: string | null;
@@ -179,6 +181,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-1",
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    positions: {},
+    score: null,
     type: "web",
     url: "https://example.com/1",
     title: "Old Title",
@@ -196,6 +200,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-2",
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    positions: {},
+    score: null,
     type: "web",
     url: "https://example.com/2",
     title: "Entry Two",
@@ -213,6 +219,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-3",
     subscriptionId: "sub-2",
     subscriptionIds: ["sub-2"],
+    positions: {},
+    score: null,
     type: "web",
     url: "https://example.com/3",
     title: "Entry Three",
@@ -230,6 +238,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-saved",
     subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
     subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
+    positions: {},
+    score: null,
     type: "saved",
     url: "https://example.com/saved-article",
     title: "Saved Article",
@@ -247,6 +257,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-starred-orphan",
     subscriptionId: null,
     subscriptionIds: [],
+    positions: {},
+    score: null,
     type: "web",
     url: "https://example.com/orphan",
     title: "Orphaned Starred Entry",

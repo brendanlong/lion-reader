@@ -99,6 +99,16 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     fun finishCollections() = db.transaction { store.collectionsListed = true }
 
+    val scoresListed: Boolean
+        get() = store.scoresListed
+
+    /** Saves the scores of a page of scored entries, for those on the device. */
+    fun saveScores(items: List<EntryListItem>) = db.transaction {
+        for (item in items) item.rankings?.let { db.entryQueries.updateScore(it.score, item.id) }
+    }
+
+    fun finishScores() = db.transaction { store.scoresListed = true }
+
     var recentlyReadSeen: Long?
         get() = store.recentlyReadSeen
         set(value) {
@@ -119,6 +129,8 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     fun finishBootstrap(start: SyncCursors) = db.transaction {
         store.cursors = start
         store.bootstrapCursors = null
+        // Its entries came with their scores.
+        store.scoresListed = true
     }
 
     /** A resync starts over from a fresh bootstrap (the outbox is kept). */
@@ -135,8 +147,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         page.deletedIds.forEach(store::deleteEntry)
         // Memberships before the events, as the server has them now: an unsubscribe in the same
         // page keeps what's still in another subscription.
-        for ((entryId, ids) in page.events.reportedMemberships()) {
-            if (store.entryExists(entryId)) store.setMemberships(entryId, ids)
+        for ((entryId, reported) in page.events.reportedMemberships()) {
+            val (ids, positions) = reported
+            if (store.entryExists(entryId)) store.setMemberships(entryId, ids, positions)
         }
         page.events.forEach(::apply)
         for (entry in page.fetchedEntries) {
@@ -156,6 +169,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 entry.starred,
                 entry.readChangedAt,
                 entry.subscriptionIds,
+                entry.rankings,
             )
             // The fetched body is current: it replaces the old one and wins
             // over any download already in flight.
@@ -189,6 +203,8 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         entry.starred ?: false,
                         entry.readChangedAt,
                         event.subscriptionIds,
+                        // A new entry has none yet; one already here keeps its own.
+                        rankings = null,
                     )
                 }
             }
@@ -212,13 +228,20 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             is SyncEvent.EntryStateChanged -> {
                 val entry = event.entry
                 when {
-                    store.entryExists(event.entryId) ->
+                    store.entryExists(event.entryId) -> {
                         db.entryQueries.updateServerState(
                             if (event.read) 1 else 0,
                             if (event.starred) 1 else 0,
                             event.readChangedAt?.let(::parseMillis),
                             event.entryId,
                         )
+                        // Its memberships again, for their positions: an entry new in this page
+                        // (its new_entry, which has none, came first) wasn't here for them.
+                        event.rankings?.let {
+                            store.setMemberships(event.entryId, event.subscriptionIds, it.positions)
+                            db.entryQueries.updateScore(it.score, event.entryId)
+                        }
+                    }
                     entry != null ->
                         store.upsertEntry(
                             event.entryId,
@@ -236,6 +259,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             event.starred,
                             event.readChangedAt,
                             event.subscriptionIds,
+                            event.rankings,
                         )
                 }
             }
@@ -412,12 +436,17 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
 private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000
 
-/** Each entry's memberships the events report (the server's, as of the page). */
-private fun List<SyncEvent>.reportedMemberships(): Map<String, List<String>> = buildMap {
+/**
+ * Each entry's memberships the events report (the server's, as of the page), with their positions
+ * when the event has them.
+ */
+private fun List<SyncEvent>.reportedMemberships():
+    Map<String, Pair<List<String>, Map<String, Double>?>> = buildMap {
     for (event in this@reportedMemberships) {
         when (event) {
-            is SyncEvent.NewEntry -> put(event.entryId, event.subscriptionIds)
-            is SyncEvent.EntryStateChanged -> put(event.entryId, event.subscriptionIds)
+            is SyncEvent.NewEntry -> put(event.entryId, event.subscriptionIds to null)
+            is SyncEvent.EntryStateChanged ->
+                put(event.entryId, event.subscriptionIds to event.rankings?.positions)
             else -> {}
         }
     }

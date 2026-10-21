@@ -15,6 +15,7 @@ import {
   addServerEntryToLists,
   getLocalDb,
   insertEntryIntoLists,
+  markEntrySortable,
   type LocalDb,
 } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
@@ -219,7 +220,10 @@ export function applyCollectionEntriesChange(
       // Its new membership places it in the collection's lists and those of
       // the collection's tags.
       const stored = db.entries.getSynced(entryId);
-      if (stored) insertEntryIntoLists(db, stored);
+      if (stored) {
+        insertEntryIntoLists(db, stored);
+        markEntrySortable(db, stored);
+      }
     }
   }
 }
@@ -231,6 +235,8 @@ export interface EntryStateChange {
   starred: boolean;
   updatedAt: Date;
   subscriptionIds?: string[];
+  positions?: Record<string, number>;
+  score?: number | null;
   /** The entry's list item, when the server sent one with an unread flip. */
   listItem?: EntryRow;
 }
@@ -249,6 +255,8 @@ export function applyEntryStateChanges(
   const db = getLocalDb(queryClient);
   for (const entry of change.entries) {
     setServerEntryState(db.entries, entry.id, entry);
+    const written = entry.listItem ?? db.entries.getSynced(entry.id);
+    if (written) markEntrySortable(db, written);
     // An entry that became unread (here or on another device) belongs in
     // unread-only lists that don't contain it (fetched while it was read).
     // The list item lets it appear even when the store doesn't hold it (e.g.
@@ -272,6 +280,8 @@ export function toEntryRow(
     subscriptionId?: string | null;
     subscriptionIds: string[];
     updatedAt: string;
+    score?: number | null;
+    positions?: Record<string, number>;
   },
   entry: NewEntryListData,
   state: { read: boolean; starred: boolean }
@@ -280,6 +290,7 @@ export function toEntryRow(
     id: event.entryId,
     subscriptionId: event.subscriptionId ?? null,
     subscriptionIds: event.subscriptionIds,
+    positions: event.positions ?? {},
     type: entry.type,
     url: entry.url,
     title: entry.title,
@@ -291,6 +302,7 @@ export function toEntryRow(
     ...(entry.entryUpdatedAt && { entryUpdatedAt: new Date(entry.entryUpdatedAt) }),
     read: state.read,
     starred: state.starred,
+    score: event.score ?? null,
     feedTitle: entry.feedTitle,
     siteName: entry.siteName,
   };

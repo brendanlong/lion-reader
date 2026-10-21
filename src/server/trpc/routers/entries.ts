@@ -65,9 +65,6 @@ const stateChangeEntriesSchema = z
     `Maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} entries per request`
   );
 
-/** Which timestamp to sort entries by. */
-const sortBySchema = z.enum(["published", "readChanged"]).optional();
-
 const feedTypeSchema = z.enum(ENTRY_TYPES);
 
 // ============================================================================
@@ -84,6 +81,10 @@ const entryFullSchema = entryReadsService.fullEntrySchema;
 const entriesListOutputSchema = z.object({
   items: z.array(entryListItemSchema),
   nextCursor: z.string().optional(),
+  /** On the first page: which ranked sorts the list has values for. */
+  sortable: entriesService.entrySortableSchema.optional(),
+  /** On the first page: the sort the list is in, which a request without one leaves to the list. */
+  sort: entriesService.entrySortSchema.optional(),
 });
 
 /**
@@ -136,7 +137,8 @@ export const entriesRouter = createTRPCRouter({
    * @param excludeTypes - Optional array of types to exclude
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
-   * @param sortOrder - Optional sort order: "newest" (default) or "oldest". Ignored when query is provided.
+   * @param sortBy - Optional sort: "published" (default), "readChanged", "score" or "position" (a collection's list only)
+   * @param sortOrder - Optional direction of sortBy: newest/oldest, highest/lowest or first/last (its first by default). Ignored when query is provided.
    * @param cursor - Optional pagination cursor (from previous response)
    * @param limit - Optional number of entries per page (default: 50, max: 100)
    * @returns Paginated list of entries
@@ -156,7 +158,6 @@ export const entriesRouter = createTRPCRouter({
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
         excludeTypes: z.array(feedTypeSchema).optional(),
-        sortBy: sortBySchema,
       })
     )
     .output(entriesListOutputSchema)

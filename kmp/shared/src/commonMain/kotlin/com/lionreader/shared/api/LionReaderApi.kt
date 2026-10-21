@@ -71,6 +71,18 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             cursor?.let { parameter("cursor", it) }
         }
 
+    /** Every entry the user has scored, highest first, then the rest (#2064). */
+    suspend fun listByScore(
+        cursor: String?,
+        limit: Int = ServerLimits.ENTRIES_PAGE_SIZE,
+    ): EntryListPage =
+        get(EntryListPage.serializer(), "/entries") {
+            parameter("sortBy", "score")
+            parameter("sortOrder", "highest")
+            parameter("limit", limit)
+            cursor?.let { parameter("cursor", it) }
+        }
+
     /** The server's Recently Read: entries whose read state changed, latest first. */
     suspend fun listRecentlyRead(
         cursor: String?,

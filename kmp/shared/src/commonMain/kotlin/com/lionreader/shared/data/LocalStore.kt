@@ -2,6 +2,7 @@ package com.lionreader.shared.data
 
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.EntryListItem
+import com.lionreader.shared.api.Rankings
 import com.lionreader.shared.api.SAVED_TYPE
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncCursors
@@ -14,6 +15,7 @@ private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 private const val CATCH_UP_START_KEY = "catch_up_start"
 private const val RECENTLY_READ_KEY = "recently_read_seen"
 private const val COLLECTIONS_LISTED_KEY = "collections_listed"
+private const val SCORES_LISTED_KEY = "scores_listed"
 private const val SAVED_SERVER_ID_KEY = "saved_subscription_id"
 
 /**
@@ -58,6 +60,16 @@ internal class LocalStore(val db: LionReaderDatabase) {
             else meta.delete(COLLECTIONS_LISTED_KEY)
         }
 
+    /**
+     * Whether the device has every score of its entries: set by a bootstrap (its entries come with
+     * theirs) or by listing the scored ones, for a database older than scores (10.sqm).
+     */
+    var scoresListed: Boolean
+        get() = meta.selectValue(SCORES_LISTED_KEY).executeAsOneOrNull() != null
+        set(value) {
+            if (value) meta.upsert(SCORES_LISTED_KEY, "1") else meta.delete(SCORES_LISTED_KEY)
+        }
+
     /** The server's id for the Saved subscription, once known ([learnSavedSubscription]). */
     val savedServerId: String?
         get() = meta.selectValue(SAVED_SERVER_ID_KEY).executeAsOneOrNull()
@@ -100,6 +112,8 @@ internal class LocalStore(val db: LionReaderDatabase) {
         readChangedAt: String?,
         /** The entry's memberships. */
         subscriptionIds: List<String>,
+        /** Null when the server didn't say (one a release behind): the stored ones stay. */
+        rankings: Rankings?,
     ) {
         val published = publishedAt?.let(::parseMillis)
         val fetched = parseMillis(fetchedAt)
@@ -128,7 +142,8 @@ internal class LocalStore(val db: LionReaderDatabase) {
             `value` = readChangedAt?.let(::parseMillis),
             id = id,
         )
-        setMemberships(id, subscriptionIds)
+        setMemberships(id, subscriptionIds, rankings?.positions)
+        if (rankings != null) entries.updateScore(rankings.score, id)
     }
 
     fun upsertEntry(item: EntryListItem) =
@@ -148,6 +163,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             item.starred,
             item.readChangedAt,
             item.subscriptionIds,
+            item.rankings,
         )
 
     fun entryExists(id: String): Boolean = entries.exists(id).executeAsOne() > 0
@@ -211,12 +227,24 @@ internal class LocalStore(val db: LionReaderDatabase) {
         db.summaryQueries.pruneOrphans()
     }
 
-    /** Replaces an entry's memberships with the server's [subscriptionIds]. */
-    fun setMemberships(entryId: String, subscriptionIds: List<String>) {
+    /**
+     * Replaces an entry's memberships with the server's [subscriptionIds], and their positions with
+     * [positions] (by server subscription id; null when the server didn't say, keeping those of the
+     * memberships it still has).
+     */
+    fun setMemberships(
+        entryId: String,
+        subscriptionIds: List<String>,
+        positions: Map<String, Double>?,
+    ) {
         val savedId = savedServerId
-        memberships.deleteForEntry(entryId)
-        for (id in subscriptionIds) {
-            memberships.insertIgnore(if (id == savedId) SAVED_SUBSCRIPTION_ID else id, entryId)
+        val local = subscriptionIds.associateWith {
+            if (it == savedId) SAVED_SUBSCRIPTION_ID else it
+        }
+        memberships.deleteForEntryExcept(entryId, local.values)
+        for ((serverId, id) in local) {
+            memberships.insertIgnore(id, entryId)
+            if (positions != null) memberships.setPosition(positions[serverId], id, entryId)
         }
     }
 

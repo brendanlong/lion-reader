@@ -12,6 +12,7 @@ import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import io.ktor.client.HttpClient
@@ -75,7 +76,7 @@ class RealServerTest {
             val reader = Reader(db, { deviceClock }, Dispatchers.Unconfined) {}
             suspend fun local(scope: ListScope = ListScope.All, unreadOnly: Boolean = false) =
                 reader
-                    .timeline(scope, unreadOnly, oldestFirst = false, emptySet(), 100)
+                    .timeline(scope, unreadOnly, sort = ListSort.NEWEST, emptySet(), 100)
                     .first()
                     .map { it.id }
                     .toSet()

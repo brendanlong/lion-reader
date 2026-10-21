@@ -129,7 +129,7 @@ export function publishStarredStateChanges(
 
 type PublishedEntryState = Pick<
   MarkReadEntryState,
-  "id" | "read" | "starred" | "updatedAt" | "subscriptionIds"
+  "id" | "read" | "starred" | "updatedAt" | "subscriptionIds" | "score" | "positions"
 >;
 
 function publishEntryState(
@@ -147,6 +147,8 @@ function publishEntryState(
     updatedAt: entry.updatedAt,
     counts,
     subscriptionIds: entry.subscriptionIds,
+    score: entry.score,
+    positions: entry.positions,
     ...listData,
   });
 }

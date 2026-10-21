@@ -638,6 +638,24 @@ const READS: Benchmark[] = [
   listBenchmark("list.recently_read_deep", `/recently-read, ${DEEP_ROWS} rows deep`, async () =>
     deep(appList({ unreadOnly: false, sortBy: "readChanged" }))
   ),
+  // Seeded scores are U0's newest 2,000 articles; the reading list is positioned.
+  listBenchmark("list.score", "/all, unread, by score (#2064)", async () =>
+    appList({ sortBy: "score" })
+  ),
+  listBenchmark("list.score_lowest", "/all, unread, by score, lowest first", async () =>
+    appList({ sortBy: "score", sortOrder: "lowest" })
+  ),
+  listBenchmark("list.score_unscored_deep", "/all, unread, by score, 2,500 rows deep", async () =>
+    deep(appList({ sortBy: "score" }), 2500)
+  ),
+  listBenchmark("list.score_tag", "/tag/:id, by score", async () =>
+    appList({ tagId: tagId(0, 1), sortBy: "score" })
+  ),
+  listBenchmark(
+    "list.collection_position",
+    "/subscription/:id for a collection, by position",
+    async () => appList({ subscriptionId: readingList, sortBy: "position" })
+  ),
   {
     name: "ssr.entries_get",
     kind: "read",
@@ -1029,6 +1047,33 @@ ${membershipJoins("user_entries.user_id", "user_entries.entry_id")}
 WHERE user_entries.user_id = ${q(U0)} AND user_entries.entry_id IN (${q(entry.id)})`,
           },
           ...(await bulkCounts(db, U0, [{ id: entry.id, subscriptionId: entry.subscription_id }])),
+        ],
+      };
+    },
+  },
+  {
+    name: "write.set_scores_100",
+    kind: "write",
+    source: "services/entry-scores.ts setEntryScores (100 entries)",
+    prepare: async (db) => {
+      const ids = await newestVisibleIds(db, 100);
+      const values = ids.map((id, i) => `(${q(id)}::uuid, ${i}::double precision)`).join(", ");
+      const visible = "(user_entries.starred = true OR user_entries.active_memberships > 0)";
+      return {
+        statements: [
+          {
+            label: "visible",
+            sql: `SELECT entry_id FROM user_entries
+WHERE user_id = ${q(U0)} AND entry_id IN (${ids.map(q).join(", ")}) AND ${visible}`,
+          },
+          {
+            label: "update",
+            sql: `UPDATE user_entries SET score = v.score, updated_at = ${q(new Date().toISOString())}
+FROM (VALUES ${values}) AS v(entry_id, score)
+WHERE user_entries.user_id = ${q(U0)} AND user_entries.entry_id = v.entry_id AND ${visible}
+  AND user_entries.score IS DISTINCT FROM v.score
+RETURNING user_entries.entry_id, user_entries.score`,
+          },
         ],
       };
     },

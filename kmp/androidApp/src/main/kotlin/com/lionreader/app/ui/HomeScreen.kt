@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -36,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -71,8 +73,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -83,8 +87,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.R
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
+import com.lionreader.shared.data.SortField
+import com.lionreader.shared.data.Sortable
 import com.lionreader.shared.data.TimelineItem
 import com.lionreader.shared.home.HomeViewModel
 import com.lionreader.shared.home.SyncStatus
@@ -112,7 +119,6 @@ fun HomeScreen(
     val navigation by model.navigation.collectAsStateWithLifecycle()
     val timeline by model.timeline.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
-    val oldestFirst by model.oldestFirst.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
     val hideEmptyLists by model.hideEmptyLists.collectAsStateWithLifecycle()
@@ -211,8 +217,10 @@ fun HomeScreen(
                             ListMenu(
                                 showRead = !unreadOnly,
                                 onShowReadChange = { model.setUnreadOnly(!it) },
-                                oldestFirst = oldestFirst,
-                                onOldestFirstChange = model::setOldestFirst,
+                                sort = timeline?.sort ?: ListSort.NEWEST,
+                                sortable = timeline?.sortable ?: Sortable.DATE_ONLY,
+                                onSortChange = model::setSort,
+                                onSortFieldChange = model::setSortField,
                                 onMarkAllRead = {
                                     coroutines.launch { markAllIds = model.unreadInList() }
                                 },
@@ -368,12 +376,18 @@ private fun SearchBar(text: String, onChange: (String) -> Unit, onClose: () -> U
     )
 }
 
+/**
+ * The list's options: read articles, its order (Date, and Score or Position when the list has them,
+ * each with its two directions), and mark-all-read.
+ */
 @Composable
 private fun ListMenu(
     showRead: Boolean,
     onShowReadChange: (Boolean) -> Unit,
-    oldestFirst: Boolean,
-    onOldestFirstChange: (Boolean) -> Unit,
+    sort: ListSort,
+    sortable: Sortable,
+    onSortChange: (ListSort) -> Unit,
+    onSortFieldChange: (SortField) -> Unit,
     onMarkAllRead: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -390,14 +404,25 @@ private fun ListMenu(
                     onShowReadChange(!showRead)
                 },
             )
-            DropdownMenuItem(
-                text = { Text("Oldest first") },
-                trailingIcon = { Checkbox(checked = oldestFirst, onCheckedChange = null) },
-                onClick = {
+            HorizontalDivider()
+            val fields = sortable.fields
+            if (fields.size > 1) {
+                MenuHeading("Sort by")
+                for (field in fields) {
+                    ChoiceItem(field.label, selected = field == sort.field) {
+                        open = false
+                        onSortFieldChange(field)
+                    }
+                }
+            }
+            MenuHeading("Order")
+            for (direction in ListSort.directions(sort.field)) {
+                ChoiceItem(direction.label, selected = direction == sort) {
                     open = false
-                    onOldestFirstChange(!oldestFirst)
-                },
-            )
+                    onSortChange(direction)
+                }
+            }
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("Mark all as read…") },
                 onClick = {
@@ -407,6 +432,27 @@ private fun ListMenu(
             )
         }
     }
+}
+
+@Composable
+private fun MenuHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { heading() },
+    )
+}
+
+/** One of a menu's choices, marked when it's the one chosen. */
+@Composable
+private fun ChoiceItem(text: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(text) },
+        trailingIcon = { RadioButton(selected = selected, onClick = null) },
+        onClick = onClick,
+        // Announced as a radio button, checked or not.
+        modifier = Modifier.selectable(selected, role = Role.RadioButton, onClick = onClick),
+    )
 }
 
 @Composable

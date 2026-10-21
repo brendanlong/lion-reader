@@ -3,6 +3,7 @@ package com.lionreader.shared.account
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import java.util.Collections
@@ -53,7 +54,7 @@ class SessionDriverTest {
             )
         val unread =
             reader
-                .timeline(ListScope.All, unreadOnly = true, oldestFirst = false, emptySet(), 50)
+                .timeline(ListScope.All, unreadOnly = true, sort = ListSort.NEWEST, emptySet(), 50)
                 .stateIn(
                     scope,
                     SharingStarted.Eagerly,

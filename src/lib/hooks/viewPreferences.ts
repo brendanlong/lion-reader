@@ -5,6 +5,8 @@
  * Preferences are synced to URL query params (see useUrlViewPreferences).
  */
 
+import { ENTRY_SORT_ORDERS, type EntrySortOrder } from "@/lib/entry-sort";
+
 /**
  * View types for different entry list pages.
  */
@@ -21,9 +23,11 @@ export interface ViewPreferences {
   showUnreadOnly: boolean;
 
   /**
-   * Sort order for entries: "newest" (default) or "oldest".
+   * The sort and its direction (`?sort=`): "newest" or "oldest" by date,
+   * "highest"/"lowest" by score, "first"/"last" by position. Undefined
+   * leaves it to the list (the server's default, #2064).
    */
-  sortOrder: "newest" | "oldest";
+  sortOrder: EntrySortOrder | undefined;
 }
 
 /**
@@ -31,7 +35,7 @@ export interface ViewPreferences {
  */
 const DEFAULT_PREFERENCES: ViewPreferences = {
   showUnreadOnly: true,
-  sortOrder: "newest",
+  sortOrder: undefined,
 };
 
 /**
@@ -47,7 +51,7 @@ export function parseViewPreferencesFromParams(
   defaults?: { unreadOnly?: boolean }
 ): {
   unreadOnly: boolean;
-  sortOrder: "newest" | "oldest";
+  sortOrder: EntrySortOrder | undefined;
   searchQuery: string | undefined;
 } {
   // Parse the full-text search query - empty/whitespace means "not searching".
@@ -66,14 +70,10 @@ export function parseViewPreferencesFromParams(
   const unreadOnly =
     unreadOnlyParam === "false" ? false : unreadOnlyParam === "true" ? true : defaultUnreadOnly;
 
-  // Parse sortOrder - explicit "oldest" means oldest first, anything else uses default
+  // Parse sortOrder - any known direction, anything else leaves it to the list
   const sortParam = searchParams?.get("sort");
   const sortOrder =
-    sortParam === "oldest"
-      ? "oldest"
-      : sortParam === "newest"
-        ? "newest"
-        : DEFAULT_PREFERENCES.sortOrder;
+    ENTRY_SORT_ORDERS.find((order) => order === sortParam) ?? DEFAULT_PREFERENCES.sortOrder;
 
   return { unreadOnly, sortOrder, searchQuery };
 }

@@ -37,6 +37,8 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     readChangedAt: null,
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    positions: {},
+    score: null,
     type: "web",
     feedTitle: "Example feed",
     metadataChanged: true,

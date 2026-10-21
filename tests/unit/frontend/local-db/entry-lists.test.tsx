@@ -56,6 +56,8 @@ function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow>
     id,
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    positions: {},
+    score: null,
     type: "web",
     url: `https://example.com/${id}`,
     title: id,

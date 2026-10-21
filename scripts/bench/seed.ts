@@ -857,6 +857,29 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
      FROM bench_feed f
      WHERE f.kind = 'web' AND EXISTS (SELECT 1 FROM bench_sub s WHERE s.feed_id = f.id AND s.active)`
   );
+  // An assistant's scores on U0's newest 2,000 visible articles, ten values
+  // so most tie, and the reading list in an order (#2064).
+  await step(
+    "scores",
+    `UPDATE user_entries ue SET score = floor(10 * pg_temp.h(ue.entry_id::text || ':score'))
+     FROM (
+       SELECT entry_id FROM user_entries
+       WHERE user_id = '${userId(0)}' AND NOT is_spam AND (starred OR active_memberships > 0)
+       ORDER BY published_or_fetched_at DESC, entry_id DESC LIMIT 2000
+     ) n
+     WHERE ue.user_id = '${userId(0)}' AND ue.entry_id = n.entry_id`
+  );
+  await step(
+    "positions",
+    `UPDATE subscription_entries se SET position = n.position
+     FROM (
+       SELECT entry_id, row_number() OVER (ORDER BY published_or_fetched_at, entry_id) AS position
+       FROM subscription_entries
+       WHERE subscription_id = '${collectionSubscriptionId(0, COLLECTIONS.readingList.key)}'
+     ) n
+     WHERE se.subscription_id = '${collectionSubscriptionId(0, COLLECTIONS.readingList.key)}'
+       AND se.entry_id = n.entry_id`
+  );
   await step("vacuum analyze", "VACUUM (ANALYZE)");
 
   const stats = await client.query<{ what: string; n: number }>(STATS);

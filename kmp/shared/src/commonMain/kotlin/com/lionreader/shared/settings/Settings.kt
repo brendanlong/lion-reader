@@ -61,7 +61,10 @@ data class AppSettings(
     val textSize: TextSize = TextSize.MEDIUM,
     val justify: Boolean = false,
     val unreadOnly: Boolean = true,
-    /** Lists run oldest first (Recently Read: earliest read first), as the web's sort toggle. */
+    /**
+     * Lists by date run oldest first (Recently Read: earliest read first), as the web's sort
+     * toggle. One choice for every list; orders by score or position aren't kept (see `shownSort`).
+     */
     val oldestFirst: Boolean = false,
     val retentionDays: Int = 30,
     val syncInterval: SyncInterval = SyncInterval.THIRTY_MINUTES,

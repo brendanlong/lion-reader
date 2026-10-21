@@ -36,7 +36,14 @@ data class EntryListItem(
     val siteName: String? = null,
     /** When read state last changed; null if it never has. */
     val readChangedAt: String? = null,
-)
+    /** The user's score for it, higher first (#2064); see [rankings]. */
+    val score: Double? = null,
+    /** Its position in each of [subscriptionIds] that gives it one, lower first; see [rankings]. */
+    val positions: Map<String, Double>? = null,
+) {
+    val rankings: Rankings?
+        get() = rankingsOf(score, positions)
+}
 
 @Serializable
 data class EntryListPage(val items: List<EntryListItem>, val nextCursor: String? = null)
@@ -61,7 +68,30 @@ data class FullEntry(
     /** The sanitized body the web's entry view shows by default; null when there's none. */
     val content: String?,
     val readChangedAt: String? = null,
-)
+    /** As [EntryListItem.score]. */
+    val score: Double? = null,
+    /** As [EntryListItem.positions]. */
+    val positions: Map<String, Double>? = null,
+) {
+    val rankings: Rankings?
+        get() = rankingsOf(score, positions)
+}
+
+/**
+ * An entry's score and its positions in its collections (by subscription id), as one server reports
+ * them; what lists sort by besides date.
+ */
+data class Rankings(val score: Double?, val positions: Map<String, Double>)
+
+/**
+ * [Rankings] from a payload's fields, or null when it has neither: a server a release behind sends
+ * no rankings, which mustn't read as "none". The server sends `positions` (an object, maybe empty)
+ * wherever it sends `score`, so it tells a null score from a missing one.
+ */
+private fun rankingsOf(score: Double?, positions: Map<String, Double>?): Rankings? =
+    positions?.let {
+        Rankings(score, it)
+    }
 
 @Serializable data class GetManyRequest(val ids: List<String>)
 
@@ -223,7 +253,14 @@ sealed interface SyncEvent {
         val subscriptionIds: List<String>,
         val subscriptionId: String? = null,
         val entry: EventEntry? = null,
-    ) : SyncEvent
+        /** As [EntryListItem.score]. */
+        val score: Double? = null,
+        /** As [EntryListItem.positions]. */
+        val positions: Map<String, Double>? = null,
+    ) : SyncEvent {
+        val rankings: Rankings?
+            get() = rankingsOf(score, positions)
+    }
 
     @Serializable
     @SerialName("subscription_created")

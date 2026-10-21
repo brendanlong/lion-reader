@@ -46,8 +46,8 @@ BEGIN
     FOR NO KEY UPDATE OF ue;
   END IF;
 
-  INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred)
-  SELECT r.user_id, r.entry_id, r.list_id, ue.published_or_fetched_at, ue.read, ue.starred
+  INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred, score)
+  SELECT r.user_id, r.entry_id, r.list_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.score
   FROM reached_tag_lists(p_user, p_entry) r
   JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id
   ORDER BY r.user_id, r.entry_id, r.list_id
@@ -308,11 +308,12 @@ BEGIN
 
   EXECUTE $q$
     UPDATE subscription_entries se
-    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam
+    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam, score = ue.score
     FROM changed_rows c
     JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
     WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
-      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam)
+      AND (se.read, se.starred, se.is_spam, se.score)
+        IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam, ue.score)
   $q$;
 
   EXECUTE $q$
@@ -478,26 +479,27 @@ CREATE FUNCTION public.user_entries_copy_state() RETURNS trigger
 BEGIN
   EXECUTE $q$
     UPDATE subscription_entries se
-    SET read = n.read, starred = n.starred, is_spam = n.is_spam
+    SET read = n.read, starred = n.starred, is_spam = n.is_spam, score = n.score
     FROM (
-      SELECT user_id, entry_id, read, starred, is_spam FROM new_rows
+      SELECT user_id, entry_id, read, starred, is_spam, score FROM new_rows
       EXCEPT
-      SELECT user_id, entry_id, read, starred, is_spam FROM old_rows
+      SELECT user_id, entry_id, read, starred, is_spam, score FROM old_rows
     ) n
     WHERE se.user_id = n.user_id AND se.entry_id = n.entry_id
-      AND (se.read, se.starred, se.is_spam) IS DISTINCT FROM (n.read, n.starred, n.is_spam)
+      AND (se.read, se.starred, se.is_spam, se.score)
+        IS DISTINCT FROM (n.read, n.starred, n.is_spam, n.score)
   $q$;
 
   EXECUTE $q$
     UPDATE tag_entries te
-    SET read = n.read, starred = n.starred
+    SET read = n.read, starred = n.starred, score = n.score
     FROM (
-      SELECT user_id, entry_id, read, starred FROM new_rows
+      SELECT user_id, entry_id, read, starred, score FROM new_rows
       EXCEPT
-      SELECT user_id, entry_id, read, starred FROM old_rows
+      SELECT user_id, entry_id, read, starred, score FROM old_rows
     ) n
     WHERE te.user_id = n.user_id AND te.entry_id = n.entry_id
-      AND (te.read, te.starred) IS DISTINCT FROM (n.read, n.starred)
+      AND (te.read, te.starred, te.score) IS DISTINCT FROM (n.read, n.starred, n.score)
   $q$;
   RETURN NULL;
 END;
@@ -927,7 +929,9 @@ CREATE TABLE public.subscription_entries (
     published_or_fetched_at timestamp with time zone NOT NULL,
     read boolean DEFAULT false NOT NULL,
     starred boolean DEFAULT false NOT NULL,
-    is_spam boolean DEFAULT false NOT NULL
+    is_spam boolean DEFAULT false NOT NULL,
+    score double precision,
+    "position" double precision
 );
 
 CREATE TABLE public.subscription_tags (
@@ -960,7 +964,8 @@ CREATE TABLE public.tag_entries (
     list_id uuid NOT NULL,
     published_or_fetched_at timestamp with time zone NOT NULL,
     read boolean NOT NULL,
-    starred boolean NOT NULL
+    starred boolean NOT NULL,
+    score double precision
 );
 
 CREATE TABLE public.tags (
@@ -995,6 +1000,7 @@ CREATE TABLE public.user_entries (
     is_spam boolean NOT NULL,
     active_memberships integer DEFAULT 0 NOT NULL,
     changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    score double precision,
     CONSTRAINT user_entries_active_memberships_nonnegative CHECK ((active_memberships >= 0))
 );
 
@@ -1079,7 +1085,8 @@ CREATE VIEW public.visible_entries AS
     ue.published_or_fetched_at,
     e.greader_item_id,
     e.search_vector,
-    e.updated_at AS entry_updated_at
+    e.updated_at AS entry_updated_at,
+    ue.score
    FROM (public.user_entries ue
      LEFT JOIN public.entries e ON ((e.id = ue.entry_id)))
   WHERE (ue.starred OR (ue.active_memberships > 0));
@@ -1348,7 +1355,15 @@ CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_activ
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
+CREATE INDEX idx_subscription_entries_position ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id);
+
+CREATE INDEX idx_subscription_entries_score ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC);
+
 CREATE INDEX idx_subscription_entries_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC);
+
+CREATE INDEX idx_subscription_entries_unread_position ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id) WHERE ((NOT read) AND (NOT is_spam));
+
+CREATE INDEX idx_subscription_entries_unread_score ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam));
 
 CREATE INDEX idx_subscription_entries_unread_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam));
 
@@ -1364,7 +1379,11 @@ CREATE UNIQUE INDEX idx_subscriptions_greader_stream_id ON public.subscriptions 
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
 
+CREATE INDEX idx_tag_entries_score ON public.tag_entries USING btree (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC);
+
 CREATE INDEX idx_tag_entries_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC);
+
+CREATE INDEX idx_tag_entries_unread_score ON public.tag_entries USING btree (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
 CREATE INDEX idx_tag_entries_unread_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
@@ -1382,13 +1401,21 @@ CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree
 
 CREATE INDEX idx_user_entries_recently_read ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC) WHERE ((read_changed_at IS NOT NULL) AND (NOT is_spam) AND (starred OR (active_memberships > 0)));
 
+CREATE INDEX idx_user_entries_starred_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
+
 CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
+
+CREATE INDEX idx_user_entries_starred_unread_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
 
 CREATE INDEX idx_user_entries_starred_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
 
 CREATE INDEX idx_user_entries_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
+CREATE INDEX idx_user_entries_visible_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT is_spam) AND (starred OR (active_memberships > 0)));
+
 CREATE INDEX idx_user_entries_visible_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT is_spam) AND (starred OR (active_memberships > 0)));
+
+CREATE INDEX idx_user_entries_visible_unread_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam) AND (starred OR (active_memberships > 0)));
 
 CREATE INDEX idx_user_entries_visible_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam) AND (starred OR (active_memberships > 0)));
 

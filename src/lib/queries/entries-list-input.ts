@@ -11,6 +11,7 @@
 
 import { extractParamsFromPathname } from "@/lib/navigation";
 import type { EntryType } from "@/lib/entry-types";
+import { sortFieldOf, type EntrySortOrder } from "@/lib/entry-sort";
 
 /**
  * Input parameters for entries.list query.
@@ -23,8 +24,8 @@ export interface EntriesListInput {
   uncategorized: boolean | undefined;
   unreadOnly: boolean;
   starredOnly: boolean | undefined;
-  sortOrder: "newest" | "oldest";
-  sortBy: "published" | "readChanged" | undefined;
+  sortOrder: EntrySortOrder | undefined;
+  sortBy: "published" | "readChanged" | "score" | "position" | undefined;
   type: EntryType | undefined;
   limit: number;
   /**
@@ -52,7 +53,8 @@ export interface EntriesListFilters {
  */
 export interface EntriesListViewPreferences {
   unreadOnly: boolean;
-  sortOrder: "newest" | "oldest";
+  /** The chosen sort, by its direction (`sortFieldOf`); undefined leaves it to the list. */
+  sortOrder?: EntrySortOrder;
   /** Full-text search query (`?q=` URL param); undefined when not searching. */
   searchQuery?: string;
 }
@@ -80,8 +82,16 @@ export function buildEntriesListInput(
   const query = preferences.searchQuery?.trim() || undefined;
   // The backend ignores sortOrder when a query is provided (results are ranked
   // by relevance), so canonicalize it while searching — a lingering ?sort=
-  // param must not fragment the cache key for the same search.
-  const sortOrder = query ? "newest" : preferences.sortOrder;
+  // param must not fragment the cache key for the same search. Recently Read
+  // sorts only by date, and only a subscription's list by position (#2064):
+  // a choice the view can't use, like none, leaves it to the list.
+  const field = preferences.sortOrder && sortFieldOf(preferences.sortOrder);
+  const usable =
+    !query &&
+    (field === "published" ||
+      (filters.sortBy !== "readChanged" && (field === "score" || !!filters.subscriptionId)));
+  const sortOrder = usable ? preferences.sortOrder : undefined;
+  const sortBy = usable && field !== "published" ? field : filters.sortBy;
   // Construct the input with explicit property order and explicit undefined values.
   // This ensures the object structure is identical regardless of where it's constructed.
   // NOTE: direction is required for tRPC infinite query cache key matching.
@@ -94,10 +104,13 @@ export function buildEntriesListInput(
     unreadOnly: preferences.unreadOnly,
     starredOnly: filters.starredOnly,
     sortOrder,
-    sortBy: filters.sortBy,
+    sortBy,
     type: filters.type,
     limit,
-    direction: sortOrder === "newest" ? "forward" : "backward",
+    direction:
+      sortOrder === "oldest" || sortOrder === "lowest" || sortOrder === "last"
+        ? "backward"
+        : "forward",
   };
 }
 
@@ -152,14 +165,11 @@ export function getFiltersFromPathname(pathname: string): EntriesListFilters {
  * Returns the default view preferences for a given pathname.
  *
  * This is the single source of truth for per-route defaults.
- * Most views default to unreadOnly=true, sortOrder="newest".
- * /recently-read defaults to unreadOnly=false.
+ * Most views default to unreadOnly=true; /recently-read to unreadOnly=false.
+ * The sort is left to the list.
  */
 export function getDefaultViewPreferences(pathname: string): EntriesListViewPreferences {
-  return {
-    unreadOnly: pathname === "/recently-read" ? false : true,
-    sortOrder: "newest",
-  };
+  return { unreadOnly: pathname === "/recently-read" ? false : true };
 }
 
 /**

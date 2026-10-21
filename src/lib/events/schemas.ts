@@ -253,6 +253,9 @@ const updatedAtWithFallback = z.string().optional();
  */
 const subscriptionIdsSchema = z.array(z.string());
 
+/** An entry's position in each active collection that gives it one (#2064), by subscription id. */
+export const entryPositionsSchema = z.record(z.string(), z.number());
+
 export const newEntryEventSchema = z.object({
   type: z.literal("new_entry"),
   subscriptionId: z.string().nullable(),
@@ -318,6 +321,10 @@ export const entryStateChangedEventSchema = z.object({
   subscriptionId: z.string().nullable().optional(),
   entry: newEntryListDataSchema.optional(),
   subscriptionIds: subscriptionIdsSchema,
+  // The user's score and the entry's collection positions (#2064), which
+  // travel with its state. Optional: a server a release behind sends neither.
+  score: z.number().nullable().optional(),
+  positions: entryPositionsSchema.optional(),
 });
 
 export const markAllReadEventSchema = z.object({

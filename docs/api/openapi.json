@@ -5321,12 +5321,29 @@
           },
           {
             "in": "query",
+            "name": "sortBy",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "published",
+                "readChanged",
+                "score",
+                "position"
+              ]
+            }
+          },
+          {
+            "in": "query",
             "name": "sortOrder",
             "schema": {
               "type": "string",
               "enum": [
                 "newest",
-                "oldest"
+                "oldest",
+                "highest",
+                "lowest",
+                "first",
+                "last"
               ]
             }
           },
@@ -5360,17 +5377,6 @@
                 ]
               }
             }
-          },
-          {
-            "in": "query",
-            "name": "sortBy",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "published",
-                "readChanged"
-              ]
-            }
           }
         ],
         "responses": {
@@ -5399,6 +5405,15 @@
                             "type": "array",
                             "items": {
                               "type": "string"
+                            }
+                          },
+                          "positions": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "number"
                             }
                           },
                           "type": {
@@ -5454,6 +5469,12 @@
                               "null"
                             ]
                           },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
                           "updatedAt": {
                             "type": "string"
                           },
@@ -5477,6 +5498,7 @@
                           "id",
                           "subscriptionId",
                           "subscriptionIds",
+                          "positions",
                           "type",
                           "url",
                           "title",
@@ -5487,6 +5509,7 @@
                           "read",
                           "starred",
                           "readChangedAt",
+                          "score",
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
@@ -5497,6 +5520,52 @@
                     },
                     "nextCursor": {
                       "type": "string"
+                    },
+                    "sortable": {
+                      "type": "object",
+                      "properties": {
+                        "score": {
+                          "type": "boolean"
+                        },
+                        "position": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "score",
+                        "position"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "sort": {
+                      "type": "object",
+                      "properties": {
+                        "sortBy": {
+                          "type": "string",
+                          "enum": [
+                            "published",
+                            "readChanged",
+                            "score",
+                            "position"
+                          ]
+                        },
+                        "sortOrder": {
+                          "type": "string",
+                          "enum": [
+                            "newest",
+                            "oldest",
+                            "highest",
+                            "lowest",
+                            "first",
+                            "last"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sortBy",
+                        "sortOrder"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -5765,6 +5834,15 @@
                             "type": "string"
                           }
                         },
+                        "positions": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -5815,6 +5893,12 @@
                         "readChangedAt": {
                           "type": [
                             "string",
+                            "null"
+                          ]
+                        },
+                        "score": {
+                          "type": [
+                            "number",
                             "null"
                           ]
                         },
@@ -5892,6 +5976,7 @@
                         "id",
                         "subscriptionId",
                         "subscriptionIds",
+                        "positions",
                         "type",
                         "url",
                         "title",
@@ -5902,6 +5987,7 @@
                         "read",
                         "starred",
                         "readChangedAt",
+                        "score",
                         "updatedAt",
                         "entryUpdatedAt",
                         "feedTitle",
@@ -6046,6 +6132,15 @@
                               "type": "string"
                             }
                           },
+                          "positions": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
                           "type": {
                             "type": "string",
                             "enum": [
@@ -6096,6 +6191,12 @@
                           "readChangedAt": {
                             "type": [
                               "string",
+                              "null"
+                            ]
+                          },
+                          "score": {
+                            "type": [
+                              "number",
                               "null"
                             ]
                           },
@@ -6179,6 +6280,7 @@
                           "id",
                           "subscriptionId",
                           "subscriptionIds",
+                          "positions",
                           "type",
                           "url",
                           "title",
@@ -6189,6 +6291,7 @@
                           "read",
                           "starred",
                           "readChangedAt",
+                          "score",
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
@@ -6349,11 +6452,26 @@
                               "type": "string"
                             }
                           },
+                          "positions": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
                           "read": {
                             "type": "boolean"
                           },
                           "starred": {
                             "type": "boolean"
+                          },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
                           },
                           "type": {
                             "type": "string",
@@ -6377,8 +6495,10 @@
                           "id",
                           "subscriptionId",
                           "subscriptionIds",
+                          "positions",
                           "read",
                           "starred",
+                          "score",
                           "type",
                           "updatedAt",
                           "readChangedAt"
@@ -7113,11 +7233,26 @@
                               "type": "string"
                             }
                           },
+                          "positions": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
                           "read": {
                             "type": "boolean"
                           },
                           "starred": {
                             "type": "boolean"
+                          },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
                           },
                           "type": {
                             "type": "string",
@@ -7141,8 +7276,10 @@
                           "id",
                           "subscriptionId",
                           "subscriptionIds",
+                          "positions",
                           "read",
                           "starred",
+                          "score",
                           "type",
                           "updatedAt",
                           "readChangedAt"
@@ -7367,6 +7504,15 @@
                             "type": "string"
                           }
                         },
+                        "positions": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -7417,6 +7563,12 @@
                         "readChangedAt": {
                           "type": [
                             "string",
+                            "null"
+                          ]
+                        },
+                        "score": {
+                          "type": [
+                            "number",
                             "null"
                           ]
                         },
@@ -7494,6 +7646,7 @@
                         "id",
                         "subscriptionId",
                         "subscriptionIds",
+                        "positions",
                         "type",
                         "url",
                         "title",
@@ -7504,6 +7657,7 @@
                         "read",
                         "starred",
                         "readChangedAt",
+                        "score",
                         "updatedAt",
                         "entryUpdatedAt",
                         "feedTitle",
@@ -13123,6 +13277,21 @@
                                 "type": "array",
                                 "items": {
                                   "type": "string"
+                                }
+                              },
+                              "score": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "positions": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "number"
                                 }
                               }
                             },

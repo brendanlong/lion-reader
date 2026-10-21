@@ -15,14 +15,16 @@ import { getLocalDb, type LocalDb } from "@/lib/local-db/local-db";
 import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
 import {
   compareListEntries,
+  comparePlaces,
   entryListKey,
   entryMatchesList,
   entryMembershipScope,
-  isNewestFirst,
   type EntryListFilters,
+  type ListSortableRow,
 } from "@/lib/local-db/entry-lists";
 import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import type { EntryRow } from "@/lib/local-db/entries";
+import { isRankedSort } from "@/lib/entry-sort";
 
 function useLocalDb(): LocalDb {
   return getLocalDb(useQueryClient());
@@ -38,8 +40,9 @@ export function useEntryListEntries(
 ): EntryRow[] {
   const db = useLocalDb();
   const listKey = entryListKey(input);
-  const newestFirst = isNewestFirst(input);
-  // Filtered outside the live query so opening another entry doesn't rebuild it.
+  // Filtered and sorted outside the live query, so opening another entry
+  // doesn't rebuild it, and a list's order has one implementation
+  // (`comparePlaces`).
   const { data } = useLiveQuery({
     query: (q) =>
       q
@@ -50,15 +53,43 @@ export function useEntryListEntries(
           ({ member, entry }) => eq(member.entryId, entry.id),
           "inner"
         )
-        .orderBy(({ member }) => member.order, "asc")
-        .orderBy(({ member }) => member.entryId, newestFirst ? "desc" : "asc")
-        .select(({ member, entry }) => ({ removed: member.removed, entry })),
+        .select(({ member, entry }) => ({
+          removed: member.removed,
+          order: member.order,
+          entry,
+        })),
   });
   return useMemo(
     () =>
-      data.filter((row) => !row.removed || row.entry.id === openEntryId).map((row) => row.entry),
+      data
+        .filter((row) => !row.removed || row.entry.id === openEntryId)
+        .sort((a, b) =>
+          comparePlaces(
+            { order: a.order, entryId: a.entry.id },
+            { order: b.order, entryId: b.entry.id }
+          )
+        )
+        .map((row) => row.entry),
     [data, openEntryId]
   );
+}
+
+/**
+ * Which ranked sorts a loaded list has values for: from its first page,
+ * then kept current by live changes. Undefined until the first page lands,
+ * and for lists that sort by nothing else (search, Recently Read).
+ */
+export function useListSortable(input: EntryListFilters): ListSortableRow | undefined {
+  const db = useLocalDb();
+  const listKey = entryListKey(input);
+  const { data } = useLiveQuery({
+    query: (q) =>
+      q
+        .from({ row: db.lists.sortable.collection })
+        .where(({ row }) => eq(row.listKey, listKey))
+        .findOne(),
+  });
+  return data;
 }
 
 /** One entry's list-item fields, or undefined when the store doesn't hold it. */
@@ -91,7 +122,7 @@ export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
     query: (q) => q.from({ entry: db.entries.collection }),
   });
   // Callers pass a fresh object each render, so the memo keys on its fields.
-  const { subscriptionId, tagId, uncategorized, starredOnly, unreadOnly, type, sortOrder } =
+  const { subscriptionId, tagId, uncategorized, starredOnly, unreadOnly, type, sortOrder, sortBy } =
     filters;
   return useMemo(() => {
     const input = {
@@ -102,6 +133,7 @@ export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
       unreadOnly,
       type,
       sortOrder,
+      sortBy: isRankedSort(sortBy) ? sortBy : undefined,
     };
     const needsScope = !!tagId || !!uncategorized || type === "saved";
     const tagIds = new Map(
@@ -133,5 +165,6 @@ export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
     unreadOnly,
     type,
     sortOrder,
+    sortBy,
   ]);
 }

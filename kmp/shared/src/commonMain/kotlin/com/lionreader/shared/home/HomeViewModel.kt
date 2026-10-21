@@ -6,9 +6,13 @@ import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.failure
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.Reader
+import com.lionreader.shared.data.SortField
+import com.lionreader.shared.data.Sortable
 import com.lionreader.shared.data.TimelineItem
+import com.lionreader.shared.data.shownSort
 import com.lionreader.shared.settings.AppSettings
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -39,15 +43,21 @@ private const val SEARCH_LIMIT = 200L
 data class Timeline(
     val scope: ListScope,
     val unreadOnly: Boolean,
-    val oldestFirst: Boolean,
+    /** The order it's shown in (see [shownSort]). */
+    val sort: ListSort,
+    /** The orders it can be shown in besides date. */
+    val sortable: Sortable,
     val items: List<TimelineItem>,
     /** How many entries the whole list has, of which [items] are the first. */
     val total: Long,
 ) {
     /** Which list this is, in what order: a change is a new list, which starts at the top. */
     val listKey: String
-        get() = "$scope unreadOnly=$unreadOnly oldestFirst=$oldestFirst"
+        get() = "$scope unreadOnly=$unreadOnly sort=$sort"
 }
+
+/** The settings a list's query depends on. */
+private data class ListSettings(val unreadOnly: Boolean, val oldestFirst: Boolean)
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -89,9 +99,6 @@ class HomeViewModel(
     val unreadOnly: StateFlow<Boolean> =
         settings.map { it.unreadOnly }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    val oldestFirst: StateFlow<Boolean> =
-        settings.map { it.oldestFirst }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
     val hideEmptyLists: StateFlow<Boolean> =
         settings.map { it.hideEmptyLists }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -103,24 +110,34 @@ class HomeViewModel(
 
     /**
      * The list's entries, with which list, filter and order they're in (so a switch can wait for
-     * them, and a new list start at the top). From [settings] rather than [unreadOnly] and
-     * [oldestFirst], whose placeholder values before the settings load would query a list only to
-     * replace it.
+     * them, and a new list start at the top). From [settings] rather than [unreadOnly], whose
+     * placeholder value before the settings load would query a list only to replace it.
      */
     val timeline: StateFlow<Timeline?> =
         combine(
                 view,
-                settings.map { it.unreadOnly to it.oldestFirst }.distinctUntilChanged(),
+                settings.map { ListSettings(it.unreadOnly, it.oldestFirst) }.distinctUntilChanged(),
                 ::Pair,
             )
-            .flatMapLatest { (view, filters) ->
-                val (unreadOnly, oldestFirst) = filters
-                combine(
-                    reader.timeline(view.scope, unreadOnly, oldestFirst, view.keepIds, view.limit),
-                    reader.timelineCount(view.scope, unreadOnly, view.keepIds),
-                ) { items, total ->
-                    Timeline(view.scope, unreadOnly, oldestFirst, items, total)
-                }
+            .flatMapLatest { (view, list) ->
+                reader
+                    .sortable(view.scope, list.unreadOnly, view.keepIds)
+                    .distinctUntilChanged()
+                    .flatMapLatest { sortable ->
+                        val sort = shownSort(view.sort, sortable, list.oldestFirst)
+                        combine(
+                            reader.timeline(
+                                view.scope,
+                                list.unreadOnly,
+                                sort,
+                                view.keepIds,
+                                view.limit,
+                            ),
+                            reader.timelineCount(view.scope, list.unreadOnly, view.keepIds),
+                        ) { items, total ->
+                            Timeline(view.scope, list.unreadOnly, sort, sortable, items, total)
+                        }
+                    }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -186,8 +203,34 @@ class HomeViewModel(
         viewModelScope.launch { updateSettings { it.copy(unreadOnly = value) } }
     }
 
-    fun setOldestFirst(value: Boolean) {
-        viewModelScope.launch { updateSettings { it.copy(oldestFirst = value) } }
+    /**
+     * Orders the list on screen by [sort], until another list is chosen. A date order's direction
+     * is every list's, and kept (the oldest-first setting).
+     */
+    fun setSort(sort: ListSort) {
+        view.update { it.sortBy(sort) }
+        if (sort.field == SortField.DATE) {
+            viewModelScope.launch {
+                updateSettings { it.copy(oldestFirst = sort == ListSort.OLDEST) }
+            }
+        }
+    }
+
+    /**
+     * Orders the list on screen by [field], in the direction it's shown in or the field's default.
+     */
+    fun setSortField(field: SortField) {
+        val shown = timeline.value?.sort
+        view.update {
+            it.sortBy(
+                when {
+                    shown?.field == field -> shown
+                    // By date, in the setting's direction (shownSort).
+                    field == SortField.DATE -> ListSort.NEWEST
+                    else -> ListSort.directions(field)[0]
+                }
+            )
+        }
     }
 
     fun toggleTag(tagId: String) {

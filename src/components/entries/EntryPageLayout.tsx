@@ -23,7 +23,10 @@ import { SearchIcon } from "@/components/ui/icons";
 import { SkeletonText } from "@/components/ui/skeleton";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
-import { SortToggle } from "./SortToggle";
+import { SortToggle, shownSortOrder } from "./SortToggle";
+import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
+import { useListSortable } from "@/lib/hooks/useLocalEntries";
+import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
@@ -68,15 +71,17 @@ export function EntryPageLayout({
   markAllReadOptions,
 }: EntryPageLayoutProps) {
   // Use non-suspending hooks directly so buttons render immediately
-  const {
-    showUnreadOnly,
-    toggleShowUnreadOnly,
-    sortOrder,
-    toggleSortOrder,
-    searchQuery,
-    setSearchQuery,
-  } = useUrlViewPreferences();
+  const { showUnreadOnly, toggleShowUnreadOnly, setSortOrder, searchQuery, setSearchQuery } =
+    useUrlViewPreferences();
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
+  // The sort chosen in the URL, if the list can use it (`buildEntriesListInput`),
+  // shown by Date while its values are gone (the choice stays for when they
+  // return); without one, the sort the server listed it in (#2064).
+  // Read from the store only once it can render from it, or the server's and
+  // the hydrating client's first renders disagree.
+  const listInput = useEntriesListInput();
+  const storedSortable = useListSortable(listInput);
+  const sortable = useCanRenderFromCache() ? storedSortable : undefined;
   const { openEntryId } = useEntryUrlState();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const pathname = useAppPathname();
@@ -164,7 +169,17 @@ export function EntryPageLayout({
                 shortcutEnabled={keyboardShortcutsEnabled && !openEntryId}
               />
             )}
-            {!isSearching && <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />}
+            {!isSearching && (
+              <SortToggle
+                sortOrder={
+                  listInput.sortOrder
+                    ? shownSortOrder(listInput.sortOrder, sortable)
+                    : (sortable?.sort?.sortOrder ?? "newest")
+                }
+                sortable={sortable}
+                onChange={setSortOrder}
+              />
+            )}
             <UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={toggleShowUnreadOnly} />
           </div>
         </div>

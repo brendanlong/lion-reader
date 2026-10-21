@@ -3,6 +3,7 @@ package com.lionreader.shared.sync
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlin.coroutines.ContinuationInterceptor
@@ -27,7 +28,7 @@ private const val STEPS = 60
  * requests (failed before or after being applied), overlapping syncs and restarts, checked against
  * invariants once everything settles:
  * - the device agrees with the server on which entries exist and their read/starred state, on
- *   what's in Saved and the collection, and on unread counts;
+ *   what's in Saved and the collection, on unread counts, and on the orders by score and position;
  * - the user's last change to every entry and field reached the server;
  * - downloaded bodies are the server's current ones;
  * - nothing is left unsent.
@@ -78,7 +79,7 @@ class SyncModelTest {
                 .timeline(
                     ListScope.All,
                     unreadOnly = false,
-                    oldestFirst = false,
+                    sort = ListSort.NEWEST,
                     emptySet(),
                     10_000,
                 )
@@ -140,7 +141,16 @@ class SyncModelTest {
                         val subscription =
                             if (random.nextInt(4) == 0) null
                             else server.subscriptions.random(random)
-                        log += "server new ${server.addEntry(subscriptionId = subscription).id}"
+                        val entry = server.addEntry(subscriptionId = subscription)
+                        log += "server new ${entry.id}"
+                        // Sometimes a collection's new member, placed (an ebook's chapter) and
+                        // scored before the device hears of it.
+                        if (random.nextInt(3) == 0) {
+                            server.toggleCollection(entry)
+                            server.setPosition(entry, random.nextInt(1, 4).toDouble())
+                            server.setScore(entry, random.nextInt(1, 4).toDouble())
+                            log += "server placed ${entry.id}"
+                        }
                     }
                     in 57..60 -> {
                         val saved = server.visible.filter { it.saved }.randomOrNull(random)
@@ -159,7 +169,23 @@ class SyncModelTest {
                         server.toggleCollection(entry)
                         log += "server collection ${entry.id}"
                     }
-                    in 65..79 -> {
+                    in 65..66 -> {
+                        val entry = server.visible.randomOrNull(random) ?: return@repeat
+                        // Few values, so ties are common.
+                        val score = random.nextInt(4).takeIf { it > 0 }?.toDouble()
+                        server.setScore(entry, score)
+                        log += "server score ${entry.id}=$score"
+                    }
+                    67 -> {
+                        val entry =
+                            server.visible
+                                .filter { server.collection in it.collections }
+                                .randomOrNull(random) ?: return@repeat
+                        val position = random.nextInt(4).takeIf { it > 0 }?.toDouble()
+                        server.setPosition(entry, position)
+                        log += "server position ${entry.id}=$position"
+                    }
+                    in 68..79 -> {
                         quietly { engine.sync(downloadContent = random.nextBoolean()) }
                         log += "sync"
                     }
@@ -215,7 +241,7 @@ class SyncModelTest {
                 .timeline(
                     ListScope.All,
                     unreadOnly = false,
-                    oldestFirst = false,
+                    sort = ListSort.NEWEST,
                     emptySet(),
                     10_000,
                 )
@@ -236,7 +262,11 @@ class SyncModelTest {
         }
 
         suspend fun ids(scope: ListScope) =
-            reader.timeline(scope, false, false, emptySet(), 10_000).first().map { it.id }.toSet()
+            reader
+                .timeline(scope, false, ListSort.NEWEST, emptySet(), 10_000)
+                .first()
+                .map { it.id }
+                .toSet()
         val saved = remote.values.filter { it.saved }.map { it.id }.toSet()
         if (ids(ListScope.Saved) != saved)
             return "saved: device ${ids(ListScope.Saved)}, server $saved"
@@ -244,6 +274,25 @@ class SyncModelTest {
             remote.values.filter { server.collection in it.collections }.map { it.id }.toSet()
         val inCollection = ids(ListScope.Subscription(server.collection))
         if (inCollection != collected) return "collection: device $inCollection, server $collected"
+
+        suspend fun order(scope: ListScope, sort: ListSort) =
+            reader.timeline(scope, false, sort, emptySet(), 10_000).first().map { it.id }
+        for ((sort, wanted) in
+            listOf(
+                ListSort.HIGHEST to server.byScore(),
+                ListSort.LOWEST to server.byScore(lowestFirst = true),
+            )) {
+            val mine = order(ListScope.All, sort)
+            if (mine != wanted) return "by score $sort: device $mine, server $wanted"
+        }
+        for ((sort, wanted) in
+            listOf(
+                ListSort.FIRST to server.byPosition(),
+                ListSort.LAST to server.byPosition(lastFirst = true),
+            )) {
+            val mine = order(ListScope.Subscription(server.collection), sort)
+            if (mine != wanted) return "by position $sort: device $mine, server $wanted"
+        }
 
         val pending = db.outboxQueries.countStates().executeAsOne()
         if (pending != 0L) return "$pending changes still unsent"
@@ -253,7 +302,7 @@ class SyncModelTest {
                 .timeline(
                     ListScope.RecentlyRead,
                     unreadOnly = false,
-                    oldestFirst = false,
+                    sort = ListSort.NEWEST,
                     emptySet(),
                     10_000,
                 )

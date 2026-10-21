@@ -31,7 +31,12 @@ CREATE TABLE entry (
   body_version INTEGER NOT NULL,
   -- When read state last changed, as the server last reported it (Recently
   -- Read's order); null if it never has.
-  read_changed_at INTEGER
+  read_changed_at INTEGER,
+  -- The user's score for it, as the server last reported it (#2064): what
+  -- selectTimelineByScore orders by, higher first. Null if it has none. Last,
+  -- where 10.sqm added it, so entry_view's columns are in the same order on
+  -- every device.
+  score REAL
 );
 
 -- Never reset (not even by clearSynced), so no entry gets back a
@@ -98,6 +103,9 @@ WHERE id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :su
 updateServerState:
 UPDATE entry SET read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at) WHERE id = ?;
 
+updateScore:
+UPDATE entry SET score = ? WHERE id = ?;
+
 markOpened:
 UPDATE entry SET last_opened_at = ? WHERE id = ?;
 
@@ -163,6 +171,71 @@ WHERE (:subscriptionId IS NULL
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
 ORDER BY sort_at ASC, id ASC
 LIMIT :limit;
+
+-- selectTimeline by score (#2064), with the same filters (keep them in step),
+-- in the server's order: scored entries first, highest first (or lowest, with
+-- ties by date flipped too), then the unscored, newest first either way. This
+-- one sorts every matching entry (no index reads both ranges in both
+-- directions), which retention keeps to a few thousand.
+selectTimelineByScore:
+SELECT id, url, title, author, summary, type, site_name, feed_title,
+  sort_at, effective_read, effective_starred
+FROM entry_view
+WHERE (:subscriptionId IS NULL
+    OR id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :subscriptionId))
+  AND (:tagId IS NULL OR id IN (SELECT se.entry_id FROM subscription_entry se
+      JOIN subscription_tag st ON st.subscription_id = se.subscription_id WHERE st.tag_id = :tagId))
+  AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
+  AND (:uncategorizedOnly = 0 OR id IN (SELECT se.entry_id FROM subscription_entry se
+      JOIN subscription s ON s.id = se.subscription_id
+      WHERE s.id NOT IN (SELECT subscription_id FROM subscription_tag)))
+  AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
+ORDER BY score IS NULL,
+  CASE WHEN :lowestFirst = 1 THEN score ELSE -score END,
+  CASE WHEN score IS NOT NULL AND :lowestFirst = 1 THEN sort_at ELSE -sort_at END,
+  CASE WHEN score IS NOT NULL AND :lowestFirst = 1 THEN id END ASC,
+  id DESC
+LIMIT :limit;
+
+-- One subscription's list (a collection's) by position in it (#2064), in the
+-- server's order: positioned entries first, lowest first (or highest, with
+-- ties by date flipped too), then the rest, newest first either way.
+selectTimelineByPosition:
+SELECT v.id, v.url, v.title, v.author, v.summary, v.type, v.site_name, v.feed_title,
+  v.sort_at, v.effective_read, v.effective_starred
+FROM entry_view v
+JOIN subscription_entry se ON se.entry_id = v.id AND se.subscription_id = :subscriptionId
+WHERE :unreadOnly = 0 OR v.effective_read = 0 OR v.id IN :keepIds
+ORDER BY se.position IS NULL,
+  CASE WHEN :lastFirst = 1 THEN -se.position ELSE se.position END,
+  CASE WHEN se.position IS NOT NULL AND :lastFirst = 0 THEN v.sort_at ELSE -v.sort_at END,
+  CASE WHEN se.position IS NOT NULL AND :lastFirst = 0 THEN v.id END ASC,
+  v.id DESC
+LIMIT :limit;
+
+-- Which orders besides date a list can be shown in (#2064), with
+-- selectTimeline's filters (keep them in step), as the server's `sortable`:
+-- score if any of its entries has one, position if any of :subscriptionId's
+-- members has one in it.
+sortable:
+SELECT
+  EXISTS (SELECT 1 FROM entry_view
+    WHERE score IS NOT NULL
+      AND (:subscriptionId IS NULL
+        OR id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :subscriptionId))
+      AND (:tagId IS NULL OR id IN (SELECT se.entry_id FROM subscription_entry se
+          JOIN subscription_tag st ON st.subscription_id = se.subscription_id WHERE st.tag_id = :tagId))
+      AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
+      AND (:uncategorizedOnly = 0 OR id IN (SELECT se.entry_id FROM subscription_entry se
+          JOIN subscription s ON s.id = se.subscription_id
+          WHERE s.id NOT IN (SELECT subscription_id FROM subscription_tag)))
+      AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
+  ) AS by_score,
+  EXISTS (SELECT 1 FROM entry_view v
+    JOIN subscription_entry se ON se.entry_id = v.id AND se.subscription_id = :subscriptionId
+    WHERE se.position IS NOT NULL
+      AND (:unreadOnly = 0 OR v.effective_read = 0 OR v.id IN :keepIds)
+  ) AS by_position;
 
 -- How many entries selectTimeline would return with no limit, with the same
 -- filters (keep them in step), for the list's scrollbar.

@@ -22,12 +22,16 @@ import {
 import {
   ingestEntryListPages,
   insertIntoMatchingLists,
+  entryMatchesList,
   entryMembershipScope,
+  markListsSortable,
   markEntryListFetchStarted,
   removeEntryList,
   type EntryListMeta,
   type EntryLists,
   type ListEntryRow,
+  type ListSort,
+  type ListSortableRow,
 } from "./entry-lists";
 import { createSyncedCollection } from "./synced-collection";
 import {
@@ -86,7 +90,12 @@ export function subscribeSavedSubscriptionId(db: LocalDb, listener: () => void):
 }
 
 interface EntriesListData {
-  pages: Array<{ items: EntryRow[]; nextCursor?: string }>;
+  pages: Array<{
+    items: EntryRow[];
+    nextCursor?: string;
+    sortable?: Pick<ListSortableRow, "score" | "position">;
+    sort?: ListSort;
+  }>;
 }
 
 let nextDbId = 0;
@@ -116,7 +125,14 @@ function createLocalDb(): LocalDb {
   };
   return {
     entries,
-    lists: { rows, meta: new Map() },
+    lists: {
+      rows,
+      meta: new Map(),
+      sortable: createSyncedCollection<ListSortableRow>({
+        id: `entry-list-sortable-${dbId}`,
+        getKey: (row) => row.listKey,
+      }),
+    },
     subscriptions,
     tags: createVersionedStore(
       createSyncedCollection<TagRow>({ id: `tags-${dbId}`, getKey: (row) => row.id })
@@ -297,12 +313,33 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
  * on their next refresh.
  */
 export function insertEntryIntoLists(db: LocalDb, entry: EntryRow): void {
-  insertIntoMatchingLists(
+  insertIntoMatchingLists(db.lists, entry, membershipScope(db, entry));
+}
+
+function membershipScope(db: LocalDb, entry: EntryRow) {
+  return entryMembershipScope(entry.subscriptionIds, db.saved.id, (id) =>
+    db.subscriptions.rows.getSynced(id)?.tags.map((tag) => tag.id)
+  );
+}
+
+/**
+ * Offers a ranked sort in the loaded lists an entry's score or positions now
+ * give a value (#2064), judged like a live insert: by its memberships and
+ * state, so a list the client can't place it in catches up on its next fetch.
+ */
+export function markEntrySortable(db: LocalDb, entry: EntryRow): void {
+  if (entry.score === null && Object.keys(entry.positions).length === 0) return;
+  const scope = membershipScope(db, entry);
+  if (entry.score !== null) {
+    markListsSortable(db.lists, "score", (input) => entryMatchesList(input, entry, scope));
+  }
+  markListsSortable(
     db.lists,
-    entry,
-    entryMembershipScope(entry.subscriptionIds, db.saved.id, (id) =>
-      db.subscriptions.rows.getSynced(id)?.tags.map((tag) => tag.id)
-    )
+    "position",
+    (input) =>
+      !!input.subscriptionId &&
+      input.subscriptionId in entry.positions &&
+      entryMatchesList(input, entry, scope)
   );
 }
 

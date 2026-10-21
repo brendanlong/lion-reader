@@ -9,6 +9,7 @@ import { eq, and, exists, inArray, sql, isNull, lte, or, type SQL } from "drizzl
 import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
 import { errors } from "@/server/errors";
+import { logger } from "@/lib/logger";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "./counts";
 import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry-events";
@@ -58,8 +59,10 @@ export const markReadEntryStateSchema = entryListItemSchema.pick({
   id: true,
   subscriptionId: true,
   subscriptionIds: true,
+  positions: true,
   read: true,
   starred: true,
+  score: true,
   type: true,
   updatedAt: true,
   readChangedAt: true,
@@ -210,14 +213,30 @@ export async function writeEntriesRead(
 
   // Always resolve final state for all requested entries, including the context
   // fields callers need for cache updates and count queries.
-  const allEntryIds = entriesToMark.map((e) => e.id);
-  const entries = await db
+  const entries = await selectEntryStates(
+    db,
+    userId,
+    entriesToMark.map((e) => e.id)
+  );
+
+  return { entries, changed: entries.filter((entry) => flippedIds.has(entry.id)) };
+}
+
+/** The visible entries' state, with the context fields cache updates and counts need. */
+async function selectEntryStates(
+  db: DbOrTx,
+  userId: string,
+  entryIds: string[]
+): Promise<MarkReadEntryState[]> {
+  return db
     .select({
       id: visibleEntries.id,
       subscriptionId: subscriptions.id,
       subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
+      positions: VISIBLE_MEMBERSHIPS.positions,
       read: visibleEntries.read,
       starred: visibleEntries.starred,
+      score: visibleEntries.score,
       type: visibleEntries.type,
       updatedAt: visibleEntries.updatedAt,
       readChangedAt: visibleEntries.readChangedAt,
@@ -225,9 +244,30 @@ export async function writeEntriesRead(
     .from(visibleEntries)
     .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
-    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
+}
 
-  return { entries, changed: entries.filter((entry) => flippedIds.has(entry.id)) };
+/**
+ * Publishes `entry_state_changed` for entries whose score or collection
+ * positions changed (#2064), which travel with their state, so the user's
+ * other tabs and devices pick them up. Fire and forget, after the write
+ * commits.
+ */
+export function publishEntryStates(db: typeof dbType, userId: string, entryIds: string[]): void {
+  if (entryIds.length === 0) return;
+  void (async () => {
+    try {
+      const states = await selectEntryStates(db, userId, entryIds);
+      if (states.length === 0) return;
+      publishStarredStateChanges(
+        userId,
+        states,
+        await getBulkEntryRelatedCounts(db, userId, states)
+      );
+    } catch (error) {
+      logger.warn("Failed to publish entry state changes", { userId, error: String(error) });
+    }
+  })();
 }
 
 /**
@@ -426,8 +466,10 @@ async function selectStarredEntryStates(
       id: userEntries.entryId,
       subscriptionId: subscriptions.id,
       subscriptionIds: USER_MEMBERSHIPS.subscriptionIds,
+      positions: USER_MEMBERSHIPS.positions,
       read: userEntries.read,
       starred: userEntries.starred,
+      score: userEntries.score,
       type: entries.type,
       updatedAt: sql`${userEntries.changedAt}`.mapWith(userEntries.updatedAt),
       readChangedAt: userEntries.readChangedAt,

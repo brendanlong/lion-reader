@@ -296,7 +296,7 @@ class HomeScreenTest {
 
         scrollTimelineTo(40)
         composeRule.onNodeWithContentDescription("List options").performClick()
-        composeRule.onNodeWithText("Oldest first").performClick()
+        composeRule.onNodeWithText("Oldest").performClick()
         composeRule.onNodeWithText("Article 59").assertIsDisplayed()
         assertEquals((59 downTo 0).map { "e$it" }, model.shownIds())
     }
@@ -650,5 +650,72 @@ class HomeScreenTest {
 
         composeRule.onNodeWithText("Uncategorized").performClick()
         assertEquals(ListScope.Uncategorized, model.scope.value)
+    }
+
+    /**
+     * The list's order changes off the main thread's queue, which Robolectric holds until idled.
+     */
+    private fun awaitList(ids: List<String>) = composeRule.waitUntil {
+        shadowOf(Looper.getMainLooper()).idle()
+        model.shownIds() == ids
+    }
+
+    private fun choose(option: String) {
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText(option).performClick()
+    }
+
+    @Test
+    fun aListWithPositionsOpensByThemAndAChoiceLastsTheScreen() {
+        // By date: Delta, Bravo, Alpha, Charlie.
+        seed("a", "Alpha", read = false, sortAt = 2, subscription = "col")
+        seed("b", "Bravo", read = false, sortAt = 3, subscription = "col")
+        seed("c", "Charlie", read = false, sortAt = 1, subscription = "col")
+        seed("d", "Delta", read = false, sortAt = 4, subscription = "col")
+        db.entryQueries.updateScore(5.0, "a")
+        db.entryQueries.updateScore(1.0, "b")
+        db.subscriptionEntryQueries.setPosition(1.0, "col", "c")
+        show()
+
+        // All has no positions: by date, Score offered.
+        awaitList(listOf("d", "b", "a", "c"))
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Date").assert(isSelected())
+        composeRule.onNodeWithText("Position").assertDoesNotExist()
+        composeRule.onNodeWithText("Score").performClick()
+        awaitList(listOf("a", "b", "d", "c"))
+        choose("Lowest")
+        awaitList(listOf("b", "a", "d", "c"))
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Lowest").assert(isSelected())
+        Espresso.pressBack()
+
+        // A collection with positions opens first to last.
+        model.select(ListScope.Subscription("col"))
+        awaitList(listOf("c", "d", "b", "a"))
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Position").assert(isSelected())
+        composeRule.onNodeWithText("First").assert(isSelected())
+        Espresso.pressBack()
+        choose("Date")
+        awaitList(listOf("d", "b", "a", "c"))
+        // A date direction is every list's.
+        choose("Oldest")
+        awaitList(listOf("c", "a", "b", "d"))
+        composeRule.waitUntil { settings.value.oldestFirst }
+
+        // The choice of Score didn't outlast the screen, and nothing else was stored.
+        model.select(ListScope.All)
+        awaitList(listOf("c", "a", "b", "d"))
+        assertEquals(AppSettings(oldestFirst = true), settings.value)
+
+        // Once its scores are gone, a list by score is by its default, until they're back.
+        choose("Score")
+        awaitList(listOf("a", "b", "d", "c"))
+        db.entryQueries.updateScore(null, "a")
+        db.entryQueries.updateScore(null, "b")
+        awaitList(listOf("c", "a", "b", "d"))
+        db.entryQueries.updateScore(1.0, "c")
+        awaitList(listOf("c", "d", "b", "a"))
     }
 }
