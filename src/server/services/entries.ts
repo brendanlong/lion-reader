@@ -35,11 +35,14 @@ import {
 import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
 import { entryPositionsSchema } from "@/lib/events/schemas";
 import {
+  ENTRY_SORT_BYS,
   ENTRY_SORT_DIRECTIONS,
+  ENTRY_SORT_ORDERS,
   isRankedSort,
   type EntrySortBy,
   type EntrySortOrder,
   type RankedSortBy,
+  sortFieldOf,
 } from "@/lib/entry-sort";
 
 // ============================================================================
@@ -58,7 +61,11 @@ export interface ListEntriesParams {
   readOnly?: boolean;
   starredOnly?: boolean;
   unstarredOnly?: boolean;
-  /** One of `sortBy`'s two directions (`ENTRY_SORT_DIRECTIONS`); its first by default. */
+  /**
+   * One of `sortBy`'s two directions (`ENTRY_SORT_DIRECTIONS`), its first by
+   * default; alone, it names its sort. With neither, a subscription whose
+   * members have positions lists by position, any other list newest first.
+   */
   sortOrder?: EntrySortOrder;
   // Which column to sort by (default: published). "published" = publish/fetch
   // time; "readChanged" = read-state-change time (the recently-read view, which
@@ -156,6 +163,17 @@ export const entrySortableSchema = z.object({
 });
 
 export type EntrySortable = z.infer<typeof entrySortableSchema>;
+
+/**
+ * The sort a list is in: the one asked for, or with none, the list's default
+ * (a subscription with positions by position, first first; else newest).
+ */
+export const entrySortSchema = z.object({
+  sortBy: z.enum(ENTRY_SORT_BYS),
+  sortOrder: z.enum(ENTRY_SORT_ORDERS),
+});
+
+export type EntrySort = z.infer<typeof entrySortSchema>;
 
 // ============================================================================
 // Constants
@@ -334,7 +352,12 @@ async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "qu
 export async function listEntries(
   db: typeof dbType,
   params: ListEntriesParams
-): Promise<{ items: EntryListItem[]; nextCursor?: string; sortable?: EntrySortable }> {
+): Promise<{
+  items: EntryListItem[];
+  nextCursor?: string;
+  sortable?: EntrySortable;
+  sort?: EntrySort;
+}> {
   // If query is provided, delegate to search implementation (indexed full-text
   // search over the stored entries.search_vector column — see searchEntries).
   if (params.query) {
@@ -365,7 +388,13 @@ export async function listEntries(
     ),
     params.cursor || params.offset ? undefined : listSortable(db, params, page),
   ]);
-  return { items: items.map(toEntryListItem), nextCursor, ...(sortable && { sortable }) };
+  const firstPage = !params.cursor && !params.offset;
+  return {
+    items: items.map(toEntryListItem),
+    nextCursor,
+    ...(sortable && { sortable }),
+    ...(firstPage && page.sort && { sort: page.sort }),
+  };
 }
 
 /**
@@ -523,10 +552,15 @@ interface PageRow {
 /**
  * The sort and its direction, validated: each sort has its own pair of
  * directions (`ENTRY_SORT_DIRECTIONS`), and position orders only one
- * subscription's list.
+ * subscription's list. A direction alone names its sort; with neither, the
+ * list's default (`defaultSortBy`).
  */
-function resolveSort(params: Omit<ListEntriesParams, "query">) {
-  const sortBy = params.sortBy ?? "published";
+function resolveSort(
+  params: Omit<ListEntriesParams, "query">,
+  defaultSortBy: "published" | "position"
+) {
+  const sortBy =
+    params.sortBy ?? (params.sortOrder ? sortFieldOf(params.sortOrder) : defaultSortBy);
   const directions = ENTRY_SORT_DIRECTIONS[sortBy === "archived" ? "readChanged" : sortBy];
   const sortOrder = params.sortOrder ?? directions[0];
   if (!(directions as readonly string[]).includes(sortOrder)) {
@@ -538,7 +572,36 @@ function resolveSort(params: Omit<ListEntriesParams, "query">) {
   if (isRankedSort(sortBy) && params.offset) {
     throw errors.validation(`A list sorted by ${sortBy} pages by cursor, not offset`);
   }
-  return { sortBy, reversed: sortOrder === directions[1] };
+  return { sortBy, sortOrder, reversed: sortOrder === directions[1] };
+}
+
+/** Whether any of a list's rows (with its filters) has a value for `sort`. */
+async function listHasValues(
+  db: typeof dbType,
+  conditions: SQL[],
+  listRows: ListRows | null,
+  sort: RankedSortBy
+): Promise<boolean> {
+  const { keys, indexDesc } = rankedSortKeys(sort, listRows);
+  const query = db
+    .select({ one: sql`1` })
+    .from(visibleEntries)
+    .$dynamic();
+  const rows = await (listRows ? query.innerJoin(listRows.table, listRows.on) : query)
+    .where(and(...conditions, isNotNull(keys[0])))
+    .orderBy(...indexScanOrder(keys, indexDesc, true))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** Whether a cursor is a ranked sort's (it carries the row's value). */
+function isRankedCursor(cursor: string): boolean {
+  try {
+    rankedCursor.decode(cursor);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -552,7 +615,6 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   const effectiveMaxLimit = params.maxLimit ?? MAX_ENTRIES_PAGE_SIZE;
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
-  const { sortBy, reversed } = resolveSort(params);
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
@@ -574,12 +636,6 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     if (subscriptionFilter) conditions.push(subscriptionFilter);
   }
 
-  // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
-  // joins them, which can't fan out, and pages through their index: walking
-  // the user's timeline instead reads every article outside the list. Sorted
-  // otherwise, the join still lets Postgres start from the list's rows when
-  // they're few (Wallabag's Saved by `archived`).
-  const timelineSort = sortBy !== "readChanged" && sortBy !== "archived";
   if (listRows) {
     conditions.push(...listRowStateConditions(listRows, params));
   }
@@ -605,6 +661,29 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
         : params
     )
   );
+
+  // A request that names no sort gets the list's default: a subscription
+  // whose members have positions (with the list's filters) in their order, so
+  // a book opens at its first chapter, and any other list newest first. A
+  // cursor carries the sort its first page used.
+  const positionable = !!params.subscriptionId && listRows?.table === subscriptionEntries;
+  const hasPositions =
+    positionable && !params.sortBy && !params.sortOrder
+      ? params.cursor
+        ? isRankedCursor(params.cursor)
+        : await listHasValues(db, conditions, listRows, "position")
+      : undefined;
+  const { sortBy, sortOrder, reversed } = resolveSort(
+    params,
+    hasPositions ? "position" : "published"
+  );
+
+  // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
+  // joins them, which can't fan out, and pages through their index: walking
+  // the user's timeline instead reads every article outside the list. Sorted
+  // otherwise, the join still lets Postgres start from the list's rows when
+  // they're few (Wallabag's Saved by `archived`).
+  const timelineSort = sortBy !== "readChanged" && sortBy !== "archived";
 
   // Recently Read: exclude entries that were never explicitly read-state-changed.
   // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
@@ -719,21 +798,6 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     return { items: items as Awaited<T>, nextCursor };
   };
 
-  /** Whether any of the list's rows (with its filters) has a value for `sort`. */
-  const hasValues = async (sort: RankedSortBy): Promise<boolean> => {
-    const { keys, indexDesc } = rankedSortKeys(sort, listRows);
-    const rows = await joinRows(
-      db
-        .select({ one: sql`1` })
-        .from(visibleEntries)
-        .$dynamic()
-    )
-      .where(and(...conditions, isNotNull(keys[0])))
-      .orderBy(...indexScanOrder(keys, indexDesc, true))
-      .limit(1);
-    return rows.length > 0;
-  };
-
   return {
     sortFields: {
       // Full-precision sort key for cursor encoding. The pool hands back
@@ -762,13 +826,15 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
      */
     sortable: async (): Promise<EntrySortable | undefined> => {
       if (!timelineSort) return undefined;
-      const position = !!params.subscriptionId && listRows?.table === subscriptionEntries;
       const [score, positioned] = await Promise.all([
-        hasValues("score"),
-        position ? hasValues("position") : false,
+        listHasValues(db, conditions, listRows, "score"),
+        positionable && (hasPositions ?? listHasValues(db, conditions, listRows, "position")),
       ]);
       return { score, position: positioned };
     },
+
+    /** The sort the page is in, for a client ordering it locally. */
+    sort: sortBy === "archived" ? undefined : { sortBy, sortOrder },
   };
 }
 
