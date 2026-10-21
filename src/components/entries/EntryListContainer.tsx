@@ -63,8 +63,8 @@ export function findAdjacentEntries(
 
 /**
  * The row to put the reader back on when an entry closes: the entry itself,
- * or — when closing it took it out of the list (it left the collection being
- * viewed) — the nearest entry that's still listed, preferring the one after it.
+ * or — when closing it took it out of the list (it left a collection that put
+ * it there) — the nearest entry that's still listed, preferring the one after it.
  */
 function entryToReturnTo(
   before: ReadonlyArray<{ id: string }>,

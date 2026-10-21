@@ -9303,10 +9303,37 @@
                         "asOf"
                       ],
                       "additionalProperties": false
+                    },
+                    "tagLists": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "entryId": {
+                            "type": "string"
+                          },
+                          "tagIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "uncategorized": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "entryId",
+                          "tagIds",
+                          "uncategorized"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
-                    "entryIds"
+                    "entryIds",
+                    "tagLists"
                   ],
                   "additionalProperties": false
                 }
@@ -9528,10 +9555,37 @@
                         "asOf"
                       ],
                       "additionalProperties": false
+                    },
+                    "tagLists": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "entryId": {
+                            "type": "string"
+                          },
+                          "tagIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "uncategorized": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "entryId",
+                          "tagIds",
+                          "uncategorized"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
-                    "entryIds"
+                    "entryIds",
+                    "tagLists"
                   ],
                   "additionalProperties": false
                 }
