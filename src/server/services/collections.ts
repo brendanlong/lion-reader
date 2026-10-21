@@ -14,6 +14,7 @@ import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
 import {
   subscriptionEntries,
   subscriptions,
+  subscriptionTags,
   userEntries,
   visibleEntries,
 } from "@/server/db/schema";
@@ -27,9 +28,11 @@ import { publishEntryStates } from "@/server/services/entry-state";
 import {
   getSubscription,
   isCollectionSubscription,
+  isUserManagedSubscription,
   lockAndCountActiveSubscriptions,
   type Subscription,
 } from "@/server/services/subscriptions";
+import type { EntryTagLists } from "@/lib/events/schemas";
 import { errors, getAppErrorCode } from "@/server/errors";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 import { isUniqueViolation } from "@/server/db/errors";
@@ -229,6 +232,8 @@ export interface CollectionEntriesChangeResult {
   entryIds: string[];
   /** Absolute counts for the collection, its tags and All; absent when nothing changed. */
   counts?: BulkUnreadCounts;
+  /** The tag lists holding each changed article now. */
+  tagLists: EntryTagLists;
 }
 
 /**
@@ -462,6 +467,7 @@ export function publishEntryLeftCollections(
       entryIds: [entryId],
       added: false,
       counts,
+      tagLists: [{ entryId, tagIds: [], uncategorized: false }],
       updatedAt: new Date(),
     });
   }
@@ -475,11 +481,14 @@ async function finishMembershipChange(
   added: boolean
 ): Promise<CollectionEntriesChangeResult> {
   if (changedIds.length === 0) {
-    return { entryIds: [] };
+    return { entryIds: [], tagLists: [] };
   }
   // Source subscriptions' counts don't change; All (always included) can,
   // when an article's only route into view is a collection.
-  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
+  const [counts, tagLists] = await Promise.all([
+    getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]),
+    listEntryTagLists(db, userId, changedIds),
+  ]);
 
   publishUserEvent({
     type: "collection_entries_changed",
@@ -488,8 +497,48 @@ async function finishMembershipChange(
     entryIds: changedIds,
     added,
     counts,
+    tagLists,
     updatedAt: new Date(),
   });
 
-  return { entryIds: changedIds, counts };
+  return { entryIds: changedIds, counts, tagLists };
+}
+
+/**
+ * The tag lists holding each article: its active subscriptions' tags, and
+ * Uncategorized when one of them has none, matching the lists' definitions in
+ * `entry-filters.ts`.
+ */
+async function listEntryTagLists(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[]
+): Promise<EntryTagLists> {
+  const rows = await db
+    .select({ entryId: subscriptionEntries.entryId, tagId: subscriptionTags.tagId })
+    .from(subscriptionEntries)
+    .innerJoin(
+      subscriptions,
+      and(
+        eq(subscriptions.id, subscriptionEntries.subscriptionId),
+        isNull(subscriptions.unsubscribedAt),
+        isUserManagedSubscription()
+      )
+    )
+    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
+    .where(
+      and(eq(subscriptionEntries.userId, userId), inArray(subscriptionEntries.entryId, entryIds))
+    );
+  const byEntry = new Map(
+    entryIds.map((entryId) => [
+      entryId,
+      { entryId, tagIds: new Set<string>(), uncategorized: false },
+    ])
+  );
+  for (const row of rows) {
+    const lists = byEntry.get(row.entryId)!;
+    if (row.tagId === null) lists.uncategorized = true;
+    else lists.tagIds.add(row.tagId);
+  }
+  return [...byEntry.values()].map((lists) => ({ ...lists, tagIds: [...lists.tagIds] }));
 }

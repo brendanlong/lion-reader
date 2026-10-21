@@ -248,6 +248,7 @@ describe("sortable", () => {
         entryIds: ["scored"],
         added: true,
         counts: COUNTS,
+        tagLists: [{ entryId: "scored", tagIds: [], uncategorized: false }],
         timestamp: "2024-07-02T00:00:00Z",
         updatedAt: "2024-07-02T00:00:00Z",
       })

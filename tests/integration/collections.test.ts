@@ -389,6 +389,27 @@ describe("collections", () => {
     });
   });
 
+  it("reports the tag lists holding each changed article, never through Saved", async () => {
+    const { userId, entryA, collectionId } = await setup();
+    const tagId = await createTestTag(userId, { subscriptionIds: [collectionId] });
+    const saved = await uploadArticle(db, userId, { content: "Body", title: "Paper" });
+    const tagLists = async (added: boolean) => {
+      const change = added ? addEntriesToCollection : removeEntriesFromCollection;
+      const result = await change(db, userId, collectionId, [entryA, saved.id]);
+      return Object.fromEntries(result.tagLists.map(({ entryId, ...lists }) => [entryId, lists]));
+    };
+
+    expect(await tagLists(true)).toEqual({
+      [entryA]: { tagIds: [tagId], uncategorized: true },
+      [saved.id]: { tagIds: [tagId], uncategorized: false },
+    });
+    expect(await tagLists(false)).toEqual({
+      [entryA]: { tagIds: [], uncategorized: true },
+      [saved.id]: { tagIds: [], uncategorized: false },
+    });
+    expect(await listIds(userId, { tagId })).toEqual([]);
+  });
+
   describe("isolation", () => {
     it("skips articles the user can't see", async () => {
       const { userId, collectionId } = await setup();

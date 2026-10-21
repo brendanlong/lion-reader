@@ -16,7 +16,7 @@ import {
   collectionPositionsSchema,
   uuidSchema,
 } from "../validation";
-import { unreadCountsSchema } from "@/lib/events/schemas";
+import { entryTagListsSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import * as collectionsService from "@/server/services/collections";
 import { subscriptionSchema } from "@/server/services/subscriptions";
 
@@ -26,6 +26,7 @@ const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
 const membershipOutputSchema = z.object({
   entryIds: z.array(z.string()),
   counts: unreadCountsSchema.optional(),
+  tagLists: entryTagListsSchema,
 });
 
 export const collectionsRouter = createTRPCRouter({

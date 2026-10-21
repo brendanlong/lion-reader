@@ -63,6 +63,7 @@ export function useCollectionMembership(entryId: string) {
         entryIds: result.entryIds,
         added: true,
         counts: result.counts,
+        tagLists: result.tagLists,
       }),
     onError,
   });
@@ -73,6 +74,7 @@ export function useCollectionMembership(entryId: string) {
         entryIds: result.entryIds,
         added: false,
         counts: result.counts,
+        tagLists: result.tagLists,
       }),
     onError,
   });

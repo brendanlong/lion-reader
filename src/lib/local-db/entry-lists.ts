@@ -3,8 +3,8 @@
  * as rows `{ listKey, entryId, order }` joined against the entry store at
  * render time. A list's membership only changes when the list is fetched
  * (a full refetch replaces it, a next page adds to it), when a live event
- * inserts an entry that belongs in it, or when an entry joins or leaves the
- * collection a list shows — never when an entry's state changes, so read
+ * inserts an entry that belongs in it, or when an entry joins or leaves a
+ * collection — never when an entry's state changes, so read
  * entries stay visible in unread-only views until the list refreshes on
  * navigation.
  */
@@ -22,7 +22,7 @@ export type ListEntryRow = {
   /** Its place in the list (see `listOrder`). */
   order: ListOrder;
   /**
-   * Left the collection the list shows. The row stays so the list keeps its
+   * Left the list by leaving a collection. The row stays so the list keeps its
    * place while the entry is open, but renders only as the open entry.
    */
   removed: boolean;
@@ -404,21 +404,29 @@ export function insertIntoMatchingLists(
   insertIntoListsWhere(lists, entry, (input) => entryMatchesList(input, entry, scope));
 }
 
+/** The tag lists holding an entry, as the server reported them. */
+export interface TagListMembership {
+  tagIds: readonly string[];
+  uncategorized: boolean;
+}
+
 /**
- * Marks an entry as having left (or rejoined) a collection in every loaded
- * list of it, whatever its other filters (they can only narrow the
- * collection). Recorded even where the entry isn't loaded yet, so a page
- * already in flight can't show it.
+ * Hides an entry from (or shows it again in) the loaded lists an entry's
+ * joining or leaving a collection changes, whatever their other filters
+ * (they can only narrow these): the collection's, and with `tagLists`, the
+ * tag and Uncategorized lists. Recorded even where the entry isn't loaded
+ * yet, so a page already in flight can't show it.
  */
-export function setLeftCollectionLists(
+export function setCollectionChangeInLists(
   lists: EntryLists,
   entryId: string,
-  collectionId: string,
-  left: boolean
+  change: { collectionId: string; added: boolean; tagLists?: TagListMembership }
 ): void {
   const rows: ListEntryRow[] = [];
   for (const [listKey, meta] of lists.meta) {
-    if (meta.input.subscriptionId !== collectionId) continue;
+    const member = memberAfterCollectionChange(meta.input, change);
+    if (member === undefined) continue;
+    const left = !member;
     if (left) {
       meta.insertedSinceFetch.delete(entryId);
       meta.removedSinceFetch.add(entryId);
@@ -432,6 +440,22 @@ export function setLeftCollectionLists(
     rows.push({ ...row, removed: left });
   }
   lists.rows.upsert(rows);
+}
+
+/** Whether the entry is in a list after the change, or undefined if the change can't move it. */
+function memberAfterCollectionChange(
+  input: EntryListFilters,
+  {
+    collectionId,
+    added,
+    tagLists,
+  }: { collectionId: string; added: boolean; tagLists?: TagListMembership }
+): boolean | undefined {
+  if (input.subscriptionId) return input.subscriptionId === collectionId ? added : undefined;
+  if (!tagLists) return undefined;
+  if (input.tagId) return tagLists.tagIds.includes(input.tagId);
+  if (input.uncategorized) return tagLists.uncategorized;
+  return undefined;
 }
 
 function insertIntoListsWhere(

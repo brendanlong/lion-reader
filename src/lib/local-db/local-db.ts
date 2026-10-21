@@ -29,6 +29,7 @@ import {
   removeEntryList,
   type EntryListMeta,
   type EntryLists,
+  type TagListMembership,
   type ListEntryRow,
   type ListSort,
   type ListSortableRow,
@@ -308,12 +309,24 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
 /**
  * Inserts an entry into the loaded lists it belongs in, judged by `entry`'s
  * fields and memberships (`subscriptionIds`). Tag/uncategorized membership
- * comes from the stored subscriptions among them, and Saved from the saved
+ * comes from `tagLists` when the server sent them, else from the stored
+ * subscriptions among the memberships, and Saved from the saved
  * subscription's id; lists the client can't place it in that way pick it up
  * on their next refresh.
  */
-export function insertEntryIntoLists(db: LocalDb, entry: EntryRow): void {
-  insertIntoMatchingLists(db.lists, entry, membershipScope(db, entry));
+export function insertEntryIntoLists(
+  db: LocalDb,
+  entry: EntryRow,
+  tagLists?: TagListMembership
+): void {
+  const scope = membershipScope(db, entry);
+  insertIntoMatchingLists(
+    db.lists,
+    entry,
+    tagLists
+      ? { ...scope, tagIds: new Set(tagLists.tagIds), uncategorized: tagLists.uncategorized }
+      : scope
+  );
 }
 
 function membershipScope(db: LocalDb, entry: EntryRow) {
