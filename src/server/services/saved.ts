@@ -339,7 +339,7 @@ type UploadedArticleFields = Omit<BuiltArticleFields, "newTextContent">;
  * returns the article already saved, or else a fresh random one. This is the
  * shared tail for every upload path (file upload, Markdown, pre-cleaned HTML).
  */
-async function insertUploadedArticle(
+export async function insertUploadedArticle(
   db: typeof dbType,
   userId: string,
   fields: UploadedArticleFields,
@@ -911,7 +911,7 @@ function uploadGuid(idempotencyKey: string): string {
  * Enforces the saved article size limit on an upload's raw bytes, before any
  * conversion (mammoth, Readability, Markdown) can burn memory or CPU on it.
  */
-function assertUploadSize(resource: string, bytes: number): void {
+export function assertUploadSize(resource: string, bytes: number): void {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   if (bytes > maxSize) {
     throw errors.contentTooLarge(resource, maxSize);

@@ -235,12 +235,15 @@ export interface CollectionEntriesChangeResult {
  * Adds articles to a collection. Only articles the user can already see are
  * added (anything else is silently skipped, like an unknown id), so a
  * collection can't be used to reach content the user has no access to.
+ * `positions` places articles as they join, so the event announcing them
+ * carries their place; an article already in the collection keeps its own.
  */
 export async function addEntriesToCollection(
   db: typeof dbType,
   userId: string,
   subscriptionId: string,
-  entryIds: string[]
+  entryIds: string[],
+  positions?: ReadonlyMap<string, number>
 ): Promise<CollectionEntriesChangeResult> {
   const added = await db.transaction(async (tx) => {
     await lockUserEntryRows(tx, userId, entryIds);
@@ -266,19 +269,41 @@ export async function addEntriesToCollection(
             starred: visibleEntries.starred,
             isSpam: visibleEntries.isSpam,
             score: visibleEntries.score,
-            position: sql<number | null>`NULL::double precision`.as("position"),
+            position: (positions?.size
+              ? sql<number | null>`CASE ${visibleEntries.id} ${sql.join(
+                  [...positions].map(
+                    ([entryId, position]) =>
+                      sql`WHEN ${entryId}::uuid THEN ${position}::double precision`
+                  ),
+                  sql` `
+                )} END`
+              : sql<number | null>`NULL::double precision`
+            ).as("position"),
           })
           .from(visibleEntries)
           .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)))
       )
       .onConflictDoNothing()
-      .returning({ entryId: subscriptionEntries.entryId });
-    const ids = inserted.map((row) => row.entryId);
-    await touchUserEntries(tx, userId, ids);
-    return ids;
+      .returning({ entryId: subscriptionEntries.entryId, position: subscriptionEntries.position });
+    await touchUserEntries(
+      tx,
+      userId,
+      inserted.map((row) => row.entryId)
+    );
+    return inserted;
   });
 
-  return finishMembershipChange(db, userId, subscriptionId, added, true);
+  const placed = added.flatMap(({ entryId, position }) =>
+    position === null ? [] : [[entryId, position] as const]
+  );
+  return finishMembershipChange(
+    db,
+    userId,
+    subscriptionId,
+    added.map((row) => row.entryId),
+    true,
+    placed.length > 0 ? Object.fromEntries(placed) : undefined
+  );
 }
 
 export async function removeEntriesFromCollection(
@@ -307,6 +332,24 @@ export async function removeEntriesFromCollection(
   });
 
   return finishMembershipChange(db, userId, subscriptionId, removed, false);
+}
+
+/** The collection's highest position, or 0 when none of its articles has one. */
+export async function maxCollectionPosition(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string
+): Promise<number> {
+  const [row] = await db
+    .select({ max: sql<number | null>`max(${subscriptionEntries.position})` })
+    .from(subscriptionEntries)
+    .where(
+      and(
+        eq(subscriptionEntries.subscriptionId, subscriptionId),
+        eq(subscriptionEntries.userId, userId)
+      )
+    );
+  return row?.max ?? 0;
 }
 
 export interface CollectionPosition {
@@ -473,7 +516,8 @@ async function finishMembershipChange(
   userId: string,
   subscriptionId: string,
   changedIds: string[],
-  added: boolean
+  added: boolean,
+  positions?: Record<string, number>
 ): Promise<CollectionEntriesChangeResult> {
   if (changedIds.length === 0) {
     return { entryIds: [] };
@@ -488,6 +532,7 @@ async function finishMembershipChange(
     subscriptionId,
     entryIds: changedIds,
     added,
+    positions,
     counts,
     updatedAt: new Date(),
   });

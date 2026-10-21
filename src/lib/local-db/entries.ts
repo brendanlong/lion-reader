@@ -222,7 +222,8 @@ export function setServerEntryState(
 
 /**
  * Adds a collection to (or removes it from) a stored entry's
- * `subscriptionIds`, after a membership change. The change's response carries
+ * `subscriptionIds`, with its position there when the change carries one, after
+ * a membership change. The change's response carries
  * no `updatedAt`, so this moves no watermark: a page fetched before the change
  * that lands after it can revert the ids, which only matters until the next
  * write that carries them (any unread flip does).
@@ -231,16 +232,19 @@ export function setStoredEntryCollection(
   store: EntryStore,
   id: string,
   collectionId: string,
-  added: boolean
+  added: boolean,
+  position?: number
 ): void {
   const stored = store.getSynced(id);
   if (!stored || stored.subscriptionIds.includes(collectionId) === added) return;
   const subscriptionIds = added
     ? [...stored.subscriptionIds, collectionId]
     : stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
-  store.upsert([
-    { ...stored, subscriptionIds, positions: withoutKey(stored.positions, collectionId) },
-  ]);
+  const positions =
+    added && position !== undefined
+      ? { ...stored.positions, [collectionId]: position }
+      : withoutKey(stored.positions, collectionId);
+  store.upsert([{ ...stored, subscriptionIds, positions }]);
 }
 
 /** Drops a deleted subscription from the stored entries' `subscriptionIds`. */

@@ -18,3 +18,11 @@ export type SupportedFileType = (typeof UPLOAD_FILE_TYPES)[keyof typeof UPLOAD_F
 export const SUPPORTED_UPLOAD_EXTENSIONS = Object.keys(UPLOAD_FILE_TYPES) as Array<
   keyof typeof UPLOAD_FILE_TYPES
 >;
+
+/** Ebooks import as a collection of chapters (`collections.importEbook`), not one article. */
+export const EBOOK_UPLOAD_EXTENSIONS = [".epub"] as const;
+
+export function isEbookFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return EBOOK_UPLOAD_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}

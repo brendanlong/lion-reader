@@ -10,9 +10,15 @@ import { z } from "zod";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
-import { collectionEntryIdsSchema, collectionNameSchema, uuidSchema } from "../validation";
+import {
+  collectionEntryIdsSchema,
+  collectionNameSchema,
+  uploadContentSchema,
+  uuidSchema,
+} from "../validation";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 import * as collectionsService from "@/server/services/collections";
+import * as ebooksService from "@/server/services/ebooks";
 import { subscriptionSchema } from "@/server/services/subscriptions";
 
 // Part of the MCP tool surface; the native app uses it too.
@@ -49,6 +55,36 @@ export const collectionsRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       collectionsService.createCollection(ctx.db, ctx.session.user.id, input.name)
     ),
+
+  /**
+   * Import an `.epub` as a collection named for the book, with each chapter
+   * as an article positioned in reading order. Like `create`, an existing
+   * collection with the book's name is reused (`created: false`).
+   */
+  importEbook: protectedProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/collections/import-ebook",
+        tags: ["Collections"],
+        summary: "Import an ebook as a collection",
+      },
+    })
+    .input(
+      z.object({
+        content: uploadContentSchema,
+        filename: z.string().min(1, "Filename is required"),
+      })
+    )
+    .output(
+      z.object({
+        subscription: subscriptionSchema,
+        created: z.boolean(),
+        entryIds: z.array(z.string()),
+        counts: unreadCountsSchema,
+      })
+    )
+    .mutation(({ ctx, input }) => ebooksService.importEbook(ctx.db, ctx.session.user.id, input)),
 
   listForEntry: protectedProcedure
     .meta({

@@ -2,7 +2,8 @@
  * FileUploadButton Component
  *
  * Button and dialog for uploading files to save for later reading.
- * Supports .docx, .pdf, .html, .md, and .txt files.
+ * Supports .docx, .pdf, .html, .md, and .txt files, and .epub ebooks, which
+ * import as a collection of chapters.
  */
 
 "use client";
@@ -11,12 +12,22 @@ import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { applyNewEntry } from "@/lib/cache/operations";
+import {
+  applyNewEntry,
+  applyUnreadCounts,
+  handleSubscriptionCreated,
+} from "@/lib/cache/operations";
+import { useAppHref } from "@/lib/hooks/useAppLocation";
+import { clientPush } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
-import { SUPPORTED_UPLOAD_EXTENSIONS } from "@/lib/upload-file-types";
+import {
+  EBOOK_UPLOAD_EXTENSIONS,
+  SUPPORTED_UPLOAD_EXTENSIONS,
+  isEbookFilename,
+} from "@/lib/upload-file-types";
 import {
   Dialog,
   DialogHeader,
@@ -31,6 +42,8 @@ import {
 // ============================================================================
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const ACCEPTED_EXTENSIONS = [...SUPPORTED_UPLOAD_EXTENSIONS, ...EBOOK_UPLOAD_EXTENSIONS];
 
 // ============================================================================
 // Types
@@ -49,7 +62,7 @@ interface FileUploadButtonProps {
 
 function isValidFileType(filename: string): boolean {
   const lower = filename.toLowerCase();
-  return SUPPORTED_UPLOAD_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
 function formatFileSize(bytes: number): string {
@@ -84,6 +97,33 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       toast.error("Failed to upload file");
     },
   });
+  const appHref = useAppHref();
+  const importEbookMutation = trpc.collections.importEbook.useMutation({
+    onSuccess: ({ subscription, created, entryIds, counts }) => {
+      toast.success(`Imported ${entryIds.length} chapter${entryIds.length === 1 ? "" : "s"}`);
+      if (created) {
+        handleSubscriptionCreated(
+          utils,
+          {
+            ...subscription,
+            unreadCount: counts.subscriptions.find((s) => s.id === subscription.id)?.unread ?? 0,
+          },
+          queryClient,
+          counts
+        );
+      } else {
+        applyUnreadCounts(utils, queryClient, counts);
+      }
+      onSuccess?.();
+      handleClose();
+      clientPush(appHref(`/subscription/${subscription.id}`));
+    },
+    onError: (err) => {
+      setError(err.message);
+      toast.error("Failed to import ebook");
+    },
+  });
+  const isPending = uploadMutation.isPending || importEbookMutation.isPending;
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -100,7 +140,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
 
   const validateFile = useCallback((file: File): string | null => {
     if (!isValidFileType(file.name)) {
-      return `Unsupported file type. Please upload ${SUPPORTED_UPLOAD_EXTENSIONS.join(", ")} files.`;
+      return `Unsupported file type. Please upload ${ACCEPTED_EXTENSIONS.join(", ")} files.`;
     }
     if (file.size > MAX_FILE_SIZE) {
       return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(MAX_FILE_SIZE)}.`;
@@ -160,11 +200,15 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       // Remove the data URL prefix (e.g., "data:application/...;base64,")
       const base64Content = result.split(",")[1];
 
-      uploadMutation.mutate({
-        content: base64Content,
-        filename: selectedFile.name,
-        idempotencyKey,
-      });
+      if (isEbookFilename(selectedFile.name)) {
+        importEbookMutation.mutate({ content: base64Content, filename: selectedFile.name });
+      } else {
+        uploadMutation.mutate({
+          content: base64Content,
+          filename: selectedFile.name,
+          idempotencyKey,
+        });
+      }
     };
     reader.onerror = () => {
       setError("Failed to read file");
@@ -192,7 +236,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
           <DialogTitle>Upload File</DialogTitle>
           <DialogDescription>
             Upload a document to save for later reading. Supported formats: Word (.docx), PDF, HTML,
-            and Markdown (.md).
+            and Markdown (.md). An ebook (.epub) becomes a collection with an article per chapter.
           </DialogDescription>
         </DialogHeader>
 
@@ -219,7 +263,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             <input
               type="file"
               aria-label="Choose a file to upload"
-              accept={SUPPORTED_UPLOAD_EXTENSIONS.join(",")}
+              accept={ACCEPTED_EXTENSIONS.join(",")}
               onChange={handleInputChange}
               className={DROP_ZONE_FILE_INPUT_CLASSES}
             />
@@ -237,21 +281,19 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
               <div className="pointer-events-none flex flex-col items-center">
                 <UploadIcon className="text-faint h-10 w-10" />
                 <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
-                <p className="ui-text-sm text-muted">.docx, .pdf, .html, .md, .txt up to 10MB</p>
+                <p className="ui-text-sm text-muted">
+                  .docx, .pdf, .html, .md, .txt, .epub up to 10MB
+                </p>
               </div>
             )}
           </div>
         </DialogBody>
 
         <DialogFooter>
-          <Button variant="secondary" onClick={handleClose} disabled={uploadMutation.isPending}>
+          <Button variant="secondary" onClick={handleClose} disabled={isPending}>
             Cancel
           </Button>
-          <Button
-            onClick={handleUpload}
-            disabled={!selectedFile || uploadMutation.isPending}
-            loading={uploadMutation.isPending}
-          >
+          <Button onClick={handleUpload} disabled={!selectedFile || isPending} loading={isPending}>
             Upload
           </Button>
         </DialogFooter>
