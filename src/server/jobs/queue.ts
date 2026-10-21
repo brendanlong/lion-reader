@@ -146,15 +146,13 @@ const JOB_DEFINITIONS = {
   backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
   // Process an OPML import in the background.
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
-  // Deletes a user's or an entry's stored objects (a deleted entry's images),
-  // unless `unlessEntryExists` names an entry that was saved after all; see
-  // src/server/services/stored-objects.ts. Throws until storage confirms, so
-  // it's retried. The prefix must be one of those two shapes, so a bad payload
-  // can't empty the bucket.
+  // Deletes a deleted user's or entry's stored objects (an entry's images);
+  // see src/server/services/stored-objects.ts. Throws until storage confirms,
+  // so it's retried. The prefix must be one of those two shapes, so a bad
+  // payload can't empty the bucket.
   delete_stored_objects: {
     payload: z.object({
       prefix: z.string().regex(/^uploads\/[0-9a-f-]{36}\/([0-9a-f-]{36}\/)?$/),
-      unlessEntryExists: z.string().optional(),
     }),
     lane: "one_time",
   },

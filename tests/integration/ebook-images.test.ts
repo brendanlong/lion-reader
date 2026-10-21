@@ -1,7 +1,7 @@
 /**
  * Ebook images in object storage (#1805): each chapter's images are stored
- * under its entry, and deleting the chapter or the account deletes them
- * through a `delete_stored_objects` job.
+ * under its entry (or the import fails), and deleting the chapter or the
+ * account deletes them through a `delete_stored_objects` job.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -11,15 +11,14 @@ import { entries, jobs, users } from "../../src/server/db/schema";
 import { importEbook } from "../../src/server/services/ebooks";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { deleteUser } from "../../src/server/services/users";
-import {
-  entryObjectsPrefix,
-  guardUnsavedEntryObjects,
-  storeEntryImage,
-  userObjectsPrefix,
-} from "../../src/server/services/stored-objects";
+import { entryObjectsPrefix, userObjectsPrefix } from "../../src/server/services/stored-objects";
+import { getAppErrorCode } from "../../src/server/errors";
 import type { JobPayloads } from "../../src/server/jobs/queue";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { deleteObjectsWithPrefix, uploadObject } from "../../src/server/storage/s3";
+import {
+  deleteObjectsWithPrefix,
+  getPublicObjectUrl,
+  uploadObject,
+} from "../../src/server/storage/s3";
 import { handleDeleteStoredObjects } from "../../src/server/jobs/handlers/delete-stored-objects";
 import { buildEpub, chapterXhtml } from "../utils/epub";
 import { startFakeS3, type FakeS3 } from "../utils/fake-s3";
@@ -66,22 +65,13 @@ function keysUnder(prefix: string): string[] {
   return [...s3.objects.keys()].filter((key) => key.startsWith(prefix));
 }
 
-/**
- * Runs the one queued `delete_stored_objects` job for `prefix` (the guard of an
- * unsaved entry's objects, or a deletion), as the worker would.
- */
-async function runQueuedJob(prefix: string, kind: "guard" | "deletion"): Promise<void> {
+/** Runs the one queued `delete_stored_objects` job for `prefix`, as the worker would. */
+async function runQueuedJob(prefix: string): Promise<void> {
   const queued = await db
     .select({ payload: jobs.payload })
     .from(jobs)
     .where(
-      and(
-        eq(jobs.type, "delete_stored_objects"),
-        sql`${jobs.payload}->>'prefix' = ${prefix}`,
-        kind === "guard"
-          ? sql`${jobs.payload} ? 'unlessEntryExists'`
-          : sql`NOT ${jobs.payload} ? 'unlessEntryExists'`
-      )
+      and(eq(jobs.type, "delete_stored_objects"), sql`${jobs.payload}->>'prefix' = ${prefix}`)
     );
   expect(queued).toHaveLength(1);
   await handleDeleteStoredObjects(queued[0].payload as JobPayloads["delete_stored_objects"]);
@@ -98,7 +88,7 @@ describe("ebook images in storage", () => {
         .select({ content: entries.contentOriginal })
         .from(entries)
         .where(eq(entries.id, entryId));
-      expect(row.content).toContain(`<img src="https://test-bucket.storage.test/${key}">`);
+      expect(row.content).toContain(`<img src="${getPublicObjectUrl(key)}">`);
     }
   });
 
@@ -116,49 +106,38 @@ describe("ebook images in storage", () => {
     const [deleted, kept] = entryIds;
 
     await deleteSavedArticle(db, userId, deleted);
-    await runQueuedJob(entryObjectsPrefix(userId, deleted), "deletion");
+    await runQueuedJob(entryObjectsPrefix(userId, deleted));
 
     expect(keysUnder(entryObjectsPrefix(userId, deleted))).toEqual([]);
     expect(keysUnder(entryObjectsPrefix(userId, kept))).toHaveLength(1);
   });
 
-  it("keeps a saved chapter's images when its guard runs", async () => {
-    const { userId, entryIds } = await importBook();
-
-    for (const entryId of entryIds) {
-      await runQueuedJob(entryObjectsPrefix(userId, entryId), "guard");
-      expect(keysUnder(entryObjectsPrefix(userId, entryId))).toHaveLength(1);
-    }
-  });
-
-  it("deletes images stored for an entry that was never saved", async () => {
+  it("fails the import when storage refuses an image, keeping the chapters before it", async () => {
     const userId = await createTestUser({ emailPrefix: "ebook-images" });
     createdUserIds.push(userId);
-    const entryId = generateUuidv7();
-    await guardUnsavedEntryObjects(db, userId, entryId);
-    await storeEntryImage(userId, entryId, {
-      data: PNG,
-      mediaType: "image/png",
-      extension: ".png",
+    const book = buildEpub({
+      title: "Refused",
+      spine: [
+        { path: "one.xhtml", xhtml: chapterXhtml("<h1>One</h1><p>No pictures.</p>") },
+        { path: "two.xhtml", xhtml: chapterXhtml('<h1>Two</h1><p><img src="pic.png"/></p>') },
+      ],
+      files: { "OEBPS/pic.png": PNG },
+      manifest: { "pic.png": "image/png" },
     });
 
-    await runQueuedJob(entryObjectsPrefix(userId, entryId), "guard");
-
-    expect(keysUnder(entryObjectsPrefix(userId, entryId))).toEqual([]);
-  });
-
-  it("inlines an image storage refuses", async () => {
     s3.failPuts = true;
     try {
-      const { entryIds } = await importBook();
-      const [row] = await db
-        .select({ content: entries.contentOriginal })
-        .from(entries)
-        .where(eq(entries.id, entryIds[0]));
-      expect(row.content).toContain(`<img src="data:image/png;base64,${PNG.toString("base64")}">`);
+      await expect(
+        importEbook(db, userId, { content: book.toString("base64"), filename: "r.epub" })
+      ).rejects.toSatisfy((error) => getAppErrorCode(error) === "STORAGE_FAILED");
     } finally {
       s3.failPuts = false;
     }
+    const titles = await db
+      .select({ title: entries.title })
+      .from(entries)
+      .where(eq(entries.ownerUserId, userId));
+    expect(titles).toEqual([{ title: "One" }]);
   });
 
   it("fails a deletion storage refuses, so the job is retried", async () => {
@@ -187,7 +166,7 @@ describe("ebook images in storage", () => {
     const { userId } = await importBook();
 
     await deleteUser(db, userId);
-    await runQueuedJob(userObjectsPrefix(userId), "deletion");
+    await runQueuedJob(userObjectsPrefix(userId));
 
     expect(keysUnder(userObjectsPrefix(userId))).toEqual([]);
   });

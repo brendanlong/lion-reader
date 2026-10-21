@@ -95,19 +95,19 @@ export interface EpubImage {
   extension: string;
 }
 
-/** Stores a book image, returning the URL to show it at, or null to inline it instead. */
-export type ImageStore = (image: EpubImage) => Promise<string | null>;
+/** Stores a book image, returning the URL to show it at. */
+export type ImageStore = (image: EpubImage) => Promise<string>;
 
 export interface EpubChapter {
   /** The table of contents' label, else the chapter's first heading. */
   title: string | null;
   /**
-   * The chapter's HTML, with each image at the URL `store` gives it (once per
-   * image), or inlined as a data URI without one. An SVG is always inlined:
-   * stored, it would run its scripts when opened from the bucket's origin. So
-   * is an image past the book's storage budget.
+   * The chapter's HTML, with each raster image at the URL `store` gives it
+   * (once per image), and each SVG inlined as a data URI: stored, an SVG would
+   * run its scripts when opened from the public bucket's origin. Throws when
+   * the book's images pass its storage budget.
    */
-  html(store?: ImageStore): Promise<string>;
+  html(store: ImageStore): Promise<string>;
 }
 
 export interface Epub {
@@ -702,21 +702,16 @@ function dataUri(image: EpubImage): string {
   return `data:${image.mediaType};base64,${image.data.toString("base64")}`;
 }
 
-function dataUriLength(image: EpubImage): number {
-  return `data:${image.mediaType};base64,`.length + 4 * Math.ceil(image.data.length / 3);
-}
-
 /**
  * Replaces a chapter's image marks with their URLs (see
- * {@link EpubChapter.html}), in order. Each image counts as if inlined, so a
- * chapter's images fit the saved-article size limit whether or not they're
- * stored; images past it are dropped. The HTML holds no relative URL, so
- * nothing downstream changes its size.
+ * {@link EpubChapter.html}), in order. An SVG that would take the chapter past
+ * the saved-article size limit is dropped; a stored image adds only its URL.
+ * The HTML holds no relative URL, so nothing downstream changes its size.
  */
 async function resolveImages(
   images: ImageReader,
   html: string,
-  store: ImageStore | undefined
+  store: ImageStore
 ): Promise<string> {
   const segments = html.split(IMAGE_MARK);
   let remaining =
@@ -732,17 +727,18 @@ async function resolveImages(
     const index = Number(segment);
     const image = await images.read(index);
     if (image === null) continue;
-    const cost = dataUriLength(image);
-    if (cost > remaining) continue;
     let url = urls.get(index);
     if (url === undefined) {
-      if (store && image.mediaType !== SVG_MEDIA_TYPE && images.claimStorage(image)) {
-        url = (await store(image)) ?? undefined;
+      if (image.mediaType === SVG_MEDIA_TYPE) {
+        url = dataUri(image);
+      } else {
+        images.chargeStorage(image);
+        url = await store(image);
       }
-      url ??= dataUri(image);
       urls.set(index, url);
     }
-    remaining -= cost;
+    if (url.length > remaining) continue;
+    remaining -= url.length;
     resolved += url;
   }
   return resolved;
@@ -780,13 +776,16 @@ class ImageReader {
    * shown in every chapter is stored for each, so this bounds what one upload
    * writes to the bucket.
    */
-  private storageRemaining = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_INFLATION_FACTOR;
+  private readonly storageBudget =
+    usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_INFLATION_FACTOR;
+  private stored = 0;
 
-  /** Charges an image to the book's storage budget, if it fits. */
-  claimStorage(image: EpubImage): boolean {
-    if (image.data.length > this.storageRemaining) return false;
-    this.storageRemaining -= image.data.length;
-    return true;
+  /** Charges an image to the book's storage budget, throwing past it. */
+  chargeStorage(image: EpubImage): void {
+    this.stored += image.data.length;
+    if (this.stored > this.storageBudget) {
+      throw errors.contentTooLarge("The ebook's images", this.storageBudget);
+    }
   }
 
   /** The {@link IMAGE_MARK} for an image in the archive. */

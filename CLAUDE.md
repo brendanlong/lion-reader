@@ -54,7 +54,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Local Services (no Docker)
 
-Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres + Redis on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<random> pnpm dev:local` (web + worker, no Discord bot). This is a shared host — pick a random app port.
+Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres, Redis and an in-memory S3 on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<random> pnpm dev:local` (web + worker, no Discord bot). This is a shared host — pick a random app port.
 
 ## Code Quality
 

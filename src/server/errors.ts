@@ -34,6 +34,7 @@ const errorCodeToTRPCCode = {
   INVITE_ALREADY_USED: "BAD_REQUEST",
   MAX_INGEST_ADDRESSES_REACHED: "BAD_REQUEST",
   NEWSLETTERS_NOT_CONFIGURED: "PRECONDITION_FAILED",
+  EBOOKS_NOT_CONFIGURED: "PRECONDITION_FAILED",
   SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   TAG_NAME_TAKEN: "CONFLICT",
@@ -52,6 +53,7 @@ const errorCodeToTRPCCode = {
   CONTENT_TOO_LARGE: "BAD_REQUEST",
   MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
+  STORAGE_FAILED: "BAD_GATEWAY",
   UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
   SERVER_BUSY: "TOO_MANY_REQUESTS",
   AI_PROVIDER_BUSY: "TOO_MANY_REQUESTS",
@@ -127,6 +129,16 @@ export const errors = {
 
   newslettersNotConfigured: () =>
     createError("NEWSLETTERS_NOT_CONFIGURED", "Email newsletters are not set up on this server"),
+
+  ebooksNotConfigured: () =>
+    createError(
+      "EBOOKS_NOT_CONFIGURED",
+      "Importing ebooks needs object storage, which isn't set up on this server"
+    ),
+
+  /** Object storage refused a write; `retry` says what trying again does. */
+  storageFailed: (retry: string) =>
+    createError("STORAGE_FAILED", `Couldn't store the ebook's images. ${retry}`),
 
   validation: (message: string, details?: Record<string, unknown>) =>
     createError("VALIDATION_ERROR", message, details),

@@ -136,7 +136,7 @@ AI assistants reach Lion Reader over [MCP](https://modelcontextprotocol.io/): St
 `fly.toml` is the source of truth for regions, process groups, machine sizes, and the release command; `docs/DEPLOYMENT.md` is the runbook. Postgres is **unmanaged** Fly Postgres Flex, so we own its upgrades, backups and monitoring (`docs/fly-postgres-ops.md`). Redis is Upstash.
 
 - **Migrations run before the canary deploy**, so every migration must work with the previous release (`migrations/CLAUDE.md`). For one that can't, an admin turns on **maintenance mode** (`/admin` → Status), which stops every process group from touching the database ("Site Status" in `src/server/CLAUDE.md`).
-- **Object storage is optional** (S3 or Tigris, `src/server/storage/s3.ts`): it re-hosts expiring external images (Google Docs), holds uploaded ebooks' images (deleted with their chapter or account: "Stored Objects" in `src/server/CLAUDE.md`) and caches the demo's recorded narration. Without it, images stay at their source or inline and each machine synthesizes demo narration once into its disk cache.
+- **Object storage is optional** (S3 or Tigris, `src/server/storage/s3.ts`): it re-hosts expiring external images (Google Docs), holds uploaded ebooks' images (deleted with their chapter or account: "Stored Objects" in `src/server/CLAUDE.md`) and caches the demo's recorded narration. Without it, ebooks can't be imported, other images stay at their source, and each machine synthesizes demo narration once into its disk cache.
 
 ---
 

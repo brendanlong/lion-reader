@@ -23,7 +23,7 @@ import {
   selectExistingUpload,
   type SavedArticle,
 } from "@/server/services/saved";
-import { guardUnsavedEntryObjects, storeEntryImage } from "@/server/services/stored-objects";
+import { storeEntryImage } from "@/server/services/stored-objects";
 import { isStorageAvailable } from "@/server/storage/s3";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { buildArticleFields } from "@/server/services/saved-content";
@@ -47,10 +47,9 @@ export interface ImportEbookResult {
 }
 
 /**
- * Saves a chapter as an uploaded article. With storage, its images go to the
- * bucket under the article's id, so deleting the article deletes them, behind
- * a guard that deletes them if the chapter isn't saved as that article after
- * all. An image storage refuses is inlined instead.
+ * Saves a chapter as an uploaded article, its images stored under the
+ * article's id so deleting the article deletes them. Storage refusing an image
+ * fails the chapter: a retry of the import finishes the book.
  */
 async function saveChapter(
   db: typeof dbType,
@@ -60,25 +59,18 @@ async function saveChapter(
   meta: { author: string | null; title: string; siteName: string }
 ): Promise<SavedArticle> {
   const entryId = generateUuidv7();
-  let guarded = false;
-  const store: ImageStore | undefined = isStorageAvailable()
-    ? async (image) => {
-        if (!guarded) {
-          await guardUnsavedEntryObjects(db, userId, entryId);
-          guarded = true;
-        }
-        try {
-          return await storeEntryImage(userId, entryId, image);
-        } catch (error) {
-          logger.warn("Couldn't store an ebook image; inlining it", {
-            userId,
-            entryId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
-      }
-    : undefined;
+  const store: ImageStore = async (image) => {
+    try {
+      return await storeEntryImage(userId, entryId, image);
+    } catch (error) {
+      logger.error("Couldn't store an ebook image", {
+        userId,
+        entryId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw errors.storageFailed("Import the ebook again to finish it.");
+    }
+  };
   const fields = await buildArticleFields(
     {
       html: await chapter.html(store),
@@ -119,6 +111,7 @@ export async function importEbook(
   userId: string,
   params: ImportEbookParams
 ): Promise<ImportEbookResult> {
+  if (!isStorageAvailable()) throw errors.ebooksNotConfigured();
   const file = Buffer.from(params.content, "base64");
   assertUploadSize("Uploaded ebook", file.length);
   const book = await openEbook(file);

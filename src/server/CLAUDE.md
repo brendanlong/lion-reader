@@ -59,7 +59,7 @@ Deltas key off change times, so a hard delete is invisible to them. **Hard-delet
 
 ## Stored Objects
 
-An object stored for a user's entry (an uploaded ebook's images) goes under that entry's prefix (`entryObjectsPrefix`, `services/stored-objects.ts`), so **hard-deleting an entry or a user must enqueue its prefix's deletion in the same transaction** (`enqueueStoredObjectsDeletion`): the bucket is public, so an object nothing deletes stays readable forever.
+An object stored for a user's entry (an uploaded ebook's images) goes under that entry's prefix (`entryObjectsPrefix`, `services/stored-objects.ts`), so **hard-deleting an entry or a user must enqueue its prefix's deletion in the same transaction** (`enqueueStoredObjectsDeletion`): the bucket is public, so an object nothing deletes stays readable forever. Images go to storage or the save fails: no inline fallback (an SVG is the exception, always inline, since from the bucket's origin it would run scripts). Dev and tests use an S3-compatible server (`scripts/fake-s3.ts`, which `pnpm services` runs, or docker-compose's S3Mock), never another backend.
 
 ## Ordering & Pagination
 

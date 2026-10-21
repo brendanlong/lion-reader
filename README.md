@@ -49,7 +49,7 @@ Read more: [Claude Wrote Me a 400-Commit RSS Reader App](https://www.brendanlong
 
 - Node.js 26+
 - pnpm
-- Docker and Docker Compose (for local Postgres and Redis)
+- Docker and Docker Compose (for local Postgres, Redis and object storage)
 
 ### Setup
 
@@ -59,7 +59,8 @@ pnpm install
 # Copy environment variables
 cp .env.example .env
 
-# Start Postgres 18 and Redis 7
+# Start Postgres 18, Redis 7 and S3Mock (object storage, which ebook uploads
+# need: uncomment the local STORAGE_* settings in .env)
 docker compose up -d
 
 # Run database migrations
