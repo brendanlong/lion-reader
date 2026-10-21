@@ -10,23 +10,50 @@
  * file boundaries.
  *
  * Chapters are read one at a time ({@link Epub.chapters}), so a whole book's
- * HTML is never in memory at once. Every byte inflated from the archive counts
- * against one budget, which bounds what a ZIP bomb can cost.
+ * HTML is never in memory at once: at most one spine document and the chapters
+ * it holds, each bounded by the saved-article size limit. Every byte inflated
+ * from the archive also counts against one budget for the book, which bounds
+ * the parsing a ZIP bomb can cost.
  */
 
 import { posix } from "node:path";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import JSZip from "jszip";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
 import { escapeHtml } from "@/server/http/html";
 import { createSaxParser } from "@/server/html/sax";
+import { documentConversionSlot, QueueTimeoutError } from "@/server/file/conversion-slot";
 
 /**
  * Everything inflated from one book, as a multiple of the saved-article size
  * limit, the same allowance a `.docx` gets: the upload itself is capped at that
  * limit, and its images barely compress.
+ *
+ * @testonly
  */
-const EPUB_MAX_INFLATION_FACTOR = 10;
+export const EPUB_MAX_INFLATION_FACTOR = 10;
+
+/**
+ * One spine document, inflated, as a multiple of the saved-article size limit:
+ * room for a book that's all one file, as `.docx` text gets, but no more,
+ * since the document is in memory whole.
+ *
+ * @testonly
+ */
+export const EPUB_MAX_DOCUMENT_FACTOR = 2;
+
+/**
+ * How long a spine document may wait for the document conversion slot, as a
+ * `.docx` conversion may.
+ */
+const SLOT_WAIT_MS = 20_000;
+
+/** How many appended pieces of HTML a chapter buffers before joining them. */
+const FLUSH_PIECES = 4096;
+
+/** How much of a document is parsed between yields to the event loop. */
+const PARSE_SLICE_LENGTH = 64 * 1024;
 
 /**
  * Most chapters one book may have. Each becomes an article saved in the import
@@ -53,7 +80,10 @@ const VOID_ELEMENTS = new Set([
 /** Elements whose content is never part of the article. */
 const SKIPPED_ELEMENTS = new Set(["script", "style", "noscript"]);
 
+const ELEMENT_NAME = /^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)?$/;
 const ATTRIBUTE_NAME = /^[a-z_][a-z0-9_.:-]*$/;
+/** Attributes holding a URL, which an upload can't resolve when it's relative. */
+const URL_ATTRIBUTES = new Set(["src", "href", "xlink:href", "poster", "srcset", "data"]);
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const HEADING = /^h[1-6]$/;
 
@@ -98,8 +128,8 @@ class BudgetedZip {
     return entry !== null && !entry.dir;
   }
 
-  async readText(path: string): Promise<string | null> {
-    const bytes = await this.read(path);
+  async readText(path: string, maxBytes?: number): Promise<string | null> {
+    const bytes = await this.read(path, maxBytes);
     return bytes === null ? null : bytes.toString("utf8");
   }
 
@@ -107,17 +137,23 @@ class BudgetedZip {
    * Counts the bytes actually inflated rather than trusting the sizes the ZIP
    * declares, which the file's author controls.
    */
-  read(path: string): Promise<Buffer | null> {
+  read(path: string, maxBytes = this.budget): Promise<Buffer | null> {
     const entry = this.zip.file(path);
     if (!entry || entry.dir) return Promise.resolve(null);
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
+      let bytes = 0;
       const stream = entry.nodeStream();
       stream.on("data", (chunk: Buffer) => {
         this.inflated += chunk.length;
-        if (this.inflated > this.budget) {
+        bytes += chunk.length;
+        if (this.inflated > this.budget || bytes > maxBytes) {
           stream.pause();
-          reject(errors.contentTooLarge("Decompressed ebook", this.budget));
+          reject(
+            this.inflated > this.budget
+              ? errors.contentTooLarge("Decompressed ebook", this.budget)
+              : errors.contentTooLarge(`Decompressed ${path}`, maxBytes)
+          );
           return;
         }
         chunks.push(chunk);
@@ -142,10 +178,11 @@ function resolveReference(
   if (URL_SCHEME.test(href) || href.startsWith("/")) return null;
   const hashIndex = href.indexOf("#");
   const pathPart = hashIndex === -1 ? href : href.slice(0, hashIndex);
-  const fragment = hashIndex === -1 ? null : href.slice(hashIndex + 1);
   let decoded: string;
+  let fragment: string | null;
   try {
     decoded = decodeURIComponent(pathPart);
+    fragment = hashIndex === -1 ? null : decodeURIComponent(href.slice(hashIndex + 1));
   } catch {
     return null;
   }
@@ -398,32 +435,58 @@ async function encryptedPaths(zip: BudgetedZip): Promise<Set<string>> {
   return paths;
 }
 
-type HtmlPart = string | { image: string };
+/**
+ * Marks a book image in a chapter's HTML: `IMAGE_MARK + path + IMAGE_MARK`,
+ * which {@link inlineImages} replaces. NUL can't occur otherwise, since it is
+ * stripped from the text and attributes written.
+ */
+const IMAGE_MARK = "\u0000";
+
+function stripNul(text: string): string {
+  return text.replaceAll(IMAGE_MARK, "");
+}
 
 interface PendingChapter {
   label: string | null;
   heading: string | null;
-  parts: HtmlPart[];
+  html: string;
 }
 
 /** An element open where a chapter is cut, which both sides of the cut need. */
 interface OpenElement {
   name: string;
-  openTag: HtmlPart[];
-  /** Where its open tag is in the current chapter's parts. */
-  index: number;
+  openTag: string;
+  /** Where its open tag starts in the current chapter's HTML. */
+  offset: number;
 }
 
 /**
  * Builds chapters from the book's spine documents in order, converting each
- * document's `<body>` from XHTML to HTML. Book images become placeholders
- * ({@link inlineImages}); links into the book keep only their fragment, which
- * works when the target is in the same chapter and is harmless otherwise.
+ * document's `<body>` from XHTML to HTML. Book images become marks
+ * ({@link IMAGE_MARK}); links into the book keep only their fragment, which
+ * works when the target is in the same chapter and is harmless otherwise; other
+ * relative URLs are dropped, since an upload has no base to resolve them
+ * against.
  */
 class ChapterBuilder {
   /** Chapters finished since the last {@link takeFinished}. */
   private finished: PendingChapter[] = [];
-  private current: PendingChapter = { label: null, heading: null, parts: [] };
+  private current: PendingChapter = { label: null, heading: null, html: "" };
+  /**
+   * HTML not yet appended to the current chapter's. Appending each tag and
+   * text run to one string would build a rope of millions of tiny pieces,
+   * many times the size of the text.
+   */
+  private unflushed: string[] = [];
+  private length = 0;
+
+  private flush(): string {
+    if (this.unflushed.length > 0) {
+      this.current.html += this.unflushed.join("");
+      this.unflushed = [];
+    }
+    return this.current.html;
+  }
 
   takeFinished(): PendingChapter[] {
     const finished = this.finished;
@@ -433,38 +496,55 @@ class ChapterBuilder {
 
   /** Ends the book, returning its last chapter. */
   finish(): PendingChapter[] {
-    this.cut(this.current.parts.length, [], null);
+    this.cut(this.length, [], null);
     return this.takeFinished();
   }
 
-  /**
-   * Starts a new chapter at `index` in the current one's parts, closing the
-   * elements open there in the old chapter and reopening them in the new.
-   */
-  private cut(index: number, open: OpenElement[], label: string | null): void {
-    const before = open.filter((element) => element.index < index);
-    const old = this.current;
-    const closers = before
-      .slice()
-      .reverse()
-      .map((element) => `</${element.name}>`);
-    const oldParts = [...old.parts.slice(0, index), ...closers];
-    if (hasContent(oldParts)) this.finished.push({ ...old, parts: oldParts });
-
-    const reopened: HtmlPart[] = [];
-    for (const element of before) {
-      element.index = reopened.length;
-      reopened.push(...element.openTag);
+  private append(html: string): void {
+    this.unflushed.push(html);
+    this.length += html.length;
+    if (this.unflushed.length >= FLUSH_PIECES) this.flush();
+    // Characters never outnumber UTF-8 bytes, so a chapter past this is too
+    // large to save.
+    const maxBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+    if (this.length > maxBytes) {
+      throw errors.contentTooLarge("An ebook chapter", maxBytes);
     }
-    for (const element of open) {
-      if (!before.includes(element)) element.index += reopened.length - index;
-    }
-    this.current = { label, heading: null, parts: [...reopened, ...old.parts.slice(index)] };
   }
 
-  addDocument(path: string, xhtml: string, cuts: DocumentCuts | undefined): void {
-    if (cuts?.atStart !== undefined) this.cut(this.current.parts.length, [], cuts.atStart);
+  /**
+   * Starts a new chapter at `offset` in the current one's HTML, closing the
+   * elements open there in the old chapter and reopening them in the new.
+   */
+  private cut(offset: number, open: OpenElement[], label: string | null): void {
+    const before = open.filter((element) => element.offset < offset);
+    const old = this.current;
+    const closers = before
+      .toReversed()
+      .map((element) => `</${element.name}>`)
+      .join("");
+    const html = this.flush();
+    const oldHtml = html.slice(0, offset) + closers;
+    if (hasContent(oldHtml)) this.finished.push({ ...old, html: oldHtml });
 
+    let reopened = "";
+    for (const element of before) {
+      element.offset = reopened.length;
+      reopened += element.openTag;
+    }
+    for (const element of open) {
+      if (!before.includes(element)) element.offset += reopened.length - offset;
+    }
+    this.current = { label, heading: null, html: reopened + html.slice(offset) };
+    this.length = this.current.html.length;
+  }
+
+  /** Finishes the current chapter if one starts with the next document. */
+  startDocument(cuts: DocumentCuts | undefined): void {
+    if (cuts?.atStart !== undefined) this.cut(this.length, [], cuts.atStart);
+  }
+
+  async addDocument(path: string, xhtml: string, cuts: DocumentCuts | undefined): Promise<void> {
     const open: OpenElement[] = [];
     let inBody = false;
     let skipDepth = 0;
@@ -472,8 +552,16 @@ class ChapterBuilder {
     // Where the run of open tags (and whitespace) just before this point
     // starts: a chapter starting here starts there instead, so it takes the
     // elements wrapping its anchor rather than leaving them empty behind.
-    let runStart = this.current.parts.length;
-    const parts = () => this.current.parts;
+    let runStart = this.length;
+    const length = () => this.length;
+
+    const cutAtAnchor = (attrs: Record<string, string>, name: string): void => {
+      const anchor = attrs.id ?? (name === "a" ? attrs.name : undefined);
+      if (anchor === undefined || !cuts?.anchors.has(anchor)) return;
+      this.cut(runStart, open, cuts.anchors.get(anchor) ?? null);
+      runStart = 0;
+      if (heading) heading = { text: "", depth: heading.depth };
+    };
 
     const parser = createSaxParser(
       {
@@ -481,62 +569,56 @@ class ChapterBuilder {
           const name = rawName.toLowerCase();
           if (!inBody) {
             inBody = name === "body";
-            runStart = parts().length;
+            runStart = length();
+            if (inBody) cutAtAnchor(attrs, name);
             return;
           }
           if (skipDepth > 0 || SKIPPED_ELEMENTS.has(name)) {
             skipDepth++;
             return;
           }
-
-          const anchor = attrs.id ?? (name === "a" ? attrs.name : undefined);
-          if (anchor !== undefined && cuts?.anchors.has(anchor)) {
-            this.cut(runStart, open, cuts.anchors.get(anchor) ?? null);
-            runStart = 0;
-            if (heading) heading = { text: "", depth: heading.depth };
-          }
+          cutAtAnchor(attrs, name);
+          // A name HTML can't spell is dropped, keeping its content.
+          if (!ELEMENT_NAME.test(name)) return;
           if (HEADING.test(name) && heading === null && this.current.heading === null) {
             heading = { text: "", depth: open.length };
           }
 
           let tag = `<${name}`;
           let image: { key: string; path: string } | null = null;
-          for (const [rawKey, value] of Object.entries(attrs)) {
+          for (const [rawKey, rawValue] of Object.entries(attrs)) {
             const key = rawKey.toLowerCase();
+            const value = stripNul(rawValue);
             if (!ATTRIBUTE_NAME.test(key)) continue;
             const isImageSource =
               (name === "img" && key === "src") ||
               (name === "image" && (key === "href" || key === "xlink:href"));
-            if (isImageSource) {
+            if (URL_ATTRIBUTES.has(key) && !URL_SCHEME.test(value)) {
               const resolved = resolveReference(path, value);
-              if (resolved) {
+              if (isImageSource && resolved) {
                 image = { key, path: resolved.path };
-                continue;
+              } else if (name === "a" && key === "href" && resolved?.fragment) {
+                tag += ` href="#${escapeHtml(resolved.fragment)}"`;
               }
-            } else if (name === "a" && key === "href" && !URL_SCHEME.test(value)) {
-              const fragment = resolveReference(path, value)?.fragment;
-              if (fragment) tag += ` href="#${escapeHtml(fragment)}"`;
               continue;
             }
             tag += ` ${key}="${escapeHtml(value)}"`;
           }
+          tag += image ? ` ${image.key}="${IMAGE_MARK}${image.path}${IMAGE_MARK}">` : ">";
 
-          const openTag: HtmlPart[] = image
-            ? [`${tag} ${image.key}="`, { image: image.path }, `">`]
-            : [`${tag}>`];
-          const index = parts().length;
-          parts().push(...openTag);
+          const offset = length();
+          this.append(tag);
           if (VOID_ELEMENTS.has(name)) {
-            runStart = parts().length;
+            runStart = length();
           } else {
-            open.push({ name, openTag, index });
+            open.push({ name, openTag: tag, offset });
           }
         },
         ontext: (text) => {
           if (!inBody || skipDepth > 0) return;
           if (heading) heading.text += text;
-          parts().push(escapeHtml(text));
-          if (text.trim() !== "") runStart = parts().length;
+          this.append(escapeHtml(stripNul(text)));
+          if (text.trim() !== "") runStart = length();
         },
         onclosetag: (rawName) => {
           const name = rawName.toLowerCase();
@@ -549,75 +631,110 @@ class ChapterBuilder {
             inBody = false;
             return;
           }
-          if (VOID_ELEMENTS.has(name)) return;
+          if (VOID_ELEMENTS.has(name) || !ELEMENT_NAME.test(name)) return;
           open.pop();
           if (heading && heading.depth === open.length) {
             this.current.heading ??= collapseWhitespace(heading.text) || null;
             heading = null;
           }
-          parts().push(`</${name}>`);
-          runStart = parts().length;
+          this.append(`</${name}>`);
+          runStart = length();
         },
       },
       // XHTML: `<div/>` is an empty div, not an open one.
       { recognizeSelfClosing: true }
     );
-    parser.write(xhtml);
+    // A long document is parsed in slices, so the event loop keeps serving
+    // other requests meanwhile.
+    for (let start = 0; start < xhtml.length; start += PARSE_SLICE_LENGTH) {
+      parser.write(xhtml.slice(start, start + PARSE_SLICE_LENGTH));
+      await yieldToEventLoop();
+    }
     parser.end();
   }
 }
 
+/** The image types a book's images may be inlined as. */
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+};
+
 function imageMediaType(manifestType: string | undefined, path: string): string | null {
-  if (manifestType?.startsWith("image/")) return manifestType;
-  const extension = posix.extname(path).toLowerCase();
-  const byExtension: Record<string, string> = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-  };
-  return byExtension[extension] ?? null;
+  const allowed = Object.values(IMAGE_MEDIA_TYPES);
+  if (manifestType && allowed.includes(manifestType)) return manifestType;
+  return IMAGE_MEDIA_TYPES[posix.extname(path).toLowerCase()] ?? null;
 }
 
 /**
- * Inlines the chapter's images as data URIs, in order, while the chapter stays
- * within the saved-article size limit; images past it are dropped.
+ * Inlines a chapter's images as data URIs, in order, while the chapter stays
+ * within the saved-article size limit; images past it are dropped. The HTML
+ * holds no relative URL, so nothing downstream changes its size.
  */
-async function inlineImages(
-  zip: BudgetedZip,
-  mediaTypes: Map<string, string>,
-  parts: HtmlPart[]
-): Promise<string> {
+async function inlineImages(images: ImageReader, html: string): Promise<string> {
+  const segments = html.split(IMAGE_MARK);
   let remaining =
     usageLimitsConfig.maxSavedArticleSizeBytes -
-    parts.reduce((sum, part) => sum + (typeof part === "string" ? part.length : 0), 0);
-  let html = "";
-  for (const part of parts) {
-    if (typeof part === "string") {
-      html += part;
+    segments.reduce((sum, segment, i) => sum + (i % 2 === 0 ? Buffer.byteLength(segment) : 0), 0);
+  let inlined = "";
+  for (const [i, segment] of segments.entries()) {
+    if (i % 2 === 0) {
+      inlined += segment;
       continue;
     }
-    const mediaType = imageMediaType(mediaTypes.get(part.image), part.image);
-    const data = mediaType ? await zip.read(part.image) : null;
-    if (!mediaType || !data) continue;
-    const uri = `data:${mediaType};base64,${data.toString("base64")}`;
-    if (uri.length > remaining) continue;
+    const uri = await images.dataUri(segment);
+    if (uri === null || uri.length > remaining) continue;
     remaining -= uri.length;
-    html += uri;
+    inlined += uri;
   }
-  return html;
+  return inlined;
 }
 
 /** Whether the converted HTML has anything to read or look at. */
-function hasContent(parts: HtmlPart[]): boolean {
-  let text = "";
-  for (const part of parts) {
-    if (typeof part !== "string") return true;
-    text += part;
+function hasContent(html: string): boolean {
+  return html.includes(IMAGE_MARK) || html.replace(/<[^>]*>/g, "").trim() !== "";
+}
+
+/** Reads each of the book's images once, however many chapters show it. */
+class ImageReader {
+  private readonly uris = new Map<string, string | null>();
+
+  constructor(
+    private readonly zip: BudgetedZip,
+    private readonly mediaTypes: Map<string, string>
+  ) {}
+
+  async dataUri(path: string): Promise<string | null> {
+    if (!this.uris.has(path)) {
+      const mediaType = imageMediaType(this.mediaTypes.get(path), path);
+      const data = mediaType ? await this.zip.read(path) : null;
+      this.uris.set(path, data && `data:${mediaType};base64,${data.toString("base64")}`);
+    }
+    return this.uris.get(path) ?? null;
   }
-  return text.replace(/<[^>]*>/g, "").trim() !== "";
+}
+
+/**
+ * Runs one document's conversion in the slot memory-heavy conversions share,
+ * so its peak doesn't overlap another's. The slot is held per document, not
+ * for the whole book, so the chapters are saved without holding it.
+ */
+async function withConversionSlot(work: () => Promise<void>): Promise<void> {
+  try {
+    await documentConversionSlot.acquire(Date.now() + SLOT_WAIT_MS);
+  } catch (error) {
+    if (error instanceof QueueTimeoutError) throw errors.serverBusy("document conversions");
+    throw error;
+  }
+  try {
+    await work();
+  } finally {
+    documentConversionSlot.release();
+  }
 }
 
 /**
@@ -658,12 +775,16 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
   if (maxChapters > EPUB_MAX_CHAPTERS) {
     throw new Error(`The ebook has more than ${EPUB_MAX_CHAPTERS} chapters`);
   }
-  const mediaTypes = new Map([...pkg.manifest.values()].map((item) => [item.path, item.mediaType]));
+  const images = new ImageReader(
+    zip,
+    new Map([...pkg.manifest.values()].map((item) => [item.path, item.mediaType]))
+  );
+  const maxDocumentBytes = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_DOCUMENT_FACTOR;
 
   async function toChapter(pending: PendingChapter): Promise<EpubChapter> {
     return {
       title: pending.label ?? pending.heading,
-      html: await inlineImages(zip, mediaTypes, pending.parts),
+      html: await inlineImages(images, pending.html),
     };
   }
 
@@ -673,8 +794,14 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
     async *chapters() {
       const builder = new ChapterBuilder();
       for (const path of spine) {
-        const xhtml = await zip.readText(path);
-        if (xhtml) builder.addDocument(path, xhtml, starts.get(path));
+        // A finished chapter is handed over before the next document is read,
+        // so it survives that document failing.
+        builder.startDocument(starts.get(path));
+        for (const pending of builder.takeFinished()) yield await toChapter(pending);
+        await withConversionSlot(async () => {
+          const xhtml = await zip.readText(path, maxDocumentBytes);
+          if (xhtml) await builder.addDocument(path, xhtml, starts.get(path));
+        });
         for (const pending of builder.takeFinished()) yield await toChapter(pending);
       }
       for (const pending of builder.finish()) yield await toChapter(pending);
