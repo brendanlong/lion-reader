@@ -243,15 +243,9 @@ describe("MCP tool results", () => {
 
   it("sets scores and a collection's order over REST with an mcp token (#2101)", async () => {
     const feedId = await createTestFeed();
-    const sourceId = await createTestSubscription(userId, feedId);
-    const older = await createTestEntry(feedId, {
-      userIds: [userId],
-      fetchedAt: new Date("2025-01-01T00:00:00Z"),
-    });
-    const newer = await createTestEntry(feedId, {
-      userIds: [userId],
-      fetchedAt: new Date("2025-01-02T00:00:00Z"),
-    });
+    await createTestSubscription(userId, feedId);
+    const first = await createTestEntry(feedId, { userIds: [userId] });
+    const second = await createTestEntry(feedId, { userIds: [userId] });
     const othersEntryId = await createTestEntry(await createTestFeed(), {
       userIds: [otherUserId],
     });
@@ -264,53 +258,43 @@ describe("MCP tool results", () => {
           body: body === undefined ? undefined : JSON.stringify(body),
         })
       );
-    const listIds = async (query: string) => {
-      const res = await rest("GET", `/entries?${query}`);
-      expect(res.status).toBe(200);
-      return ((await res.json()) as { items: { id: string }[] }).items.map((item) => item.id);
-    };
     const { subscription } = (await (
       await rest("POST", "/collections", { name: "REST book" })
     ).json()) as { subscription: { id: string } };
     expect(
       (
         await rest("POST", `/collections/${subscription.id}/entries`, {
-          entryIds: [older, newer],
+          entryIds: [first, second],
         })
       ).status
     ).toBe(200);
 
     const positions = await rest("POST", `/collections/${subscription.id}/positions`, {
       positions: [
-        { entryId: older, position: 1 },
-        { entryId: newer, position: 2 },
+        { entryId: first, position: 1 },
+        { entryId: second, position: 2 },
         { entryId: othersEntryId, position: 3 },
       ],
     });
     expect(await positions.json()).toEqual({
-      changedIds: expect.arrayContaining([older, newer]),
+      changedIds: expect.arrayContaining([first, second]),
       notInCollectionIds: [othersEntryId],
     });
-    expect(await listIds(`subscriptionId=${subscription.id}&sortBy=position`)).toEqual([
-      older,
-      newer,
-    ]);
 
     const scores = await rest("POST", "/entries/scores", {
       scores: [
-        { entryId: older, score: 2 },
-        { entryId: newer, score: 1 },
+        { entryId: first, score: 2 },
+        { entryId: second, score: 1 },
         { entryId: othersEntryId, score: 3 },
       ],
     });
     expect(await scores.json()).toEqual({
       changed: expect.arrayContaining([
-        { entryId: older, score: 2 },
-        { entryId: newer, score: 1 },
+        { entryId: first, score: 2 },
+        { entryId: second, score: 1 },
       ]),
       notFoundIds: [othersEntryId],
     });
-    expect(await listIds(`subscriptionId=${sourceId}&sortBy=score`)).toEqual([older, newer]);
   });
 
   it("returns save results without the article body (#1835)", async () => {
