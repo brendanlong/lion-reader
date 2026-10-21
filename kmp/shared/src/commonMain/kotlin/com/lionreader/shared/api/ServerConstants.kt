@@ -28,6 +28,9 @@ object ServerLimits {
 val UPLOAD_EXTENSIONS: List<String> =
     listOf(".docx", ".pdf", ".html", ".htm", ".md", ".markdown", ".txt")
 
+/** File extensions `/collections/import-ebook` imports as a collection of chapters. */
+val EBOOK_UPLOAD_EXTENSIONS: List<String> = listOf(".epub")
+
 /** The silence after each chunk of cloud speech (`pauseSeconds`), as the web sets it. */
 object CloudSpeechPause {
     const val DEFAULT_SECONDS = 0.6f

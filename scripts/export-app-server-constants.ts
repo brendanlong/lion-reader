@@ -13,7 +13,7 @@ import {
   MAX_CLOUD_SPEECH_CHARS,
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
 } from "../src/lib/narration/constants";
-import { SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
+import { EBOOK_UPLOAD_EXTENSIONS, SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
 import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES } from "../src/server/config/env";
 import { MAX_ENTRIES_PAGE_SIZE } from "../src/server/services/entries";
 import { MAX_ENTRY_STATE_BATCH } from "../src/server/services/entry-state";
@@ -61,6 +61,10 @@ object ServerLimits {
 /** File extensions \`/saved/upload\` converts; it picks the converter by the filename's. */
 val UPLOAD_EXTENSIONS: List<String> =
     listOf(${SUPPORTED_UPLOAD_EXTENSIONS.map((ext) => JSON.stringify(ext)).join(", ")})
+
+/** File extensions \`/collections/import-ebook\` imports as a collection of chapters. */
+val EBOOK_UPLOAD_EXTENSIONS: List<String> =
+    listOf(${EBOOK_UPLOAD_EXTENSIONS.map((ext) => JSON.stringify(ext)).join(", ")})
 
 /** The silence after each chunk of cloud speech (\`pauseSeconds\`), as the web sets it. */
 object CloudSpeechPause {

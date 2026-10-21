@@ -2,6 +2,7 @@ package com.lionreader.shared.links
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -30,6 +31,14 @@ class SharedFileTest {
         val added = uploadFilename("z".repeat(MAX_UPLOAD_FILENAME_CHARS), "text/markdown")!!
         assertEquals(MAX_UPLOAD_FILENAME_CHARS, added.length)
         assertTrue(added.endsWith(".md"))
+    }
+
+    @Test
+    fun takesEbooksByExtensionOrMimeType() {
+        assertEquals("Tale.epub", uploadFilename("Tale.epub", "application/octet-stream"))
+        assertEquals("Tale.epub", uploadFilename("Tale", "application/epub+zip"))
+        assertTrue(isEbookFilename("Tale.EPUB"))
+        assertFalse(isEbookFilename("Tale.pdf"))
     }
 
     @Test

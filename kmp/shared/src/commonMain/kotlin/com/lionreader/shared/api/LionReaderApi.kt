@@ -216,6 +216,18 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             )
             .article
 
+    /**
+     * Imports an `.epub` as a collection named for the book, with an article per chapter. Importing
+     * the same file again saves only the chapters still missing.
+     */
+    suspend fun importEbook(filename: String, bytes: ByteArray): ImportedEbook =
+        post(
+            ImportedEbook.serializer(),
+            "/collections/import-ebook",
+            ImportEbookRequest(Base64.encode(bytes), filename),
+            ImportEbookRequest.serializer(),
+        )
+
     suspend fun summarizationAvailable(): Boolean =
         get(SummarizationAvailability.serializer(), "/summarization/available") {}.available
 
