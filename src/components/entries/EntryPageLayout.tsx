@@ -74,8 +74,9 @@ export function EntryPageLayout({
   const { showUnreadOnly, toggleShowUnreadOnly, setSortOrder, searchQuery, setSearchQuery } =
     useUrlViewPreferences();
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
-  // The sort the list can use (`buildEntriesListInput`), shown by Date while
-  // its values are gone, keeping the choice in the URL for when they return.
+  // The sort chosen in the URL, if the list can use it (`buildEntriesListInput`),
+  // shown by Date while its values are gone (the choice stays for when they
+  // return); without one, the sort the server listed it in (#2064).
   // Read from the store only once it can render from it, or the server's and
   // the hydrating client's first renders disagree.
   const listInput = useEntriesListInput();
@@ -170,7 +171,11 @@ export function EntryPageLayout({
             )}
             {!isSearching && (
               <SortToggle
-                sortOrder={shownSortOrder(listInput.sortOrder, sortable)}
+                sortOrder={
+                  listInput.sortOrder
+                    ? shownSortOrder(listInput.sortOrder, sortable)
+                    : (sortable?.sort?.sortOrder ?? "newest")
+                }
                 sortable={sortable}
                 onChange={setSortOrder}
               />

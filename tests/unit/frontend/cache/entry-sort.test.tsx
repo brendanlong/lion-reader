@@ -146,6 +146,31 @@ describe("live inserts into ranked lists", () => {
   });
 });
 
+describe("a list left to the server's default sort", () => {
+  it("orders by the sort its first page came in, live inserts too", async () => {
+    const input = { subscriptionId: COLLECTION, limit: 10 };
+    const { queryClient, ids, insert, result } = renderList(input);
+    act(() =>
+      queryClient.setQueryData([["entries", "list"], { input, type: "infinite" }], {
+        pages: [
+          {
+            items: [
+              makeEntry("one", "2024-06-03", { positions: { [COLLECTION]: 1 } }),
+              makeEntry("two", "2024-06-01", { positions: { [COLLECTION]: 2 } }),
+            ],
+            sortable: { score: false, position: true },
+            sort: { sortBy: "position", sortOrder: "first" },
+          },
+        ],
+        pageParams: [undefined],
+      })
+    );
+    insert(makeEntry("between", "2024-06-04", { positions: { [COLLECTION]: 1.5 } }));
+    await waitFor(() => expect(ids()).toEqual(["one", "between", "two"]));
+    expect(result.current.sortable?.sort).toEqual({ sortBy: "position", sortOrder: "first" });
+  });
+});
+
 describe("sortable", () => {
   const COUNTS = createCounts({ all: { unread: 1 } });
 

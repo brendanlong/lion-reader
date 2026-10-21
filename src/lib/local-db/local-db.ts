@@ -30,6 +30,7 @@ import {
   type EntryListMeta,
   type EntryLists,
   type ListEntryRow,
+  type ListSort,
   type ListSortableRow,
 } from "./entry-lists";
 import { createSyncedCollection } from "./synced-collection";
@@ -92,7 +93,8 @@ interface EntriesListData {
   pages: Array<{
     items: EntryRow[];
     nextCursor?: string;
-    sortable?: Omit<ListSortableRow, "listKey">;
+    sortable?: Pick<ListSortableRow, "score" | "position">;
+    sort?: ListSort;
   }>;
 }
 

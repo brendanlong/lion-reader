@@ -23,10 +23,11 @@ export interface ViewPreferences {
   showUnreadOnly: boolean;
 
   /**
-   * The sort and its direction (`?sort=`): "newest" (default) or "oldest" by
-   * date, "highest"/"lowest" by score, "first"/"last" by position.
+   * The sort and its direction (`?sort=`): "newest" or "oldest" by date,
+   * "highest"/"lowest" by score, "first"/"last" by position. Undefined
+   * leaves it to the list (the server's default, #2064).
    */
-  sortOrder: EntrySortOrder;
+  sortOrder: EntrySortOrder | undefined;
 }
 
 /**
@@ -34,7 +35,7 @@ export interface ViewPreferences {
  */
 const DEFAULT_PREFERENCES: ViewPreferences = {
   showUnreadOnly: true,
-  sortOrder: "newest",
+  sortOrder: undefined,
 };
 
 /**
@@ -50,7 +51,7 @@ export function parseViewPreferencesFromParams(
   defaults?: { unreadOnly?: boolean }
 ): {
   unreadOnly: boolean;
-  sortOrder: EntrySortOrder;
+  sortOrder: EntrySortOrder | undefined;
   searchQuery: string | undefined;
 } {
   // Parse the full-text search query - empty/whitespace means "not searching".
@@ -69,7 +70,7 @@ export function parseViewPreferencesFromParams(
   const unreadOnly =
     unreadOnlyParam === "false" ? false : unreadOnlyParam === "true" ? true : defaultUnreadOnly;
 
-  // Parse sortOrder - any known direction, anything else uses the default
+  // Parse sortOrder - any known direction, anything else leaves it to the list
   const sortParam = searchParams?.get("sort");
   const sortOrder =
     ENTRY_SORT_ORDERS.find((order) => order === sortParam) ?? DEFAULT_PREFERENCES.sortOrder;

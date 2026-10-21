@@ -64,7 +64,10 @@ don't want the entry there, so it hides at once, except as the open entry
 stores its place (`listOrder` in `entry-lists.ts`, compared only by
 `comparePlaces`): by date, score or a collection's position as the server
 orders them, entries without a value last (#2064), or the fetch position for
-search and Recently Read, whose order entries can't reproduce. A row's place
+search and Recently Read, whose order entries can't reproduce. A list with no
+sort in its URL is in the server's default (by position where there are
+positions, else newest), which its first page reports (`sort`): rows, live
+inserts and the sort control follow that. A row's place
 is set when it lands, so a score or position change moves it only on the
 list's next fetch. Which sorts a list can use (`sortable`, from its first
 page) is stored per list (`useListSortable`); an `entry_state_changed` that

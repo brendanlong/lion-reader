@@ -35,9 +35,10 @@ export interface UseUrlViewPreferencesResult {
   toggleShowUnreadOnly: () => void;
 
   /**
-   * Current preference: the sort and its direction (`?sort=`).
+   * Current preference: the sort and its direction (`?sort=`), or undefined
+   * to leave it to the list.
    */
-  sortOrder: EntrySortOrder;
+  sortOrder: EntrySortOrder | undefined;
 
   /**
    * Set the sort (updates URL).
@@ -108,14 +109,8 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
       }
 
       // Update sort param
-      if (updates.sort !== undefined) {
-        if (updates.sort === "newest") {
-          // newest is the default, remove from URL to keep it clean
-          params.delete("sort");
-        } else {
-          params.set("sort", updates.sort);
-        }
-      }
+      // Any choice is explicit: newest isn't every list's default (#2064).
+      if (updates.sort !== undefined) params.set("sort", updates.sort);
 
       const queryString = params.toString();
       clientReplace(appHref(queryString ? `${pathname}?${queryString}` : pathname));

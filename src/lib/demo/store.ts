@@ -14,6 +14,7 @@
  * is given, so mutating a returned object would change the cache behind its back.
  */
 
+import { sortFieldOf } from "@/lib/entry-sort";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
@@ -506,6 +507,11 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         nextCursor: hasMore && last ? encodeCursor(position(last)) : undefined,
         ...(!input.cursor &&
           sortBy !== "readChanged" && { sortable: { score: false, position: false } }),
+        ...(!input.cursor && {
+          sort: input.sortOrder
+            ? { sortBy: input.sortBy ?? sortFieldOf(input.sortOrder), sortOrder: input.sortOrder }
+            : { sortBy, sortOrder: "newest" as const },
+        }),
       };
     },
 

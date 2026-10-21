@@ -45,6 +45,8 @@ export interface EntryListFilters {
 export interface EntryListMeta {
   input: EntryListFilters & Record<string, unknown>;
   hasMore: boolean;
+  /** The sort the server listed it in (its first page's `sort`). */
+  sort?: ListSort;
   /** The last loaded entry's place (the pagination window's edge). */
   last?: ListPlace;
   entryIds: Set<string>;
@@ -65,8 +67,28 @@ export interface EntryLists {
   sortable: SyncedCollection<ListSortableRow>;
 }
 
-/** Which ranked sorts a list has values for (`entries.list`'s `sortable`), kept live. */
-export type ListSortableRow = { listKey: string; score: boolean; position: boolean };
+/**
+ * Which ranked sorts a list has values for (`entries.list`'s `sortable`),
+ * kept live, and the sort its first page came in (`sort`).
+ */
+export type ListSortableRow = {
+  listKey: string;
+  score: boolean;
+  position: boolean;
+  sort?: ListSort;
+};
+
+/** The sort a list came in: the one asked for, or with none, the list's default. */
+export type ListSort = {
+  sortBy: "published" | "readChanged" | "score" | "position";
+  sortOrder: EntrySortOrder;
+};
+
+/** A list's filters with the sort it's in: the one asked for, or the server's. */
+function sortedInput(input: EntryListFilters, sort: ListSort | undefined): EntryListFilters {
+  if (input.sortOrder || !sort) return input;
+  return { ...input, sortBy: sort.sortBy, sortOrder: sort.sortOrder };
+}
 
 /**
  * The list identity for an `entries.list` input — the input minus the
@@ -187,20 +209,24 @@ export function ingestEntryListPages(
   pages: Array<{
     items: EntryRow[];
     nextCursor?: string;
-    sortable?: Omit<ListSortableRow, "listKey">;
+    sortable?: Pick<ListSortableRow, "score" | "position">;
+    sort?: ListSort;
   }>,
   mode: "replace" | "append"
 ): void {
   const listKey = entryListKey(input);
   const previous = lists.meta.get(listKey);
   const removedSinceFetch = previous?.removedSinceFetch ?? new Set<string>();
+  // A next page's first is the earlier fetch's, whose sort is already stored.
+  const sort = (mode === "replace" ? pages[0]?.sort : undefined) ?? previous?.sort;
+  const orderInput = sortedInput(input, sort);
   const rows = pages
     .flatMap((page) => page.items)
     .map((entry, index): ListEntryRow => ({
       key: listEntryKey(listKey, entry.id),
       listKey,
       entryId: entry.id,
-      order: listOrder(input, entry, index),
+      order: listOrder(orderInput, entry, index),
       removed:
         removedSinceFetch.has(entry.id) ||
         (mode === "append" && !!lists.rows.getSynced(listEntryKey(listKey, entry.id))?.removed),
@@ -238,6 +264,7 @@ export function ingestEntryListPages(
   lists.meta.set(listKey, {
     input,
     hasMore,
+    sort,
     last,
     entryIds,
     insertedSinceFetch: keepsLiveChanges ? previous.insertedSinceFetch : new Set(),
@@ -245,7 +272,7 @@ export function ingestEntryListPages(
   });
   // A next page's first is the earlier fetch's: live changes since may be newer.
   const sortable = pages[0]?.sortable;
-  if (mode === "replace" && sortable) lists.sortable.upsert([{ listKey, ...sortable }]);
+  if (mode === "replace" && sortable) lists.sortable.upsert([{ listKey, ...sortable, sort }]);
 }
 
 export function removeEntryList(lists: EntryLists, input: Record<string, unknown>): void {
@@ -421,7 +448,7 @@ function insertIntoListsWhere(
     );
     if (hasUnknownFilter || !belongs(input)) continue;
 
-    const order = listOrder(input, entry, 0);
+    const order = listOrder(sortedInput(input, meta.sort), entry, 0);
     if (meta.hasMore && meta.last && comparePlaces({ order, entryId: entry.id }, meta.last) > 0) {
       continue;
     }
