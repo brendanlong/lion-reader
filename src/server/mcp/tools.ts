@@ -20,8 +20,10 @@ import { users } from "@/server/db/schema";
 import {
   collectionEntryIdsSchema,
   collectionNameSchema,
+  collectionPositionsSchema,
   entryCountInputSchema,
   entryListInputSchema,
+  entryScoresSchema,
   savedArticleUrlSchema,
   saveCollectionIdsSchema,
   subscriptionListInputSchema,
@@ -170,20 +172,7 @@ const listEntriesArgs = entryListInputSchema().extend({
 });
 
 const setEntryScoresArgs = z.object({
-  scores: z
-    .array(
-      z.object({
-        entryId: uuidSchema.describe("Entry ID"),
-        score: z
-          .number()
-          .finite()
-          .nullable()
-          .describe("Any number; higher sorts first. Null clears the score."),
-      })
-    )
-    .min(1)
-    .max(entryScoresService.MAX_ENTRY_SCORE_BATCH)
-    .describe("The entries to score"),
+  scores: entryScoresSchema.describe("The entries to score"),
 });
 
 const collectionPositionsArgs = z
@@ -195,19 +184,7 @@ const collectionPositionsArgs = z
       .max(MAX_COLLECTION_ENTRIES)
       .optional()
       .describe("Entry IDs in order: they get positions 1, 2, 3, …"),
-    positions: z
-      .array(
-        z.object({
-          entryId: uuidSchema.describe("Entry ID"),
-          position: z
-            .number()
-            .finite()
-            .nullable()
-            .describe("Any number; lower sorts first. Null clears the position."),
-        })
-      )
-      .min(1)
-      .max(MAX_COLLECTION_ENTRIES)
+    positions: collectionPositionsSchema
       .optional()
       .describe("Entries and their positions, to move a few without renumbering the rest"),
   })
