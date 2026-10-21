@@ -175,6 +175,62 @@ describe("sorting a collection by position", () => {
   });
 });
 
+describe("the default sort", () => {
+  let book: string;
+
+  beforeAll(async () => {
+    book = (await createCollection(db, userId, "Book")).subscription.id;
+    await addEntriesToCollection(db, userId, book, ids);
+    await setCollectionPositions(db, userId, book, [
+      { entryId: ids[4], position: 1 },
+      { entryId: ids[1], position: 2 },
+    ]);
+  });
+
+  it("lists a subscription whose members have positions by position, on every page", async () => {
+    const first = await list({ subscriptionId: book, limit: 2 });
+    expect(first.sort).toEqual({ sortBy: "position", sortOrder: "first" });
+    const pages = first.items.map((item) => item.id);
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const page = await list({ subscriptionId: book, limit: 2, cursor });
+      expect(page.sort).toBeUndefined();
+      pages.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor;
+    }
+    expect(pages).toEqual(await order({ subscriptionId: book, sortBy: "position" }));
+  });
+
+  it("lists by date where there are no positions, and when asked to", async () => {
+    expect((await list({ subscriptionId })).sort).toEqual({
+      sortBy: "published",
+      sortOrder: "newest",
+    });
+    expect(await order({ subscriptionId: book, sortOrder: "newest" })).toEqual(
+      await order({ subscriptionId })
+    );
+  });
+
+  it("judges positions with the list's filters", async () => {
+    await markEntriesRead(db, userId, [{ id: ids[4] }, { id: ids[1] }], true);
+    try {
+      expect((await list({ subscriptionId: book, unreadOnly: true })).sort).toEqual({
+        sortBy: "published",
+        sortOrder: "newest",
+      });
+    } finally {
+      await markEntriesRead(db, userId, [{ id: ids[4] }, { id: ids[1] }], false);
+    }
+  });
+
+  it("takes a direction alone as naming its sort", async () => {
+    expect((await list({ sortOrder: "lowest" })).sort).toEqual({
+      sortBy: "score",
+      sortOrder: "lowest",
+    });
+  });
+});
+
 describe("sortable", () => {
   it("says which sorts the list has values for, with its filters", async () => {
     const otherFeed = await createTestFeed();

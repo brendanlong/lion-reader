@@ -83,6 +83,8 @@ const entriesListOutputSchema = z.object({
   nextCursor: z.string().optional(),
   /** On the first page: which ranked sorts the list has values for. */
   sortable: entriesService.entrySortableSchema.optional(),
+  /** On the first page: the sort the list is in, which a request without one leaves to the list. */
+  sort: entriesService.entrySortSchema.optional(),
 });
 
 /**

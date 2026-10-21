@@ -5526,6 +5526,36 @@
                         "position"
                       ],
                       "additionalProperties": false
+                    },
+                    "sort": {
+                      "type": "object",
+                      "properties": {
+                        "sortBy": {
+                          "type": "string",
+                          "enum": [
+                            "published",
+                            "readChanged",
+                            "score",
+                            "position"
+                          ]
+                        },
+                        "sortOrder": {
+                          "type": "string",
+                          "enum": [
+                            "newest",
+                            "oldest",
+                            "highest",
+                            "lowest",
+                            "first",
+                            "last"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sortBy",
+                        "sortOrder"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
