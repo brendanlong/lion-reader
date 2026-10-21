@@ -284,13 +284,26 @@ export async function addEntriesToCollection(
           .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)))
       )
       .onConflictDoNothing()
-      .returning({ entryId: subscriptionEntries.entryId });
-    const ids = inserted.map((row) => row.entryId);
-    await touchUserEntries(tx, userId, ids);
-    return ids;
+      .returning({ entryId: subscriptionEntries.entryId, position: subscriptionEntries.position });
+    await touchUserEntries(
+      tx,
+      userId,
+      inserted.map((row) => row.entryId)
+    );
+    return inserted;
   });
 
-  return finishMembershipChange(db, userId, subscriptionId, added, true);
+  const placed = added.flatMap(({ entryId, position }) =>
+    position === null ? [] : [[entryId, position] as const]
+  );
+  return finishMembershipChange(
+    db,
+    userId,
+    subscriptionId,
+    added.map((row) => row.entryId),
+    true,
+    placed.length > 0 ? Object.fromEntries(placed) : undefined
+  );
 }
 
 export async function removeEntriesFromCollection(
@@ -503,7 +516,8 @@ async function finishMembershipChange(
   userId: string,
   subscriptionId: string,
   changedIds: string[],
-  added: boolean
+  added: boolean,
+  positions?: Record<string, number>
 ): Promise<CollectionEntriesChangeResult> {
   if (changedIds.length === 0) {
     return { entryIds: [] };
@@ -518,6 +532,7 @@ async function finishMembershipChange(
     subscriptionId,
     entryIds: changedIds,
     added,
+    positions,
     counts,
     updatedAt: new Date(),
   });

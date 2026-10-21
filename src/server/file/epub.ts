@@ -186,6 +186,8 @@ function resolveReference(
   } catch {
     return null;
   }
+  // No real reference holds NUL, which marks images in converted HTML.
+  if (decoded.includes(IMAGE_MARK) || fragment?.includes(IMAGE_MARK)) return null;
   if (decoded === "") return { path: fromPath, fragment };
   const path = posix.normalize(posix.join(posix.dirname(fromPath), decoded));
   return path.startsWith("../") ? null : { path, fragment };
@@ -436,8 +438,9 @@ async function encryptedPaths(zip: BudgetedZip): Promise<Set<string>> {
 }
 
 /**
- * Marks a book image in a chapter's HTML: `IMAGE_MARK + path + IMAGE_MARK`,
- * which {@link inlineImages} replaces. NUL can't occur otherwise, since it is
+ * Marks a book image in a chapter's HTML: `IMAGE_MARK + index + IMAGE_MARK`,
+ * the image's index in its {@link ImageReader}, which {@link inlineImages}
+ * replaces. NUL can't occur otherwise, since it is
  * stripped from the text and attributes written.
  */
 const IMAGE_MARK = "\u0000";
@@ -469,6 +472,8 @@ interface OpenElement {
  * against.
  */
 class ChapterBuilder {
+  constructor(private readonly images: ImageReader) {}
+
   /** Chapters finished since the last {@link takeFinished}. */
   private finished: PendingChapter[] = [];
   private current: PendingChapter = { label: null, heading: null, html: "" };
@@ -604,7 +609,7 @@ class ChapterBuilder {
             }
             tag += ` ${key}="${escapeHtml(value)}"`;
           }
-          tag += image ? ` ${image.key}="${IMAGE_MARK}${image.path}${IMAGE_MARK}">` : ">";
+          tag += image ? ` ${image.key}="${this.images.mark(image.path)}">` : ">";
 
           const offset = length();
           this.append(tag);
@@ -686,7 +691,7 @@ async function inlineImages(images: ImageReader, html: string): Promise<string> 
       inlined += segment;
       continue;
     }
-    const uri = await images.dataUri(segment);
+    const uri = await images.dataUri(Number(segment));
     if (uri === null || uri.length > remaining) continue;
     remaining -= uri.length;
     inlined += uri;
@@ -701,20 +706,34 @@ function hasContent(html: string): boolean {
 
 /** Reads each of the book's images once, however many chapters show it. */
 class ImageReader {
-  private readonly uris = new Map<string, string | null>();
+  private readonly paths: string[] = [];
+  private readonly indexes = new Map<string, number>();
+  private readonly uris = new Map<number, string | null>();
 
   constructor(
     private readonly zip: BudgetedZip,
     private readonly mediaTypes: Map<string, string>
   ) {}
 
-  async dataUri(path: string): Promise<string | null> {
-    if (!this.uris.has(path)) {
+  /** The {@link IMAGE_MARK} for an image in the archive. */
+  mark(path: string): string {
+    let index = this.indexes.get(path);
+    if (index === undefined) {
+      index = this.paths.push(path) - 1;
+      this.indexes.set(path, index);
+    }
+    return `${IMAGE_MARK}${index}${IMAGE_MARK}`;
+  }
+
+  async dataUri(index: number): Promise<string | null> {
+    const path = this.paths[index];
+    if (path === undefined) return null;
+    if (!this.uris.has(index)) {
       const mediaType = imageMediaType(this.mediaTypes.get(path), path);
       const data = mediaType ? await this.zip.read(path) : null;
-      this.uris.set(path, data && `data:${mediaType};base64,${data.toString("base64")}`);
+      this.uris.set(index, data && `data:${mediaType};base64,${data.toString("base64")}`);
     }
-    return this.uris.get(path) ?? null;
+    return this.uris.get(index) ?? null;
   }
 }
 
@@ -792,7 +811,7 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
     title: pkg.title,
     author: pkg.creators.length > 0 ? pkg.creators.join(", ") : null,
     async *chapters() {
-      const builder = new ChapterBuilder();
+      const builder = new ChapterBuilder(images);
       for (const path of spine) {
         // A finished chapter is handed over before the next document is read,
         // so it survives that document failing.

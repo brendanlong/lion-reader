@@ -207,15 +207,16 @@ export function applyCollectionEntriesChange(
     subscriptionId: string;
     entryIds: string[];
     added: boolean;
+    positions?: Record<string, number>;
     counts?: UnreadCounts;
   }
 ): void {
-  const { subscriptionId, entryIds, added, counts } = change;
+  const { subscriptionId, entryIds, added, positions, counts } = change;
   if (counts) applyUnreadCounts(utils, queryClient, counts);
   const db = getLocalDb(queryClient);
   for (const entryId of entryIds) {
     setLeftCollectionLists(db.lists, entryId, subscriptionId, !added);
-    setStoredEntryCollection(db.entries, entryId, subscriptionId, added);
+    setStoredEntryCollection(db.entries, entryId, subscriptionId, added, positions?.[entryId]);
     if (added) {
       // Its new membership places it in the collection's lists and those of
       // the collection's tags.

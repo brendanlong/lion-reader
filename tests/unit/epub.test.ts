@@ -364,6 +364,27 @@ describe("openEpub", () => {
     );
   });
 
+  it("drops a reference that decodes to the NUL marking images", async () => {
+    const [chapter] = await readChapters(
+      buildEpub({
+        spine: [
+          {
+            path: "a.xhtml",
+            xhtml: chapterXhtml(
+              '<p>x<a href="#a%00b">link</a><img src="a%00%3Cscript%3E%00.png"/>' +
+                '<img src="pic.png"/></p>'
+            ),
+          },
+        ],
+        files: { "OEBPS/pic.png": PNG },
+        manifest: { "pic.png": "image/png" },
+      })
+    );
+    expect(chapter.html).toBe(
+      `<p>x<a>link</a><img><img src="data:image/png;base64,${PNG.toString("base64")}"></p>`
+    );
+  });
+
   it("cuts at an anchor on <body> and at a percent-encoded fragment", async () => {
     const chapters = await readChapters(
       buildEpub({
