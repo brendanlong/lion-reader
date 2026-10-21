@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * Supports:
  * - URL sharing (traditional share target)
- * - File sharing (text/plain, text/markdown, text/html, .docx, .pdf)
+ * - File sharing (text/plain, text/markdown, text/html, .docx, .pdf, .epub)
  */
 
 /**

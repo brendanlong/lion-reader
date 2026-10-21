@@ -381,6 +381,18 @@ data class UploadFileRequest(
 
 @Serializable data class SaveArticleResponse(val article: SavedArticle)
 
+/**
+ * [content] is the `.epub`, Base64-encoded; [filename] names the collection if the book has no
+ * title.
+ */
+@Serializable data class ImportEbookRequest(val content: String, val filename: String)
+
+@Serializable data class ImportedCollection(val id: String, val title: String? = null)
+
+/** The book's collection, and its chapters' articles in reading order. */
+@Serializable
+data class ImportedEbook(val subscription: ImportedCollection, val entryIds: List<String>)
+
 @Serializable data class SummarizationAvailability(val available: Boolean)
 
 @Serializable data class GenerateSummaryRequest(val entryId: String)

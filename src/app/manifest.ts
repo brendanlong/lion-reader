@@ -58,6 +58,7 @@ export default function manifest(): MetadataRoute.Manifest {
               "text/html",
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
               "application/pdf",
+              "application/epub+zip",
             ],
           },
         ],
