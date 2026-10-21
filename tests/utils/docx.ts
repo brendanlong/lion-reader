@@ -40,12 +40,15 @@ interface BuildZipOptions {
  * default; pass `compression: "store"` to write them uncompressed (method 0),
  * which exercises the reader's stored branch.
  */
-export function buildZip(files: Record<string, string>, options: BuildZipOptions = {}): Buffer {
+export function buildZip(
+  files: Record<string, string | Buffer>,
+  options: BuildZipOptions = {}
+): Buffer {
   const store = options.compression === "store";
   const method = store ? 0 : 8;
   const entries: ZipEntry[] = Object.entries(files).map(([name, content]) => ({
     name,
-    data: Buffer.from(content, "utf8"),
+    data: typeof content === "string" ? Buffer.from(content, "utf8") : content,
   }));
 
   const localChunks: Buffer[] = [];
