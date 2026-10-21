@@ -15,7 +15,7 @@ import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/servi
 import {
   addEntriesToCollection,
   createCollection,
-  setCollectionPositions,
+  maxCollectionPosition,
 } from "@/server/services/collections";
 import { assertUploadSize, insertUploadedArticle } from "@/server/services/saved";
 import { buildArticleFields } from "@/server/services/saved-content";
@@ -53,9 +53,12 @@ async function openEbook(file: Buffer): Promise<Epub> {
  * collection with that name is reused, as `createCollection` does), with each
  * chapter as an article whose position is its place in the book.
  *
- * Each chapter's guid is derived from the file's hash and the chapter's index,
- * so importing the same file again, e.g. retrying after a failure partway
- * through, saves only the chapters still missing.
+ * Each chapter joins the collection as it's saved, after anything already in
+ * it, so a book that fails partway (a chapter too large, say) leaves the
+ * chapters before it in order. Each chapter's guid is derived from the file's
+ * hash and the chapter's index, so importing the same file again saves only
+ * the chapters still missing, and those already in the collection keep their
+ * places.
  */
 export async function importEbook(
   db: typeof dbType,
@@ -80,11 +83,13 @@ export async function importEbook(
     throw errors.validation("Failed to process ebook: it has no readable chapters");
   }
   const { subscription, created } = await createCollection(db, userId, name);
+  const basePosition = await maxCollectionPosition(db, userId, subscription.id);
 
   const entryIds: string[] = [];
+  let counts: BulkUnreadCounts | undefined;
   for (let next: IteratorResult<EpubChapter> = first; !next.done; next = await chapters.next()) {
     const chapter = next.value;
-    const position = entryIds.length + 1;
+    const index = entryIds.length + 1;
     const fields = await buildArticleFields(
       {
         html: chapter.html,
@@ -93,24 +98,25 @@ export async function importEbook(
         // Already clean content, so Readability is skipped.
         preCleanedContent: { title: chapter.title, summary: null, author: book.author },
       },
-      { providedTitle: chapter.title ?? `${name} (${position})`, siteName: name }
+      { providedTitle: chapter.title ?? `${name} (${index})`, siteName: name }
     );
     const { article } = await insertUploadedArticle(
       db,
       userId,
       fields,
-      `uploaded:epub:${fileHash}:${position}`
+      `uploaded:epub:${fileHash}:${index}`
     );
+    const added = await addEntriesToCollection(
+      db,
+      userId,
+      subscription.id,
+      [article.id],
+      new Map([[article.id, basePosition + index]])
+    );
+    counts = added.counts ?? counts;
     entryIds.push(article.id);
   }
 
-  const added = await addEntriesToCollection(db, userId, subscription.id, entryIds);
-  await setCollectionPositions(
-    db,
-    userId,
-    subscription.id,
-    entryIds.map((entryId, index) => ({ entryId, position: index + 1 }))
-  );
   logger.info("Imported ebook", {
     subscriptionId: subscription.id,
     chapters: entryIds.length,
@@ -121,7 +127,7 @@ export async function importEbook(
     created,
     entryIds,
     counts:
-      added.counts ??
+      counts ??
       (await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subscription.id }])),
   };
 }

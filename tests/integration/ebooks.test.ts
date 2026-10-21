@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, userEntries, users } from "../../src/server/db/schema";
 import { importEbook } from "../../src/server/services/ebooks";
+import { createCollection } from "../../src/server/services/collections";
 import { listEntries } from "../../src/server/services/entries";
 import { usageLimitsConfig } from "../../src/server/config/env";
 import { getAppErrorCode } from "../../src/server/errors";
@@ -56,6 +57,17 @@ async function savedEntryCount(userId: string): Promise<number> {
   return rows.length;
 }
 
+/** The titles in the user's collection with this name, in its default order. */
+async function collectionTitles(userId: string, name: string): Promise<(string | null)[]> {
+  const { subscription } = await createCollection(db, userId, name);
+  const { items } = await listEntries(db, {
+    userId,
+    subscriptionId: subscription.id,
+    showSpam: false,
+  });
+  return items.map((item) => item.title);
+}
+
 describe("importEbook", () => {
   it("creates a collection named for the book, listing its chapters in order by default", async () => {
     const userId = await createUser();
@@ -86,6 +98,43 @@ describe("importEbook", () => {
     expect(second.subscription.id).toBe(first.subscription.id);
     expect(second.entryIds).toEqual(first.entryIds);
     expect(await savedEntryCount(userId)).toBe(3);
+  });
+
+  it("keeps the chapters before one that fails, in their collection and in order", async () => {
+    const userId = await createUser();
+    const tooLarge = "a".repeat(usageLimitsConfig.maxSavedArticleSizeBytes + 1);
+    const book = buildEpub({
+      title: "Broken",
+      spine: [
+        { path: "one.xhtml", xhtml: chapterXhtml("<h1>One</h1><p>1</p>") },
+        { path: "two.xhtml", xhtml: chapterXhtml("<h1>Two</h1><p>2</p>") },
+        { path: "three.xhtml", xhtml: chapterXhtml(`<p>${tooLarge}</p>`) },
+      ],
+    });
+
+    await expect(upload(userId, book)).rejects.toSatisfy(
+      (error) => getAppErrorCode(error) === "CONTENT_TOO_LARGE"
+    );
+    expect(await collectionTitles(userId, "Broken")).toEqual(["One", "Two"]);
+  });
+
+  it("files a second book with the same title after the first", async () => {
+    const userId = await createUser();
+    const sequel = buildEpub({
+      title: "A Tale",
+      spine: [{ path: "one.xhtml", xhtml: chapterXhtml("<p>Again.</p>") }],
+      nav: [{ href: "one.xhtml", label: "Sequel" }],
+    });
+    await upload(userId);
+    const second = await upload(userId, sequel);
+
+    expect(second.created).toBe(false);
+    expect(await collectionTitles(userId, "A Tale")).toEqual([
+      "The Best",
+      "The Worst",
+      "Before Us",
+      "Sequel",
+    ]);
   });
 
   it("saves no chapters when the user can't create the collection", async () => {

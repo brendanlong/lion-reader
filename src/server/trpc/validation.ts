@@ -185,10 +185,6 @@ export const savedArticleUrlSchema = z.url("Invalid URL");
 export const saveCollectionIdsSchema = z.array(uuidSchema).max(MAX_SAVE_COLLECTIONS).optional();
 
 /**
- * Makes an upload idempotent: retrying with the same key returns the article
- * the first attempt saved instead of saving another.
- */
-/**
  * An uploaded file's bytes, base64-encoded. Base64 inflates by ~4/3; capping
  * the encoded string rejects an oversized upload before we spend memory/CPU
  * decoding it. The service enforces the decoded byte length exactly (base64
@@ -202,6 +198,10 @@ export const uploadContentSchema = z
     "File content exceeds the maximum saved article size"
   );
 
+/**
+ * Makes an upload idempotent: retrying with the same key returns the article
+ * the first attempt saved instead of saving another.
+ */
 export const uploadIdempotencyKeySchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,128}$/, "Invalid idempotency key")

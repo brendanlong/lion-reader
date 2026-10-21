@@ -4,7 +4,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { openEpub, type EpubChapter } from "@/server/file/epub";
+import {
+  EPUB_MAX_DOCUMENT_FACTOR,
+  EPUB_MAX_INFLATION_FACTOR,
+  openEpub,
+  type EpubChapter,
+} from "@/server/file/epub";
 import { usageLimitsConfig } from "@/server/config/env";
 import { getAppErrorCode } from "@/server/errors";
 import { buildEpub, chapterXhtml } from "../utils/epub";
@@ -248,12 +253,75 @@ describe("openEpub", () => {
     expect(chapter.html).toContain(PNG.toString("base64"));
   });
 
-  it("rejects a book that inflates past its budget", async () => {
-    const bomb = "a".repeat(usageLimitsConfig.maxSavedArticleSizeBytes * 11);
-    const error = await openError(
-      buildEpub({ spine: [{ path: "a.xhtml", xhtml: chapterXhtml(`<p>${bomb}</p>`) }] })
-    );
-    expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+  describe("resource bounds", () => {
+    const limit = usageLimitsConfig.maxSavedArticleSizeBytes;
+    /** A document that inflates to about `bytes` but converts to almost nothing. */
+    const paddedDocument = (bytes: number) =>
+      chapterXhtml(`<p>Short.</p><!--${"a".repeat(bytes)}-->`);
+
+    it("rejects a spine document that inflates past its own budget", async () => {
+      const error = await openError(
+        buildEpub({
+          spine: [{ path: "a.xhtml", xhtml: paddedDocument(limit * EPUB_MAX_DOCUMENT_FACTOR) }],
+        })
+      );
+      expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+    });
+
+    it("rejects a book whose documents together inflate past its budget", async () => {
+      const perDocument = limit * EPUB_MAX_DOCUMENT_FACTOR - 1024;
+      const count = Math.floor((limit * EPUB_MAX_INFLATION_FACTOR) / perDocument) + 1;
+      const error = await openError(
+        buildEpub({
+          spine: Array.from({ length: count }, (_, i) => ({
+            path: `${i}.xhtml`,
+            xhtml: paddedDocument(perDocument),
+          })),
+        })
+      );
+      expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+    });
+
+    it("rejects a chapter too large to save as soon as it's read", async () => {
+      const error = await openError(
+        buildEpub({
+          spine: [{ path: "a.xhtml", xhtml: chapterXhtml(`<p>${"a".repeat(limit + 1)}</p>`) }],
+        })
+      );
+      expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+    });
+
+    it("reads an image once, however many chapters show it", async () => {
+      const image = Buffer.alloc(Math.floor(limit / 2));
+      const count = Math.floor((limit * EPUB_MAX_INFLATION_FACTOR) / image.length) + 1;
+      const chapters = await readChapters(
+        buildEpub({
+          spine: Array.from({ length: count }, (_, i) => ({
+            path: `${i}.xhtml`,
+            xhtml: chapterXhtml('<p>Text</p><img src="pic.png"/>'),
+          })),
+          files: { "OEBPS/pic.png": image },
+          manifest: { "pic.png": "image/png" },
+        })
+      );
+      expect(chapters).toHaveLength(count);
+      expect(chapters.every((chapter) => chapter.html.includes("data:image/png"))).toBe(true);
+    });
+
+    it("budgets a chapter's images by its text's UTF-8 bytes", async () => {
+      // A third of the limit in characters is the whole limit in bytes.
+      const text = "章".repeat(Math.floor(limit / 3) - 64);
+      const image = Buffer.alloc(1024);
+      const [chapter] = await readChapters(
+        buildEpub({
+          spine: [{ path: "a.xhtml", xhtml: chapterXhtml(`<p>${text}</p><img src="pic.png"/>`) }],
+          files: { "OEBPS/pic.png": image },
+          manifest: { "pic.png": "image/png" },
+        })
+      );
+      expect(chapter.html).not.toContain("data:image/png");
+      expect(Buffer.byteLength(chapter.html)).toBeLessThanOrEqual(limit);
+    });
   });
 
   it("rejects a DRM-protected book, but not one with obfuscated fonts", async () => {
@@ -271,10 +339,51 @@ describe("openEpub", () => {
   });
 
   it.each([
-    ["isn't a ZIP", Buffer.from("not a zip")],
-    ["has no package document", buildZip({ mimetype: "application/epub+zip" })],
-    ["has an empty spine", buildEpub({ spine: [] })],
-  ])("rejects a file that %s", async (_label, file) => {
-    await expect(openEpub(file)).rejects.toThrow();
+    ["isn't a ZIP", Buffer.from("not a zip"), /isn't a ZIP/],
+    ["has no package document", buildZip({ mimetype: "application/epub+zip" }), /package/],
+    ["has an empty spine", buildEpub({ spine: [] }), /no chapters/],
+  ])("rejects a file that %s", async (_label, file, message) => {
+    await expect(openEpub(file)).rejects.toThrow(message);
+  });
+
+  it("writes only markup it built: an image type is one we know, and an element name HTML can spell", async () => {
+    const [chapter] = await readChapters(
+      buildEpub({
+        spine: [
+          {
+            path: "a.xhtml",
+            xhtml: chapterXhtml('<p><img src="pic.png"/><x"y>kept text</x"y></p>'),
+          },
+        ],
+        files: { "OEBPS/pic.png": PNG },
+        manifest: { "pic.png": "image/png&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;" },
+      })
+    );
+    expect(chapter.html).toBe(
+      `<p><img src="data:image/png;base64,${PNG.toString("base64")}">kept text</p>`
+    );
+  });
+
+  it("cuts at an anchor on <body> and at a percent-encoded fragment", async () => {
+    const chapters = await readChapters(
+      buildEpub({
+        spine: [
+          { path: "a.xhtml", xhtml: chapterXhtml("<p>One</p>") },
+          {
+            path: "b.xhtml",
+            xhtml: chapterXhtml('<p>Two</p><h2 id="章">Three</h2>').replace(
+              "<body>",
+              '<body id="c2">'
+            ),
+          },
+        ],
+        nav: [
+          { href: "a.xhtml", label: "One" },
+          { href: "b.xhtml#c2", label: "Two" },
+          { href: "b.xhtml#%E7%AB%A0", label: "Three" },
+        ],
+      })
+    );
+    expect(chapters.map((chapter) => chapter.title)).toEqual(["One", "Two", "Three"]);
   });
 });
