@@ -13,7 +13,6 @@ import com.lionreader.shared.data.SortField
 import com.lionreader.shared.data.Sortable
 import com.lionreader.shared.data.TimelineItem
 import com.lionreader.shared.data.shownSort
-import com.lionreader.shared.data.sortKey
 import com.lionreader.shared.settings.AppSettings
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -58,15 +57,7 @@ data class Timeline(
 }
 
 /** The settings a list's query depends on. */
-private data class ListSettings(
-    val unreadOnly: Boolean,
-    val oldestFirst: Boolean,
-    val listSorts: Map<String, ListSort>,
-) {
-    /** What the user chose for [scope], whether or not it has the values for it. */
-    fun chosenSort(scope: ListScope): ListSort =
-        listSorts[scope.sortKey] ?: if (oldestFirst) ListSort.OLDEST else ListSort.NEWEST
-}
+private data class ListSettings(val unreadOnly: Boolean, val oldestFirst: Boolean)
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -125,18 +116,15 @@ class HomeViewModel(
     val timeline: StateFlow<Timeline?> =
         combine(
                 view,
-                settings
-                    .map { ListSettings(it.unreadOnly, it.oldestFirst, it.listSorts) }
-                    .distinctUntilChanged(),
+                settings.map { ListSettings(it.unreadOnly, it.oldestFirst) }.distinctUntilChanged(),
                 ::Pair,
             )
             .flatMapLatest { (view, list) ->
-                val chosen = list.chosenSort(view.scope)
                 reader
                     .sortable(view.scope, list.unreadOnly, view.keepIds)
                     .distinctUntilChanged()
                     .flatMapLatest { sortable ->
-                        val sort = shownSort(chosen, sortable, list.oldestFirst)
+                        val sort = shownSort(view.sort, sortable, list.oldestFirst)
                         combine(
                             reader.timeline(
                                 view.scope,
@@ -216,37 +204,32 @@ class HomeViewModel(
     }
 
     /**
-     * Orders the list on screen by [sort]. By date, that's every list's order (and this one's
-     * choice of score or position is dropped); by score or position, only this list's.
+     * Orders the list on screen by [sort], until another list is chosen. A date order's direction
+     * is every list's, and kept (the oldest-first setting).
      */
     fun setSort(sort: ListSort) {
-        val key = view.value.scope.sortKey
-        viewModelScope.launch {
-            updateSettings {
-                if (sort.field == SortField.DATE) {
-                    it.copy(oldestFirst = sort == ListSort.OLDEST, listSorts = it.listSorts - key)
-                } else {
-                    it.copy(listSorts = it.listSorts + (key to sort))
-                }
+        view.update { it.sortBy(sort) }
+        if (sort.field == SortField.DATE) {
+            viewModelScope.launch {
+                updateSettings { it.copy(oldestFirst = sort == ListSort.OLDEST) }
             }
         }
     }
 
     /**
-     * Orders the list on screen by [field]: by date in every list's direction, else in the
-     * direction it had, or the field's default.
+     * Orders the list on screen by [field], in the direction it's shown in or the field's default.
      */
     fun setSortField(field: SortField) {
-        val key = view.value.scope.sortKey
-        viewModelScope.launch {
-            updateSettings {
+        val shown = timeline.value?.sort
+        view.update {
+            it.sortBy(
                 when {
-                    field == SortField.DATE -> it.copy(listSorts = it.listSorts - key)
-                    it.listSorts[key]?.field == field -> it
-                    else ->
-                        it.copy(listSorts = it.listSorts + (key to ListSort.directions(field)[0]))
+                    shown?.field == field -> shown
+                    // By date, in the setting's direction (shownSort).
+                    field == SortField.DATE -> ListSort.NEWEST
+                    else -> ListSort.directions(field)[0]
                 }
-            }
+            )
         }
     }
 

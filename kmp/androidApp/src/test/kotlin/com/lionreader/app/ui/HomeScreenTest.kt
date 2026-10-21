@@ -42,7 +42,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
-import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.home.HomeViewModel
@@ -667,7 +666,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun scoreAndPositionAreOfferedWhereAListHasThemAndKeptPerList() {
+    fun aListWithPositionsOpensByThemAndAChoiceLastsTheScreen() {
         // By date: Delta, Bravo, Alpha, Charlie.
         seed("a", "Alpha", read = false, sortAt = 2, subscription = "col")
         seed("b", "Bravo", read = false, sortAt = 3, subscription = "col")
@@ -678,9 +677,10 @@ class HomeScreenTest {
         db.subscriptionEntryQueries.setPosition(1.0, "col", "c")
         show()
 
+        // All has no positions: by date, Score offered.
+        awaitList(listOf("d", "b", "a", "c"))
         composeRule.onNodeWithContentDescription("List options").performClick()
         composeRule.onNodeWithText("Date").assert(isSelected())
-        // Only a collection's list has positions.
         composeRule.onNodeWithText("Position").assertDoesNotExist()
         composeRule.onNodeWithText("Score").performClick()
         awaitList(listOf("a", "b", "d", "c"))
@@ -690,22 +690,31 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Lowest").assert(isSelected())
         Espresso.pressBack()
 
-        // Another list goes by date until it's ordered otherwise.
+        // A collection with positions opens first to last.
         model.select(ListScope.Subscription("col"))
-        awaitList(listOf("d", "b", "a", "c"))
-        choose("Position")
         awaitList(listOf("c", "d", "b", "a"))
-        assertEquals(
-            mapOf("all" to ListSort.LOWEST, "subscription:col" to ListSort.FIRST),
-            settings.value.listSorts,
-        )
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Position").assert(isSelected())
+        composeRule.onNodeWithText("First").assert(isSelected())
+        Espresso.pressBack()
+        choose("Date")
+        awaitList(listOf("d", "b", "a", "c"))
+        // A date direction is every list's.
+        choose("Oldest")
+        awaitList(listOf("c", "a", "b", "d"))
+        composeRule.waitUntil { settings.value.oldestFirst }
 
-        // Without scores, All is by date, and by score again once they're back.
+        // The choice of Score didn't outlast the screen, and nothing else was stored.
         model.select(ListScope.All)
-        awaitList(listOf("b", "a", "d", "c"))
+        awaitList(listOf("c", "a", "b", "d"))
+        assertEquals(AppSettings(oldestFirst = true), settings.value)
+
+        // Once its scores are gone, a list by score is by its default, until they're back.
+        choose("Score")
+        awaitList(listOf("a", "b", "d", "c"))
         db.entryQueries.updateScore(null, "a")
         db.entryQueries.updateScore(null, "b")
-        awaitList(listOf("d", "b", "a", "c"))
+        awaitList(listOf("c", "a", "b", "d"))
         db.entryQueries.updateScore(1.0, "c")
         awaitList(listOf("c", "d", "b", "a"))
     }

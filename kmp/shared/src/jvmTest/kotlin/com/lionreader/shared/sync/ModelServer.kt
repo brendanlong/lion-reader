@@ -442,13 +442,22 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .filter { type != "saved" || savedSubscriptionId in it.memberships }
                 .filter { subscriptionId == null || subscriptionId in it.memberships }
                 .filter { sortBy != "readChanged" || it.readChangedAt != null }
-                .sortedWith(
-                    when (sortBy) {
-                        "readChanged" -> recentlyReadOrder
-                        "score" -> highestScoreOrder
-                        else -> newestOrder
-                    }
-                )
+                .let { rows ->
+                    // With no sort named, a subscription whose members have positions lists by
+                    // them, first first, as the server's default; any other list newest first.
+                    val byPosition =
+                        sortBy == null &&
+                            subscriptionId != null &&
+                            rows.any { subscriptionId in it.positions }
+                    rows.sortedWith(
+                        when {
+                            sortBy == "readChanged" -> recentlyReadOrder
+                            sortBy == "score" -> highestScoreOrder
+                            byPosition -> rankedOrder(false) { it.positions[subscriptionId] }
+                            else -> newestOrder
+                        }
+                    )
+                }
         val offset = cursor?.toInt() ?: 0
         val page = matching.drop(offset).take(limit)
         val next = (offset + limit).takeIf { it < matching.size }?.toString()

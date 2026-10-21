@@ -1,6 +1,7 @@
 package com.lionreader.shared.home
 
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.ListSort
 
 /**
  * Which list is on screen and how much of it. One value, changed by the functions below, so a
@@ -15,9 +16,16 @@ internal data class ListState(
      */
     val keepIds: Set<String> = emptySet(),
     val limit: Long = PAGE,
+    /**
+     * The order the user chose for this list on screen; null for its default (`shownSort`). Never
+     * kept past it: choosing the list again starts from its default.
+     */
+    val sort: ListSort? = null,
 ) {
-    /** A list starts at its first page, keeping nothing. */
+    /** A list starts at its first page, in its default order, keeping nothing. */
     fun select(scope: ListScope): ListState = ListState(scope)
+
+    fun sortBy(sort: ListSort): ListState = copy(sort = sort)
 
     fun loadMore(): ListState = copy(limit = limit + PAGE)
 

@@ -45,23 +45,19 @@ data class Sortable(val score: Boolean, val position: Boolean) {
     }
 }
 
-/**
- * What a list is shown in: its [chosen] order while the list has values for it, else by date
- * ([oldestFirst]), keeping the choice for when they come back.
- */
-fun shownSort(chosen: ListSort, sortable: Sortable, oldestFirst: Boolean): ListSort =
-    if (sortable.has(chosen.field)) chosen
-    else if (oldestFirst) ListSort.OLDEST else ListSort.NEWEST
+/** By date, in every list's direction ([oldestFirst], a setting). */
+fun dateSort(oldestFirst: Boolean): ListSort = if (oldestFirst) ListSort.OLDEST else ListSort.NEWEST
 
-/** The key a list's chosen order is kept under (`AppSettings.listSorts`). */
-val ListScope.sortKey: String
-    get() =
-        when (this) {
-            ListScope.All -> "all"
-            ListScope.Starred -> "starred"
-            ListScope.Saved -> "saved"
-            ListScope.Uncategorized -> "uncategorized"
-            ListScope.RecentlyRead -> "recently-read"
-            is ListScope.Subscription -> "subscription:$id"
-            is ListScope.Tag -> "tag:$id"
-        }
+/**
+ * What a list is shown in, as the server lists it (`planEntryPage`): by what the user chose for it
+ * on this screen, while it has values for that, else by its default: position (first first) for a
+ * list with positions, so a book opens at its first chapter, and date for any other. Nothing
+ * remembers a choice past the screen (that's #2100).
+ */
+fun shownSort(chosen: ListSort?, sortable: Sortable, oldestFirst: Boolean): ListSort =
+    when {
+        chosen?.field == SortField.DATE -> dateSort(oldestFirst)
+        chosen != null && sortable.has(chosen.field) -> chosen
+        sortable.position -> ListSort.FIRST
+        else -> dateSort(oldestFirst)
+    }
