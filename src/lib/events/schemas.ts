@@ -434,6 +434,8 @@ export const collectionEntriesChangedEventSchema = z.object({
   subscriptionId: z.string(),
   entryIds: z.array(z.string()),
   added: z.boolean(),
+  /** Added articles' positions in the collection, by entry id, for those that have one. */
+  positions: z.record(z.string(), z.number()).optional(),
   counts: unreadCountsSchema,
   tagLists: entryTagListsSchema,
   timestamp: timestampWithDefault,

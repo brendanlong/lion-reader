@@ -25,6 +25,7 @@ afterEach(() => {
 });
 
 const COLLECTION = "collection-1";
+const COUNTS = createCounts({ all: { unread: 1 } });
 
 function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow> = {}): EntryRow {
   return {
@@ -170,11 +171,53 @@ describe("a list left to the server's default sort", () => {
     await waitFor(() => expect(ids()).toEqual(["one", "between", "two"]));
     expect(result.current.sortable?.sort).toEqual({ sortBy: "position", sortOrder: "first" });
   });
+
+  it("places entries joining the collection at the positions their event carries", async () => {
+    const input = { subscriptionId: COLLECTION, limit: 10 };
+    const { queryClient, ids } = renderList(input);
+    const utils = createRealTrpcUtils(queryClient);
+    act(() => {
+      queryClient.setQueryData([["entries", "list"], { input, type: "infinite" }], {
+        pages: [
+          {
+            items: [makeEntry("one", "2024-06-01", { positions: { [COLLECTION]: 1 } })],
+            sortable: { score: false, position: true },
+            sort: { sortBy: "position", sortOrder: "first" },
+          },
+        ],
+        pageParams: [undefined],
+      });
+      // Saved before they joined, newest last, as an import saves chapters.
+      upsertServerEntries(getLocalDb(queryClient).entries, [
+        makeEntry("two", "2024-06-02", { subscriptionIds: ["sub-1"] }),
+        makeEntry("three", "2024-06-03", { subscriptionIds: ["sub-1"] }),
+      ]);
+    });
+    await waitFor(() => expect(ids()).toEqual(["one"]));
+
+    for (const [entryId, position] of [
+      ["two", 2],
+      ["three", 3],
+    ] as const) {
+      act(() =>
+        handleSyncEvent(utils, queryClient, {
+          type: "collection_entries_changed",
+          subscriptionId: COLLECTION,
+          entryIds: [entryId],
+          added: true,
+          positions: { [entryId]: position },
+          tagLists: [{ entryId, tagIds: [], uncategorized: false }],
+          counts: COUNTS,
+          timestamp: "2024-07-02T00:00:00Z",
+          updatedAt: "2024-07-02T00:00:00Z",
+        })
+      );
+    }
+    await waitFor(() => expect(ids()).toEqual(["one", "two", "three"]));
+  });
 });
 
 describe("sortable", () => {
-  const COUNTS = createCounts({ all: { unread: 1 } });
-
   function stateChanged(
     entry: EntryRow,
     change: { score?: number | null; positions?: Record<string, number> }
