@@ -699,9 +699,20 @@ async function inlineImages(images: ImageReader, html: string): Promise<string> 
   return inlined;
 }
 
-/** Whether the converted HTML has anything to read or look at. */
+/**
+ * Whether the converted HTML has anything to read or look at: an image, or
+ * text outside a tag (the builder escapes `<` and `>` in text and attributes).
+ */
 function hasContent(html: string): boolean {
-  return html.includes(IMAGE_MARK) || html.replace(/<[^>]*>/g, "").trim() !== "";
+  if (html.includes(IMAGE_MARK)) return true;
+  let inTag = false;
+  for (let i = 0; i < html.length; i++) {
+    const char = html[i];
+    if (char === "<") inTag = true;
+    else if (char === ">") inTag = false;
+    else if (!inTag && char.trim() !== "") return true;
+  }
+  return false;
 }
 
 /** Reads each of the book's images once, however many chapters show it. */
