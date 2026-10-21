@@ -6,8 +6,8 @@
 //! `class="absolute inset-0 z-10"` covered the whole reader pane and turned
 //! every click into a navigation, and `fixed`/`hidden`/`opacity-0` would let a
 //! feed hide content or lay an invisible link over the app. So a class survives
-//! only if it is one the reader stylesheets deliberately style: `globals.css`
-//! (`.reader-prose …`) on the web and `ReaderDocument.kt` on Android.
+//! only if it is one the reader stylesheets deliberately style:
+//! `src/app/reader-prose.css`, which both the web and Android readers load.
 
 /// Classes kept on entry content. Add one here when a reader stylesheet starts
 /// styling it.

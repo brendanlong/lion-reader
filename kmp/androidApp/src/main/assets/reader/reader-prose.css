@@ -1,0 +1,232 @@
+/* Generated from src/app/reader-prose.css by `pnpm app:reader-css`; do not edit. */
+/* =================================
+   Reader Prose: the article content's fixes for feed markup, shared by the web
+   reader (imported by globals.css, under Tailwind Typography) and the Android
+   reader's WebView (copied into its assets by `pnpm app:reader-css`, on top of
+   ReaderDocument.kt's base styles). Put a rule here when it fixes how some
+   feed's markup renders, so both readers get it; platform layout (heading
+   scale, spacing, fonts) stays with each platform.
+
+   - Scope every rule to `.reader-prose` (the web's content wrappers, the
+     Android document's <body>).
+   - Colors only through the theme tokens both platforms define: `--edge-strong`
+     (borders), `--surface-subtle` (card fill), `--surface-muted` (hover fill).
+     On e-paper both fills are paper white, so cards carry state on borders.
+   - No :is(): e-reader WebViews may predate it, and a selector a browser can't
+     parse drops its whole rule. Spell the selectors out instead.
+   ================================= */
+
+/* KaTeX emits each formula twice: `.katex-mathml` (MathML, which browsers
+   render natively) and `.katex-html`, a span tree that only looks right with
+   KaTeX's own stylesheet. We don't load that stylesheet, so hide the span copy
+   when its MathML twin is there. This is CSS rather than a sanitizer rule
+   because removing elements in the streaming sanitizer can desync its view of
+   the document from the browser's (an mXSS vector). */
+.reader-prose .katex-mathml + .katex-html {
+  display: none;
+}
+
+/* =================================
+   <details>/<summary>
+
+   Feeds (notably LessWrong) ship collapsible <details> blocks. Browser
+   defaults leave them bare, and because LessWrong wraps the summary title in a
+   <p>, the disclosure marker sits on its own line above the text. Give the
+   block a card border, keep the marker beside the title, and make the spacing
+   look right both collapsed and expanded.
+
+   The card's vertical padding is 0 so a collapsed <details> is exactly the
+   height of its <summary>; the body's spacing comes from margins (which don't
+   collapse out through the card's border).
+   ================================= */
+
+.reader-prose details {
+  margin: 1.25em 0;
+  padding: 0 1em;
+  border: 1px solid var(--edge-strong);
+  border-radius: 0.5rem;
+  background-color: var(--surface-subtle);
+}
+
+.reader-prose summary {
+  /* Bleed to the card edges so the whole header is the click/hover target. */
+  margin: 0 -1em;
+  padding: 0.6em 1em;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  /* Keep the disclosure marker inside the card, just left of the title. */
+  list-style-position: inside;
+}
+.reader-prose summary:hover {
+  background-color: var(--surface-muted);
+}
+
+/* Keep the disclosure marker on the same line as the title: LessWrong wraps
+   the title in a <p> that would otherwise break below the marker. */
+.reader-prose summary > * {
+  display: inline;
+  margin: 0;
+}
+
+/* When open, split the header from the body with the card's border and square
+   off the summary's bottom corners so its hover fill meets the divider. The
+   bottom margin collapses with the body's first top margin, so the body clears
+   the divider even where paragraphs have no top margin (the Android reader). */
+.reader-prose details[open] > summary {
+  margin-bottom: 1em;
+  border-bottom: 1px solid var(--edge-strong);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* =================================
+   Footnotes
+
+   The CKEditor 5 footnotes plugin used on ForumMagnum sites (LessWrong, EA
+   Forum, Alignment Forum, etc.) emits a footnote section as an
+   <ol class="footnote-section"> whose items each start with a "^" back-link
+   (a <sup> inside <span class="footnote-back-link">) followed by the footnote
+   body in <div class="footnote-content">. Because that body is a block <div>,
+   it drops onto its own line, stranding the tiny superscript "^" above each
+   footnote with a large gap (and the <div>'s own <p> adds margins on top). Pull
+   the back-link and the footnote body back onto the list marker's line so a
+   footnote reads like "1. ^ text", matching the source.
+
+   Keyed off the plugin's class names (not a hostname), so it fixes every feed
+   using this plugin. The id/class/#fragment anchors survive sanitization, so
+   jump-to-footnote and jump-back already work — this is purely layout. */
+
+.reader-prose .footnote-content,
+.reader-prose .footnote-content > p:first-child {
+  display: inline;
+}
+/* Multi-paragraph footnotes: only the first paragraph joins the caret line;
+   the rest flow as normal blocks below it with an even gap (not the larger
+   inter-paragraph margin, which looks off against the tightened list). */
+.reader-prose .footnote-content > p:not(:first-child) {
+  display: block;
+  margin: 0.5em 0 0;
+}
+
+.reader-prose .footnote-back-link {
+  margin-right: 0.35em;
+}
+/* Drop the caret from superscript to the baseline so it reads as an inline
+   "jump back" affordance beside the text, not a stranded superscript. */
+.reader-prose .footnote-back-link sup {
+  vertical-align: baseline;
+  font-size: inherit;
+}
+
+/* Tighten the space between footnotes now that each is a single line + body. */
+.reader-prose .footnote-section > li {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* =================================
+   Task Lists
+
+   GFM task lists (`- [x] done`) are a list whose items start with a disabled
+   checkbox; the sanitizer keeps it as an inert `<input type="checkbox">` (see
+   native/sanitizer). Drop the bullet -- the checkbox is the marker. Matched
+   structurally rather than by class, because only some sources emit GitHub's
+   `task-list-item` classes -- our Markdown renderer does not.
+
+   Two shapes, because renderers disagree on where the checkbox goes: directly
+   in the <li> for a tight list (what our renderer emits) and inside the item's
+   first <p> for a loose one (what cmark-gfm/GitHub emit, so it shows up in feed
+   HTML).
+
+   The checkbox is deliberately NOT pulled into the marker's gutter with a
+   negative margin, tempting as that is (it's what GitHub does). CSS can't see
+   text nodes -- `:first-child` matches the first *element*, so
+   `<li>see <input> here</li>`, which a feed is free to write, matches every
+   selector we can express. A negative margin there lands the checkbox on top of
+   the preceding word. Sitting at the text's start edge is slightly less tidy in
+   a list that mixes task and plain items, but it cannot collide with anything.
+   ================================= */
+
+.reader-prose li:has(> input[type="checkbox"]),
+.reader-prose li:has(> p:first-child > input[type="checkbox"]) {
+  list-style: none;
+}
+
+.reader-prose li input[type="checkbox"] {
+  /* Sized in `em` so the checkbox tracks the user's article font size, which a
+     UA-default 13px checkbox would not. */
+  width: 1em;
+  height: 1em;
+  margin-inline-end: 0.3em;
+  vertical-align: -0.1em;
+}
+
+/* =================================
+   Table Alignment
+
+   Markdown table alignment (`| :-: |`) arrives as `align` on the cells, a
+   presentational hint that loses to any author CSS (e.g. Typography's
+   `th, td { text-align: start }`). Put the author's alignment back.
+   ================================= */
+
+.reader-prose th[align="left"],
+.reader-prose td[align="left"] {
+  text-align: left;
+}
+.reader-prose th[align="center"],
+.reader-prose td[align="center"] {
+  text-align: center;
+}
+.reader-prose th[align="right"],
+.reader-prose td[align="right"] {
+  text-align: right;
+}
+
+/* =================================
+   Layout Tables
+
+   Email newsletters lay out the whole message with nested tables, marked
+   `role="none"`/`"presentation"` (#1966). Data-table styling draws borders and
+   (under Typography) shrinks the font again at every nesting level, so flatten
+   them into plain blocks; that also keeps fixed-width columns from overflowing
+   a phone. Child combinators so a real data table nested in a layout cell keeps
+   its styling.
+   ================================= */
+
+.reader-prose table[role~="none"],
+.reader-prose table[role~="none"] > *,
+.reader-prose table[role~="none"] > * > tr,
+.reader-prose table[role~="none"] > * > tr > *,
+.reader-prose table[role~="presentation"],
+.reader-prose table[role~="presentation"] > *,
+.reader-prose table[role~="presentation"] > * > tr,
+.reader-prose table[role~="presentation"] > * > tr > * {
+  display: block;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* =================================
+   Video Embeds
+
+   The only iframes that survive sanitization are allow-listed embeds
+   (native/sanitizer/core/src/embeds.rs). Feed-supplied width/height attributes
+   are arbitrary, so make the player fill the column at the standard 16:9
+   aspect instead.
+   ================================= */
+
+.reader-prose iframe {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 0.5rem;
+}

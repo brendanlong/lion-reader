@@ -38,14 +38,15 @@ data class ReaderColors(
 
 /**
  * The reader view's invariant is in SECURITY.md §1. [assetOrigin]: where the app serves the bundled
- * fonts and scripts from (`<origin>/assets/reader/…`), and the document's own origin.
+ * fonts, scripts and stylesheet from (`<origin>/assets/reader/…`), and the document's own origin.
  */
 private fun contentSecurityPolicy(assetOrigin: String) =
     "default-src 'none'; " +
         "script-src $assetOrigin/assets/reader/scroll-detect.js " +
         "$assetOrigin/assets/reader/narration.js; " +
         "base-uri 'none'; form-action 'none'; " +
-        "style-src 'unsafe-inline'; font-src $assetOrigin; " +
+        "style-src 'unsafe-inline' $assetOrigin/assets/reader/reader-prose.css; " +
+        "font-src $assetOrigin; " +
         "img-src * data:; media-src *; frame-src https:"
 
 private val FONT_FILES =
@@ -78,7 +79,8 @@ data class ReaderHeader(val title: String, val byline: String, val url: String? 
  * body. The summary and body are the server's sanitized HTML (sanitized on every read); they are
  * inserted verbatim and never re-sanitized here. Our script goes in the head, ahead of it, so no
  * unclosed element in the body can swallow it. The document is loaded at [assetOrigin], where the
- * app serves its bundled fonts and scripts.
+ * app serves its bundled fonts, scripts and the web's `reader-prose.css` (the fixes for feed
+ * markup, which reads the theme from the `--edge-strong`/`--surface-*` variables set here).
  */
 fun readerDocument(
     header: ReaderHeader,
@@ -102,6 +104,8 @@ fun readerDocument(
         <script defer src="$assetOrigin/assets/reader/narration.js"></script>
         <style>
         ${fontFaces(assetOrigin)}
+        :root { --edge-strong: ${colors.border}; --surface-subtle: ${colors.codeBackground};
+          --surface-muted: ${colors.codeBackground}; }
         html { background: ${colors.background}; }
         body {
           /* A readable line on wide screens, as on the web (max-w-3xl). */
@@ -114,7 +118,7 @@ fun readerDocument(
         a { color: ${colors.link}; }
         h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.5em 0 0.5em; text-align: left; }
         h1 { font-size: 1.6em; } h2 { font-size: 1.35em; } h3 { font-size: 1.15em; }
-        p, ul, ol, blockquote, figure, pre, table, details { margin: 0 0 1.1em; }
+        p, ul, ol, blockquote, figure, pre, table { margin: 0 0 1.1em; }
         img, video, svg, iframe { max-width: 100%; height: auto; border-radius: 6px; }
         figure { margin-left: 0; margin-right: 0; }
         figcaption { color: ${colors.muted}; font-size: 0.875em; }
@@ -125,17 +129,7 @@ fun readerDocument(
         code { font-size: 0.9em; }
         table { display: block; overflow-x: auto; border-collapse: collapse; }
         th, td { border: 1px solid ${colors.border}; padding: 0.3em 0.6em; }
-        /* Email layout tables (#1966); see "Reader Prose Layout Tables" in globals.css.
-           No :is(), which e-reader WebViews may predate. */
-        table[role~="none"], table[role~="none"] > *, table[role~="none"] > * > tr,
-        table[role~="none"] > * > tr > *,
-        table[role~="presentation"], table[role~="presentation"] > *,
-        table[role~="presentation"] > * > tr, table[role~="presentation"] > * > tr > * {
-          display: block; width: auto; height: auto; margin: 0; padding: 0; border: 0;
-          overflow: visible;
-        }
         hr { border: 0; border-top: 1px solid ${colors.border}; }
-        details { border: 1px solid ${colors.border}; border-radius: 6px; padding: 0.5em 0.75em; }
         math { font-size: 1.1em; }
         .lr-header { margin: 16px 0 1.5em; padding-bottom: 1em; text-align: left;
           border-bottom: 1px solid ${colors.border}; }
@@ -146,13 +140,15 @@ fun readerDocument(
         .lr-summary { margin: 0 0 1.5em; padding: 0.75em 1em; border-radius: 8px;
           border: 1px solid ${colors.border}; background: ${colors.codeBackground}; }
         .lr-summary > :last-child { margin-bottom: 0; }
-        .lr-narrating { background: color-mix(in srgb, ${colors.link} 18%, transparent);
+        /* Outranks reader-prose.css's card fills. */
+        .reader-prose .lr-narrating { background: color-mix(in srgb, ${colors.link} 18%, transparent);
           border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, ${colors.link} 18%, transparent); }
         .lr-summary-label { margin: 0 0 0.5em; color: ${colors.muted}; font-family: sans-serif;
           font-size: 0.875rem; font-weight: 600; }
-        .katex-mathml + .katex-html { display: none; }
-        </style></head>
-        <body>
+        </style>
+        <link rel="stylesheet" href="$assetOrigin/assets/reader/reader-prose.css">
+        </head>
+        <body class="reader-prose">
         """
         .trimIndent() +
         // After trimIndent, so feed text can't change the template's indentation.

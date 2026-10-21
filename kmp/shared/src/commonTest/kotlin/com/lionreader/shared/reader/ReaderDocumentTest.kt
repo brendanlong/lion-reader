@@ -93,7 +93,7 @@ class ReaderDocumentTest {
     }
 
     @Test
-    fun theScriptsComeOnlyFromTheAssetOrigin() {
+    fun scriptsAndStylesheetsComeOnlyFromTheAssetOrigin() {
         val html = readerDocument(header, null, "", AppSettings(), tokens, colors, ORIGIN)
         val csp = html.substringAfter("Content-Security-Policy\" content=\"").substringBefore('"')
         assertTrue(csp.startsWith("default-src 'none'; "))
@@ -101,6 +101,7 @@ class ReaderDocumentTest {
             "script-src $ORIGIN/assets/reader/scroll-detect.js $ORIGIN/assets/reader/narration.js;" in
                 csp
         )
+        assertTrue("style-src 'unsafe-inline' $ORIGIN/assets/reader/reader-prose.css;" in csp)
     }
 
     @Test

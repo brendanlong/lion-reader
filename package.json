@@ -45,6 +45,7 @@
     "openapi:generate": "dotenv -o -e .env.test -- tsx scripts/generate-openapi.ts",
     "app:appearance": "tsx scripts/export-app-appearance.ts",
     "app:narration": "tsx scripts/export-app-narration.ts",
+    "app:reader-css": "tsx scripts/export-app-reader-css.ts",
     "app:server-constants": "tsx scripts/export-app-server-constants.ts",
     "app:test-fixture": "tsx scripts/create-app-test-fixture.ts",
     "db:migrate:test": "dotenv -o -e .env.test -- tsx scripts/migrate.ts",
