@@ -386,7 +386,7 @@ export async function listEntries(
         .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
         .$dynamic()
     ),
-    params.cursor || params.offset ? undefined : page.sortable(),
+    params.cursor || params.offset ? undefined : listSortable(db, params, page),
   ]);
   const firstPage = !params.cursor && !params.offset;
   return {
@@ -395,6 +395,21 @@ export async function listEntries(
     ...(sortable && { sortable }),
     ...(firstPage && page.sort && { sort: page.sort }),
   };
+}
+
+/**
+ * Which ranked sorts the list has values for, ignoring spam: a showSpam tag
+ * or Uncategorized list has no rows of its own (`tag_entries` hold no spam),
+ * so its lookup would walk every scored article the user has. A scored spam
+ * article alone doesn't offer the sort.
+ */
+async function listSortable(
+  db: typeof dbType,
+  params: ListEntriesParams,
+  page: NonNullable<Awaited<ReturnType<typeof planEntryPage>>>
+): Promise<EntrySortable | undefined> {
+  if (!params.showSpam) return page.sortable();
+  return (await planEntryPage(db, { ...params, showSpam: false }))?.sortable();
 }
 
 /** An entry as Google Reader's item lists key it (`listGreaderItemRefs`). */
