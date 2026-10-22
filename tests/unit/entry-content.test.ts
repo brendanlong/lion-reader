@@ -3,11 +3,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { selectDisplayedContent } from "@/lib/entry-content";
+import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 
 const fields = {
   fullContentCleaned: "<p>full cleaned</p>",
-  fullContentOriginal: "<p>full original</p>",
   contentCleaned: "<p>cleaned</p>",
   contentOriginal: "<p>original</p>",
 };
@@ -31,15 +30,6 @@ describe("selectDisplayedContent", () => {
     );
   });
 
-  it("falls back full-cleaned -> full-original", () => {
-    expect(
-      selectDisplayedContent(
-        { ...fields, fullContentCleaned: null },
-        { showFullContent: true, showOriginal: false }
-      )
-    ).toBe("<p>full original</p>");
-  });
-
   it("falls back cleaned -> original when cleaned is missing", () => {
     expect(
       selectDisplayedContent(
@@ -56,5 +46,24 @@ describe("selectDisplayedContent", () => {
         { showFullContent: true, showOriginal: false }
       )
     ).toBeNull();
+  });
+});
+
+describe("showsFullContent", () => {
+  const fetched = {
+    fetchFullContent: true,
+    fullContentCleaned: "<p>full cleaned</p>",
+    fullContentFetchedAt: new Date("2026-01-01T00:00:00Z"),
+    fullContentError: null,
+  };
+
+  it("shows a successful fetch", () => {
+    expect(showsFullContent(fetched)).toBe(true);
+  });
+
+  // Fetches from before failed extractions were recorded as errors stored the
+  // whole page with no article (#2115); those show the feed content.
+  it("doesn't show a fetch that stored no article", () => {
+    expect(showsFullContent({ ...fetched, fullContentCleaned: null })).toBe(false);
   });
 });

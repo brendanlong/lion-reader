@@ -351,7 +351,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       contentCleaned,
       feedUrl: null,
       unsubscribeUrl: null,
-      fullContentOriginal: null,
       // "Full content" of a self-contained demo article is the article itself.
       fullContentCleaned: state.fullContentFetchedAt ? contentCleaned : null,
       fullContentFetchedAt: state.fullContentFetchedAt,

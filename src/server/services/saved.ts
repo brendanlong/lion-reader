@@ -31,7 +31,6 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { stripHtml } from "@/server/html/strip-html";
 import { escapeHtml } from "@/server/http/html";
-import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { toEntryMetadata } from "@/server/services/entry-sync-events";
@@ -442,10 +441,7 @@ async function savedArticleFromRow({
   entry,
   userState,
 }: NonNullable<Awaited<ReturnType<typeof selectExistingSavedRow>>>): Promise<SavedArticle> {
-  const { cleaned } = await sanitizeEntryContentFamily("content", {
-    original: entry.contentOriginal,
-    cleaned: entry.contentCleaned,
-  });
+  const cleaned = await sanitizeEntryHtmlAsync(entry.contentCleaned);
   return {
     id: entry.id,
     url: entry.url,

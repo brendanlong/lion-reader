@@ -12,9 +12,10 @@ import type { db as dbType } from "@/server/db";
 import { entries, narrationContent, subscriptions } from "@/server/db/schema";
 import { HttpFetchError } from "@/server/http/fetch";
 import { getAppErrorCode } from "@/server/errors";
-import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
+import { archiveFullContentOriginal } from "./full-content-archive";
 import { type FullEntry, getFullEntry } from "./entry-reads";
 import { articleContentFromAcquired, processArticleContent } from "./article-content";
 
@@ -24,13 +25,15 @@ import { articleContentFromAcquired, processArticleContent } from "./article-con
 export interface FetchFullContentResult {
   /** Whether the fetch was successful */
   success: boolean;
-  /** The raw HTML content from the URL */
+  /** The raw HTML content from the URL, archived rather than stored on the entry */
   contentOriginal?: string;
   /** The article body: Readability's extraction, or the content when already clean (set on success) */
   contentCleaned?: string;
   /** Error message if the fetch failed */
   error?: string;
 }
+
+export const FULL_CONTENT_EXTRACTION_FAILED = "Could not extract article content from page";
 
 /**
  * Fetches full article content from a URL.
@@ -68,10 +71,7 @@ export async function fetchFullContent(
     // Readability failed on a generic page. Storing the whole page would show
     // it in place of the feed's own content, so record the failure instead.
     if (contentCleaned === null) {
-      return {
-        success: false,
-        error: "Could not extract article content from page",
-      };
+      return { success: false, error: FULL_CONTENT_EXTRACTION_FAILED };
     }
 
     return { success: true, contentOriginal, contentCleaned };
@@ -96,8 +96,9 @@ export async function fetchFullContent(
  * user-initiated fetch (fetchAndStoreFullContent) and the background worker
  * (fetchFullContentForNewEntries below).
  *
- * Stores only the raw full-content columns; the read path sanitizes per read
- * (issue #1282).
+ * Stores only the raw cleaned content; the read path sanitizes per read (issue
+ * #1282). The fetched page goes to the archive (`archiveFullContentOriginal`),
+ * never the entry row (#2115); failing to archive it doesn't fail the write.
  *
  * Bumps `updated_at` only when the full content an entry view shows changes:
  * sync reports every bump as `entry_updated` to every subscriber, and clients
@@ -129,14 +130,21 @@ export async function persistFullContentResult(
     return null;
   }
 
+  if (result.contentOriginal) {
+    await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
+      logger.warn("Failed to archive full content original", {
+        entryId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
   // Compute hash of full content for separate summary caching
-  const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
-  const fullContentHash = fullContentForHash
-    ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
+  const fullContentHash = result.contentCleaned
+    ? createHash("sha256").update(result.contentCleaned, "utf8").digest("hex")
     : null;
 
   const fullContentUpdate = {
-    fullContentOriginal: result.contentOriginal ?? null,
     fullContentCleaned: result.contentCleaned ?? null,
     fullContentHash,
     fullContentFetchedAt: now,
@@ -367,17 +375,13 @@ export async function fetchAndStoreFullContent(
 
   // Sanitize the freshly-fetched full content for the response (raw is stored;
   // sanitization is per-read now — issue #1282).
-  const fullContent = await sanitizeEntryContentFamily("fullContent", {
-    original: fullContentUpdate.fullContentOriginal,
-    cleaned: fullContentUpdate.fullContentCleaned,
-  });
+  const fullContentCleaned = await sanitizeEntryHtmlAsync(fullContentUpdate.fullContentCleaned);
 
   return {
     success: true,
     entry: {
       ...entry,
-      fullContentOriginal: fullContent.original,
-      fullContentCleaned: fullContent.cleaned,
+      fullContentCleaned,
       fullContentFetchedAt: now,
       fullContentError: null,
     },

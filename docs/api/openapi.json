@@ -5983,12 +5983,6 @@
                             "null"
                           ]
                         },
-                        "fullContentOriginal": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "fullContentCleaned": {
                           "type": [
                             "string",
@@ -6036,7 +6030,6 @@
                         "contentCleaned",
                         "feedUrl",
                         "unsubscribeUrl",
-                        "fullContentOriginal",
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",
@@ -6301,12 +6294,6 @@
                               "null"
                             ]
                           },
-                          "fullContentOriginal": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "fullContentCleaned": {
                             "type": [
                               "string",
@@ -6360,7 +6347,6 @@
                           "contentCleaned",
                           "feedUrl",
                           "unsubscribeUrl",
-                          "fullContentOriginal",
                           "fullContentCleaned",
                           "fullContentFetchedAt",
                           "fullContentError",
@@ -7877,12 +7863,6 @@
                             "null"
                           ]
                         },
-                        "fullContentOriginal": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "fullContentCleaned": {
                           "type": [
                             "string",
@@ -7930,7 +7910,6 @@
                         "contentCleaned",
                         "feedUrl",
                         "unsubscribeUrl",
-                        "fullContentOriginal",
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",

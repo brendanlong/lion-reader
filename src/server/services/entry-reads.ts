@@ -8,7 +8,7 @@ import { z } from "zod";
 import { eq, and, asc, inArray, gt, sql, or, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, feeds, subscriptions, userEntries, visibleEntries } from "@/server/db/schema";
-import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
+import { sanitizeEntryContentPair } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 import { escapeHtml } from "@/server/http/html";
@@ -35,7 +35,6 @@ export const fullEntrySchema = entryListItemSchema.extend({
   feedUrl: z.string().nullable(),
   /** The unsubscribe link from an email's HTML. */
   unsubscribeUrl: z.string().nullable(),
-  fullContentOriginal: z.string().nullable(),
   fullContentCleaned: z.string().nullable(),
   fullContentFetchedAt: z.date().nullable(),
   fullContentError: z.string().nullable(),
@@ -62,11 +61,7 @@ type OfflineEntry = z.infer<typeof offlineEntrySchema>;
  */
 export type EntryFull = Omit<
   FullEntry,
-  | "fullContentOriginal"
-  | "fullContentCleaned"
-  | "fullContentFetchedAt"
-  | "fullContentError"
-  | "fetchFullContent"
+  "fullContentCleaned" | "fullContentFetchedAt" | "fullContentError" | "fetchFullContent"
 > & {
   /**
    * The sanitized fetched full article when the entry view shows it instead of
@@ -121,16 +116,10 @@ const entryReadSelectFields = {
  */
 type FullContentScope = "all" | "shown";
 
-/**
- * The full-content bodies, raw. The original is the whole fetched page and is
- * served only when there's no cleaned version, so it isn't loaded otherwise.
- */
+/** The full-content body, raw. */
 function fullContentBodyFields(scope: FullContentScope) {
   const loaded = scope === "all" ? sql`true` : sql`${subscriptions.fetchFullContent}`;
   return {
-    fullContentOriginal: sql<
-      string | null
-    >`CASE WHEN ${loaded} AND ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
     fullContentCleaned: sql<
       string | null
     >`CASE WHEN ${loaded} THEN ${visibleEntries.fullContentCleaned} END`,
@@ -215,7 +204,6 @@ const entryRawContentSelectFields = {
   contentOriginal: visibleEntries.contentOriginal,
   contentCleaned: visibleEntries.contentCleaned,
   contentHash: visibleEntries.contentHash,
-  fullContentOriginal: visibleEntries.fullContentOriginal,
   fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentHash: visibleEntries.fullContentHash,
 };
@@ -225,7 +213,6 @@ export interface OwnedEntryRawContent {
   contentOriginal: string | null;
   contentCleaned: string | null;
   contentHash: string;
-  fullContentOriginal: string | null;
   fullContentCleaned: string | null;
   fullContentHash: string | null;
 }
@@ -263,69 +250,23 @@ export async function getOwnedEntryRawContent(
 }
 
 /**
- * Sanitize both content families of a full entry for display.
- *
- * Entry bodies come from untrusted feeds and are rendered via
- * `dangerouslySetInnerHTML` (and served to external clients such as MCP,
- * Google Reader, and Wallabag), so they must be sanitized. As of issue #1282
- * sanitization is not persisted — the native sanitizer is fast enough to run on
- * every read — so the read query selects the raw columns and this sanitizes
- * them (large bodies off the event loop; the full-content original only when
- * cleaned is NULL). See `sanitizeEntryContentFamily`.
+ * The app's full-entry view of a row: the feed content pair and the full
+ * content sanitized (the view can toggle back to feed content).
  */
-async function sanitizeFullEntryContent(row: {
-  contentOriginal: string | null;
-  contentCleaned: string | null;
-  fullContentOriginal: string | null;
-  fullContentCleaned: string | null;
-}) {
-  const [content, fullContent] = await Promise.all([
-    sanitizeEntryContentFamily("content", {
-      original: row.contentOriginal,
-      cleaned: row.contentCleaned,
-    }),
-    sanitizeEntryContentFamily("fullContent", {
-      original: row.fullContentOriginal,
-      cleaned: row.fullContentCleaned,
-    }),
+async function toFullEntry(row: EntryRow): Promise<FullEntry> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { contentHash, contentOriginal, contentCleaned, fullContentCleaned, ...rest } = row;
+
+  const [content, sanitizedFullContent] = await Promise.all([
+    sanitizeEntryContentPair({ original: contentOriginal, cleaned: contentCleaned }),
+    sanitizeEntryHtmlAsync(fullContentCleaned),
   ]);
 
   return {
+    ...rest,
     contentOriginal: content.original,
     contentCleaned: content.cleaned,
-    fullContentOriginal: fullContent.original,
-    fullContentCleaned: fullContent.cleaned,
-  };
-}
-
-/**
- * The app's full-entry view of a row: both content families sanitized (the
- * view can toggle back to feed content).
- */
-async function toFullEntry(row: EntryRow): Promise<FullEntry> {
-  const {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    contentHash,
-    contentOriginal,
-    contentCleaned,
-    fullContentOriginal,
-    fullContentCleaned,
-    ...rest
-  } = row;
-
-  const content = await sanitizeFullEntryContent({
-    contentOriginal,
-    contentCleaned,
-    fullContentOriginal,
-    fullContentCleaned,
-  });
-
-  return {
-    ...rest,
-    contentOriginal: content.contentOriginal,
-    contentCleaned: content.contentCleaned,
-    fullContentOriginal: content.fullContentOriginal,
-    fullContentCleaned: content.fullContentCleaned,
+    fullContentCleaned: sanitizedFullContent,
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
@@ -400,13 +341,12 @@ export interface ExportableEntry {
  * The fetched full article, for reads that serve the variant the entry view
  * shows rather than both families. Needs `subscriptions` LEFT JOINed on the
  * entry's subscription. The body is raw (untrusted) and loaded only for
- * subscriptions that fetch full content, reduced to the variant served so a
- * whole-page original is never loaded alongside its cleaned version.
+ * subscriptions that fetch full content.
  */
 const shownFullContentSelectFields = {
   fullContent: sql<
     string | null
-  >`CASE WHEN ${subscriptions.fetchFullContent} THEN COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal}) END`,
+  >`CASE WHEN ${subscriptions.fetchFullContent} THEN ${visibleEntries.fullContentCleaned} END`,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   fetchFullContent: subscriptions.fetchFullContent,
@@ -529,14 +469,9 @@ export async function listExportableEntries(
  * entry view shows (`showsFullContent`).
  */
 async function toEntryFull(row: EntryRow): Promise<EntryFull> {
-  const shownFullContent = showsFullContent(row)
-    ? (row.fullContentCleaned ?? row.fullContentOriginal)
-    : null;
+  const shownFullContent = showsFullContent(row) ? row.fullContentCleaned : null;
   const [content, fullContent] = await Promise.all([
-    sanitizeEntryContentFamily("content", {
-      original: row.contentOriginal,
-      cleaned: row.contentCleaned,
-    }),
+    sanitizeEntryContentPair({ original: row.contentOriginal, cleaned: row.contentCleaned }),
     sanitizeEntryHtmlAsync(shownFullContent),
   ]);
 

@@ -620,7 +620,6 @@ export const entries = pgTable(
 
     // Full content fetching (on-demand from URL)
     fullContentHash: text("full_content_hash"), // SHA256 of full content (for separate summary caching)
-    fullContentOriginal: text("full_content_original"), // Raw HTML from URL
     fullContentCleaned: text("full_content_cleaned"), // Readability-cleaned HTML
     fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
     fullContentError: text("full_content_error"), // Error message if fetch failed
@@ -1104,7 +1103,6 @@ export const visibleEntries = pgView("visible_entries", {
   isSpam: boolean("is_spam").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(), // GREATEST(entries, user_entries)
   entryUpdatedAt: timestamp("entry_updated_at", { withTimezone: true }).notNull(), // entries.updated_at alone
-  fullContentOriginal: text("full_content_original"),
   fullContentCleaned: text("full_content_cleaned"),
   fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
   fullContentError: text("full_content_error"),

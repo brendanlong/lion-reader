@@ -17,7 +17,6 @@ import { useLocalSubscription } from "@/lib/hooks/useLocalSubscriptions";
 
 interface FullContentEntry {
   fetchFullContent: boolean;
-  fullContentOriginal?: string | null;
   fullContentCleaned?: string | null;
   fullContentFetchedAt?: Date | null;
   fullContentError?: string | null;

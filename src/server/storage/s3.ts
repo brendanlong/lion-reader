@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit, ContentTooLargeError } from "@/server/http/fetch";
+import { createSaxParser } from "@/server/html/sax";
 
 /**
  * Maximum size for images fetched from external URLs (20MB).
@@ -35,7 +36,19 @@ export function isStorageAvailable(): boolean {
 }
 
 /**
- * Lazily initialized AWS SigV4 signer (aws4fetch).
+ * Whether the private archive bucket is configured (see the Archive section).
+ */
+export function isArchiveAvailable(): boolean {
+  return !!(
+    storageConfig.archiveBucket &&
+    storageConfig.accessKeyId &&
+    storageConfig.secretAccessKey
+  );
+}
+
+/**
+ * Lazily initialized AWS SigV4 signer (aws4fetch). Both buckets share the
+ * credentials.
  */
 let s3Client: AwsClient | null = null;
 
@@ -43,7 +56,7 @@ let s3Client: AwsClient | null = null;
  * Gets or creates the S3 client.
  */
 function getS3Client(): AwsClient | null {
-  if (!isStorageAvailable()) {
+  if (!storageConfig.accessKeyId || !storageConfig.secretAccessKey) {
     return null;
   }
 
@@ -52,8 +65,8 @@ function getS3Client(): AwsClient | null {
   }
 
   s3Client = new AwsClient({
-    accessKeyId: storageConfig.accessKeyId!,
-    secretAccessKey: storageConfig.secretAccessKey!,
+    accessKeyId: storageConfig.accessKeyId,
+    secretAccessKey: storageConfig.secretAccessKey,
     service: "s3",
     region: storageConfig.region,
     // aws4fetch defaults to 10 retries; cap it lower since image uploads are
@@ -65,18 +78,18 @@ function getS3Client(): AwsClient | null {
 }
 
 /**
- * Builds the request URL for an object key.
+ * Builds the request URL for a bucket, optionally for an object key in it.
  *
  * Mirrors the previous AWS SDK addressing: path-style when a custom endpoint
  * is configured (Tigris requires it), virtual-hosted style for plain AWS S3.
  */
-function getObjectRequestUrl(key: string): string {
+function getObjectRequestUrl(bucket: string, key = ""): string {
   if (storageConfig.endpoint) {
     const base = storageConfig.endpoint.replace(/\/$/, "");
-    return `${base}/${storageConfig.bucket}/${key}`;
+    return `${base}/${bucket}/${key}`;
   }
 
-  return `https://${storageConfig.bucket}.s3.${storageConfig.region}.amazonaws.com/${key}`;
+  return `https://${bucket}.s3.${storageConfig.region}.amazonaws.com/${key}`;
 }
 
 // ============================================================================
@@ -204,7 +217,7 @@ async function uploadImage(
   options: UploadLocation
 ): Promise<UploadResult | null> {
   const client = getS3Client();
-  if (!client) {
+  if (!client || !isStorageAvailable()) {
     logger.debug("Storage not available, skipping image upload");
     return null;
   }
@@ -241,7 +254,7 @@ async function putObject(
   data: Uint8Array,
   contentType: string
 ): Promise<void> {
-  const response = await client.fetch(getObjectRequestUrl(key), {
+  const response = await client.fetch(getObjectRequestUrl(storageConfig.bucket!, key), {
     method: "PUT",
     headers: {
       "Content-Type": contentType,
@@ -255,16 +268,13 @@ async function putObject(
     // requires.
     body: data as Uint8Array<ArrayBuffer>,
   });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`S3 PUT failed with status ${response.status}: ${detail.slice(0, 200)}`);
-  }
+  await ensureOk(response, "PUT");
 }
 
 function requireS3Client(): AwsClient {
   const client = getS3Client();
-  if (!client) throw new Error("Object storage isn't configured (STORAGE_* env vars)");
+  if (!client || !isStorageAvailable())
+    throw new Error("Object storage isn't configured (STORAGE_* env vars)");
   return client;
 }
 
@@ -351,4 +361,102 @@ export async function fetchAndUploadImage(
     }
     return null;
   }
+}
+
+// ============================================================================
+// Archive (private bucket)
+// ============================================================================
+
+function requireArchive(): { client: AwsClient; bucket: string } {
+  const client = getS3Client();
+  if (!client || !isArchiveAvailable()) {
+    throw new Error("The archive bucket isn't configured (STORAGE_ARCHIVE_BUCKET)");
+  }
+  return { client, bucket: storageConfig.archiveBucket! };
+}
+
+async function ensureOk(response: Response, action: string): Promise<void> {
+  if (response.ok) return;
+  const detail = await response.text().catch(() => "");
+  throw new Error(`S3 ${action} failed with status ${response.status}: ${detail.slice(0, 200)}`);
+}
+
+/**
+ * Stores `data` under `key` in the archive bucket (idempotent); throws if the
+ * archive isn't configured or refuses.
+ */
+export async function putArchiveObject(
+  key: string,
+  data: Uint8Array,
+  contentType: string
+): Promise<void> {
+  const { client, bucket } = requireArchive();
+  const response = await client.fetch(getObjectRequestUrl(bucket, key), {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "Content-Length": String(data.byteLength),
+    },
+    body: data as Uint8Array<ArrayBuffer>,
+  });
+  await ensureOk(response, "PUT");
+}
+
+/** Deletes `key` from the archive bucket; deleting a missing key succeeds. */
+export async function deleteArchiveObject(key: string): Promise<void> {
+  const { client, bucket } = requireArchive();
+  const response = await client.fetch(getObjectRequestUrl(bucket, key), { method: "DELETE" });
+  await ensureOk(response, "DELETE");
+}
+
+interface ListObjectsPage {
+  keys: string[];
+  nextContinuationToken: string | null;
+}
+
+function parseListObjectsV2(xml: string): ListObjectsPage {
+  const keys: string[] = [];
+  let nextContinuationToken: string | null = null;
+  const path: string[] = [];
+  let text = "";
+  const parser = createSaxParser(
+    {
+      onopentagname(name) {
+        path.push(name);
+        text = "";
+      },
+      ontext(chunk) {
+        text += chunk;
+      },
+      onclosetag(name) {
+        const parent = path[path.length - 2];
+        if (name === "Key" && parent === "Contents") keys.push(text);
+        if (name === "NextContinuationToken" && parent === "ListBucketResult") {
+          nextContinuationToken = text;
+        }
+        path.pop();
+        text = "";
+      },
+    },
+    { xmlMode: true }
+  );
+  parser.end(xml);
+  return { keys, nextContinuationToken };
+}
+
+/** Every key under `prefix` in the archive bucket, a page (up to 1000) at a time. */
+export async function* listArchiveKeys(prefix: string): AsyncGenerator<string[]> {
+  const { client, bucket } = requireArchive();
+  let continuationToken: string | null = null;
+  do {
+    const url = new URL(getObjectRequestUrl(bucket));
+    url.searchParams.set("list-type", "2");
+    url.searchParams.set("prefix", prefix);
+    if (continuationToken) url.searchParams.set("continuation-token", continuationToken);
+    const response = await client.fetch(url.toString(), { method: "GET" });
+    await ensureOk(response, "ListObjectsV2");
+    const page = parseListObjectsV2(await response.text());
+    if (page.keys.length > 0) yield page.keys;
+    continuationToken = page.nextContinuationToken;
+  } while (continuationToken);
 }

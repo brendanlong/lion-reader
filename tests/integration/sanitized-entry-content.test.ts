@@ -69,7 +69,6 @@ describe("entries.get sanitized content", () => {
     const entryId = await createTestEntry(feedId, {
       title: "No full content",
       contentCleaned: "<p>hello</p>",
-      fullContentOriginal: null,
       fullContentCleaned: null,
       userIds: [userId],
     });
@@ -77,19 +76,14 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
     expect(entry.contentCleaned).toContain("hello");
-    expect(entry.fullContentOriginal).toBeNull();
     expect(entry.fullContentCleaned).toBeNull();
   });
 
-  it("serves full-content cleaned (sanitized) and omits original when cleaned exists", async () => {
+  it("serves full content sanitized", async () => {
     const { userId, feedId } = await seedSubscribedUser();
-    // The full-content serving rule is `cleaned ?? original`, so when cleaned
-    // exists the (whole raw page) original is never displayed — the read path
-    // skips sanitizing it and returns null.
     const entryId = await createTestEntry(feedId, {
       title: "Full content",
       contentCleaned: "<p>feed body</p>",
-      fullContentOriginal: "<article>whole raw page<script>alert(1)</script></article>",
       fullContentCleaned: '<p onclick="evil()">full cleaned<script>alert(2)</script></p>',
       fullContentHash: "fullhash",
       fullContentFetchedAt: new Date(),
@@ -102,27 +96,6 @@ describe("entries.get sanitized content", () => {
     expect(entry.fullContentCleaned).toContain("full cleaned");
     expect(entry.fullContentCleaned).not.toContain("<script>");
     expect(entry.fullContentCleaned).not.toContain("onclick");
-    expect(entry.fullContentOriginal).toBeNull();
-  });
-
-  it("sanitizes the full-content original when cleaned is absent", async () => {
-    const { userId, feedId } = await seedSubscribedUser();
-    const entryId = await createTestEntry(feedId, {
-      title: "Full content original only",
-      contentCleaned: "<p>feed body</p>",
-      fullContentOriginal: '<article onclick="evil()">raw page<script>alert(1)</script></article>',
-      fullContentCleaned: null,
-      fullContentHash: "fullhash",
-      fullContentFetchedAt: new Date(),
-      userIds: [userId],
-    });
-
-    const caller = createCaller(await createAuthContext(userId));
-    const { entry } = await caller.entries.get({ id: entryId });
-
-    expect(entry.fullContentOriginal).toContain("raw page");
-    expect(entry.fullContentOriginal).not.toContain("<script>");
-    expect(entry.fullContentOriginal).not.toContain("onclick");
   });
 
   // The services-layer getEntry/getEntries are the read path for MCP get_entry,
