@@ -4,9 +4,10 @@
 -- hold only rows with a value: a page reads the rows without one through the
 -- list's timeline index.
 --
--- The previous release still orders Recently Read and the ranked sorts'
--- unvalued range as the indexes kept here return them, so those indexes are
--- dropped a release later (#2116).
+-- 0171 and 0172 drop the indexes the merged ones replace. The previous
+-- release still orders Recently Read and the ranked sorts' unvalued range as
+-- only the old read_changed_at and full score/position indexes return them,
+-- so those are dropped a release later (#2116).
 SET LOCAL lock_timeout = '5s';
 
 -- Every build's lock up front, in the lock order (migration 0169 says why).
@@ -70,25 +71,3 @@ CREATE INDEX IF NOT EXISTS idx_tag_entries_scored
 CREATE INDEX IF NOT EXISTS idx_tag_entries_unread_scored
   ON tag_entries (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC)
   WHERE score IS NOT NULL AND NOT read;
---> statement-breakpoint
-
--- The previous release's date pages already carry visibility, so these serve
--- them too.
-DROP INDEX IF EXISTS idx_user_entries_published_or_fetched;
---> statement-breakpoint
-DROP INDEX IF EXISTS idx_user_entries_visible_timeline;
---> statement-breakpoint
-DROP INDEX IF EXISTS idx_user_entries_unread_timeline;
---> statement-breakpoint
-DROP INDEX IF EXISTS idx_user_entries_visible_unread_timeline;
---> statement-breakpoint
-DROP INDEX IF EXISTS idx_subscription_entries_unread_timeline;
---> statement-breakpoint
-ALTER INDEX IF EXISTS idx_user_entries_visible_timeline_new
-  RENAME TO idx_user_entries_visible_timeline;
---> statement-breakpoint
-ALTER INDEX IF EXISTS idx_user_entries_visible_unread_timeline_new
-  RENAME TO idx_user_entries_visible_unread_timeline;
---> statement-breakpoint
-ALTER INDEX IF EXISTS idx_subscription_entries_unread_timeline_new
-  RENAME TO idx_subscription_entries_unread_timeline;

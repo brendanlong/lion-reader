@@ -5,7 +5,9 @@
  * return) is spread across the whole timeline, so a page that walks an index
  * and filters, or sorts a whole set, reads thousands of rows where a bounded
  * page reads a few dozen. Every query a page runs is held to that, including
- * the ranked sorts' two ranges and the first page's `sortable` lookups.
+ * the ranked sorts' two ranges and the first page's `sortable` lookups. The
+ * one exception is a ranked page of rows without a value, which also reads
+ * the rows with one that sit among them (`ranked`).
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

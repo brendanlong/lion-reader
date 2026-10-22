@@ -1191,6 +1191,20 @@
       "when": 1792444651053,
       "tag": "0170_shrink_list_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1792444652053,
+      "tag": "0171_drop_merged_user_entries_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1792444653053,
+      "tag": "0172_drop_spam_subscription_entries_index",
+      "breakpoints": true
     }
   ]
 }
