@@ -994,7 +994,7 @@ export const subscriptionEntries = pgTable(
 /**
  * A tag's or Uncategorized's list rows, kept by triggers ("Subscription
  * Attribution" in src/server/CLAUDE.md). `list_id` is the tag's id, or the
- * user's for Uncategorized; spam has none.
+ * user's for Uncategorized.
  */
 export const tagEntries = pgTable(
   "tag_entries",

@@ -34,6 +34,8 @@ import {
 const LIMIT = 20;
 /** Rows of each noise set: far more than any bounded page reads. */
 const NOISE = 2000;
+/** Spam rows: rare, as lists that hide it filter it per row (#2114). */
+const SPAM = 40;
 /** Rows of each sparse list, placed in the middle of the timeline. */
 const SPARSE = 30;
 /** How deep the second page tested starts. */
@@ -72,19 +74,6 @@ const scopes: Record<ListName, Partial<ListEntriesParams>> = {
   recentlyRead: { sortBy: "readChanged" },
   collection: {},
 };
-/**
- * The lists a showSpam page reads through the same rows. A tag's or
- * Uncategorized's rows hold no spam, so with spam shown they filter the
- * timeline instead.
- */
-const SHOW_SPAM: ReadonlySet<ListName> = new Set([
-  "all",
-  "starred",
-  "subscription",
-  "recentlyRead",
-  "collection",
-]);
-
 /**
  * Each feed's newest three quarters have a score (and the big feed's a
  * position in the collection), so a page of the rows without one that walks
@@ -273,9 +262,10 @@ beforeAll(async () => {
     .set({ unsubscribedAt: new Date() })
     .where(eq(subscriptions.id, goneSubscription));
 
-  // Unread spam, hidden from lists by default.
+  // Unread spam, hidden from lists by default, spread over the timeline.
+  // Lists step over it row by row, which is cheap only because it's rare.
   const spamSender = await createTestEmailSubscription(userId);
-  await seedSubscription(spamSender, NOISE, halfStep, STEP_MS, () => ({}), {
+  await seedSubscription(spamSender, SPAM, halfStep, (NOISE / SPAM) * STEP_MS, () => ({}), {
     type: "email",
     isSpam: true,
   });
@@ -322,7 +312,7 @@ afterAll(async () => {
 
 const DATE_CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
   (list === "recentlyRead" ? (["all"] as const) : (["all", "unread"] as const)).flatMap((filter) =>
-    (SHOW_SPAM.has(list) ? [false, true] : [false]).flatMap((showSpam) =>
+    [false, true].flatMap((showSpam) =>
       (["newest", "oldest"] as const).map((sortOrder) => ({ list, filter, showSpam, sortOrder }))
     )
   )

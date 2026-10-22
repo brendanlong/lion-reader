@@ -230,7 +230,7 @@ CREATE FUNCTION public.reached_tag_lists(p_user uuid[], p_entry uuid[]) RETURNS 
     AS $$
   SELECT DISTINCT COALESCE(t.id, se.user_id), se.user_id, se.entry_id
   FROM (SELECT DISTINCT u, e FROM unnest(p_user, p_entry) AS p(u, e)) p
-  JOIN subscription_entries se ON se.user_id = p.u AND se.entry_id = p.e AND NOT se.is_spam
+  JOIN subscription_entries se ON se.user_id = p.u AND se.entry_id = p.e
   JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
   LEFT JOIN subscription_tags st ON st.subscription_id = s.id
   LEFT JOIN tags t ON t.id = st.tag_id AND t.user_id = s.user_id AND t.deleted_at IS NULL
@@ -308,12 +308,11 @@ BEGIN
 
   EXECUTE $q$
     UPDATE subscription_entries se
-    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam, score = ue.score
+    SET read = ue.read, starred = ue.starred, score = ue.score
     FROM changed_rows c
     JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
     WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
-      AND (se.read, se.starred, se.is_spam, se.score)
-        IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam, ue.score)
+      AND (se.read, se.starred, se.score) IS DISTINCT FROM (ue.read, ue.starred, ue.score)
   $q$;
 
   EXECUTE $q$
@@ -479,15 +478,14 @@ CREATE FUNCTION public.user_entries_copy_state() RETURNS trigger
 BEGIN
   EXECUTE $q$
     UPDATE subscription_entries se
-    SET read = n.read, starred = n.starred, is_spam = n.is_spam, score = n.score
+    SET read = n.read, starred = n.starred, score = n.score
     FROM (
-      SELECT user_id, entry_id, read, starred, is_spam, score FROM new_rows
+      SELECT user_id, entry_id, read, starred, score FROM new_rows
       EXCEPT
-      SELECT user_id, entry_id, read, starred, is_spam, score FROM old_rows
+      SELECT user_id, entry_id, read, starred, score FROM old_rows
     ) n
     WHERE se.user_id = n.user_id AND se.entry_id = n.entry_id
-      AND (se.read, se.starred, se.is_spam, se.score)
-        IS DISTINCT FROM (n.read, n.starred, n.is_spam, n.score)
+      AND (se.read, se.starred, se.score) IS DISTINCT FROM (n.read, n.starred, n.score)
   $q$;
 
   EXECUTE $q$
@@ -929,7 +927,6 @@ CREATE TABLE public.subscription_entries (
     published_or_fetched_at timestamp with time zone NOT NULL,
     read boolean DEFAULT false NOT NULL,
     starred boolean DEFAULT false NOT NULL,
-    is_spam boolean DEFAULT false NOT NULL,
     score double precision,
     "position" double precision
 );
@@ -1395,10 +1392,6 @@ CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry
 
 CREATE INDEX idx_user_entries_multi_member ON public.user_entries USING btree (user_id) WHERE (active_memberships > 1);
 
-CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
-
-CREATE INDEX idx_user_entries_recently_read ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC) WHERE ((read_changed_at IS NOT NULL) AND (starred OR (active_memberships > 0)));
-
 CREATE INDEX idx_user_entries_starred_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
 
 CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
@@ -1406,6 +1399,8 @@ CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btre
 CREATE INDEX idx_user_entries_starred_unread_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
 
 CREATE INDEX idx_user_entries_starred_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
+
+CREATE INDEX idx_user_entries_visible_read_changed ON public.user_entries USING btree (user_id, read_changed_at DESC NULLS LAST, entry_id DESC) WHERE (starred OR (active_memberships > 0));
 
 CREATE INDEX idx_user_entries_visible_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (starred OR (active_memberships > 0));
 
