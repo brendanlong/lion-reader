@@ -83,11 +83,11 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
   `);
 
   // What reached_tag_lists gives for every membership, inlined over the whole
-  // table.
+  // table, spam included. It adds rows only for non-spam articles, as this
+  // release's triggers do, but keeps the spam rows the next release adds.
   const reached = sql`
     SELECT DISTINCT COALESCE(t.id, se.user_id) AS list_id, se.user_id, se.entry_id
     FROM subscription_entries se
-    JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id AND NOT ue.is_spam
     JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
     LEFT JOIN subscription_tags st ON st.subscription_id = s.id
     LEFT JOIN tags t ON t.id = st.tag_id AND t.user_id = s.user_id AND t.deleted_at IS NULL
@@ -104,7 +104,7 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
     INSERT INTO tag_entries (user_id, entry_id, list_id, published_or_fetched_at, read, starred, score)
     SELECT r.user_id, r.entry_id, r.list_id, ue.published_or_fetched_at, ue.read, ue.starred, ue.score
     FROM (${reached}) r
-    JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id
+    JOIN user_entries ue ON ue.user_id = r.user_id AND ue.entry_id = r.entry_id AND NOT ue.is_spam
     WHERE NOT EXISTS (
       SELECT 1 FROM tag_entries te
       WHERE te.user_id = r.user_id AND te.entry_id = r.entry_id AND te.list_id = r.list_id
