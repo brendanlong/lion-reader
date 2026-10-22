@@ -57,6 +57,7 @@ type ListName =
   | "denseTag"
   | "uncategorized"
   | "recentlyRead"
+  | "archived"
   | "collection";
 type Filter = "all" | "unread";
 
@@ -70,14 +71,32 @@ const scopes: Record<ListName, Partial<ListEntriesParams>> = {
   denseTag: {},
   uncategorized: { uncategorized: true },
   recentlyRead: { sortBy: "readChanged" },
+  archived: { sortBy: "archived" },
   collection: {},
 };
 /**
- * Each feed's newest three quarters have a score (and the big feed's a
- * position in the collection), so a page of the rows without one that walks
- * the date index instead reads past all of those first.
+ * The lists a showSpam page reads through the same rows. A tag's or
+ * Uncategorized's rows hold no spam, so with spam shown they filter the
+ * timeline instead.
  */
-const ranked = (i: number, count: number) => i >= count / 4;
+const SHOW_SPAM: ReadonlySet<ListName> = new Set([
+  "all",
+  "starred",
+  "subscription",
+  "recentlyRead",
+  "archived",
+  "collection",
+]);
+/** Wallabag's archived sort pages by offset, so only its first page is bounded. */
+const OFFSET_PAGED: ReadonlySet<ListName> = new Set(["archived"]);
+/**
+ * A quarter of each feed has a score (and of the big feed a position in the
+ * collection), spread over the timeline. A page of the rows without one reads
+ * the timeline index past the rows with one that it meets (#2114), so it costs
+ * about a third more than its size here: a list whose newest rows all have a
+ * value pays for them once, on the page where they run out.
+ */
+const ranked = (i: number) => i % 4 === 0;
 /** Few distinct values, so most rows tie and order by date within them. */
 const rankValue = (i: number) => i % 5;
 /** The cases whose lists are long enough for a page `DEEP` rows in. */
@@ -192,7 +211,7 @@ async function seedSubscription(
   await createTestUserEntries(
     ids.map((entryId, i) => {
       const { read = false, starred = false, readChangedAt = null } = rows(i);
-      const score = ranked(i, count) ? rankValue(i) : null;
+      const score = ranked(i) ? rankValue(i) : null;
       return { userId, entryId, read, starred, readChangedAt, score };
     })
   );
@@ -236,12 +255,12 @@ beforeAll(async () => {
       bigIds.slice(i, i + MAX_COLLECTION_BATCH)
     );
   }
-  for (const [i, id] of bigIds.entries()) if (ranked(i, NOISE)) positionedIds.add(id);
+  for (const [i, id] of bigIds.entries()) if (ranked(i)) positionedIds.add(id);
   await setCollectionPositions(
     db,
     userId,
     collection.id,
-    bigIds.flatMap((entryId, i) => (ranked(i, NOISE) ? [{ entryId, position: rankValue(i) }] : []))
+    bigIds.flatMap((entryId, i) => (ranked(i) ? [{ entryId, position: rankValue(i) }] : []))
   );
   const denseTag = await createTestTag(userId, {
     subscriptionIds: [bigSubscription, unreadSubscription, collection.id],
@@ -308,13 +327,18 @@ afterAll(async () => {
 });
 
 const DATE_CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
-  (list === "recentlyRead" ? (["all"] as const) : (["all", "unread"] as const)).flatMap((filter) =>
-    (["newest", "oldest"] as const).map((sortOrder) => ({ list, filter, sortOrder }))
+  (list === "recentlyRead" || list === "archived"
+    ? (["all"] as const)
+    : (["all", "unread"] as const)
+  ).flatMap((filter) =>
+    (SHOW_SPAM.has(list) ? [false, true] : [false]).flatMap((showSpam) =>
+      (["newest", "oldest"] as const).map((sortOrder) => ({ list, filter, showSpam, sortOrder }))
+    )
   )
 );
 
 const RANKED_CASES = (Object.keys(scopes) as ListName[])
-  .filter((list) => list !== "recentlyRead")
+  .filter((list) => list !== "recentlyRead" && list !== "archived")
   .flatMap((list) =>
     (list === "collection"
       ? [
@@ -337,20 +361,20 @@ const RANKED_CASES = (Object.keys(scopes) as ListName[])
   );
 
 describe("entry list pages read a bounded number of rows", () => {
-  for (const { list, filter, sortOrder } of DATE_CASES) {
-    it(`${list}, ${filter}, ${sortOrder}`, async () => {
+  for (const { list, filter, showSpam, sortOrder } of DATE_CASES) {
+    it(`${list}, ${filter}${showSpam ? ", showSpam" : ""}, ${sortOrder}`, async () => {
       const params: ListEntriesParams = {
         userId,
         ...scopes[list],
         unreadOnly: filter === "unread",
         sortOrder,
         limit: LIMIT,
-        showSpam: false,
+        showSpam,
       };
       const first = await expectBoundedPage(params);
       expect(first.items.length).toBeGreaterThan(0);
 
-      if (LONG.has(`${list}/${filter}`)) {
+      if (LONG.has(`${list}/${filter}`) && !OFFSET_PAGED.has(list)) {
         const cursor = await deepCursor(params);
         expect(cursor).toBeDefined();
         await expectBoundedPage(params, cursor);

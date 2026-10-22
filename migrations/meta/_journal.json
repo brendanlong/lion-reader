@@ -1184,6 +1184,13 @@
       "when": 1792444650053,
       "tag": "0169_entry_score_position_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1792444651053,
+      "tag": "0170_shrink_list_indexes",
+      "breakpoints": true
     }
   ]
 }

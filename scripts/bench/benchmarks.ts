@@ -648,13 +648,43 @@ const READS: Benchmark[] = [
   listBenchmark("list.score_unscored_deep", "/all, unread, by score, 2,500 rows deep", async () =>
     deep(appList({ sortBy: "score" }), 2500)
   ),
+  listBenchmark(
+    "list.score_unscored_first",
+    "/all, unread, by score, the page where the scored rows run out",
+    async (db) => {
+      const { n } = await one<{ n: number }>(
+        db,
+        `SELECT count(*)::int AS n FROM visible_entries
+WHERE user_id = ${q(U0)} AND NOT read AND NOT is_spam AND score IS NOT NULL`
+      );
+      return deep(appList({ sortBy: "score" }), n - 5);
+    }
+  ),
   listBenchmark("list.score_tag", "/tag/:id, by score", async () =>
     appList({ tagId: tagId(0, 1), sortBy: "score" })
+  ),
+  listBenchmark("list.all_show_spam", "/all, unread, showSpam", async () =>
+    appList({ showSpam: true })
+  ),
+  listBenchmark("list.recently_read_show_spam", "/recently-read, showSpam", async () =>
+    appList({ unreadOnly: false, sortBy: "readChanged", showSpam: true })
   ),
   listBenchmark(
     "list.collection_position",
     "/subscription/:id for a collection, by position",
     async () => appList({ subscriptionId: readingList, sortBy: "position" })
+  ),
+  listBenchmark(
+    "list.collection_position_last",
+    "/subscription/:id for a collection, by position, its last page",
+    async (db) => {
+      const { n } = await one<{ n: number }>(
+        db,
+        `SELECT count(*)::int AS n FROM subscription_entries
+WHERE subscription_id = ${q(readingList)} AND NOT read AND NOT is_spam`
+      );
+      return deep(appList({ subscriptionId: readingList, sortBy: "position" }), n - 5);
+    }
   ),
   {
     name: "ssr.entries_get",
@@ -691,6 +721,14 @@ const READS: Benchmark[] = [
     kind: "read",
     source: "wallabag/entries.ts listWallabagEntries (sort archived, perPage 30, detail full)",
     prepare: async () => ({ statements: await wallabagEntries({ sort: "archived" }) }),
+  },
+  {
+    name: "wallabag.entries_archived_asc",
+    kind: "read",
+    source: "wallabag/entries.ts listWallabagEntries (sort archived, order asc, perPage 30)",
+    prepare: async () => ({
+      statements: await wallabagEntries({ sort: "archived", order: "asc" }),
+    }),
   },
   {
     name: "search",

@@ -397,9 +397,17 @@ describe("Entries", () => {
         .set({ readChangedAt: null })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, unreadId)));
 
-      // sortBy=archived must NOT drop the never-read entry (unlike readChanged).
+      // sortBy=archived must NOT drop the never-read entry (unlike readChanged),
+      // and lists it after every read one newest first, as its index does.
       const archived = await listEntries(db, { userId, sortBy: "archived", showSpam: false });
-      expect(archived.items.map((e) => e.id).sort()).toEqual([readId, unreadId].sort());
+      expect(archived.items.map((e) => e.id)).toEqual([readId, unreadId]);
+      const oldest = await listEntries(db, {
+        userId,
+        sortBy: "archived",
+        sortOrder: "oldest",
+        showSpam: false,
+      });
+      expect(oldest.items.map((e) => e.id)).toEqual([unreadId, readId]);
 
       // sortBy=readChanged (recently-read view) DOES exclude the never-read entry.
       const recentlyRead = await listEntries(db, {

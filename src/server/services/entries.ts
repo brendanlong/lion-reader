@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, asc, sql, isNull, isNotNull, type AnyColumn, type SQL } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgSelect } from "drizzle-orm/pg-core";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
@@ -386,7 +386,7 @@ export async function listEntries(
         .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
         .$dynamic()
     ),
-    params.cursor || params.offset ? undefined : listSortable(db, params, page),
+    params.cursor || params.offset ? undefined : page.sortable(),
   ]);
   const firstPage = !params.cursor && !params.offset;
   return {
@@ -395,21 +395,6 @@ export async function listEntries(
     ...(sortable && { sortable }),
     ...(firstPage && page.sort && { sort: page.sort }),
   };
-}
-
-/**
- * Which ranked sorts the list has values for, ignoring spam: the score and
- * position indexes leave it out, as the default lists do, so a showSpam
- * list's lookup would otherwise walk every row. A scored spam article alone
- * doesn't offer the sort.
- */
-async function listSortable(
-  db: typeof dbType,
-  params: ListEntriesParams,
-  page: NonNullable<Awaited<ReturnType<typeof planEntryPage>>>
-): Promise<EntrySortable | undefined> {
-  if (!params.showSpam) return page.sortable();
-  return (await planEntryPage(db, { ...params, showSpam: false }))?.sortable();
 }
 
 /** An entry as Google Reader's item lists key it (`listGreaderItemRefs`). */
@@ -723,8 +708,9 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   /**
    * A ranked sort's page: the rows with a value, in the requested direction,
-   * then those without, newest first, each one range of the index. The
-   * cursor says which range the page starts in.
+   * through the ranked index, which holds only those, then the rows without,
+   * newest first, through the list's timeline index. The cursor says which
+   * range the page starts in.
    */
   const readRanked = async <T extends PgSelect>(
     { keys, indexDesc }: NonNullable<typeof ranked>,
@@ -754,14 +740,13 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
       rows.push(...(page as PageRow[]));
     }
     if (rows.length <= limit) {
-      // Newest first: the scan of an ASC index runs backward.
       const unvalued = [...conditions, isNull(value)];
       if (cursor?.value === null && tsBound) {
         unvalued.push(afterInScan([ts, id], tsBound, true));
       }
       const page = await joinRows(build())
         .where(and(...unvalued))
-        .orderBy(...indexScanOrder(keys, indexDesc, indexDesc))
+        .orderBy(desc(ts), desc(id))
         .limit(limit + 1 - rows.length);
       rows.push(...(page as PageRow[]));
     }
@@ -787,11 +772,13 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     // join on a list's rows (one per list and article), so no DISTINCT ON
     // dedup is needed and the (sortColumn, id) keyset cursor resumes cleanly
     // over unique rows.
+    // Most rows were never read or unread, so read_changed_at's index puts
+    // NULLs last: newest first lists them last, oldest first lists them first.
+    const direction = sql.raw(descending ? "DESC" : "ASC");
+    const nulls = sql.raw(timelineSort ? "" : descending ? "NULLS LAST" : "NULLS FIRST");
     const rows = await joinRows(build())
       .where(and(...page))
-      .orderBy(
-        ...(descending ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)])
-      )
+      .orderBy(sql`${sortColumn} ${direction} ${nulls}`, sql`${idColumn} ${direction}`)
       .limit(limit + 1)
       .offset(params.offset ?? 0);
     const { items, nextCursor } = paginate(rows as PageRow[]);
