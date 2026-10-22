@@ -1370,8 +1370,8 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.feed_id = ${q(newFeed)}
           {
             label: "copy_memberships",
             sql: `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                  read, starred, is_spam)
-SELECT ${q(survivor)}::uuid, user_id, entry_id, published_or_fetched_at, read, starred, is_spam
+                                  read, starred)
+SELECT ${q(survivor)}::uuid, user_id, entry_id, published_or_fetched_at, read, starred
 FROM subscription_entries
 WHERE subscription_id = ${q(subMergeSource)}
 ON CONFLICT DO NOTHING`,
