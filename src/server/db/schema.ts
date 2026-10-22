@@ -966,7 +966,6 @@ export const subscriptionEntries = pgTable(
     // Attribution" in src/server/CLAUDE.md).
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
-    isSpam: boolean("is_spam").notNull().default(false),
     score: doublePrecision("score"),
     // The article's place in this collection (#2064): lower sorts first, NULL
     // after every positioned one. Only collections' memberships have one.

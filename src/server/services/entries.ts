@@ -316,19 +316,14 @@ async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "qu
     ? null
     : (params.tagId ?? (params.uncategorized ? params.userId : null));
   const rows = subscriptionId
-    ? {
-        table: subscriptionEntries,
-        inList: eq(subscriptionEntries.subscriptionId, subscriptionId),
-        isSpam: subscriptionEntries.isSpam,
-      }
+    ? { table: subscriptionEntries, inList: eq(subscriptionEntries.subscriptionId, subscriptionId) }
     : tagListId
-      ? { table: tagEntries, inList: eq(tagEntries.listId, tagListId), isSpam: null }
+      ? { table: tagEntries, inList: eq(tagEntries.listId, tagListId) }
       : null;
   if (!rows) return null;
   const { table } = rows;
   return {
     table,
-    isSpam: rows.isSpam,
     on: and(
       rows.inList,
       eq(table.userId, visibleEntries.userId),
@@ -466,18 +461,16 @@ export async function listGreaderItemRefs(
   };
 }
 
-/** The read, starred and spam filters, on a list row's copies of them. */
+/** The read and starred filters, on a list row's copies of them. */
 function listRowStateConditions(
-  rows: { table: typeof subscriptionEntries | typeof tagEntries; isSpam: AnyColumn | null },
+  table: typeof subscriptionEntries | typeof tagEntries,
   params: Omit<ListEntriesParams, "query">
 ): SQL[] {
-  const { table } = rows;
   const conditions: SQL[] = [];
   if (params.unreadOnly) conditions.push(sql`NOT ${table.read}`);
   else if (params.readOnly) conditions.push(sql`${table.read}`);
   if (params.starredOnly) conditions.push(sql`${table.starred}`);
   else if (params.unstarredOnly) conditions.push(sql`NOT ${table.starred}`);
-  if (!params.showSpam && rows.isSpam) conditions.push(sql`NOT ${rows.isSpam}`);
   return conditions;
 }
 
@@ -637,15 +630,16 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   }
 
   if (listRows) {
-    conditions.push(...listRowStateConditions(listRows, params));
+    conditions.push(...listRowStateConditions(listRows.table, params));
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).
   // Saved is the saved subscription's list, which `listRows` already is. A
-  // list's rows filter read, starred and spam on their copies alone: the
-  // triggers write those in the article's own transaction, and filtering both
-  // would have Postgres multiply two identical selectivities, guess a page
-  // holds fewer rows than it does, and sort the whole list instead.
+  // list's rows filter read and starred on their copies alone: the triggers
+  // write those in the article's own transaction, and filtering both would
+  // have Postgres multiply two identical selectivities, guess a page holds
+  // fewer rows than it does, and sort the whole list instead. Spam, which is
+  // rare and never changes, is filtered on the joined user_entries row.
   conditions.push(
     ...buildEntryFilterConditions(
       listRows
@@ -656,7 +650,6 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
             readOnly: undefined,
             starredOnly: undefined,
             unstarredOnly: undefined,
-            showSpam: true,
           }
         : params
     )
@@ -723,9 +716,8 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   /**
    * A ranked sort's page: the rows with a value, in the requested direction,
-   * through the ranked index, which holds only those, then the rows without,
-   * newest first, through the list's timeline index. The cursor says which
-   * range the page starts in.
+   * then those without, newest first, each one range of the index. The
+   * cursor says which range the page starts in.
    */
   const readRanked = async <T extends PgSelect>(
     { keys, indexDesc }: NonNullable<typeof ranked>,
@@ -755,13 +747,14 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
       rows.push(...(page as PageRow[]));
     }
     if (rows.length <= limit) {
+      // Newest first: the scan of an ASC index runs backward.
       const unvalued = [...conditions, isNull(value)];
       if (cursor?.value === null && tsBound) {
         unvalued.push(afterInScan([ts, id], tsBound, true));
       }
       const page = await joinRows(build())
         .where(and(...unvalued))
-        .orderBy(desc(ts), desc(id))
+        .orderBy(...indexScanOrder(keys, indexDesc, indexDesc))
         .limit(limit + 1 - rows.length);
       rows.push(...(page as PageRow[]));
     }

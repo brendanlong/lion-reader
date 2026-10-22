@@ -1357,21 +1357,13 @@ CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
 CREATE INDEX idx_subscription_entries_position ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id);
 
-CREATE INDEX idx_subscription_entries_positioned ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id) WHERE ("position" IS NOT NULL);
-
 CREATE INDEX idx_subscription_entries_score ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC);
-
-CREATE INDEX idx_subscription_entries_scored ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (score IS NOT NULL);
 
 CREATE INDEX idx_subscription_entries_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC);
 
-CREATE INDEX idx_subscription_entries_unread_position ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id) WHERE ((NOT read) AND (NOT is_spam));
+CREATE INDEX idx_subscription_entries_unread_position ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id) WHERE (NOT read);
 
-CREATE INDEX idx_subscription_entries_unread_positioned ON public.subscription_entries USING btree (subscription_id, "position", published_or_fetched_at, entry_id) WHERE (("position" IS NOT NULL) AND (NOT read));
-
-CREATE INDEX idx_subscription_entries_unread_score ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam));
-
-CREATE INDEX idx_subscription_entries_unread_scored ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((score IS NOT NULL) AND (NOT read));
+CREATE INDEX idx_subscription_entries_unread_score ON public.subscription_entries USING btree (subscription_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
 CREATE INDEX idx_subscription_entries_unread_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
@@ -1389,13 +1381,9 @@ CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (
 
 CREATE INDEX idx_tag_entries_score ON public.tag_entries USING btree (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC);
 
-CREATE INDEX idx_tag_entries_scored ON public.tag_entries USING btree (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (score IS NOT NULL);
-
 CREATE INDEX idx_tag_entries_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC);
 
 CREATE INDEX idx_tag_entries_unread_score ON public.tag_entries USING btree (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
-
-CREATE INDEX idx_tag_entries_unread_scored ON public.tag_entries USING btree (list_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((score IS NOT NULL) AND (NOT read));
 
 CREATE INDEX idx_tag_entries_unread_timeline ON public.tag_entries USING btree (list_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
@@ -1413,27 +1401,19 @@ CREATE INDEX idx_user_entries_recently_read ON public.user_entries USING btree (
 
 CREATE INDEX idx_user_entries_starred_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
 
-CREATE INDEX idx_user_entries_starred_scored ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((score IS NOT NULL) AND starred);
-
 CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
 
 CREATE INDEX idx_user_entries_starred_unread_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
-
-CREATE INDEX idx_user_entries_starred_unread_scored ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((score IS NOT NULL) AND starred AND (NOT read));
 
 CREATE INDEX idx_user_entries_starred_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (starred AND (NOT read));
 
 CREATE INDEX idx_user_entries_visible_read_changed ON public.user_entries USING btree (user_id, read_changed_at DESC NULLS LAST, entry_id DESC) WHERE (starred OR (active_memberships > 0));
 
-CREATE INDEX idx_user_entries_visible_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT is_spam) AND (starred OR (active_memberships > 0)));
-
-CREATE INDEX idx_user_entries_visible_scored ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((score IS NOT NULL) AND (starred OR (active_memberships > 0)));
+CREATE INDEX idx_user_entries_visible_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE (starred OR (active_memberships > 0));
 
 CREATE INDEX idx_user_entries_visible_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (starred OR (active_memberships > 0));
 
-CREATE INDEX idx_user_entries_visible_unread_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (NOT is_spam) AND (starred OR (active_memberships > 0)));
-
-CREATE INDEX idx_user_entries_visible_unread_scored ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((score IS NOT NULL) AND (NOT read) AND (starred OR (active_memberships > 0)));
+CREATE INDEX idx_user_entries_visible_unread_score ON public.user_entries USING btree (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (starred OR (active_memberships > 0)));
 
 CREATE INDEX idx_user_entries_visible_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE ((NOT read) AND (starred OR (active_memberships > 0)));
 

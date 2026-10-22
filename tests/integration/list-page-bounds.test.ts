@@ -5,9 +5,7 @@
  * return) is spread across the whole timeline, so a page that walks an index
  * and filters, or sorts a whole set, reads thousands of rows where a bounded
  * page reads a few dozen. Every query a page runs is held to that, including
- * the ranked sorts' two ranges and the first page's `sortable` lookups. The
- * one exception is a ranked page of rows without a value, which also reads
- * the rows with one that sit among them (`ranked`).
+ * the ranked sorts' two ranges and the first page's `sortable` lookups.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -92,13 +90,11 @@ const SHOW_SPAM: ReadonlySet<ListName> = new Set([
 /** Wallabag's archived sort pages by offset, so only its first page is bounded. */
 const OFFSET_PAGED: ReadonlySet<ListName> = new Set(["archived"]);
 /**
- * A quarter of each feed has a score (and of the big feed a position in the
- * collection), spread over the timeline. A page of the rows without one reads
- * the timeline index past the rows with one that it meets (#2114), so it costs
- * about a third more than its size here: a list whose newest rows all have a
- * value pays for them once, on the page where they run out.
+ * Each feed's newest three quarters have a score (and the big feed's a
+ * position in the collection), so a page of the rows without one that walks
+ * the date index instead reads past all of those first.
  */
-const ranked = (i: number) => i % 4 === 0;
+const ranked = (i: number, count: number) => i >= count / 4;
 /** Few distinct values, so most rows tie and order by date within them. */
 const rankValue = (i: number) => i % 5;
 /** The cases whose lists are long enough for a page `DEEP` rows in. */
@@ -213,7 +209,7 @@ async function seedSubscription(
   await createTestUserEntries(
     ids.map((entryId, i) => {
       const { read = false, starred = false, readChangedAt = null } = rows(i);
-      const score = ranked(i) ? rankValue(i) : null;
+      const score = ranked(i, count) ? rankValue(i) : null;
       return { userId, entryId, read, starred, readChangedAt, score };
     })
   );
@@ -257,12 +253,12 @@ beforeAll(async () => {
       bigIds.slice(i, i + MAX_COLLECTION_BATCH)
     );
   }
-  for (const [i, id] of bigIds.entries()) if (ranked(i)) positionedIds.add(id);
+  for (const [i, id] of bigIds.entries()) if (ranked(i, NOISE)) positionedIds.add(id);
   await setCollectionPositions(
     db,
     userId,
     collection.id,
-    bigIds.flatMap((entryId, i) => (ranked(i) ? [{ entryId, position: rankValue(i) }] : []))
+    bigIds.flatMap((entryId, i) => (ranked(i, NOISE) ? [{ entryId, position: rankValue(i) }] : []))
   );
   const denseTag = await createTestTag(userId, {
     subscriptionIds: [bigSubscription, unreadSubscription, collection.id],

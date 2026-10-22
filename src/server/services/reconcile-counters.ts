@@ -76,11 +76,10 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
 
   const membershipsResult = await db.execute(sql`
     UPDATE subscription_entries se
-    SET read = ue.read, starred = ue.starred, is_spam = ue.is_spam, score = ue.score
+    SET read = ue.read, starred = ue.starred, score = ue.score
     FROM user_entries ue
     WHERE ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-      AND (se.read, se.starred, se.is_spam, se.score)
-        IS DISTINCT FROM (ue.read, ue.starred, ue.is_spam, ue.score)
+      AND (se.read, se.starred, se.score) IS DISTINCT FROM (ue.read, ue.starred, ue.score)
   `);
 
   // What reached_tag_lists gives for every membership, inlined over the whole
@@ -88,11 +87,11 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
   const reached = sql`
     SELECT DISTINCT COALESCE(t.id, se.user_id) AS list_id, se.user_id, se.entry_id
     FROM subscription_entries se
+    JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id AND NOT ue.is_spam
     JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
     LEFT JOIN subscription_tags st ON st.subscription_id = s.id
     LEFT JOIN tags t ON t.id = st.tag_id AND t.user_id = s.user_id AND t.deleted_at IS NULL
-    WHERE NOT se.is_spam
-      AND (t.id IS NOT NULL OR (st.subscription_id IS NULL AND s.type <> 'saved'))
+    WHERE t.id IS NOT NULL OR (st.subscription_id IS NULL AND s.type <> 'saved')
   `;
   const tagEntriesExtra = await db.execute(sql`
     DELETE FROM tag_entries te

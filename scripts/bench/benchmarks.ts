@@ -223,7 +223,6 @@ const insertWithMembershipsSql = (label: string, candidates: string): Statement 
 missing AS (
   SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
          COALESCE(ue.read, c.read) AS state_read, COALESCE(ue.starred, false) AS state_starred,
-         COALESCE(ue.is_spam, c.is_spam) AS state_is_spam,
          (s.unsubscribed_at IS NULL)::int AS active_memberships,
          COALESCE(ue.published_or_fetched_at, c.published_or_fetched_at) AS published_or_fetched_at
   FROM c
@@ -240,9 +239,8 @@ new_rows AS (
   ON CONFLICT DO NOTHING
 )
 INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                  read, starred, is_spam)
-SELECT subscription_id, user_id, entry_id, published_or_fetched_at,
-       state_read, state_starred, state_is_spam
+                                  read, starred)
+SELECT subscription_id, user_id, entry_id, published_or_fetched_at, state_read, state_starred
 FROM missing
 ON CONFLICT DO NOTHING
 RETURNING subscription_id, entry_id`,
@@ -376,9 +374,9 @@ FOR NO KEY UPDATE OF subscriptions`,
     {
       label: "insert",
       sql: `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                  read, starred, is_spam)
+                                  read, starred)
 SELECT ${q(collection)}::uuid AS subscription_id, ve.user_id, ve.id, ve.published_or_fetched_at,
-       ve.read, ve.starred, ve.is_spam
+       ve.read, ve.starred
 FROM visible_entries ve
 WHERE ve.user_id = ${q(userId)} AND ve.id IN (${ids})
 ON CONFLICT DO NOTHING
@@ -681,7 +679,7 @@ WHERE user_id = ${q(U0)} AND NOT read AND NOT is_spam AND score IS NOT NULL`
       const { n } = await one<{ n: number }>(
         db,
         `SELECT count(*)::int AS n FROM subscription_entries
-WHERE subscription_id = ${q(readingList)} AND NOT read AND NOT is_spam`
+WHERE subscription_id = ${q(readingList)} AND NOT read`
       );
       return deep(appList({ subscriptionId: readingList, sortBy: "position" }), n - 5);
     }
