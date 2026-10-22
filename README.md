@@ -148,7 +148,7 @@ NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=.next/ node_mod
 
 ## Background
 
-Lion Reader is largely written by Claude. More on how that went: [Claude Wrote Me a 400-Commit RSS Reader App](https://www.brendanlong.com/claude-wrote-me-a-400-commit-rss-reader-app.html) and the follow-up, [My RSS Reader is Done](https://www.brendanlong.com/my-rss-reader-is-done.html).
+Lion Reader is designed and built by [Brendan Long](https://www.brendanlong.com/pages/about-me.html), and largely written by Claude. More on how that went: [Claude Wrote Me a 400-Commit RSS Reader App](https://www.brendanlong.com/claude-wrote-me-a-400-commit-rss-reader-app.html) and the follow-up, [My RSS Reader is Done](https://www.brendanlong.com/my-rss-reader-is-done.html).
 
 ## License
 
