@@ -1,6 +1,5 @@
--- Replaces the spam-free unread membership indexes with migration 0170's,
--- which serve the previous release's queries too. One table per
--- transaction, as 0171 says.
+-- Replaces the spam-free unread membership indexes with migration 0172's,
+-- which serve the previous release's queries too.
 SET LOCAL lock_timeout = '5s';
 
 DROP INDEX IF EXISTS idx_subscription_entries_unread_timeline;
