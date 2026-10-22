@@ -21,3 +21,12 @@ provider "healthchecksio" {}
 provider "aws" {
   region = "us-east-1"
 }
+
+# The Tigris provider's own fallback is AWS_ACCESS_KEY_ID, which would hand it
+# the AWS credentials the registrar and state backend use, so its key comes in
+# as variables instead.
+provider "tigris" {
+  endpoint   = "https://t3.storage.dev" # STORAGE_ENDPOINT in ../fly.toml
+  access_key = var.tigris_access_key_id
+  secret_key = var.tigris_secret_access_key
+}

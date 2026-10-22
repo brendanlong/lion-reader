@@ -69,3 +69,15 @@ variable "backup_bucket_secret_access_key" {
   type        = string
   sensitive   = true
 }
+
+variable "tigris_access_key_id" {
+  description = "Tigris access key that can create and configure buckets (tigris.tf)."
+  type        = string
+  sensitive   = true
+}
+
+variable "tigris_secret_access_key" {
+  description = "Secret for var.tigris_access_key_id."
+  type        = string
+  sensitive   = true
+}
