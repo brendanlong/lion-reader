@@ -159,15 +159,13 @@ to re-enable writes` and `vm` check `checkDisk: … free space on /data/`. The n
 healthy primary otherwise (no zombie, no split-brain). Flex flips the primary read-only at
 **~90% `/data` usage** as a safety valve so Postgres doesn't hard-crash on a full disk.
 
-Flex sets read-only with `ALTER DATABASE … SET default_transaction_read_only`, which only
-new sessions pick up, and restarts haproxy, which drops every client connection (the app
-logs `Connection terminated unexpectedly`). So pooled connections opened while read-only
-was on keep failing writes after it lifts, until the next haproxy restart drops them.
+Flex toggles read-only with `ALTER DATABASE … SET default_transaction_read_only` and then
+restarts haproxy, so **both entering and leaving** read-only drop every client connection
+(the app logs `Connection terminated unexpectedly`) and the pool reconnects in the new mode.
 
-**If it comes and goes** (Sentry shows bursts of both errors about every 15 minutes for a
-couple of hours a day, `/data` on fly-metrics.net spiking by about the DB's size), the
-cause is a **base backup without enough headroom**, not WAL; see
-[Backups & PITR](#backups--point-in-time-recovery-pitr). Extend the volume.
+**If it comes and goes** (bursts of read-only and `Connection terminated` errors for a
+couple of hours a day, `/data` spiking by about the DB's size), it's a base backup without
+enough headroom, not WAL: see [Volume headroom](#volume-headroom-keep-data-under-45).
 
 **Cause (most common for us):** the disk is full of **undrained WAL**, not data. `pg_wal`
 dwarfs `base`:
@@ -315,13 +313,13 @@ version. Add a bucket lifecycle rule only if you want a hard backstop beyond
 
 ### Volume headroom: keep `/data` under ~45%
 
-A base backup (`barman-cloud-backup`) stages the whole backup in a temp dir on `/data`
-before it's uploaded, so it temporarily needs **free space about the size of the DB**.
-Without it, each attempt runs the volume past 90%, which trips read-only mode (see
-[forced read-only](#recovery-forced-read-only-from-a-full-disk-orphaned-replication-slot-pinning-wal)),
-then fails. Flex retries 10 times, 30s apart, then waits for the next scheduled backup, so
-this repeats daily and no base backup succeeds. Extend the volume before steady-state usage
-reaches ~45%.
+A base backup (`barman-cloud-backup`) buffers its upload in a temp dir on `/data`
+(`/data/barman.tmp.*`), and in practice `/data` grows by about the DB's size mid-backup, so
+it needs **free space about the size of the DB** (usage plus that copy must stay under the
+90% read-only threshold). Without it, each attempt trips read-only mode (see
+[forced read-only](#recovery-forced-read-only-from-a-full-disk-orphaned-replication-slot-pinning-wal))
+and then fails. Flex retries 10 times, 30s apart, then waits for the next scheduled backup,
+so this repeats daily and the PITR window quietly stops getting fresh base backups.
 
 ### List backups / on-demand base backup
 
