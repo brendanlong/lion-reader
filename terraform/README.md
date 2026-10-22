@@ -3,8 +3,8 @@
 Everything about the deployment is managed either by Fly.io (`../fly.toml`) or
 here. This module owns `lionreader.com` DNS (Cloudflare), the Bunny CDN pull
 zone, Mailgun, Sentry, the healthchecks.io monitors, the backup-health Cloudflare
-Worker, and the domain registration at Amazon Registrar. Change them here, not
-in a dashboard.
+Worker, the private Tigris archive bucket, and the domain registration at Amazon
+Registrar. Change them here, not in a dashboard.
 
 ## Credentials
 
@@ -15,7 +15,14 @@ export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
 export SENTRY_AUTH_TOKEN=...      # org:read + project:write
 export HEALTHCHECKSIO_API_KEY=... # must be read-write; see providers.tf
 # AWS creds via the normal chain — for the S3 state backend and route53domains
+export TF_VAR_tigris_access_key_id=...     # Tigris admin key; see providers.tf on why not AWS_*
+export TF_VAR_tigris_secret_access_key=...
 ```
+
+The provider can't create access keys, so after the archive bucket exists, give
+the app's storage key (the one already in `STORAGE_ACCESS_KEY_ID`) the Editor
+role on it in the Tigris dashboard. The app reads and writes both its buckets
+with that one key.
 
 The backup-health Worker also needs a Tigris key whose only permissions are the
 IAM policy in `backup-health/tigris-policy.json`, with no bucket access granted

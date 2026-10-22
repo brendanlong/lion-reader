@@ -29,6 +29,10 @@ terraform {
       source  = "kristofferahl/healthchecksio"
       version = "~> 2.3"
     }
+    tigris = {
+      source  = "tigrisdata/tigris"
+      version = "~> 1.1"
+    }
   }
 
   # The bucket holds state for more than this project, so the key is what
