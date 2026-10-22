@@ -48,12 +48,6 @@ export async function listWallabagEntries(
     collectionIdGroups,
   };
 
-  // Wallabag `sort` field → listEntries sort column. `created` (default) is our
-  // publish/fetch-time sort; `archived` sorts by when read state last changed
-  // (our closest analogue to Wallabag's archived_at). `updated` (last-modified)
-  // is approximated as the default `created` sort.
-  const sortBy = params.sort === "archived" ? "archived" : "published";
-
   // Serve the requested page with a single indexed query via LIMIT/OFFSET, and
   // fetch the total count in parallel (Wallabag needs it for page metadata).
   const [result, total] = await Promise.all([
@@ -63,7 +57,6 @@ export async function listWallabagEntries(
       limit: params.perPage,
       offset: (params.page - 1) * params.perPage,
       sortOrder: params.order === "asc" ? "oldest" : "newest",
-      sortBy,
     }),
     countTotalEntries(db, userId, filter),
   ]);

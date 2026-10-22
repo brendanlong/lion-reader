@@ -57,7 +57,6 @@ type ListName =
   | "denseTag"
   | "uncategorized"
   | "recentlyRead"
-  | "archived"
   | "collection";
 type Filter = "all" | "unread";
 
@@ -71,7 +70,6 @@ const scopes: Record<ListName, Partial<ListEntriesParams>> = {
   denseTag: {},
   uncategorized: { uncategorized: true },
   recentlyRead: { sortBy: "readChanged" },
-  archived: { sortBy: "archived" },
   collection: {},
 };
 /**
@@ -84,11 +82,9 @@ const SHOW_SPAM: ReadonlySet<ListName> = new Set([
   "starred",
   "subscription",
   "recentlyRead",
-  "archived",
   "collection",
 ]);
-/** Wallabag's archived sort pages by offset, so only its first page is bounded. */
-const OFFSET_PAGED: ReadonlySet<ListName> = new Set(["archived"]);
+
 /**
  * Each feed's newest three quarters have a score (and the big feed's a
  * position in the collection), so a page of the rows without one that walks
@@ -325,10 +321,7 @@ afterAll(async () => {
 });
 
 const DATE_CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
-  (list === "recentlyRead" || list === "archived"
-    ? (["all"] as const)
-    : (["all", "unread"] as const)
-  ).flatMap((filter) =>
+  (list === "recentlyRead" ? (["all"] as const) : (["all", "unread"] as const)).flatMap((filter) =>
     (SHOW_SPAM.has(list) ? [false, true] : [false]).flatMap((showSpam) =>
       (["newest", "oldest"] as const).map((sortOrder) => ({ list, filter, showSpam, sortOrder }))
     )
@@ -336,7 +329,7 @@ const DATE_CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
 );
 
 const RANKED_CASES = (Object.keys(scopes) as ListName[])
-  .filter((list) => list !== "recentlyRead" && list !== "archived")
+  .filter((list) => list !== "recentlyRead")
   .flatMap((list) =>
     (list === "collection"
       ? [
@@ -372,7 +365,7 @@ describe("entry list pages read a bounded number of rows", () => {
       const first = await expectBoundedPage(params);
       expect(first.items.length).toBeGreaterThan(0);
 
-      if (LONG.has(`${list}/${filter}`) && !OFFSET_PAGED.has(list)) {
+      if (LONG.has(`${list}/${filter}`)) {
         const cursor = await deepCursor(params);
         expect(cursor).toBeDefined();
         await expectBoundedPage(params, cursor);

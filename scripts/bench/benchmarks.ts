@@ -721,14 +721,6 @@ WHERE subscription_id = ${q(readingList)} AND NOT read`
     prepare: async () => ({ statements: await wallabagEntries({ sort: "archived" }) }),
   },
   {
-    name: "wallabag.entries_archived_asc",
-    kind: "read",
-    source: "wallabag/entries.ts listWallabagEntries (sort archived, order asc, perPage 30)",
-    prepare: async () => ({
-      statements: await wallabagEntries({ sort: "archived", order: "asc" }),
-    }),
-  },
-  {
     name: "search",
     kind: "read",
     source: "services/entries.ts searchEntries (all entries, two-word query)",

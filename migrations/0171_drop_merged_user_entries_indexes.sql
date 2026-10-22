@@ -14,6 +14,8 @@ DROP INDEX IF EXISTS idx_user_entries_visible_score;
 --> statement-breakpoint
 DROP INDEX IF EXISTS idx_user_entries_visible_unread_score;
 --> statement-breakpoint
+DROP INDEX IF EXISTS idx_user_entries_recently_read;
+--> statement-breakpoint
 ALTER INDEX IF EXISTS idx_user_entries_visible_timeline_new
   RENAME TO idx_user_entries_visible_timeline;
 --> statement-breakpoint
@@ -25,3 +27,6 @@ ALTER INDEX IF EXISTS idx_user_entries_visible_score_new
 --> statement-breakpoint
 ALTER INDEX IF EXISTS idx_user_entries_visible_unread_score_new
   RENAME TO idx_user_entries_visible_unread_score;
+--> statement-breakpoint
+ALTER INDEX IF EXISTS idx_user_entries_recently_read_new
+  RENAME TO idx_user_entries_recently_read;

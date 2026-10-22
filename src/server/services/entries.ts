@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc, sql, isNull, isNotNull, type AnyColumn, type SQL } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, isNotNull, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgSelect } from "drizzle-orm/pg-core";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
@@ -18,7 +18,7 @@ import {
   visibleEntries,
 } from "@/server/db/schema";
 import { getSavedSubscriptionId } from "./subscriptions";
-import { parseTimestamptzOrNull } from "@/server/db/temporal";
+import { parseTimestamptz } from "@/server/db/temporal";
 import { errors } from "@/server/errors";
 import { createCursorCodec, cursorUuid } from "./cursor";
 import { countsAsOfColumn, countsAsOfNow, formatCountsAsOf, getUserUnreadCounts } from "./counts";
@@ -68,14 +68,11 @@ export interface ListEntriesParams {
    */
   sortOrder?: EntrySortOrder;
   // Which column to sort by (default: published). "published" = publish/fetch
-  // time; "readChanged" = read-state-change time (the recently-read view, which
-  // also excludes never-read entries); "archived" = read-state-change time
-  // WITHOUT the recently-read exclusion (Wallabag sort=archived); "score" and
-  // "position" (one subscription's list only) = the user's score or the
-  // collection's position, then date (#2064). Each is served by an index.
-  // There is no "updated" sort: the Wallabag route approximates sort=updated
-  // as the default published sort.
-  sortBy?: EntrySortBy | "archived";
+  // time; "readChanged" = read-state-change time (Recently Read, which also
+  // excludes never-read entries); "score" and "position" (one subscription's
+  // list only) = the user's score or the collection's position, then date
+  // (#2064). Each is served by an index.
+  sortBy?: EntrySortBy;
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
@@ -538,14 +535,14 @@ type ListRows = NonNullable<Awaited<ReturnType<typeof listRowsOf>>>;
 /** A row of a page, with the sort key `planEntryPage`'s `sortFields` selects. */
 interface PageRow {
   id: string;
-  sortTs: Temporal.Instant | null;
+  sortTs: Temporal.Instant;
   sortValue: number | null;
 }
 
 /**
  * The sort and its direction, validated: each sort has its own pair of
- * directions (`ENTRY_SORT_DIRECTIONS`), and position orders only one
- * subscription's list. A direction alone names its sort; with neither, the
+ * directions (`ENTRY_SORT_DIRECTIONS`), position orders only one
+ * subscription's list, and read time only the user's whole history. A direction alone names its sort; with neither, the
  * list's default (`defaultSortBy`).
  */
 function resolveSort(
@@ -554,13 +551,21 @@ function resolveSort(
 ) {
   const sortBy =
     params.sortBy ?? (params.sortOrder ? sortFieldOf(params.sortOrder) : defaultSortBy);
-  const directions = ENTRY_SORT_DIRECTIONS[sortBy === "archived" ? "readChanged" : sortBy];
+  const directions = ENTRY_SORT_DIRECTIONS[sortBy];
   const sortOrder = params.sortOrder ?? directions[0];
   if (!(directions as readonly string[]).includes(sortOrder)) {
     throw errors.validation(`Sort by ${sortBy} is ${directions.join(" or ")}, not ${sortOrder}`);
   }
   if (sortBy === "position" && !params.subscriptionId) {
     throw errors.validation("Only a collection's list (subscriptionId) can sort by position");
+  }
+  // A list with rows of its own has no read-time index, and nothing needs one
+  // (#2114): Recently Read is the user's whole history.
+  if (
+    sortBy === "readChanged" &&
+    (params.subscriptionId || params.tagId || params.uncategorized || params.type === "saved")
+  ) {
+    throw errors.validation("Recently Read covers every subscription; it can't be filtered to one");
   }
   if (isRankedSort(sortBy) && params.offset) {
     throw errors.validation(`A list sorted by ${sortBy} pages by cursor, not offset`);
@@ -673,26 +678,22 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
 
   // A list with rows of its own (one subscription's, a tag's, Uncategorized's)
   // joins them, which can't fan out, and pages through their index: walking
-  // the user's timeline instead reads every article outside the list. Sorted
-  // otherwise, the join still lets Postgres start from the list's rows when
-  // they're few (Wallabag's Saved by `archived`).
-  const timelineSort = sortBy !== "readChanged" && sortBy !== "archived";
+  // the user's timeline instead reads every article outside the list.
+  const timelineSort = sortBy !== "readChanged";
 
-  // Recently Read: exclude entries that were never explicitly read-state-changed.
-  // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
-  // "archived" sort orders by the same column but keeps unarchived entries.
-  if (sortBy === "readChanged") {
+  // Recently Read lists only entries whose read state was ever set.
+  if (!timelineSort) {
     conditions.push(isNotNull(visibleEntries.readChangedAt));
   }
 
   // Sort column: the timeline ("published", and the date ranked sorts break
-  // ties by), or when read state last changed ("readChanged"/"archived").
+  // ties by), or when read state last changed ("readChanged").
   const sortColumn = !timelineSort
     ? visibleEntries.readChangedAt
     : listRows
       ? listRows.table.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
-  const idColumn = listRows && timelineSort ? listRows.table.entryId : visibleEntries.id;
+  const idColumn = listRows ? listRows.table.entryId : visibleEntries.id;
   const ranked = isRankedSort(sortBy) ? rankedSortKeys(sortBy, listRows) : null;
 
   const joinRows = <T extends PgSelect>(query: T) =>
@@ -702,9 +703,7 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     if (rows.length <= limit) return { items: rows };
     const items = rows.slice(0, limit);
     const last = items[items.length - 1];
-    // sortTs is only null for the offset-paginated "archived" sort (which
-    // ignores nextCursor).
-    if (last?.sortTs == null) return { items };
+    if (!last) return { items };
     const position = { ts: last.sortTs.toString(), id: last.id };
     return {
       items,
@@ -780,13 +779,11 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     // join on a list's rows (one per list and article), so no DISTINCT ON
     // dedup is needed and the (sortColumn, id) keyset cursor resumes cleanly
     // over unique rows.
-    // Most rows were never read or unread, so read_changed_at's index puts
-    // NULLs last: newest first lists them last, oldest first lists them first.
-    const direction = sql.raw(descending ? "DESC" : "ASC");
-    const nulls = sql.raw(timelineSort ? "" : descending ? "NULLS LAST" : "NULLS FIRST");
     const rows = await joinRows(build())
       .where(and(...page))
-      .orderBy(sql`${sortColumn} ${direction} ${nulls}`, sql`${idColumn} ${direction}`)
+      .orderBy(
+        ...(descending ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)])
+      )
       .limit(limit + 1)
       .offset(params.offset ?? 0);
     const { items, nextCursor } = paginate(rows as PageRow[]);
@@ -800,13 +797,7 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
       // mapWith decodes it to a Temporal.Instant so the cursor never loses the
       // microseconds a JS Date would truncate — which corrupted keyset pagination
       // (#680, #683).
-      //
-      // Null-tolerant: the "archived" sort (Wallabag) orders by readChangedAt
-      // WITHOUT the readChanged view's isNotNull filter, so a row can have a null
-      // sort key. That path is offset-paginated and ignores nextCursor. For the
-      // cursor-paginated sorts (published is NOT NULL; readChanged filters
-      // non-null) the sort key is always present.
-      sortTs: sql`${sortColumn}`.mapWith(parseTimestamptzOrNull),
+      sortTs: sql`${sortColumn}`.mapWith(parseTimestamptz),
       sortValue: ranked ? sql<number | null>`${ranked.keys[0]}`.mapWith(Number) : sql<null>`NULL`,
     },
 
@@ -829,7 +820,7 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     },
 
     /** The sort the page is in, for a client ordering it locally. */
-    sort: sortBy === "archived" ? undefined : { sortBy, sortOrder },
+    sort: { sortBy, sortOrder },
   };
 }
 

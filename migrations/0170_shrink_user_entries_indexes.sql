@@ -5,9 +5,8 @@
 -- score and position ones. 0171 drops what these replace; 0172 and 0173 do
 -- the same for subscription_entries, one table per migration.
 --
--- The previous release orders Recently Read with NULLs first, which only the
--- old read_changed_at indexes serve, so those are dropped a release later
--- (#2116).
+-- The previous release's Wallabag `archived` sort reads the plain
+-- read_changed_at index, so that one is dropped a release later (#2116).
 SET LOCAL lock_timeout = '5s';
 
 CREATE INDEX IF NOT EXISTS idx_user_entries_visible_timeline_new
@@ -26,8 +25,6 @@ CREATE INDEX IF NOT EXISTS idx_user_entries_visible_unread_score_new
   ON user_entries (user_id, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC)
   WHERE NOT read AND (starred OR active_memberships > 0);
 --> statement-breakpoint
--- NULLS LAST: most rows were never read or unread, and Recently Read starts
--- from the newest change.
-CREATE INDEX IF NOT EXISTS idx_user_entries_visible_read_changed
-  ON user_entries (user_id, read_changed_at DESC NULLS LAST, entry_id DESC)
-  WHERE starred OR active_memberships > 0;
+CREATE INDEX IF NOT EXISTS idx_user_entries_recently_read_new
+  ON user_entries (user_id, read_changed_at DESC, entry_id DESC)
+  WHERE read_changed_at IS NOT NULL AND (starred OR active_memberships > 0);
