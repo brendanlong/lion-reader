@@ -3,6 +3,9 @@
  * interactive demo, so they show the real UI and can be refreshed when it
  * changes.
  *
+ * The default base URL is production, so the shots show what's deployed. To
+ * capture a branch, run `pnpm dev:local` and pass its URL.
+ *
  * Usage: pnpm readme-screenshots [base-url]   (default https://lionreader.com)
  */
 import { chromium, type Browser, type BrowserContextOptions, type Page } from "@playwright/test";
@@ -40,6 +43,12 @@ async function clickButton(page: Page, text: string): Promise<void> {
   await page.locator("button:visible", { hasText: text }).first().click();
 }
 
+async function save(page: Page, file: string): Promise<void> {
+  const outputPath = path.join(outDir, file);
+  await page.screenshot({ path: outputPath, animations: "disabled" });
+  console.log(`Wrote ${outputPath}`);
+}
+
 async function main() {
   const browser = await chromium.launch();
   try {
@@ -47,21 +56,23 @@ async function main() {
     const phone = { viewport: PHONE, isMobile: true, hasTouch: true };
 
     const list = await openDemo(browser, "light", null, desktop);
-    await list.screenshot({ path: path.join(outDir, "list.png") });
+    await save(list, "list.png");
 
     const summary = await openDemo(browser, "light", "plugins", desktop);
     await clickButton(summary, "Summarize");
-    await summary.getByText("AI Summary").waitFor();
-    await summary.screenshot({ path: path.join(outDir, "summary.png") });
+    await summary.locator("button:visible", { hasText: "Hide Summary" }).waitFor();
+    await save(summary, "summary.png");
 
     const narration = await openDemo(browser, "dark", "text-to-speech", desktop);
     await clickButton(narration, "Listen");
     await narration.locator("button:visible", { hasText: "Pause" }).waitFor();
-    await narration.screenshot({ path: path.join(outDir, "narration.png") });
+    await save(narration, "narration.png");
 
     const phoneList = await openDemo(browser, "dark", null, phone);
     const phoneArticle = await openDemo(browser, "epaper", "email-newsletters", phone);
-    const shots = await Promise.all([phoneList.screenshot(), phoneArticle.screenshot()]);
+    const shots = await Promise.all(
+      [phoneList, phoneArticle].map((page) => page.screenshot({ animations: "disabled" }))
+    );
 
     // Lay the two phone shots side by side on a transparent background.
     const composite = await browser.newPage({
@@ -78,6 +89,7 @@ async function main() {
       `<body style="margin:0;display:flex;gap:${PHONE_GAP}px;background:transparent">${images}</body>`
     );
     await composite.screenshot({ path: path.join(outDir, "mobile.png"), omitBackground: true });
+    console.log(`Wrote ${path.join(outDir, "mobile.png")}`);
   } finally {
     await browser.close();
   }

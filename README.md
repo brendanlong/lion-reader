@@ -8,10 +8,10 @@ One fast, private reader for the sites you follow, your email newsletters, and t
 
 ## What you can do
 
-- **Follow sites, read newsletters, and save articles in one place.** Subscribe to RSS, Atom, and JSON feeds, or paste a site's URL and Lion Reader finds its feed. Newsletters go to a private ingest address, so Lion Reader never needs access to your inbox. Save any page for later from the browser extension, a bookmarklet, your phone's share menu, Discord, or by uploading a Markdown, Word, or HTML file.
+- **Follow sites, read newsletters, and save articles in one place.** Subscribe to RSS, Atom, and JSON feeds, or paste a site's URL and Lion Reader finds its feed. Newsletters go to a private ingest address, so Lion Reader never needs access to your inbox. Save any page for later from the browser extension, a bookmarklet, your phone's share menu, Discord, or by uploading a document like a PDF or Word file.
 - **Read full articles, not teasers.** Links from sites like YouTube, arXiv, GitHub, Google Docs, and Bluesky come through complete and readable instead of as a sign-in page or a stub. For feeds that only send a summary, Lion Reader can fetch the full article.
-- **Use AI when you want it, and not otherwise.** Summarize an article in a click, listen to any article in a natural voice with the current paragraph highlighted, or connect Claude or another assistant over [MCP](docs/DESIGN.md#mcp-server) to search, triage, star, and save articles for you. Nothing is sent to an AI provider unless you ask for it.
-- **Keep using the apps you like.** Lion Reader speaks the Google Reader API (for RSS apps like NetNewsWire or Reeder) and the Wallabag API (for saving from your phone with the Wallabag app). There's also a REST API with an OpenAPI spec at `/api/openapi`, and a native Android app in early development ([GitHub releases](https://github.com/brendanlong/lion-reader/releases)).
+- **Use AI when you want it, and not otherwise.** Summarize an article in a click, listen to any article in a natural voice with the current paragraph highlighted, or connect Claude or another assistant over [MCP](docs/DESIGN.md#mcp-server) to search, triage, star, and save articles for you. AI features run only when you use them or connect an assistant, and you can use your own API keys.
+- **Keep using the apps you like.** Lion Reader speaks the Google Reader API (for RSS apps like NetNewsWire or Reeder) and the Wallabag API (for saving from your phone with the Wallabag app). There's also a REST API with an OpenAPI spec at `/api/openapi`.
 - **Move around instantly.** New entries appear in the list you're reading without a refresh, navigation renders from cache and refreshes in the background, and typical pages load in under 100ms. See [Frontend State](src/FRONTEND_STATE.md) for how.
 - **All the essentials.** Full-text search, tags, starring, keyboard shortcuts (press `?`), light, dark, and e-ink themes, OPML import and export, a full-library export, and an installable app (PWA).
 
@@ -23,20 +23,19 @@ One fast, private reader for the sites you follow, your email newsletters, and t
 
 ## Privacy
 
-No ads, no data selling, and no third-party tracking scripts. The hosted site counts page views with cookie-less [GoatCounter](https://www.goatcounter.com/), recording only the _kind_ of page (an entry list, an article, a settings page), never which list or article, and nothing tied to your account. Self-hosted builds send nothing.
+No ads, no data selling, and no third-party tracking scripts. The hosted site counts page views with cookie-less [GoatCounter](https://www.goatcounter.com/), recording only the _kind_ of page (an entry list, an article, a settings page), never which list or article, and nothing tied to your account. Self-hosted builds send nothing unless you configure analytics or error tracking.
 
-A feed is fetched once for all its subscribers, but a new subscriber starts with what the feed publishes right now, never older entries Lion Reader kept from someone else's subscription. AI features are opt-in per use, and you can bring your own API keys. The [privacy policy](https://lionreader.com/privacy) lists every third-party service and what it receives.
+A feed is fetched once for all its subscribers, but a new subscriber starts with what the feed publishes right now, never older entries Lion Reader kept from someone else's subscription. The [privacy policy](https://lionreader.com/privacy) lists every third-party service and what it receives.
 
 ## Get the apps
 
 - **Web**: [lionreader.com](https://lionreader.com), installable as an app from your browser
 - **Browser extension**: [Chrome](https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl) and [Firefox](https://addons.mozilla.org/en-US/firefox/addon/lion-reader/) ([source](extension/))
-- **Android** (early, offline-first): APKs on [GitHub releases](https://github.com/brendanlong/lion-reader/releases) ([source](kmp/))
-- **Any Google Reader API client**, the Wallabag app, or an MCP-capable AI assistant, using your Lion Reader account
+- **Android** (early, offline-first): APKs on the `android-v*` [GitHub releases](https://github.com/brendanlong/lion-reader/releases) ([source](kmp/))
 
 ## Self-hosting
 
-Lion Reader ships as a Docker image and needs PostgreSQL and Redis. It runs on a small VM and scales horizontally: the web app, the background worker (feed fetching, jobs), and the optional Discord bot are separate processes. Features that depend on outside services (OAuth sign-in, AI summaries and narration, newsletter delivery, error tracking) are optional and switch on when you configure them. Metrics are exposed for Prometheus, and logs are structured JSON.
+Lion Reader builds into a Docker image (`Dockerfile`) and needs PostgreSQL and Redis. It runs on a small VM and scales horizontally: the web app, the background worker (feed fetching, jobs), and the optional Discord bot are separate processes. Features that depend on outside services (OAuth sign-in, AI summaries and narration, newsletter delivery, error tracking) are optional and switch on when you configure them. Metrics are exposed for Prometheus, and logs are structured JSON.
 
 The [Deployment Guide](docs/DEPLOYMENT.md) walks through a full Fly.io setup, including every setting that hosted lionreader.com uses which you'll want to change.
 
@@ -114,7 +113,7 @@ pnpm db:migrate
 # Seed the database with test data (optional)
 pnpm db:seed
 
-# Start development server (app + worker)
+# Start development server (app, worker, and Discord bot, which idles without a token)
 pnpm dev
 ```
 
