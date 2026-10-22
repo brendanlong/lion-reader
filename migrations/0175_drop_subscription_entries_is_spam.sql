@@ -3,7 +3,7 @@
 -- changes. The previous release neither reads nor writes the copy.
 SET LOCAL lock_timeout = '5s';
 
--- Spam articles get tag and Uncategorized rows too (0175 backfills them).
+-- Spam articles get tag and Uncategorized rows too (0176 backfills them).
 CREATE OR REPLACE FUNCTION reached_tag_lists(p_user uuid[], p_entry uuid[])
     RETURNS TABLE (list_id uuid, user_id uuid, entry_id uuid)
     LANGUAGE sql STABLE
