@@ -30,7 +30,7 @@ import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
-// min-h-11 matches the toolbar's height, so a one-line title centers on it and
+// min-h-11 matches the toolbar's, so a one-line title centers on it and
 // a wrapped title grows downward while the toolbar stays pinned to the top.
 const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body min-h-11 font-bold";
 
@@ -43,7 +43,9 @@ export function TitleSkeleton() {
  */
 export function TitleText({ children }: { children: ReactNode }) {
   return (
-    <h1 className={`${TITLE_CLASSES} flex min-w-0 items-center wrap-break-word`}>{children}</h1>
+    <h1 className={`${TITLE_CLASSES} flex min-w-0 items-center`}>
+      <span className="min-w-0 wrap-break-word">{children}</span>
+    </h1>
   );
 }
 
@@ -153,7 +155,7 @@ export function EntryPageLayout({
         {/* Header with title and buttons */}
         <div className="mb-4 flex items-start justify-between gap-4 sm:mb-6">
           {titleSlot}
-          <div className="flex shrink-0 gap-2">
+          <div className="flex min-h-11 shrink-0 items-center gap-2">
             <StateToggleButton
               icon={<SearchIcon className="h-5 w-5" />}
               label="Search"
