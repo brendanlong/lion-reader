@@ -3,7 +3,7 @@
 Everything about the deployment is managed either by Fly.io (`../fly.toml`) or
 here. This module owns `lionreader.com` DNS (Cloudflare), the Bunny CDN pull
 zone, Mailgun, Sentry, the healthchecks.io monitors, the backup-health Cloudflare
-Worker, the private Tigris archive bucket, and the domain registration at Amazon
+Worker, both Tigris buckets, and the domain registration at Amazon
 Registrar. Change them here, not in a dashboard.
 
 ## Credentials
