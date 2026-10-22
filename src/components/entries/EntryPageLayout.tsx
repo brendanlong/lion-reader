@@ -30,7 +30,9 @@ import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
-const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body font-bold";
+// min-h-11 matches the toolbar's height, so a one-line title centers on it and
+// a wrapped title grows downward while the toolbar stays pinned to the top.
+const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body min-h-11 font-bold";
 
 export function TitleSkeleton() {
   return <SkeletonText width="w-48" className={TITLE_CLASSES} />;
@@ -40,7 +42,9 @@ export function TitleSkeleton() {
  * Title text component - renders the h1 with proper styling.
  */
 export function TitleText({ children }: { children: ReactNode }) {
-  return <h1 className={TITLE_CLASSES}>{children}</h1>;
+  return (
+    <h1 className={`${TITLE_CLASSES} flex min-w-0 items-center wrap-break-word`}>{children}</h1>
+  );
 }
 
 interface EntryPageLayoutProps {
@@ -147,9 +151,9 @@ export function EntryPageLayout({
       {/* Main content area - hidden when viewing an entry */}
       <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
         {/* Header with title and buttons */}
-        <div className="mb-4 flex items-center justify-between sm:mb-6">
+        <div className="mb-4 flex items-start justify-between gap-4 sm:mb-6">
           {titleSlot}
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
             <StateToggleButton
               icon={<SearchIcon className="h-5 w-5" />}
               label="Search"
