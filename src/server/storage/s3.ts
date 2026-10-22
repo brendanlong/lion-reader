@@ -41,6 +41,8 @@ export function isStorageAvailable(): boolean {
 export function isArchiveAvailable(): boolean {
   return !!(
     storageConfig.archiveBucket &&
+    // The other bucket is public, and archived keys are guessable.
+    storageConfig.archiveBucket !== storageConfig.bucket &&
     storageConfig.accessKeyId &&
     storageConfig.secretAccessKey
   );
@@ -367,6 +369,12 @@ export async function fetchAndUploadImage(
 // Archive (private bucket)
 // ============================================================================
 
+/**
+ * Timeout for one archive request. Archiving happens inline in full-content
+ * fetches, which mustn't hang on a stalled store.
+ */
+const ARCHIVE_REQUEST_TIMEOUT_MS = 30000;
+
 function requireArchive(): { client: AwsClient; bucket: string } {
   const client = getS3Client();
   if (!client || !isArchiveAvailable()) {
@@ -398,6 +406,7 @@ export async function putArchiveObject(
       "Content-Length": String(data.byteLength),
     },
     body: data as Uint8Array<ArrayBuffer>,
+    signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
   });
   await ensureOk(response, "PUT");
 }
@@ -405,7 +414,10 @@ export async function putArchiveObject(
 /** Deletes `key` from the archive bucket; deleting a missing key succeeds. */
 export async function deleteArchiveObject(key: string): Promise<void> {
   const { client, bucket } = requireArchive();
-  const response = await client.fetch(getObjectRequestUrl(bucket, key), { method: "DELETE" });
+  const response = await client.fetch(getObjectRequestUrl(bucket, key), {
+    method: "DELETE",
+    signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
+  });
   await ensureOk(response, "DELETE");
 }
 
@@ -453,7 +465,10 @@ export async function* listArchiveKeys(prefix: string): AsyncGenerator<string[]>
     url.searchParams.set("list-type", "2");
     url.searchParams.set("prefix", prefix);
     if (continuationToken) url.searchParams.set("continuation-token", continuationToken);
-    const response = await client.fetch(url.toString(), { method: "GET" });
+    const response = await client.fetch(url.toString(), {
+      method: "GET",
+      signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
+    });
     await ensureOk(response, "ListObjectsV2");
     const page = parseListObjectsV2(await response.text());
     if (page.keys.length > 0) yield page.keys;

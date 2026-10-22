@@ -4,11 +4,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { gunzipSync } from "node:zlib";
-import { sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds } from "../../src/server/db/schema";
 import { storageConfig } from "../../src/server/config/env";
-import { FULL_CONTENT_EXTRACTION_FAILED } from "../../src/server/services/full-content";
 import { fullContentArchiveKey } from "../../src/server/services/full-content-archive";
 import { archiveFullContentOriginals } from "../../scripts/archive-full-content-originals";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
@@ -19,35 +18,32 @@ const fetchedAt = new Date("2026-01-01T00:00:00Z");
 
 let s3: FakeS3;
 
-interface Row extends Record<string, unknown> {
-  original: string | null;
-  error: string | null;
-  updated_at: Date;
-}
-
-async function readRow(entryId: string): Promise<Row> {
-  const result = await db.execute<Row>(
-    sql`SELECT full_content_original AS original, full_content_error AS error, updated_at
-        FROM entries WHERE id = ${entryId}`
-  );
-  return { ...result.rows[0], updated_at: new Date(result.rows[0].updated_at) };
+async function readRow(entryId: string) {
+  const [row] = await db
+    .select({
+      original: entries.fullContentOriginal,
+      cleaned: entries.fullContentCleaned,
+      updatedAt: entries.updatedAt,
+    })
+    .from(entries)
+    .where(eq(entries.id, entryId));
+  return row;
 }
 
 /** An entry as fetches stored it before #2115, with the page on the row. */
 async function createFetchedEntry(
   feedId: string,
   page: string | null,
-  fields: { fullContentCleaned?: string | null; fullContentError?: string | null } = {}
+  fields: { fullContentCleaned?: string | null } = {}
 ): Promise<string> {
-  const entryId = await createTestEntry(feedId, {
+  return createTestEntry(feedId, {
     fetchedAt,
     fullContentFetchedAt: fetchedAt,
     fullContentHash: "hash",
     fullContentCleaned: "<p>Article</p>",
+    fullContentOriginal: page,
     ...fields,
   });
-  await db.execute(sql`UPDATE entries SET full_content_original = ${page} WHERE id = ${entryId}`);
-  return entryId;
 }
 
 function archived(entryId: string): string | undefined {
@@ -72,40 +68,31 @@ afterEach(async () => {
 afterAll(cleanup);
 
 describe("archiveFullContentOriginals", () => {
-  it("archives every page, clears the column, and fails fetches that showed the whole page", async () => {
+  it("archives every page and clears the column without changing what's shown", async () => {
     const feedId = await createTestFeed();
-    const extracted = await createFetchedEntry(feedId, "<html>extracted</html>");
-    const wholePage = await createFetchedEntry(feedId, "<html>whole page</html>", {
+    const extracted = await createFetchedEntry(feedId, "<html>page</html>");
+    // A plugin's article, stored only as the original before 4d18f516.
+    const pluginArticle = await createFetchedEntry(feedId, "<article>plugin</article>", {
       fullContentCleaned: null,
-    });
-    const alreadyFailed = await createFetchedEntry(feedId, "<html>failed</html>", {
-      fullContentCleaned: null,
-      fullContentError: "HTTP 500: Internal Server Error",
     });
     const noPage = await createFetchedEntry(feedId, null);
 
     // Smaller than the row count, so the walk crosses batches.
-    const result = await archiveFullContentOriginals(db, { batchSize: 2, pauseMs: 0 });
+    const result = await archiveFullContentOriginals(db, { batchSize: 1, pauseMs: 0 });
 
-    expect(result).toEqual({ archived: 3, failedUploads: 0 });
-    expect(archived(extracted)).toBe("<html>extracted</html>");
-    expect(archived(wholePage)).toBe("<html>whole page</html>");
-    expect(archived(alreadyFailed)).toBe("<html>failed</html>");
+    expect(result).toEqual({ archived: 2, failedUploads: 0 });
+    expect(archived(extracted)).toBe("<html>page</html>");
+    expect(archived(pluginArticle)).toBe("<article>plugin</article>");
     expect(archived(noPage)).toBeUndefined();
-
     expect(await readRow(extracted)).toEqual({
       original: null,
-      error: null,
-      updated_at: fetchedAt,
+      cleaned: "<p>Article</p>",
+      updatedAt: fetchedAt,
     });
-    const whole = await readRow(wholePage);
-    expect(whole.original).toBeNull();
-    expect(whole.error).toBe(FULL_CONTENT_EXTRACTION_FAILED);
-    expect(whole.updated_at.getTime()).toBeGreaterThan(fetchedAt.getTime());
-    expect(await readRow(alreadyFailed)).toEqual({
+    expect(await readRow(pluginArticle)).toEqual({
       original: null,
-      error: "HTTP 500: Internal Server Error",
-      updated_at: fetchedAt,
+      cleaned: "<article>plugin</article>",
+      updatedAt: fetchedAt,
     });
   });
 

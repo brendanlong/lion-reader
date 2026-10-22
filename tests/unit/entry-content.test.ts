@@ -61,9 +61,7 @@ describe("showsFullContent", () => {
     expect(showsFullContent(fetched)).toBe(true);
   });
 
-  // Fetches from before failed extractions were recorded as errors stored the
-  // whole page with no article (#2115); those show the feed content.
-  it("doesn't show a fetch that stored no article", () => {
+  it("doesn't show a fetch without an article", () => {
     expect(showsFullContent({ ...fetched, fullContentCleaned: null })).toBe(false);
   });
 });

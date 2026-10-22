@@ -116,13 +116,20 @@ const entryReadSelectFields = {
  */
 type FullContentScope = "all" | "shown";
 
+/**
+ * The full article, raw. A plugin fetch from before 4d18f516 stored its
+ * article only as the original, which the backfill of #2115 moves into
+ * `full_content_cleaned`; until it has run, fall back to it.
+ */
+const fullContentArticleSql = sql<
+  string | null
+>`COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal})`;
+
 /** The full-content body, raw. */
 function fullContentBodyFields(scope: FullContentScope) {
   const loaded = scope === "all" ? sql`true` : sql`${subscriptions.fetchFullContent}`;
   return {
-    fullContentCleaned: sql<
-      string | null
-    >`CASE WHEN ${loaded} THEN ${visibleEntries.fullContentCleaned} END`,
+    fullContentCleaned: sql<string | null>`CASE WHEN ${loaded} THEN ${fullContentArticleSql} END`,
   };
 }
 
@@ -204,7 +211,7 @@ const entryRawContentSelectFields = {
   contentOriginal: visibleEntries.contentOriginal,
   contentCleaned: visibleEntries.contentCleaned,
   contentHash: visibleEntries.contentHash,
-  fullContentCleaned: visibleEntries.fullContentCleaned,
+  fullContentCleaned: fullContentArticleSql,
   fullContentHash: visibleEntries.fullContentHash,
 };
 
@@ -338,15 +345,15 @@ export interface ExportableEntry {
 }
 
 /**
- * The fetched full article, for reads that serve the variant the entry view
- * shows rather than both families. Needs `subscriptions` LEFT JOINed on the
+ * The fetched full article, for reads that serve only the variant the entry
+ * view shows. Needs `subscriptions` LEFT JOINed on the
  * entry's subscription. The body is raw (untrusted) and loaded only for
  * subscriptions that fetch full content.
  */
 const shownFullContentSelectFields = {
   fullContent: sql<
     string | null
-  >`CASE WHEN ${subscriptions.fetchFullContent} THEN ${visibleEntries.fullContentCleaned} END`,
+  >`CASE WHEN ${subscriptions.fetchFullContent} THEN ${fullContentArticleSql} END`,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   fetchFullContent: subscriptions.fetchFullContent,

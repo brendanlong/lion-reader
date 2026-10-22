@@ -98,6 +98,29 @@ describe("entries.get sanitized content", () => {
     expect(entry.fullContentCleaned).not.toContain("onclick");
   });
 
+  // Plugin fetches from before 4d18f516 stored the article only as the
+  // original, until the #2115 backfill moves it.
+  it("serves a full-content original stored without a cleaned copy, sanitized", async () => {
+    const { userId, feedId } = await seedSubscribedUser();
+    const entryId = await createTestEntry(feedId, {
+      title: "Full content original only",
+      contentCleaned: "<p>feed body</p>",
+      fullContentOriginal:
+        '<article onclick="evil()">plugin article<script>alert(1)</script></article>',
+      fullContentCleaned: null,
+      fullContentHash: "fullhash",
+      fullContentFetchedAt: new Date(),
+      userIds: [userId],
+    });
+
+    const caller = createCaller(await createAuthContext(userId));
+    const { entry } = await caller.entries.get({ id: entryId });
+
+    expect(entry.fullContentCleaned).toContain("plugin article");
+    expect(entry.fullContentCleaned).not.toContain("<script>");
+    expect(entry.fullContentCleaned).not.toContain("onclick");
+  });
+
   // The services-layer getEntry/getEntries are the read path for MCP get_entry,
   // Google Reader, and Wallabag — they must sanitize content too, not just the
   // tRPC router (issue #956).

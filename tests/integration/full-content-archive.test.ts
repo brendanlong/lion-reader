@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { gunzipSync } from "node:zlib";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds } from "../../src/server/db/schema";
 import { persistFullContentResult } from "../../src/server/services/full-content";
@@ -46,10 +46,11 @@ function archived(entryId: string): string | undefined {
 }
 
 async function storedOriginal(entryId: string): Promise<string | null> {
-  const result = await db.execute<{ original: string | null }>(
-    sql`SELECT full_content_original AS original FROM entries WHERE id = ${entryId}`
-  );
-  return result.rows[0].original;
+  const [row] = await db
+    .select({ original: entries.fullContentOriginal })
+    .from(entries)
+    .where(eq(entries.id, entryId));
+  return row.original;
 }
 
 describe("persistFullContentResult", () => {
@@ -62,6 +63,18 @@ describe("persistFullContentResult", () => {
     expect(await storedOriginal(entryId)).toBeNull();
     const [row] = await db.select().from(entries).where(eq(entries.id, entryId));
     expect(row.fullContentCleaned).toBe("<p>Article</p>");
+  });
+
+  // Left on the row, the backfill would archive it over the newer page.
+  it("clears a page an earlier fetch stored on the row", async () => {
+    const entryId = await createTestEntry(await createTestFeed(), {
+      fullContentOriginal: "<html>older page</html>",
+    });
+
+    await persistFullContentResult(db, entryId, success);
+
+    expect(await storedOriginal(entryId)).toBeNull();
+    expect(archived(entryId)).toBe(PAGE);
   });
 
   it("stores the article even when the archive refuses the page", async () => {

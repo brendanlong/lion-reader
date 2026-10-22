@@ -33,8 +33,6 @@ export interface FetchFullContentResult {
   error?: string;
 }
 
-export const FULL_CONTENT_EXTRACTION_FAILED = "Could not extract article content from page";
-
 /**
  * Fetches full article content from a URL.
  *
@@ -71,7 +69,10 @@ export async function fetchFullContent(
     // Readability failed on a generic page. Storing the whole page would show
     // it in place of the feed's own content, so record the failure instead.
     if (contentCleaned === null) {
-      return { success: false, error: FULL_CONTENT_EXTRACTION_FAILED };
+      return {
+        success: false,
+        error: "Could not extract article content from page",
+      };
     }
 
     return { success: true, contentOriginal, contentCleaned };
@@ -97,8 +98,9 @@ export async function fetchFullContent(
  * (fetchFullContentForNewEntries below).
  *
  * Stores only the raw cleaned content; the read path sanitizes per read (issue
- * #1282). The fetched page goes to the archive (`archiveFullContentOriginal`),
- * never the entry row (#2115); failing to archive it doesn't fail the write.
+ * #1282). The fetched page goes to the archive (`archiveFullContentOriginal`)
+ * once the row is written, never the row itself (#2115); failing to archive it
+ * doesn't fail the write.
  *
  * Bumps `updated_at` only when the full content an entry view shows changes:
  * sync reports every bump as `entry_updated` to every subscriber, and clients
@@ -130,15 +132,6 @@ export async function persistFullContentResult(
     return null;
   }
 
-  if (result.contentOriginal) {
-    await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
-      logger.warn("Failed to archive full content original", {
-        entryId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
-
   // Compute hash of full content for separate summary caching
   const fullContentHash = result.contentCleaned
     ? createHash("sha256").update(result.contentCleaned, "utf8").digest("hex")
@@ -155,9 +148,21 @@ export async function persistFullContentResult(
     .update(entries)
     .set({
       ...fullContentUpdate,
+      // An older fetch's page, superseded by the one archived below: left
+      // here, the backfill would archive it over this one.
+      fullContentOriginal: null,
       updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT DISTINCT FROM ${fullContentHash} THEN ${entries.updatedAt} ELSE ${now} END`,
     })
     .where(eq(entries.id, entryId));
+
+  if (result.contentOriginal) {
+    await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
+      logger.warn("Failed to archive full content original", {
+        entryId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   return fullContentUpdate;
 }
 

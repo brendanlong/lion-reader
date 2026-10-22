@@ -12,10 +12,12 @@
  * logs its cursor, which `--after` resumes from. `--pause-ms` spaces batches
  * out so the walk doesn't saturate the database's I/O.
  *
- * An entry whose page Readability couldn't extract from (no
- * `full_content_cleaned`) showed the whole page. It becomes the failed fetch
- * such a page is now recorded as, and its `updated_at` moves so clients that
- * stored the page re-download the entry.
+ * A plugin fetch from before 4d18f516 stored its article only as the
+ * original (no `full_content_cleaned`); it moves into `full_content_cleaned`,
+ * which the read path falls back to meanwhile, so nothing a reader sees
+ * changes. Run it once the deploy that stops writing the column has finished
+ * rolling out: an old machine's write landing between a batch's read and its
+ * update would be cleared without being archived.
  */
 
 import { fileURLToPath } from "node:url";
@@ -24,7 +26,6 @@ import { sql } from "drizzle-orm";
 import type { db as dbType } from "../src/server/db";
 import { isArchiveAvailable } from "../src/server/storage/s3";
 import { archiveFullContentOriginal } from "../src/server/services/full-content-archive";
-import { FULL_CONTENT_EXTRACTION_FAILED } from "../src/server/services/full-content";
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
@@ -78,25 +79,18 @@ export async function archiveFullContentOriginals(
       }
     }
 
-    // SET reads the row as it is now, so an entry refetched since the SELECT
-    // (which no longer writes the column) keeps its new article.
+    // A fetch since the SELECT has already cleared the column (and archived
+    // its own page), so only rows still holding a page are touched.
     if (uploaded.length > 0) {
       await db.execute(sql`
         UPDATE entries
-        SET full_content_original = NULL,
-            full_content_error = CASE
-              WHEN full_content_cleaned IS NULL
-              THEN COALESCE(full_content_error, ${FULL_CONTENT_EXTRACTION_FAILED})
-              ELSE full_content_error
-            END,
-            updated_at = CASE
-              WHEN full_content_cleaned IS NULL AND full_content_error IS NULL THEN now()
-              ELSE updated_at
-            END
+        SET full_content_cleaned = COALESCE(full_content_cleaned, full_content_original),
+            full_content_original = NULL
         WHERE id IN (${sql.join(
           uploaded.map((id) => sql`${id}::uuid`),
           sql`, `
         )})
+          AND full_content_original IS NOT NULL
       `);
     }
     archived += uploaded.length;
