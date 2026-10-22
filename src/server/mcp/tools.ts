@@ -156,7 +156,8 @@ const listEntriesArgs = entryListInputSchema().extend({
   sortBy: entryList.sortBy.describe(
     "What to sort by. Default: a collection whose articles have positions by position, " +
       "anything else by date. published (date), readChanged (when last marked " +
-      "read or unread; only entries ever marked), score (set_entry_scores) or position (a " +
+      "read or unread; only entries ever marked, across all subscriptions: not with " +
+      "subscriptionId, tagId, uncategorized or type saved), score (set_entry_scores) or position (a " +
       "collection's order, set_collection_positions; needs subscriptionId). Entries without " +
       "a score or position come after those with one, newest first. The first page's " +
       "`sortable` says whether the list has any scores or positions."

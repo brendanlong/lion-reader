@@ -542,8 +542,9 @@ interface PageRow {
 /**
  * The sort and its direction, validated: each sort has its own pair of
  * directions (`ENTRY_SORT_DIRECTIONS`), position orders only one
- * subscription's list, and read time only the user's whole history. A direction alone names its sort; with neither, the
- * list's default (`defaultSortBy`).
+ * subscription's list, and read time only the user's whole history. A
+ * direction alone names its sort; with neither, the list's default
+ * (`defaultSortBy`).
  */
 function resolveSort(
   params: Omit<ListEntriesParams, "query">,

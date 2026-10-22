@@ -715,10 +715,10 @@ WHERE subscription_id = ${q(readingList)} AND NOT read`
     async () => appList({ userId: U_KEEPS_UP })
   ),
   {
-    name: "wallabag.entries_archived",
+    name: "wallabag.entries",
     kind: "read",
-    source: "wallabag/entries.ts listWallabagEntries (sort archived, perPage 30, detail full)",
-    prepare: async () => ({ statements: await wallabagEntries({ sort: "archived" }) }),
+    source: "wallabag/entries.ts listWallabagEntries (perPage 30, detail full)",
+    prepare: async () => ({ statements: await wallabagEntries({}) }),
   },
   {
     name: "search",

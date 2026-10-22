@@ -139,7 +139,7 @@ export const entriesRouter = createTRPCRouter({
    * @param excludeTypes - Optional array of types to exclude
    * @param unreadOnly - Optional filter to show only unread entries
    * @param starredOnly - Optional filter to show only starred entries
-   * @param sortBy - Optional sort: "published" (default), "readChanged", "score" or "position" (a collection's list only)
+   * @param sortBy - Optional sort: "published" (default), "readChanged" (all entries only, no list filter), "score" or "position" (a collection's list only)
    * @param sortOrder - Optional direction of sortBy: newest/oldest, highest/lowest or first/last (its first by default). Ignored when query is provided.
    * @param cursor - Optional pagination cursor (from previous response)
    * @param limit - Optional number of entries per page (default: 50, max: 100)
