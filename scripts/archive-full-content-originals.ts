@@ -15,9 +15,9 @@
  * A plugin fetch from before 4d18f516 stored its article only as the
  * original (no `full_content_cleaned`); it moves into `full_content_cleaned`,
  * which the read path falls back to meanwhile, so nothing a reader sees
- * changes. Run it once the deploy that stops writing the column has finished
- * rolling out: an old machine's write landing between a batch's read and its
- * update would be cleared without being archived.
+ * changes. A page written to the column after its batch read it is left for
+ * a rerun, so run it again until it archives nothing once the deploy that
+ * stops writing the column has rolled out.
  */
 
 import { fileURLToPath } from "node:url";
@@ -45,6 +45,8 @@ export interface ArchiveResult {
 interface BatchRow extends Record<string, unknown> {
   id: string;
   original: string;
+  /** As text, to compare at full precision. */
+  fetched_at: string | null;
 }
 
 export async function archiveFullContentOriginals(
@@ -60,7 +62,7 @@ export async function archiveFullContentOriginals(
   let failedUploads = 0;
   for (;;) {
     const { rows } = await db.execute<BatchRow>(sql`
-      SELECT id, full_content_original AS original
+      SELECT id, full_content_original AS original, full_content_fetched_at::text AS fetched_at
       FROM entries
       WHERE id > ${cursor}::uuid AND full_content_original IS NOT NULL
       ORDER BY id
@@ -68,29 +70,32 @@ export async function archiveFullContentOriginals(
     `);
     if (rows.length === 0) break;
 
-    const uploaded: string[] = [];
+    const uploaded: BatchRow[] = [];
     for (const row of rows) {
       try {
         await archiveFullContentOriginal(row.id, row.original);
-        uploaded.push(row.id);
+        uploaded.push(row);
       } catch (err) {
         failedUploads++;
         log(`upload failed for ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
-    // A fetch since the SELECT has already cleared the column (and archived
-    // its own page), so only rows still holding a page are touched.
+    // Every write of the column also set the fetch time, so a row whose fetch
+    // time moved since the SELECT holds a page this batch didn't archive (or,
+    // since this release, none): leave it to a rerun.
     if (uploaded.length > 0) {
       await db.execute(sql`
-        UPDATE entries
-        SET full_content_cleaned = COALESCE(full_content_cleaned, full_content_original),
+        UPDATE entries e
+        SET full_content_cleaned = COALESCE(e.full_content_cleaned, e.full_content_original),
             full_content_original = NULL
-        WHERE id IN (${sql.join(
-          uploaded.map((id) => sql`${id}::uuid`),
+        FROM (VALUES ${sql.join(
+          uploaded.map((row) => sql`(${row.id}::uuid, ${row.fetched_at}::timestamptz)`),
           sql`, `
-        )})
-          AND full_content_original IS NOT NULL
+        )}) AS u(id, fetched_at)
+        WHERE e.id = u.id
+          AND e.full_content_original IS NOT NULL
+          AND e.full_content_fetched_at IS NOT DISTINCT FROM u.fetched_at
       `);
     }
     archived += uploaded.length;

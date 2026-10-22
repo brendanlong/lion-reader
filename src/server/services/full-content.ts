@@ -148,8 +148,7 @@ export async function persistFullContentResult(
     .update(entries)
     .set({
       ...fullContentUpdate,
-      // An older fetch's page, superseded by the one archived below: left
-      // here, the backfill would archive it over this one.
+      // An older fetch's page; the backfill archives what's left here.
       fullContentOriginal: null,
       updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT DISTINCT FROM ${fullContentHash} THEN ${entries.updatedAt} ELSE ${now} END`,
     })
@@ -333,7 +332,7 @@ export async function fetchAndStoreFullContent(
   const now = new Date();
   // Persist the raw full-content columns onto the shared entry row (see note
   // above); sanitized for the response below (per-read sanitization, #1282).
-  const fullContentUpdate = await persistFullContentResult(db, entryId, result, now);
+  const fullContentUpdate = await persistFullContentResult(db, entry.id, result, now);
 
   if (!result.success || !fullContentUpdate) {
     logger.warn("Failed to fetch full content", {

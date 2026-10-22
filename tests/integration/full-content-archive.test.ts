@@ -11,8 +11,8 @@ import { db } from "../../src/server/db";
 import { entries, feeds } from "../../src/server/db/schema";
 import { persistFullContentResult } from "../../src/server/services/full-content";
 import {
+  archiveFullContentOriginal,
   deleteOrphanedFullContentArchives,
-  fullContentArchiveKey,
 } from "../../src/server/services/full-content-archive";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
@@ -40,9 +40,12 @@ afterEach(async () => {
 
 afterAll(cleanup);
 
-function archived(entryId: string): string | undefined {
-  const object = s3.objects.get(`${BUCKET}/${fullContentArchiveKey(entryId)}`);
-  return object && gunzipSync(object).toString("utf8");
+/** The pages archived for an entry. */
+function archived(entryId: string): string[] {
+  const prefix = `${BUCKET}/full-content/${entryId}/`;
+  return [...s3.objects]
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([, object]) => gunzipSync(object).toString("utf8"));
 }
 
 async function storedOriginal(entryId: string): Promise<string | null> {
@@ -59,7 +62,7 @@ describe("persistFullContentResult", () => {
 
     await persistFullContentResult(db, entryId, success);
 
-    expect(archived(entryId)).toBe(PAGE);
+    expect(archived(entryId)).toEqual([PAGE]);
     expect(await storedOriginal(entryId)).toBeNull();
     const [row] = await db.select().from(entries).where(eq(entries.id, entryId));
     expect(row.fullContentCleaned).toBe("<p>Article</p>");
@@ -74,7 +77,7 @@ describe("persistFullContentResult", () => {
     await persistFullContentResult(db, entryId, success);
 
     expect(await storedOriginal(entryId)).toBeNull();
-    expect(archived(entryId)).toBe(PAGE);
+    expect(archived(entryId)).toEqual([PAGE]);
   });
 
   it("stores the article even when the archive refuses the page", async () => {
@@ -83,27 +86,31 @@ describe("persistFullContentResult", () => {
 
     expect(await persistFullContentResult(db, entryId, success)).not.toBeNull();
 
-    expect(archived(entryId)).toBeUndefined();
+    expect(archived(entryId)).toEqual([]);
     const [row] = await db.select().from(entries).where(eq(entries.id, entryId));
     expect(row.fullContentCleaned).toBe("<p>Article</p>");
   });
 });
 
 describe("deleteOrphanedFullContentArchives", () => {
-  it("deletes pages of deleted entries across list pages and keeps the rest", async () => {
+  it("deletes every page of deleted entries across list pages and keeps the rest", async () => {
     const feedId = await createTestFeed();
-    const kept = [await createTestEntry(feedId), await createTestEntry(feedId)];
-    const deleted = [generateUuidv7(), generateUuidv7(), generateUuidv7()];
-    for (const id of [...kept, ...deleted]) {
-      s3.objects.set(`${BUCKET}/${fullContentArchiveKey(id)}`, Buffer.from("x"));
+    const kept = await createTestEntry(feedId);
+    const deleted = [generateUuidv7(), generateUuidv7()];
+    // A refetch archives its page beside the earlier one.
+    for (const id of [kept, ...deleted]) {
+      await archiveFullContentOriginal(id, "<html>first</html>");
+      await archiveFullContentOriginal(id, "<html>second</html>");
     }
+    // A request may spell an entry id in uppercase.
+    const deletedUppercase = generateUuidv7();
+    await archiveFullContentOriginal(deletedUppercase.toUpperCase(), "<html>page</html>");
     const foreign = `${BUCKET}/full-content/not-an-entry.html.gz`;
     s3.objects.set(foreign, Buffer.from("x"));
 
-    expect(await deleteOrphanedFullContentArchives(db)).toBe(deleted.length);
+    expect(await deleteOrphanedFullContentArchives(db)).toBe(5);
 
-    expect([...s3.objects.keys()].sort()).toEqual(
-      [...kept.map((id) => `${BUCKET}/${fullContentArchiveKey(id)}`), foreign].sort()
-    );
+    expect(archived(kept).sort()).toEqual(["<html>first</html>", "<html>second</html>"]);
+    expect([...s3.objects.keys()].filter((key) => !key.includes(kept))).toEqual([foreign]);
   });
 });

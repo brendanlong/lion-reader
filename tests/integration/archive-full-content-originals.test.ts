@@ -8,7 +8,6 @@ import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds } from "../../src/server/db/schema";
 import { storageConfig } from "../../src/server/config/env";
-import { fullContentArchiveKey } from "../../src/server/services/full-content-archive";
 import { archiveFullContentOriginals } from "../../scripts/archive-full-content-originals";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
 import { createTestEntry, createTestFeed } from "./helpers";
@@ -46,9 +45,12 @@ async function createFetchedEntry(
   });
 }
 
-function archived(entryId: string): string | undefined {
-  const object = s3.objects.get(`${BUCKET}/${fullContentArchiveKey(entryId)}`);
-  return object && gunzipSync(object).toString("utf8");
+/** The pages archived for an entry. */
+function archived(entryId: string): string[] {
+  const prefix = `${BUCKET}/full-content/${entryId}/`;
+  return [...s3.objects]
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([, object]) => gunzipSync(object).toString("utf8"));
 }
 
 async function cleanup(): Promise<void> {
@@ -81,9 +83,9 @@ describe("archiveFullContentOriginals", () => {
     const result = await archiveFullContentOriginals(db, { batchSize: 1, pauseMs: 0 });
 
     expect(result).toEqual({ archived: 2, failedUploads: 0 });
-    expect(archived(extracted)).toBe("<html>page</html>");
-    expect(archived(pluginArticle)).toBe("<article>plugin</article>");
-    expect(archived(noPage)).toBeUndefined();
+    expect(archived(extracted)).toEqual(["<html>page</html>"]);
+    expect(archived(pluginArticle)).toEqual(["<article>plugin</article>"]);
+    expect(archived(noPage)).toEqual([]);
     expect(await readRow(extracted)).toEqual({
       original: null,
       cleaned: "<p>Article</p>",
