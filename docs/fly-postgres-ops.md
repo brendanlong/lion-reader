@@ -159,6 +159,16 @@ to re-enable writes` and `vm` check `checkDisk: … free space on /data/`. The n
 healthy primary otherwise (no zombie, no split-brain). Flex flips the primary read-only at
 **~90% `/data` usage** as a safety valve so Postgres doesn't hard-crash on a full disk.
 
+Flex sets read-only with `ALTER DATABASE … SET default_transaction_read_only`, which only
+new sessions pick up, and restarts haproxy, which drops every client connection (the app
+logs `Connection terminated unexpectedly`). So pooled connections opened while read-only
+was on keep failing writes after it lifts, until the next haproxy restart drops them.
+
+**If it comes and goes** (Sentry shows bursts of both errors about every 15 minutes for a
+couple of hours a day, `/data` on fly-metrics.net spiking by about the DB's size), the
+cause is a **base backup without enough headroom**, not WAL; see
+[Backups & PITR](#backups--point-in-time-recovery-pitr). Extend the volume.
+
 **Cause (most common for us):** the disk is full of **undrained WAL**, not data. `pg_wal`
 dwarfs `base`:
 
@@ -254,7 +264,7 @@ Two independent layers protect the database:
    instant inside the retention window, not just the last snapshot — with an **RPO of
    seconds** because `--archive-timeout` is set (untuned, a quiet DB's worst-case RPO is
    larger, since WAL otherwise ships only as 16MB segments fill).
-2. **Daily volume snapshots (floor).** Fly snapshots the 10GB NVMe volume once a day
+2. **Daily volume snapshots (floor).** Fly snapshots the NVMe volume once a day
    (≈ 5-day retention, ~24h RPO), as the backstop if the WAL archive is ever unavailable.
    Flex volumes are single-host local NVMe (not replicated), so snapshots alone would risk
    ~24h of data on a disk/host failure — which is exactly why WAL archiving is the primary.
@@ -303,12 +313,26 @@ DB), `--minimum-redundancy` (min base backups to keep). Durations are strings li
 version. Add a bucket lifecycle rule only if you want a hard backstop beyond
 `--recovery-window`.
 
+### Volume headroom: keep `/data` under ~45%
+
+A base backup (`barman-cloud-backup`) stages the whole backup in a temp dir on `/data`
+before it's uploaded, so it temporarily needs **free space about the size of the DB**.
+Without it, each attempt runs the volume past 90%, which trips read-only mode (see
+[forced read-only](#recovery-forced-read-only-from-a-full-disk-orphaned-replication-slot-pinning-wal)),
+then fails. Flex retries 10 times, 30s apart, then waits for the next scheduled backup, so
+this repeats daily and no base backup succeeds. Extend the volume before steady-state usage
+reaches ~45%.
+
 ### List backups / on-demand base backup
 
 ```bash
 fly postgres backup list   -a lion-reader-pg
 fly postgres backup create -a lion-reader-pg   # also resets the base-backup timer
 ```
+
+`backup create` waits on a remote exec that times out (`deadline_exceeded`) long before
+a backup finishes, but the backup keeps running on the machine. Confirm it with
+`backup list` afterwards.
 
 ### Restore to a point in time (PITR)
 
