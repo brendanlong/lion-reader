@@ -165,11 +165,17 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   if (!canRenderFromCache || !sub) {
     return <TitleSkeleton />;
   }
+  // Inline, not wrapped in a block: see the header in EntryPageLayout.
   return (
-    <div className="min-w-0">
+    <>
       <TitleText>{sub.title ?? sub.originalTitle ?? untitledSubscriptionLabel(sub.type)}</TitleText>
-      <FeedSiteLink siteUrl={sub.siteUrl} className="mt-0.5" />
-    </div>
+      {sub.siteUrl && (
+        <>
+          <br />
+          <FeedSiteLink siteUrl={sub.siteUrl} className="align-middle" />
+        </>
+      )}
+    </>
   );
 }
 
