@@ -9,6 +9,7 @@ import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import { isWebSubscription } from "@/server/services/subscriptions";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
+import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   createPubSubSubscription,
   getFeedEventsChannel,
@@ -22,6 +23,7 @@ import {
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
 import type {
+  TagLists,
   NewEntryListData,
   entryUpdatedEventSchema,
   newEntryEventSchema,
@@ -150,6 +152,56 @@ export function startSseConnection({
    */
   let queuedNewEntries = 0;
   const queuedNewEntrySubscriptionIds = new Set<string>();
+  /** Queued new_entry ids whose tag lists aren't read yet, and those read but not sent. */
+  const queuedNewEntryIds = new Set<string>();
+  const queuedTagLists = new Map<string, TagLists>();
+
+  /**
+   * An entry's tag lists, per user (a web feed's event is shared by every
+   * subscriber). The first new_entry of a burst reads every queued one's in a
+   * single lookup; undefined when that lookup failed.
+   */
+  async function takeQueuedTagLists(entryId: string): Promise<TagLists | undefined> {
+    if (!queuedTagLists.has(entryId)) {
+      // Itself too: an entry queued twice in a burst was taken by the first.
+      const entryIds = [...queuedNewEntryIds.add(entryId)];
+      queuedNewEntryIds.clear();
+      try {
+        for (const [id, lists] of await listEntryTagLists(db, userId, entryIds)) {
+          queuedTagLists.set(id, lists);
+        }
+      } catch (err) {
+        logger.error("Failed to read new_entry tag lists", {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    const tagLists = queuedTagLists.get(entryId);
+    queuedTagLists.delete(entryId);
+    return tagLists;
+  }
+
+  /** Counts for every queued new_entry's subscription, which the last one queued carries. */
+  async function readQueuedNewEntryCounts(): Promise<BulkUnreadCounts | undefined> {
+    const subscriptionIds = [...queuedNewEntrySubscriptionIds];
+    queuedNewEntrySubscriptionIds.clear();
+    try {
+      return await getBulkEntryRelatedCounts(
+        db,
+        userId,
+        subscriptionIds.map((id) => ({ subscriptionId: id }))
+      );
+    } catch (err) {
+      // Leave counts off; the client skips the count update and it
+      // self-heals on the next count-bearing event or refetch.
+      logger.error("Failed to compute new_entry counts", {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
 
   /**
    * Sends a new_entry event, whether it came from a web feed's channel or
@@ -178,27 +230,16 @@ export function startSseConnection({
     if (subscriptionId && event.feedType !== "saved") {
       queuedNewEntrySubscriptionIds.add(subscriptionId);
     }
+    queuedNewEntryIds.add(event.entryId);
     enqueueSend(async () => {
       queuedNewEntries--;
-      let counts: BulkUnreadCounts | undefined;
-      try {
-        if (queuedNewEntries === 0) {
-          const subscriptionIds = [...queuedNewEntrySubscriptionIds];
-          queuedNewEntrySubscriptionIds.clear();
-          counts = await getBulkEntryRelatedCounts(
-            db,
-            userId,
-            subscriptionIds.map((id) => ({ subscriptionId: id }))
-          );
-        }
-      } catch (err) {
-        // Leave counts off; the client skips the count update and it
-        // self-heals on the next count-bearing event or refetch.
-        logger.error("Failed to compute new_entry counts", {
-          userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      const carriesCounts = queuedNewEntries === 0;
+      const tagLists = await takeQueuedTagLists(event.entryId);
+      // Without them the client can't place the entry, so it isn't sent (its
+      // lists pick it up on their next fetch), and the queued subscriptions'
+      // counts wait for the next new_entry.
+      if (!tagLists) return;
+      const counts = carriesCounts ? await readQueuedNewEntryCounts() : undefined;
       if (closed) return;
       const cursor = new Date().toISOString();
       send(
@@ -207,6 +248,7 @@ export function startSseConnection({
           subscriptionId,
           // A new entry's one membership is its origin (#1846).
           subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
+          tagLists,
           entryId: event.entryId,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,

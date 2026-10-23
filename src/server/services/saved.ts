@@ -12,6 +12,7 @@ import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, subscriptions, userEntries } from "@/server/db/schema";
 import { entryMemberships, entryOriginOn } from "./entry-filters";
+import { listEntryTagLists } from "./entry-tag-lists";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -281,6 +282,7 @@ async function insertSavedEntry(
     subscriptionId: inserted.savedSubscriptionId,
     // A new entry's one membership is its origin (#1846).
     subscriptionIds: [inserted.savedSubscriptionId],
+    tagLists: (await listEntryTagLists(db, userId, [entryId])).get(entryId)!,
     updatedAt: now.toISOString(),
     entry: toNewEntryListData(values, SAVED_ARTICLES_TITLE),
   };
@@ -495,12 +497,17 @@ async function selectExistingUpload(
     .limit(1);
   if (!row?.subscriptionId) return null;
   const { entry, userState } = row;
+  const [article, tagLists] = await Promise.all([
+    savedArticleFromRow(row),
+    listEntryTagLists(db, userId, [entry.id]),
+  ]);
   return {
-    article: await savedArticleFromRow(row),
+    article,
     listItem: {
       entryId: entry.id,
       subscriptionId: row.subscriptionId,
       subscriptionIds: row.subscriptionIds,
+      tagLists: tagLists.get(entry.id)!,
       updatedAt: userState.updatedAt.toISOString(),
       entry: toNewEntryListData(entry, SAVED_ARTICLES_TITLE, {
         read: userState.read,

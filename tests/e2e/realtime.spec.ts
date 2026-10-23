@@ -21,6 +21,7 @@ import {
   getUserEventsChannel,
 } from "../../src/server/redis/pubsub";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
+import { listEntryTagLists } from "../../src/server/services/entry-tag-lists";
 import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
@@ -435,6 +436,7 @@ test("entry_state_changed event syncs read state and counts across lists without
     updatedAt,
     counts,
     subscriptionIds: [taggedFeed.subscriptionId],
+    tagLists: (await listEntryTagLists(db, user.id, [firstPost.id])).get(firstPost.id)!,
   });
 
   // Read state and affected counts update from the event's absolute values...
@@ -584,6 +586,7 @@ test("entry_state_changed for the last unread entry clears subscription and tag 
     updatedAt,
     counts,
     subscriptionIds: [taggedFeed.subscriptionId],
+    tagLists: (await listEntryTagLists(db, user.id, [lastEntry.id])).get(lastEntry.id)!,
   });
 
   // The sidebar defaults to unread-only mode, so once the subscription's

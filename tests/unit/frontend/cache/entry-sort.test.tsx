@@ -32,6 +32,7 @@ function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow>
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1", COLLECTION],
     positions: {},
+    tagLists: { tagIds: [], uncategorized: false },
     score: null,
     type: "web",
     url: null,
@@ -187,6 +188,7 @@ describe("sortable", () => {
       timestamp: "2024-07-02T00:00:00Z",
       updatedAt: "2024-07-02T00:00:00Z",
       subscriptionIds: entry.subscriptionIds,
+      tagLists: entry.tagLists ?? { tagIds: [], uncategorized: false },
       ...change,
     };
   }

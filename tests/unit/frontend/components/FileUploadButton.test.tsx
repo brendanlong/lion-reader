@@ -43,6 +43,7 @@ const listItem: NewEntryListItem = {
   entryId: "entry-1",
   subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
   subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
+  tagLists: { tagIds: [], uncategorized: false },
   updatedAt: "2024-07-01T00:00:00.000Z",
   entry: {
     type: "saved",

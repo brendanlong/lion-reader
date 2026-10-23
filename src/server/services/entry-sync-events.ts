@@ -11,6 +11,7 @@ import {
   type entryMetadataSchema,
   type NewEntryListData,
   type NewEntryListDataSource,
+  type TagLists,
   type serverSyncEventSchema,
   type unreadCountsSchema,
 } from "@/lib/events/schemas";
@@ -82,6 +83,7 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   subscriptionIds: string[];
   /** Its position in each of those that gives it one (#2064). */
   positions: Record<string, number>;
+  tagLists: TagLists;
   score: number | null;
   feedTitle: string | null;
   /** The entry's content changed (or it was created) since the catch-up's start. */
@@ -122,6 +124,7 @@ export function entryRowToSyncEvents(
         type: "new_entry",
         subscriptionId: row.subscriptionId,
         subscriptionIds: row.subscriptionIds,
+        tagLists: row.tagLists,
         entryId: row.id,
         ...stamps,
         ...announcement,
@@ -149,6 +152,7 @@ export function entryRowToSyncEvents(
       readChangedAt: row.readChangedAt?.toISOString() ?? null,
       counts: counts.stateChanged,
       subscriptionIds: row.subscriptionIds,
+      tagLists: row.tagLists,
       score: row.score,
       positions: row.positions,
       ...stamps,

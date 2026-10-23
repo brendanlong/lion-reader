@@ -38,7 +38,7 @@ import {
   SEEDED_SAVED_SUBSCRIPTION_ID,
 } from "../../../utils/cache-test-helpers";
 import type { QueryClient } from "@tanstack/react-query";
-import { getLocalDb } from "@/lib/local-db/local-db";
+import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
 import { entryListKey } from "@/lib/local-db/entry-lists";
 import type { EntryRow } from "@/lib/local-db/entries";
 import type { CountedList } from "@/lib/local-db/counts";
@@ -793,6 +793,120 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(getSidebarUnreadCount("sub-1")).toBe(5); // unchanged
     expect(getEntriesCount({ all: true })?.unread).toBe(18); // unchanged
     expect(getEntriesCount({ starred: true })?.unread).toBe(2); // unchanged
+  });
+});
+
+// ============================================================================
+// Tag and Uncategorized lists (#2126)
+// ============================================================================
+
+describe("handleSyncEvent - tag and Uncategorized lists", () => {
+  // A subscription the client hasn't stored (its sidebar section collapsed):
+  // only the server knows its tags.
+  const UNSTORED = "sub-unstored";
+  const TAG_LIST = { tagId: "tag-2", limit: 25 };
+  const UNCATEGORIZED_LIST = { uncategorized: true, limit: 25 };
+  const PAYLOAD = {
+    type: "web" as const,
+    url: null,
+    title: "Arriving",
+    author: null,
+    summary: null,
+    publishedAt: "2024-07-01T00:00:00.000Z",
+    fetchedAt: "2024-07-01T00:00:00.000Z",
+    siteName: null,
+    feedTitle: "Unstored Feed",
+  };
+
+  beforeEach(() => {
+    expect(findSubscription(UNSTORED)).toBeUndefined();
+    seedList(TAG_LIST, []);
+    seedList(UNCATEGORIZED_LIST, []);
+  });
+
+  it("places a new entry by the event's tag lists", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createNewEntryEvent({
+        entryId: "tagged",
+        subscriptionId: UNSTORED,
+        subscriptionIds: [UNSTORED],
+        tagLists: { tagIds: ["tag-2"], uncategorized: false },
+        entry: PAYLOAD,
+      })
+    );
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createNewEntryEvent({
+        entryId: "untagged",
+        subscriptionId: UNSTORED,
+        subscriptionIds: [UNSTORED],
+        tagLists: { tagIds: [], uncategorized: true },
+        entry: PAYLOAD,
+      })
+    );
+
+    expect(listIds(TAG_LIST)).toEqual(["tagged"]);
+    expect(listIds(UNCATEGORIZED_LIST)).toEqual(["untagged"]);
+  });
+
+  it("places an entry marked unread elsewhere by the event's tag lists", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "unread-elsewhere",
+        read: false,
+        starred: false,
+        subscriptionId: UNSTORED,
+        subscriptionIds: [UNSTORED],
+        tagLists: { tagIds: ["tag-2"], uncategorized: true },
+        updatedAt: "2024-07-01T00:00:00.000Z",
+        entry: PAYLOAD,
+      })
+    );
+
+    expect(listIds(TAG_LIST)).toEqual(["unread-elsewhere"]);
+    expect(listIds(UNCATEGORIZED_LIST)).toEqual(["unread-elsewhere"]);
+  });
+
+  it("places a stored entry marked unread elsewhere by the event's tag lists, not its stored ones", () => {
+    // Stored read and in Uncategorized; its feed has been tagged since.
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-3",
+        read: false,
+        starred: false,
+        subscriptionIds: ["sub-2"],
+        tagLists: { tagIds: ["tag-2"], uncategorized: false },
+        updatedAt: "2024-07-01T00:00:00.000Z",
+      })
+    );
+
+    expect(listIds(TAG_LIST)).toEqual(["entry-3"]);
+    expect(listIds(UNCATEGORIZED_LIST)).toEqual([]);
+  });
+
+  // The server re-delivers none of the entries these move, so their stored
+  // tag lists may be wrong: placing them from the store (a local mark-unread)
+  // skips tag and Uncategorized lists until the server sends them again.
+  it.each([
+    ["a retag of its subscription", createSubscriptionUpdatedEvent({ id: "sub-1" })],
+    ["its subscription's deletion", createSubscriptionDeletedEvent({ subscriptionId: "sub-1" })],
+    ["its tag's deletion", createTagDeletedEvent({ tagId: "tag-1" })],
+  ])("doesn't place a stored entry by its tag lists after %s", (_, event) => {
+    const list = { tagId: "tag-1", limit: 25 };
+    seedList(list, []);
+    handleSyncEvent(utils, queryClient, event);
+
+    insertEntryIntoLists(getLocalDb(queryClient), storedEntry("entry-2")!);
+
+    expect(storedEntry("entry-2")?.tagLists).toBeNull();
+    expect(listIds(list)).toEqual([]);
   });
 });
 

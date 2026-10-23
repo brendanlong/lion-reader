@@ -21,6 +21,8 @@ import {
 } from "./entry-filters";
 import type { EntryType } from "@/lib/entry-types";
 import { entryListItemSchema } from "./entries";
+import { withTagLists } from "./entry-tag-lists";
+import type { TagLists } from "@/lib/events/schemas";
 
 /**
  * The app's full-entry view (`entries.get`). Every content field is the
@@ -145,7 +147,7 @@ function selectEntryRows(db: typeof dbType, where: SQL | undefined, scope: FullC
     .where(where);
 }
 
-type EntryRow = Awaited<ReturnType<typeof selectEntryRows>>[number];
+type EntryRow = Awaited<ReturnType<typeof selectEntryRows>>[number] & { tagLists: TagLists };
 
 /**
  * Reads the user's visible entries among `entryIds` and maps each to an output
@@ -161,10 +163,15 @@ async function readEntries<T extends { id: string }>(
   toOutput: (row: EntryRow) => Promise<T>
 ): Promise<T[]> {
   if (entryIds.length === 0) return [];
-  const rows = await selectEntryRows(
+  const rows = await withTagLists(
     db,
-    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
-    scope
+    userId,
+    entryIds,
+    selectEntryRows(
+      db,
+      and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
+      scope
+    )
   );
   const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, toOutput);
   const byId = new Map(mapped.map((entry) => [entry.id, entry]));
@@ -179,11 +186,16 @@ async function readEntry<T>(
   scope: FullContentScope,
   toOutput: (row: EntryRow) => Promise<T>
 ): Promise<T> {
-  const [row] = await selectEntryRows(
+  const [row] = await withTagLists(
     db,
-    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
-    scope
-  ).limit(1);
+    userId,
+    [entryId],
+    selectEntryRows(
+      db,
+      and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
+      scope
+    ).limit(1)
+  );
   if (!row) {
     throw errors.entryNotFound();
   }
@@ -533,6 +545,7 @@ async function toEntryFull(row: EntryRow): Promise<EntryFull> {
     subscriptionId: row.subscriptionId,
     subscriptionIds: row.subscriptionIds,
     positions: row.positions,
+    tagLists: row.tagLists,
     type: row.type,
     url: row.url,
     title: row.title,

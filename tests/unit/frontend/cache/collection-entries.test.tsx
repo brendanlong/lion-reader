@@ -40,6 +40,7 @@ function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow>
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
     positions: {},
+    tagLists: { tagIds: [], uncategorized: false },
     score: null,
     type: "web",
     url: `https://example.com/${id}`,
@@ -151,7 +152,6 @@ describe("collection_entries_changed", () => {
       act(() =>
         applyCollectionEntriesChange(utils, queryClient, {
           subscriptionId: COLLECTION,
-          entryIds: ["a"],
           added,
           tagLists: [{ entryId: "a", tagIds, uncategorized }],
         })
@@ -248,7 +248,6 @@ describe("collection_entries_changed", () => {
     act(() =>
       applyCollectionEntriesChange(createRealTrpcUtils(queryClient), queryClient, {
         subscriptionId: COLLECTION,
-        entryIds: ["a"],
         added: false,
         tagLists: tagListsOf(["a"]),
       })
@@ -292,7 +291,6 @@ describe("collection_entries_changed", () => {
         act(() =>
           applyCollectionEntriesChange(createRealTrpcUtils(queryClient), queryClient, {
             subscriptionId: COLLECTION,
-            entryIds: [entryId],
             added: false,
             tagLists: tagListsOf([entryId]),
           })

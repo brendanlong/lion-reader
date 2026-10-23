@@ -10,7 +10,7 @@ import { vi, type MockInstance } from "vitest";
 import { createTRPCClient, httpLink } from "@trpc/client";
 import { createTRPCQueryUtils } from "@trpc/react-query";
 import superjson from "superjson";
-import type { SyncEvent, SyncSubscription } from "@/lib/events/schemas";
+import type { SyncEvent, SyncSubscription, TagLists } from "@/lib/events/schemas";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import type { UnreadCounts } from "@/lib/cache/operations";
 import type { AppRouter } from "@/server/trpc/root";
@@ -52,6 +52,7 @@ export interface SeededEntry {
   id: string;
   subscriptionId: string | null;
   subscriptionIds: string[];
+  tagLists: TagLists;
   positions: Record<string, number>;
   score: number | null;
   type: EntryType;
@@ -181,6 +182,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-1",
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    tagLists: { tagIds: ["tag-1"], uncategorized: false },
     positions: {},
     score: null,
     type: "web",
@@ -200,6 +202,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-2",
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    tagLists: { tagIds: ["tag-1"], uncategorized: false },
     positions: {},
     score: null,
     type: "web",
@@ -219,6 +222,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-3",
     subscriptionId: "sub-2",
     subscriptionIds: ["sub-2"],
+    tagLists: { tagIds: [], uncategorized: true },
     positions: {},
     score: null,
     type: "web",
@@ -238,6 +242,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-saved",
     subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
     subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
+    tagLists: { tagIds: [], uncategorized: false },
     positions: {},
     score: null,
     type: "saved",
@@ -257,6 +262,7 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
     id: "entry-starred-orphan",
     subscriptionId: null,
     subscriptionIds: [],
+    tagLists: { tagIds: [], uncategorized: false },
     positions: {},
     score: null,
     type: "web",
@@ -510,6 +516,7 @@ export function createNewEntryEvent(
     subscriptionId: "sub-1",
     // A new entry's one membership is its origin.
     subscriptionIds: overrides.subscriptionId === null ? [] : [overrides.subscriptionId ?? "sub-1"],
+    tagLists: { tagIds: [], uncategorized: false },
     entryId: "new-entry-1",
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
@@ -547,6 +554,7 @@ export function createEntryStateChangedEvent(
     starred: true,
     counts: createCounts(),
     subscriptionIds: ["sub-1"],
+    tagLists: { tagIds: [], uncategorized: false },
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
     ...overrides,

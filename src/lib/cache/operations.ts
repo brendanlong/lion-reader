@@ -13,6 +13,7 @@ import type {
   EntryTagLists,
   NewEntryListData,
   NewEntryListItem,
+  TagLists,
   unreadCountsSchema,
 } from "@/lib/events/schemas";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import {
+  forgetStoredEntryTagLists,
   removeStoredEntryMemberships,
   setServerEntryState,
   setStoredEntryCollection,
@@ -142,8 +144,12 @@ export function applySubscriptionUpdate(
       .map((tag) => tag.id)
       .sort()
       .join();
-  // Tag feed counts change with the tags, and the collection picker searches by title.
-  if (!stored || tagIds(stored) !== tagIds(row)) utils.tags.list.invalidate();
+  // Tag feed counts change with the tags, and so may its entries' tag lists.
+  // The collection picker searches by title.
+  if (!stored || tagIds(stored) !== tagIds(row)) {
+    utils.tags.list.invalidate();
+    forgetStoredEntryTagLists(db.entries, (entry) => entry.subscriptionIds.includes(row.id));
+  }
   if (!stored || row.title !== stored.title) {
     void utils.subscriptions.list.invalidate({ type: "collection" });
   }
@@ -189,6 +195,8 @@ export function applyTagDeleted(
   const db = getLocalDb(queryClient);
   removeLiveTag(db.tags, tagId);
   removeTagCount(db.counts, tagId);
+  // Its entries may have moved to Uncategorized.
+  forgetStoredEntryTagLists(db.entries, (entry) => !!entry.tagLists?.tagIds.includes(tagId));
   for (const row of db.subscriptions.rows.allSynced()) {
     if (row.tags.some((t) => t.id === tagId)) {
       patchLiveSubscription(db.subscriptions, row.id, {
@@ -212,30 +220,25 @@ export function applyCollectionEntriesChange(
   queryClient: QueryClient,
   change: {
     subscriptionId: string;
-    entryIds: string[];
     added: boolean;
     counts?: UnreadCounts;
     tagLists: EntryTagLists;
   }
 ): void {
-  const { subscriptionId, entryIds, added, counts } = change;
+  const { subscriptionId, added, counts } = change;
   if (counts) applyUnreadCounts(utils, queryClient, counts);
   const db = getLocalDb(queryClient);
-  const tagListsOf = new Map(change.tagLists.map((lists) => [lists.entryId, lists]));
-  for (const entryId of entryIds) {
-    const tagLists = tagListsOf.get(entryId);
-    setCollectionChangeInLists(db.lists, entryId, {
-      collectionId: subscriptionId,
-      added,
-      tagLists,
-    });
-    setStoredEntryCollection(db.entries, entryId, subscriptionId, added);
+  // One per changed entry.
+  for (const { entryId, ...tagLists } of change.tagLists) {
+    const membership = { collectionId: subscriptionId, added, tagLists };
+    setCollectionChangeInLists(db.lists, entryId, membership);
+    setStoredEntryCollection(db.entries, entryId, membership);
     if (added) {
       // Its new membership places it in the collection's lists and those of
       // the collection's tags.
       const stored = db.entries.getSynced(entryId);
       if (stored) {
-        insertEntryIntoLists(db, stored, tagLists);
+        insertEntryIntoLists(db, stored);
         markEntrySortable(db, stored);
       }
     }
@@ -249,6 +252,7 @@ export interface EntryStateChange {
   starred: boolean;
   updatedAt: Date;
   subscriptionIds?: string[];
+  tagLists?: TagLists;
   positions?: Record<string, number>;
   score?: number | null;
   /** The entry's list item, when the server sent one with an unread flip. */
@@ -293,6 +297,7 @@ export function toEntryRow(
     entryId: string;
     subscriptionId?: string | null;
     subscriptionIds: string[];
+    tagLists: TagLists;
     updatedAt: string;
     score?: number | null;
     positions?: Record<string, number>;
@@ -304,6 +309,7 @@ export function toEntryRow(
     id: event.entryId,
     subscriptionId: event.subscriptionId ?? null,
     subscriptionIds: event.subscriptionIds,
+    tagLists: event.tagLists,
     positions: event.positions ?? {},
     type: entry.type,
     url: entry.url,

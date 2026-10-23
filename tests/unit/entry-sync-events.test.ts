@@ -37,6 +37,7 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     readChangedAt: null,
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
+    tagLists: { tagIds: [], uncategorized: false },
     positions: {},
     score: null,
     type: "web",
@@ -54,11 +55,13 @@ const typesOf = (r: ChangedEntryRow) => entryRowToSyncEvents(r, allCounts).map((
 
 describe("entryRowToSyncEvents", () => {
   it("announces a new entry with its list payload, current state and counts", () => {
-    const [event] = entryRowToSyncEvents(row({ starred: true }), allCounts);
+    const tagLists = { tagIds: ["tag-1"], uncategorized: true };
+    const [event] = entryRowToSyncEvents(row({ starred: true, tagLists }), allCounts);
     expect(event).toEqual({
       type: "new_entry",
       subscriptionId: "sub-1",
       subscriptionIds: ["sub-1"],
+      tagLists,
       entryId: "entry-1",
       timestamp: updatedAt,
       updatedAt,
@@ -110,12 +113,15 @@ describe("entryRowToSyncEvents", () => {
       subscriptionIds: ["sub-1"],
       entry: { title: "A post", type: "web" },
     });
+    const tagLists = { tagIds: ["tag-1"], uncategorized: false };
     const read = entryRowToSyncEvents(
-      row({ isNew: false, metadataChanged: false, read: true }),
+      row({ isNew: false, metadataChanged: false, read: true, tagLists }),
       allCounts
     );
     expect(read[0]).not.toHaveProperty("entry");
     expect(read[0]).not.toHaveProperty("subscriptionId");
+    // Memberships and tag lists travel with every state change.
+    expect(read[0]).toMatchObject({ subscriptionIds: ["sub-1"], tagLists });
   });
 
   it("reports the entry's edit as entry_updated metadata", () => {

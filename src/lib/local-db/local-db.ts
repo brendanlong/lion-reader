@@ -23,13 +23,11 @@ import {
   ingestEntryListPages,
   insertIntoMatchingLists,
   entryMatchesList,
-  entryMembershipScope,
   markListsSortable,
   markEntryListFetchStarted,
   removeEntryList,
   type EntryListMeta,
   type EntryLists,
-  type TagListMembership,
   type ListEntryRow,
   type ListSort,
   type ListSortableRow,
@@ -308,51 +306,27 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
 
 /**
  * Inserts an entry into the loaded lists it belongs in, judged by `entry`'s
- * fields and memberships (`subscriptionIds`). Tag/uncategorized membership
- * comes from `tagLists` when the server sent them, else from the stored
- * subscriptions among the memberships, and Saved from the saved
- * subscription's id; lists the client can't place it in that way pick it up
- * on their next refresh.
+ * fields: its memberships (`subscriptionIds`), the server's `tagLists`, and
+ * Saved by the saved subscription's id (a list the client can't place it in
+ * that way picks it up on its next refresh).
  */
-export function insertEntryIntoLists(
-  db: LocalDb,
-  entry: EntryRow,
-  tagLists?: TagListMembership
-): void {
-  const scope = membershipScope(db, entry);
-  insertIntoMatchingLists(
-    db.lists,
-    entry,
-    tagLists
-      ? { ...scope, tagIds: new Set(tagLists.tagIds), uncategorized: tagLists.uncategorized }
-      : scope
-  );
-}
-
-function membershipScope(db: LocalDb, entry: EntryRow) {
-  return entryMembershipScope(entry.subscriptionIds, db.saved.id, (id) =>
-    db.subscriptions.rows.getSynced(id)?.tags.map((tag) => tag.id)
-  );
+export function insertEntryIntoLists(db: LocalDb, entry: EntryRow): void {
+  insertIntoMatchingLists(db.lists, entry, db.saved.id);
 }
 
 /**
  * Offers a ranked sort in the loaded lists an entry's score or positions now
- * give a value (#2064), judged like a live insert: by its memberships and
- * state, so a list the client can't place it in catches up on its next fetch.
+ * give a value (#2064), judged like a live insert, so a list the client can't
+ * place it in catches up on its next fetch.
  */
 export function markEntrySortable(db: LocalDb, entry: EntryRow): void {
   if (entry.score === null && Object.keys(entry.positions).length === 0) return;
-  const scope = membershipScope(db, entry);
-  if (entry.score !== null) {
-    markListsSortable(db.lists, "score", (input) => entryMatchesList(input, entry, scope));
-  }
+  const belongs = (input: EntryListMeta["input"]) => entryMatchesList(input, entry, db.saved.id);
+  if (entry.score !== null) markListsSortable(db.lists, "score", belongs);
   markListsSortable(
     db.lists,
     "position",
-    (input) =>
-      !!input.subscriptionId &&
-      input.subscriptionId in entry.positions &&
-      entryMatchesList(input, entry, scope)
+    (input) => !!input.subscriptionId && input.subscriptionId in entry.positions && belongs(input)
   );
 }
 

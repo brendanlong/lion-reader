@@ -19,7 +19,6 @@ import { trpc } from "@/lib/trpc/client";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
 import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
-import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 import { savedSubscriptionRow } from "../../../utils/cache-test-helpers";
@@ -28,35 +27,13 @@ afterEach(() => {
   cleanup();
 });
 
-function seedSubscription(
-  queryClient: QueryClient,
-  id: string,
-  tags: Array<{ id: string; name: string }> = [],
-  type: "web" | "collection" = "web"
-): void {
-  writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
-    {
-      id,
-      type,
-      url: `https://example.com/${id}.xml`,
-      title: `Feed ${id}`,
-      originalTitle: `Feed ${id}`,
-      description: null,
-      siteUrl: null,
-      subscribedAt: new Date("2024-01-01T00:00:00Z"),
-      unreadCount: 0,
-      tags: tags.map((tag) => ({ ...tag, color: null })),
-      fetchFullContent: false,
-    },
-  ]);
-}
-
 function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow> = {}): EntryRow {
   return {
     id,
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
     positions: {},
+    tagLists: { tagIds: [], uncategorized: false },
     score: null,
     type: "web",
     url: `https://example.com/${id}`,
@@ -398,64 +375,55 @@ describe("live inserts - filter targeting", () => {
       for (const input of Object.values(inputs)) seedList(queryClient, input, [{ items: [] }]);
     });
 
-  it("targets subscription, tag and uncategorized lists by the cached subscription", async () => {
+  it("targets subscription, tag and Uncategorized lists by the entry's memberships and tag lists", async () => {
     const inputs = {
       sub1: { ...ALL, subscriptionId: "sub-1" },
-      sub2: { ...ALL, subscriptionId: "sub-2" },
+      collection: { ...ALL, subscriptionId: "col-1" },
       tag1: { ...ALL, tagId: "tag-1" },
       tag2: { ...ALL, tagId: "tag-2" },
       uncategorized: { ...ALL, uncategorized: true },
     };
     const { queryClient, ids, insert } = renderLists(inputs);
-    seedSubscription(queryClient, "sub-1", [{ id: "tag-1", name: "Tech" }]);
-    seedSubscription(queryClient, "sub-2");
     seedEmpty(queryClient, inputs);
 
-    insert(makeEntry("tagged", "2024-07-01"));
+    // No subscription is stored: the server's tag lists alone place them.
     insert(
-      makeEntry("untagged", "2024-07-02", { subscriptionId: "sub-2", subscriptionIds: ["sub-2"] })
+      makeEntry("collected", "2024-07-01", {
+        subscriptionIds: ["sub-1", "col-1"],
+        tagLists: { tagIds: ["tag-1", "tag-2"], uncategorized: true },
+      })
+    );
+    insert(
+      makeEntry("tagged", "2024-07-02", { tagLists: { tagIds: ["tag-1"], uncategorized: false } })
     );
 
-    await waitFor(() => expect(ids("sub1")).toEqual(["tagged"]));
-    expect(ids("sub2")).toEqual(["untagged"]);
-    expect(ids("tag1")).toEqual(["tagged"]);
-    expect(ids("tag2")).toEqual([]);
-    expect(ids("uncategorized")).toEqual(["untagged"]);
-  });
-
-  it("skips tag and uncategorized lists when the subscription is not cached", async () => {
-    const inputs = {
-      tag1: { ...ALL, tagId: "tag-1" },
-      uncategorized: { ...ALL, uncategorized: true },
-      all: ALL,
-    };
-    const { queryClient, ids, insert } = renderLists(inputs);
-    seedEmpty(queryClient, inputs);
-    insert(makeEntry("e", "2024-07-01"));
-    await waitFor(() => expect(ids("all")).toEqual(["e"]));
-    expect(ids("tag1")).toEqual([]);
-    expect(ids("uncategorized")).toEqual([]);
-  });
-
-  it("targets lists through every membership, collections included", async () => {
-    const inputs = {
-      collection: { ...ALL, subscriptionId: "col-1" },
-      tag2: { ...ALL, tagId: "tag-2" },
-      uncategorized: { ...ALL, uncategorized: true },
-    };
-    const { queryClient, ids, insert } = renderLists(inputs);
-    seedSubscription(queryClient, "sub-1", [{ id: "tag-1", name: "Tech" }]);
-    seedSubscription(queryClient, "col-1", [{ id: "tag-2", name: "Science" }], "collection");
-    seedSubscription(queryClient, "col-2", [], "collection");
-    seedEmpty(queryClient, inputs);
-
-    // Its feed is tagged, so only its untagged collection puts it in Uncategorized.
-    insert(makeEntry("collected", "2024-07-01", { subscriptionIds: ["sub-1", "col-1", "col-2"] }));
-    insert(makeEntry("feed-only", "2024-07-02"));
-
-    await waitFor(() => expect(ids("collection")).toEqual(["collected"]));
+    await waitFor(() => expect(ids("sub1")).toEqual(["tagged", "collected"]));
+    expect(ids("collection")).toEqual(["collected"]);
+    expect(ids("tag1")).toEqual(["tagged", "collected"]);
     expect(ids("tag2")).toEqual(["collected"]);
     expect(ids("uncategorized")).toEqual(["collected"]);
+  });
+
+  it("skips tag and Uncategorized lists for a stored row a server a release behind sent without tag lists", async () => {
+    const inputs = {
+      all: ALL,
+      tag1: { ...ALL, tagId: "tag-1" },
+      uncategorized: { ...ALL, uncategorized: true },
+    };
+    const { queryClient, ids } = renderLists(inputs);
+    seedEmpty(queryClient, inputs);
+    const withoutTagLists: Partial<EntryRow> = makeEntry("old", "2024-07-01");
+    delete withoutTagLists.tagLists;
+    act(() => {
+      const db = getLocalDb(queryClient);
+      upsertServerEntries(db.entries, [withoutTagLists as EntryRow]);
+      insertEntryIntoLists(db, db.entries.getSynced("old")!);
+    });
+
+    await waitFor(() => expect(ids("all")).toEqual(["old"]));
+    expect(getLocalDb(queryClient).entries.getSynced("old")?.tagLists).toBeNull();
+    expect(ids("tag1")).toEqual([]);
+    expect(ids("uncategorized")).toEqual([]);
   });
 
   it("honors starred and unread filters", async () => {
@@ -471,14 +439,9 @@ describe("live inserts - filter targeting", () => {
   });
 
   it("puts entries in Saved by membership in the saved subscription, not by type", async () => {
-    const inputs = {
-      saved: { ...ALL, type: "saved" },
-      uncategorized: { ...ALL, uncategorized: true },
-    };
+    const inputs = { saved: { ...ALL, type: "saved" } };
     const { queryClient, ids, insert } = renderLists(inputs);
     seedSavedSubscription(queryClient, "sub-saved");
-    // Even listed and untagged, the saved subscription isn't Uncategorized.
-    seedSubscription(queryClient, "sub-saved");
     seedEmpty(queryClient, inputs);
     insert(
       makeEntry("saved", "2024-07-01", {
@@ -491,7 +454,6 @@ describe("live inserts - filter targeting", () => {
     insert(makeEntry("unsaved-upload", "2024-07-03", { type: "saved", subscriptionIds: [] }));
 
     await waitFor(() => expect(ids("saved")).toEqual(["feed-article", "saved"]));
-    expect(ids("uncategorized")).toEqual([]);
   });
 
   it("skips Saved while the saved subscription isn't known", async () => {

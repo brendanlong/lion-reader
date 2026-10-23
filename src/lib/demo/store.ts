@@ -19,7 +19,8 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
-import { entryMatchesList, entryMembershipScope } from "@/lib/local-db/entry-lists";
+import { entryMatchesList } from "@/lib/local-db/entry-lists";
+import type { TagLists } from "@/lib/events/schemas";
 import {
   DEMO_ENTRIES,
   DEMO_SUBSCRIPTIONS,
@@ -260,6 +261,15 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
     return state.entry.type === "saved" ? [DEMO_SAVED_SUBSCRIPTION_ID, ...ids].sort() : ids.sort();
   }
 
+  /** The tag lists holding the entry, like the API's `tagLists`. */
+  function tagListsOf(state: EntryState): TagLists {
+    const containers = containersOf(state);
+    return {
+      tagIds: [...new Set(containers.flatMap((sub) => sub.tagIds))],
+      uncategorized: containers.some((sub) => sub.tagIds.length === 0),
+    };
+  }
+
   /**
    * Saved articles (in the saved subscription), starred ones and collected
    * ones stay visible after unsubscribing, like the app.
@@ -270,15 +280,13 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
 
   function matches(state: EntryState, filter: EntryFilter): boolean {
     if (!isVisible(state)) return false;
-    const subscriptionIds = subscriptionIdsOf(state);
-    const scope = entryMembershipScope(
-      subscriptionIds,
-      DEMO_SAVED_SUBSCRIPTION_ID,
-      (id) => subscriptions.get(id)?.tagIds
-    );
-    if (!entryMatchesList(filter, { ...state, type: state.entry.type, subscriptionIds }, scope)) {
-      return false;
-    }
+    const row = {
+      ...state,
+      type: state.entry.type,
+      subscriptionIds: subscriptionIdsOf(state),
+      tagLists: tagListsOf(state),
+    };
+    if (!entryMatchesList(filter, row, DEMO_SAVED_SUBSCRIPTION_ID)) return false;
     if (filter.excludeTypes?.includes(state.entry.type)) return false;
     if (filter.query) {
       const needle = filter.query.trim().toLowerCase();
@@ -314,6 +322,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       id: entry.id,
       subscriptionId: originOf(state),
       subscriptionIds: subscriptionIdsOf(state),
+      tagLists: tagListsOf(state),
       positions: {},
       type: entry.type,
       url: entry.url,
@@ -456,14 +465,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
     return {
       entryIds: changed,
       counts: changed.length > 0 ? countsForSubscriptions([collection]) : undefined,
-      tagLists: changed.map((entryId) => {
-        const scope = entryMembershipScope(
-          subscriptionIdsOf(entries.get(entryId)!),
-          DEMO_SAVED_SUBSCRIPTION_ID,
-          (id) => subscriptions.get(id)?.tagIds
-        );
-        return { entryId, tagIds: [...scope.tagIds], uncategorized: scope.uncategorized };
-      }),
+      tagLists: changed.map((entryId) => ({ entryId, ...tagListsOf(entries.get(entryId)!) })),
     };
   }
 
@@ -557,6 +559,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
           id,
           subscriptionId: originOf(state),
           subscriptionIds: subscriptionIdsOf(state),
+          tagLists: tagListsOf(state),
           read: state.read,
           starred: state.starred,
           type: state.entry.type,
