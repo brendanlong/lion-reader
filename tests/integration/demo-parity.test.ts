@@ -80,7 +80,7 @@ function normalizer(ids: Map<string, string>): (value: unknown) => unknown {
     if (Array.isArray(value)) {
       const items = value.map(walk);
       return items.every(isRecordWithId)
-        ? [...items].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+        ? [...items].sort((a, b) => String(recordId(a)).localeCompare(String(recordId(b))))
         : items.every((item) => typeof item === "string")
           ? [...items].sort()
           : items;
@@ -97,8 +97,13 @@ function normalizer(ids: Map<string, string>): (value: unknown) => unknown {
   return walk;
 }
 
-function isRecordWithId(value: unknown): value is { id: unknown } {
-  return typeof value === "object" && value !== null && "id" in value;
+/** A record identified by its `id`, or by `entryId` for per-entry results. */
+function isRecordWithId(value: unknown): value is { id: unknown } | { entryId: unknown } {
+  return typeof value === "object" && value !== null && ("id" in value || "entryId" in value);
+}
+
+function recordId(record: { id: unknown } | { entryId: unknown }): unknown {
+  return "id" in record ? record.id : record.entryId;
 }
 
 /** Replaces fixture ids in an input with this side's. */
