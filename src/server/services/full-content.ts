@@ -156,7 +156,9 @@ export async function persistFullContentResult(
 
   if (result.contentOriginal) {
     await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
-      logger.warn("Failed to archive full content original", {
+      // Error level: the article is stored, but every failure loses a page, so
+      // a lasting one (bad credentials, say) must surface in Sentry.
+      logger.error("Failed to archive full content original", {
         entryId,
         error: error instanceof Error ? error.message : String(error),
       });

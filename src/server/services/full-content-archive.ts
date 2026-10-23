@@ -12,9 +12,8 @@
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
-import { inArray } from "drizzle-orm";
-import type { db as dbType } from "@/server/db";
-import { entries } from "@/server/db/schema";
+import type { DbOrTx } from "@/server/db";
+import { createJob } from "@/server/jobs/queue";
 import {
   deleteArchiveObject,
   isArchiveAvailable,
@@ -25,8 +24,12 @@ import {
 const gzipAsync = promisify(gzip);
 
 const KEY_PREFIX = "full-content/";
-const KEY_PATTERN =
-  /^full-content\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[0-9a-f]{64}\.html\.gz$/;
+
+/**
+ * Entries per deletion job. Each costs a list request, so this keeps a job
+ * well inside `DEFAULT_JOB_TIMEOUT_MS` however many entries a delete removes.
+ */
+const DELETION_JOB_ENTRIES = 200;
 
 function fullContentArchiveKey(entryId: string, html: string): string {
   const hash = createHash("sha256").update(html, "utf8").digest("hex");
@@ -45,35 +48,43 @@ export async function archiveFullContentOriginal(entryId: string, html: string):
 }
 
 /**
- * Deletes archived pages whose entry no longer exists. Entries are
- * hard-deleted by several cascades (account deletion, deleting a saved
- * article, a feed nobody holds), so the archive is swept rather than cleaned
- * up on each path. An entry deleted mid-sweep is caught by the next one.
+ * Queues deletion of the archived pages of `entryIds`, which `executor` is
+ * hard-deleting: pass the deleting transaction, so the job commits with the
+ * delete. Entries never fetched have no pages, so callers pass only those with
+ * a `full_content_fetched_at`.
+ */
+export async function enqueueFullContentArchiveDeletion(
+  executor: DbOrTx,
+  entryIds: string[]
+): Promise<void> {
+  if (!isArchiveAvailable()) return;
+  for (let i = 0; i < entryIds.length; i += DELETION_JOB_ENTRIES) {
+    await createJob(
+      {
+        type: "delete_full_content_archives",
+        payload: { entryIds: entryIds.slice(i, i + DELETION_JOB_ENTRIES) },
+      },
+      executor
+    );
+  }
+}
+
+/**
+ * Deletes every archived page of `entryIds` (idempotent). Throws on a storage
+ * error, so the job retries.
  *
  * @returns how many pages were deleted
  */
-export async function deleteOrphanedFullContentArchives(db: typeof dbType): Promise<number> {
+export async function deleteFullContentArchives(entryIds: string[]): Promise<number> {
   if (!isArchiveAvailable()) return 0;
 
   let deleted = 0;
-  for await (const keys of listArchiveKeys(KEY_PREFIX)) {
-    const keysByEntryId = new Map<string, string[]>();
-    for (const key of keys) {
-      const entryId = KEY_PATTERN.exec(key)?.[1];
-      if (!entryId) continue;
-      keysByEntryId.set(entryId, [...(keysByEntryId.get(entryId) ?? []), key]);
-    }
-    if (keysByEntryId.size === 0) continue;
-
-    const existing = await db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(inArray(entries.id, [...keysByEntryId.keys()]));
-    for (const { id } of existing) keysByEntryId.delete(id);
-
-    for (const key of [...keysByEntryId.values()].flat()) {
-      await deleteArchiveObject(key);
-      deleted++;
+  for (const entryId of entryIds) {
+    for await (const keys of listArchiveKeys(`${KEY_PREFIX}${entryId.toLowerCase()}/`)) {
+      for (const key of keys) {
+        await deleteArchiveObject(key);
+        deleted++;
+      }
     }
   }
   return deleted;

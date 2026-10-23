@@ -4,11 +4,17 @@
 
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { gunzipSync } from "node:zlib";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds } from "../../src/server/db/schema";
 import { storageConfig } from "../../src/server/config/env";
-import { archiveFullContentOriginals } from "../../scripts/archive-full-content-originals";
+import {
+  clearArchivedOriginals,
+  uploadFullContentOriginals,
+} from "../../scripts/archive-full-content-originals";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
 import { createTestEntry, createTestFeed } from "./helpers";
 
@@ -16,6 +22,8 @@ const BUCKET = "test-archive";
 const fetchedAt = new Date("2026-01-01T00:00:00Z");
 
 let s3: FakeS3;
+let dir: string;
+let manifest: string;
 
 async function readRow(entryId: string) {
   const [row] = await db
@@ -61,16 +69,24 @@ async function cleanup(): Promise<void> {
 beforeEach(async () => {
   await cleanup();
   s3 = await useFakeS3(BUCKET);
+  dir = await mkdtemp(join(tmpdir(), "archive-manifest-"));
+  manifest = join(dir, "manifest.jsonl");
 });
 
 afterEach(async () => {
   await s3.close();
+  await rm(dir, { recursive: true, force: true });
 });
+
+async function manifestLines(): Promise<number> {
+  const text = await readFile(manifest, "utf8").catch(() => "");
+  return text.split("\n").filter(Boolean).length;
+}
 
 afterAll(cleanup);
 
-describe("archiveFullContentOriginals", () => {
-  it("archives every page and clears the column without changing what's shown", async () => {
+describe("archive-full-content-originals", () => {
+  it("archives every page, then clears the column without changing what's shown", async () => {
     const feedId = await createTestFeed();
     const extracted = await createFetchedEntry(feedId, "<html>page</html>");
     // A plugin's article, stored only as the original before 4d18f516.
@@ -80,12 +96,24 @@ describe("archiveFullContentOriginals", () => {
     const noPage = await createFetchedEntry(feedId, null);
 
     // Smaller than the row count, so the walk crosses batches.
-    const result = await archiveFullContentOriginals(db, { batchSize: 1, pauseMs: 0 });
-
-    expect(result).toEqual({ archived: 2, failedUploads: 0 });
+    expect(await uploadFullContentOriginals(db, manifest, { batchSize: 1 })).toEqual({
+      archived: 2,
+      failedUploads: 0,
+    });
+    // Rerun, it resumes after what the manifest holds.
+    expect(await uploadFullContentOriginals(db, manifest)).toEqual({
+      archived: 0,
+      failedUploads: 0,
+    });
+    expect(await manifestLines()).toBe(2);
     expect(archived(extracted)).toEqual(["<html>page</html>"]);
     expect(archived(pluginArticle)).toEqual(["<article>plugin</article>"]);
     expect(archived(noPage)).toEqual([]);
+    expect((await readRow(extracted)).original).toBe("<html>page</html>");
+
+    expect(await clearArchivedOriginals(db, manifest, { batchSize: 1, pauseMs: 0 })).toEqual({
+      cleared: 2,
+    });
     expect(await readRow(extracted)).toEqual({
       original: null,
       cleaned: "<p>Article</p>",
@@ -98,22 +126,38 @@ describe("archiveFullContentOriginals", () => {
     });
   });
 
-  it("keeps a page on the row when its upload fails", async () => {
+  it("doesn't clear a page written after the upload read the row", async () => {
+    const entryId = await createFetchedEntry(await createTestFeed(), "<html>old</html>");
+    await uploadFullContentOriginals(db, manifest);
+    // A machine still on the previous release refetches it.
+    await db
+      .update(entries)
+      .set({ fullContentOriginal: "<html>new</html>", fullContentFetchedAt: new Date() })
+      .where(eq(entries.id, entryId));
+
+    expect(await clearArchivedOriginals(db, manifest, { pauseMs: 0 })).toEqual({ cleared: 0 });
+
+    expect((await readRow(entryId)).original).toBe("<html>new</html>");
+  });
+
+  it("leaves a page whose upload failed for a later run", async () => {
     const entryId = await createFetchedEntry(await createTestFeed(), "<html>page</html>");
     s3.failPutsWith = 503;
 
-    const result = await archiveFullContentOriginals(db, { pauseMs: 0 });
+    expect(await uploadFullContentOriginals(db, manifest)).toEqual({
+      archived: 0,
+      failedUploads: 1,
+    });
+    await clearArchivedOriginals(db, manifest, { pauseMs: 0 });
 
-    expect(result).toEqual({ archived: 0, failedUploads: 1 });
     expect((await readRow(entryId)).original).toBe("<html>page</html>");
   });
 
-  it("refuses to run without the archive bucket", async () => {
-    const entryId = await createFetchedEntry(await createTestFeed(), "<html>page</html>");
+  it("refuses to upload without the archive bucket", async () => {
+    await createFetchedEntry(await createTestFeed(), "<html>page</html>");
     storageConfig.archiveBucket = undefined;
 
-    await expect(archiveFullContentOriginals(db, { pauseMs: 0 })).rejects.toThrow();
-
-    expect((await readRow(entryId)).original).toBe("<html>page</html>");
+    await expect(uploadFullContentOriginals(db, manifest)).rejects.toThrow();
+    expect(await manifestLines()).toBe(0);
   });
 });

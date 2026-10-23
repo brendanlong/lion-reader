@@ -526,7 +526,7 @@ export default function PrivacyPolicyPage() {
               When Lion Reader fetches an article&apos;s full text from its website (for example for
               a subscription with &quot;fetch full content&quot; on), it also keeps the whole web
               page it downloaded, compressed, in a private Tigris bucket that nothing serves. The
-              page is deleted, usually within a day, after its article is deleted.
+              page is deleted shortly after its article is deleted.
             </LegalParagraph>
           </LegalSubsection>
         </div>

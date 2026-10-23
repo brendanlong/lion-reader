@@ -1,22 +1,28 @@
 /**
  * Integration tests for the full-content page archive (#2115): the fetched
- * page goes to the private archive bucket instead of the entry row, and the
- * daily sweep deletes pages whose entry is gone.
+ * page goes to the private archive bucket instead of the entry row, and
+ * hard-deleting an entry queues deletion of its pages.
  */
 
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { gunzipSync } from "node:zlib";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries, feeds } from "../../src/server/db/schema";
+import { entries, feeds, jobs, users } from "../../src/server/db/schema";
+import { getJobPayload } from "../../src/server/jobs/queue";
+import { handleDeleteFullContentArchives } from "../../src/server/jobs/handlers/delete-full-content-archives";
 import { persistFullContentResult } from "../../src/server/services/full-content";
-import {
-  archiveFullContentOriginal,
-  deleteOrphanedFullContentArchives,
-} from "../../src/server/services/full-content-archive";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { archiveFullContentOriginal } from "../../src/server/services/full-content-archive";
+import { deleteSavedArticle } from "../../src/server/services/saved";
+import { deleteUser } from "../../src/server/services/users";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
-import { createTestEntry, createTestFeed } from "./helpers";
+import {
+  createTestEmailSubscription,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 const BUCKET = "test-archive";
 const PAGE = "<html><body><nav>menu</nav><article><p>Article</p></article></body></html>";
@@ -24,9 +30,35 @@ const success = { success: true, contentOriginal: PAGE, contentCleaned: "<p>Arti
 
 let s3: FakeS3;
 
+const createdUsers: string[] = [];
+
 async function cleanup(): Promise<void> {
   await db.delete(entries);
   await db.delete(feeds);
+  await db.delete(jobs).where(eq(jobs.type, "delete_full_content_archives"));
+  if (createdUsers.length > 0) await db.delete(users).where(inArray(users.id, createdUsers));
+}
+
+async function user(): Promise<string> {
+  const id = await createTestUser({ emailPrefix: "archive" });
+  createdUsers.push(id);
+  return id;
+}
+
+/** An entry whose full content was fetched, with two archived pages (a refetch). */
+async function fetchedEntry(owner: string, options: Parameters<typeof createTestEntry>[1] = {}) {
+  const entryId = await createTestEntry(owner, { fullContentFetchedAt: new Date(), ...options });
+  await archiveFullContentOriginal(entryId, "<html>first</html>");
+  await archiveFullContentOriginal(entryId, "<html>second</html>");
+  return entryId;
+}
+
+/** Runs the queued archive deletions as the worker would. */
+async function runDeletionJobs(): Promise<void> {
+  const queued = await db.select().from(jobs).where(eq(jobs.type, "delete_full_content_archives"));
+  for (const job of queued) {
+    await handleDeleteFullContentArchives(getJobPayload(job, "delete_full_content_archives"));
+  }
 }
 
 beforeEach(async () => {
@@ -92,25 +124,41 @@ describe("persistFullContentResult", () => {
   });
 });
 
-describe("deleteOrphanedFullContentArchives", () => {
-  it("deletes every page of deleted entries across list pages and keeps the rest", async () => {
-    const feedId = await createTestFeed();
-    const kept = await createTestEntry(feedId);
-    const deleted = [generateUuidv7(), generateUuidv7()];
-    // A refetch archives its page beside the earlier one.
-    for (const id of [kept, ...deleted]) {
-      await archiveFullContentOriginal(id, "<html>first</html>");
-      await archiveFullContentOriginal(id, "<html>second</html>");
-    }
-    // A request may spell an entry id in uppercase.
-    const deletedUppercase = generateUuidv7();
-    await archiveFullContentOriginal(deletedUppercase.toUpperCase(), "<html>page</html>");
-    const foreign = `${BUCKET}/full-content/not-an-entry.html.gz`;
-    s3.objects.set(foreign, Buffer.from("x"));
+describe("deleting entries", () => {
+  it("deletes a deleted saved article's pages and keeps the others'", async () => {
+    const userId = await user();
+    const deleted = await fetchedEntry(userId, { type: "saved", userIds: [userId] });
+    const kept = await fetchedEntry(userId, { type: "saved", userIds: [userId] });
 
-    expect(await deleteOrphanedFullContentArchives(db)).toBe(5);
+    await deleteSavedArticle(db, userId, deleted);
+    await runDeletionJobs();
 
-    expect(archived(kept).sort()).toEqual(["<html>first</html>", "<html>second</html>"]);
-    expect([...s3.objects.keys()].filter((key) => !key.includes(kept))).toEqual([foreign]);
+    expect(archived(deleted)).toEqual([]);
+    expect(archived(kept)).toHaveLength(2);
+  });
+
+  it("deletes the pages of every entry an account deletion removes", async () => {
+    const leaving = await user();
+    const staying = await user();
+    const saved = await fetchedEntry(leaving, { type: "saved", userIds: [leaving] });
+    const email = await fetchedEntry(await createTestEmailSubscription(leaving), {
+      type: "email",
+      userIds: [leaving],
+    });
+    const onlyMine = await createTestFeed();
+    await createTestSubscription(leaving, onlyMine);
+    const orphaned = await fetchedEntry(onlyMine, { userIds: [leaving] });
+    const shared = await createTestFeed();
+    await createTestSubscription(leaving, shared);
+    await createTestSubscription(staying, shared);
+    const stillHeld = await fetchedEntry(shared, { userIds: [leaving, staying] });
+
+    await deleteUser(db, leaving);
+    await runDeletionJobs();
+
+    expect(archived(saved)).toEqual([]);
+    expect(archived(email)).toEqual([]);
+    expect(archived(orphaned)).toEqual([]);
+    expect(archived(stillHeld)).toHaveLength(2);
   });
 });

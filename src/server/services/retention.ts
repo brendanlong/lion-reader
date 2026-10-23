@@ -32,7 +32,6 @@ import {
   sessions,
 } from "../db/schema";
 import { pruneEntryTombstones } from "./entry-tombstones";
-import { deleteOrphanedFullContentArchives } from "./full-content-archive";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -95,13 +94,11 @@ export interface RetentionCleanupResult {
   opmlImports: number;
   deadFeedJobs: number;
   entryTombstones: number;
-  /** Archived full-content pages whose entry is gone (not rows). */
-  fullContentArchives: number;
 }
 
 /**
- * Deletes expired/revoked credentials, orphaned DCR clients, old OPML imports,
- * dead feed jobs and archived pages of deleted entries.
+ * Deletes expired/revoked credentials, orphaned DCR clients, old OPML imports
+ * and dead feed jobs.
  */
 export async function runRetentionCleanup(db: Database): Promise<RetentionCleanupResult> {
   const now = Date.now();
@@ -239,6 +236,5 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     opmlImports: oldOpmlImports.rowCount ?? 0,
     deadFeedJobs: deadFeedJobs.rowCount ?? 0,
     entryTombstones: await pruneEntryTombstones(db, nowDate),
-    fullContentArchives: await deleteOrphanedFullContentArchives(db),
   };
 }

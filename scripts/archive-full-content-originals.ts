@@ -1,26 +1,32 @@
 /**
  * Moves every stored `entries.full_content_original` into the archive bucket
- * and clears the column (#2115), a batch at a time.
+ * and clears the column (#2115), in two steps so production never ships its
+ * pages anywhere:
  *
- * Usage, with DATABASE_URL and the STORAGE_* variables (STORAGE_ARCHIVE_BUCKET
- * included) set:
- *   pnpm exec tsx scripts/archive-full-content-originals.ts [--batch-size 50] [--pause-ms 1000] [--after <entry_id>]
+ *   pnpm exec tsx scripts/archive-full-content-originals.ts upload <manifest> [--batch-size 50] [--pause-ms 0]
+ *   pnpm exec tsx scripts/archive-full-content-originals.ts clear <manifest> [--batch-size 200] [--pause-ms 1000]
  *
- * Walks `entries` in id order. Each batch uploads its pages, then clears the
- * column only on the rows whose upload succeeded, so a page is never dropped
- * before it's stored. Rerunning is safe and skips finished rows; each batch
- * logs its cursor, which `--after` resumes from. `--pause-ms` spaces batches
- * out so the walk doesn't saturate the database's I/O.
+ * `upload` runs against a restore of production (DATABASE_URL pointing at it,
+ * plus the STORAGE_* variables, STORAGE_ARCHIVE_BUCKET included). Take the
+ * restore after the deploy that stops writing the column has rolled out. It
+ * walks `entries` in id order, archives each page, and appends a line per
+ * archived row to the manifest (JSON: the id and its fetch time). Rerun, it
+ * resumes after the manifest's last row; a failed upload is left out, so a
+ * later upload run picks it up.
  *
- * A plugin fetch from before 4d18f516 stored its article only as the
- * original (no `full_content_cleaned`); it moves into `full_content_cleaned`,
- * which the read path falls back to meanwhile, so nothing a reader sees
- * changes. A page written to the column after its batch read it is left for
- * a rerun, so run it again until it archives nothing once the deploy that
- * stops writing the column has rolled out.
+ * `clear` runs against production, reading only the manifest. A plugin fetch
+ * from before 4d18f516 stored its article only as the original; it moves into
+ * `full_content_cleaned`, which the read path falls back to meanwhile, so
+ * nothing a reader sees changes. A row whose fetch time differs from the
+ * manifest's (every write of the column also set it) holds a page the upload
+ * didn't archive, so it's left alone. Rerun both until `upload` archives
+ * nothing on a fresh restore.
+ *
+ * `--pause-ms` spaces batches out so `clear` doesn't saturate production's I/O.
  */
 
 import { fileURLToPath } from "node:url";
+import { appendFile, readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import type { db as dbType } from "../src/server/db";
@@ -29,39 +35,51 @@ import { archiveFullContentOriginal } from "../src/server/services/full-content-
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
-export interface ArchiveOptions {
+/** One archived row, as the manifest records it. */
+interface ArchivedRow {
+  id: string;
+  /** `full_content_fetched_at` as text, to compare at full precision. */
+  fetchedAt: string | null;
+}
+
+interface BatchOptions {
   batchSize?: number;
   pauseMs?: number;
-  /** Resume the walk after this entry id. */
-  after?: string;
   log?: (message: string) => void;
 }
 
-export interface ArchiveResult {
-  archived: number;
-  failedUploads: number;
+async function readManifest(path: string): Promise<ArchivedRow[]> {
+  const text = await readFile(path, "utf8").catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return "";
+    throw err;
+  });
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as ArchivedRow);
 }
 
-interface BatchRow extends Record<string, unknown> {
+interface UploadRow extends Record<string, unknown> {
   id: string;
   original: string;
-  /** As text, to compare at full precision. */
   fetched_at: string | null;
 }
 
-export async function archiveFullContentOriginals(
+/** Archives every stored page after the manifest's last row, appending to it. */
+export async function uploadFullContentOriginals(
   db: typeof dbType,
-  { batchSize = 50, pauseMs = 1000, after = NIL_UUID, log = () => {} }: ArchiveOptions = {}
-): Promise<ArchiveResult> {
+  manifestPath: string,
+  { batchSize = 50, pauseMs = 0, log = () => {} }: BatchOptions = {}
+): Promise<{ archived: number; failedUploads: number }> {
   if (!isArchiveAvailable()) {
-    throw new Error("The archive bucket isn't configured: refusing to drop the originals");
+    throw new Error("The archive bucket isn't configured");
   }
 
-  let cursor = after;
+  let cursor = (await readManifest(manifestPath)).at(-1)?.id ?? NIL_UUID;
   let archived = 0;
   let failedUploads = 0;
   for (;;) {
-    const { rows } = await db.execute<BatchRow>(sql`
+    const { rows } = await db.execute<UploadRow>(sql`
       SELECT id, full_content_original AS original, full_content_fetched_at::text AS fetched_at
       FROM entries
       WHERE id > ${cursor}::uuid AND full_content_original IS NOT NULL
@@ -70,52 +88,70 @@ export async function archiveFullContentOriginals(
     `);
     if (rows.length === 0) break;
 
-    const uploaded: BatchRow[] = [];
+    const lines: string[] = [];
     for (const row of rows) {
       try {
         await archiveFullContentOriginal(row.id, row.original);
-        uploaded.push(row);
+        lines.push(JSON.stringify({ id: row.id, fetchedAt: row.fetched_at } satisfies ArchivedRow));
       } catch (err) {
         failedUploads++;
         log(`upload failed for ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-
-    // Every write of the column also set the fetch time, so a row whose fetch
-    // time moved since the SELECT holds a page this batch didn't archive (or,
-    // since this release, none): leave it to a rerun.
-    if (uploaded.length > 0) {
-      await db.execute(sql`
-        UPDATE entries e
-        SET full_content_cleaned = COALESCE(e.full_content_cleaned, e.full_content_original),
-            full_content_original = NULL
-        FROM (VALUES ${sql.join(
-          uploaded.map((row) => sql`(${row.id}::uuid, ${row.fetched_at}::timestamptz)`),
-          sql`, `
-        )}) AS u(id, fetched_at)
-        WHERE e.id = u.id
-          AND e.full_content_original IS NOT NULL
-          AND e.full_content_fetched_at IS NOT DISTINCT FROM u.fetched_at
-      `);
-    }
-    archived += uploaded.length;
+    if (lines.length > 0) await appendFile(manifestPath, lines.map((l) => `${l}\n`).join(""));
+    archived += lines.length;
 
     cursor = rows[rows.length - 1].id;
-    log(`archived ${uploaded.length} of ${rows.length}, after ${cursor}`);
+    log(`archived ${lines.length} of ${rows.length}, after ${cursor}`);
     if (rows.length < batchSize) break;
     await sleep(pauseMs);
   }
-
   return { archived, failedUploads };
 }
 
-function parseArgs(argv: string[]): ArchiveOptions {
-  const options: ArchiveOptions = { log: (m) => console.log(m) };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--batch-size") options.batchSize = Number(argv[++i]);
-    else if (arg === "--pause-ms") options.pauseMs = Number(argv[++i]);
-    else if (arg === "--after") options.after = argv[++i];
+/** Clears the column on the manifest's rows that still hold the archived page. */
+export async function clearArchivedOriginals(
+  db: typeof dbType,
+  manifestPath: string,
+  { batchSize = 200, pauseMs = 1000, log = () => {} }: BatchOptions = {}
+): Promise<{ cleared: number }> {
+  const manifest = await readManifest(manifestPath);
+  let cleared = 0;
+  for (let i = 0; i < manifest.length; i += batchSize) {
+    const batch = manifest.slice(i, i + batchSize);
+    const result = await db.execute(sql`
+      UPDATE entries e
+      SET full_content_cleaned = COALESCE(e.full_content_cleaned, e.full_content_original),
+          full_content_original = NULL
+      FROM (VALUES ${sql.join(
+        batch.map((row) => sql`(${row.id}::uuid, ${row.fetchedAt}::timestamptz)`),
+        sql`, `
+      )}) AS m(id, fetched_at)
+      WHERE e.id = m.id
+        AND e.full_content_original IS NOT NULL
+        AND e.full_content_fetched_at IS NOT DISTINCT FROM m.fetched_at
+    `);
+    cleared += result.rowCount ?? 0;
+    log(`cleared ${result.rowCount ?? 0} of ${batch.length}, through ${batch.at(-1)?.id}`);
+    if (i + batchSize < manifest.length) await sleep(pauseMs);
+  }
+  return { cleared };
+}
+
+function parseArgs(argv: string[]): {
+  command: "upload" | "clear";
+  manifest: string;
+  options: BatchOptions;
+} {
+  const [command, manifest, ...rest] = argv;
+  if ((command !== "upload" && command !== "clear") || !manifest) {
+    throw new Error("Usage: archive-full-content-originals.ts upload|clear <manifest> [options]");
+  }
+  const options: BatchOptions = { log: (m) => console.log(m) };
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === "--batch-size") options.batchSize = Number(rest[++i]);
+    else if (arg === "--pause-ms") options.pauseMs = Number(rest[++i]);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.batchSize !== undefined && !(options.batchSize > 0)) {
@@ -124,17 +160,20 @@ function parseArgs(argv: string[]): ArchiveOptions {
   if (options.pauseMs !== undefined && !(options.pauseMs >= 0)) {
     throw new Error("--pause-ms must be a non-negative number");
   }
-  return options;
+  return { command, manifest, options };
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const { command, manifest, options } = parseArgs(process.argv.slice(2));
   const { db, pool } = await import("../src/server/db");
   try {
     const started = Date.now();
-    const result = await archiveFullContentOriginals(db, options);
+    const result =
+      command === "upload"
+        ? await uploadFullContentOriginals(db, manifest, options)
+        : await clearArchivedOriginals(db, manifest, options);
     console.log(`Done in ${((Date.now() - started) / 1000).toFixed(1)} s:`, JSON.stringify(result));
-    process.exitCode = result.failedUploads > 0 ? 1 : 0;
+    process.exitCode = "failedUploads" in result && result.failedUploads > 0 ? 1 : 0;
   } finally {
     await pool.end();
   }

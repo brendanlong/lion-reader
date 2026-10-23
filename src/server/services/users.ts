@@ -5,11 +5,12 @@
  * tRPC routers, MCP server, and background jobs.
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
 import { retryDeadlocks } from "@/server/db/errors";
+import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
 
 /**
  * Deletes a user account and all associated data.
@@ -52,6 +53,42 @@ async function deleteUserOnce(db: Database, userId: string): Promise<void> {
       .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
       .where(eq(subscriptions.userId, userId));
 
+    // The archived pages of every entry this deletes (the user's own, and
+    // those of the feeds step 3 deletes), read while the rows still exist.
+    const ownedArchived = await tx
+      .select({ id: entries.id })
+      .from(entries)
+      .where(
+        and(
+          isNotNull(entries.fullContentFetchedAt),
+          or(
+            eq(entries.ownerUserId, userId),
+            inArray(
+              entries.ownerSubscriptionId,
+              tx
+                .select({ id: subscriptions.id })
+                .from(subscriptions)
+                .where(eq(subscriptions.userId, userId))
+            )
+          )
+        )
+      );
+    const feedArchived =
+      candidates.length > 0
+        ? await tx
+            .select({ id: entries.id, feedId: entries.ownerFeedId })
+            .from(entries)
+            .where(
+              and(
+                isNotNull(entries.fullContentFetchedAt),
+                inArray(
+                  entries.ownerFeedId,
+                  candidates.map((f) => f.id)
+                )
+              )
+            )
+        : [];
+
     // Step 2: Delete the user. This cascades to:
     // - sessions, api_tokens, oauth_accounts
     // - oauth_authorization_codes, oauth_consent_grants, oauth_token_grants (and their tokens)
@@ -67,21 +104,31 @@ async function deleteUserOnce(db: Database, userId: string): Promise<void> {
     // from (e.g. starred after unsubscribing), and their entries by cascade.
     // Checking in the DELETE itself, after the user's own rows are gone, means
     // only a subscribe still uncommitted when it runs can be lost (cascaded).
+    let deletedFeedIds = new Set<string>();
     if (candidates.length > 0) {
-      await tx.delete(feeds).where(
-        and(
-          inArray(
-            feeds.id,
-            candidates.map((f) => f.id)
-          ),
-          sql`NOT EXISTS (SELECT 1 FROM ${subscriptions} WHERE ${subscriptions.feedId} = ${feeds.id})`,
-          sql`NOT EXISTS (
+      const deletedFeeds = await tx
+        .delete(feeds)
+        .where(
+          and(
+            inArray(
+              feeds.id,
+              candidates.map((f) => f.id)
+            ),
+            sql`NOT EXISTS (SELECT 1 FROM ${subscriptions} WHERE ${subscriptions.feedId} = ${feeds.id})`,
+            sql`NOT EXISTS (
             SELECT 1 FROM ${entries}
             INNER JOIN ${userEntries} ON ${userEntries.entryId} = ${entries.id}
             WHERE ${entries.ownerFeedId} = ${feeds.id}
           )`
+          )
         )
-      );
+        .returning({ id: feeds.id });
+      deletedFeedIds = new Set(deletedFeeds.map((f) => f.id));
     }
+
+    await enqueueFullContentArchiveDeletion(tx, [
+      ...ownedArchived.map((e) => e.id),
+      ...feedArchived.filter((e) => e.feedId && deletedFeedIds.has(e.feedId)).map((e) => e.id),
+    ]);
   });
 }

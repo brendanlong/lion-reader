@@ -23,6 +23,7 @@ import {
   publishEntryLeftCollections,
 } from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
+import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
 import { detectFileType, getSupportedTypesDescription } from "@/server/file/process-upload";
@@ -879,8 +880,15 @@ export async function deleteSavedArticle(
   // delete so a client can never see one without the other.
   const collectionIds = await listEntryCollectionIds(db, userId, articleId);
   await db.transaction(async (tx) => {
-    await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.ownerUserId, userId)));
+    const deleted = await tx
+      .delete(entries)
+      .where(and(eq(entries.id, articleId), eq(entries.ownerUserId, userId)))
+      .returning({ id: entries.id, fullContentFetchedAt: entries.fullContentFetchedAt });
     await recordEntryTombstone(tx, userId, articleId);
+    await enqueueFullContentArchiveDeletion(
+      tx,
+      deleted.filter((row) => row.fullContentFetchedAt).map((row) => row.id)
+    );
   });
   // The entry is gone, so its collections are named as subscriptions.
   const counts = await getBulkEntryRelatedCounts(
