@@ -55,7 +55,7 @@ Every badge reads one trigger-maintained counter (spam excluded; the list is in 
 
 ## Deletions in Delta Sync
 
-Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`).
+Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`). It must also queue the deletion of the entry's archived full-content pages in that transaction (`enqueueFullContentArchiveDeletion`, `services/full-content-archive.ts`): nothing sweeps the archive bucket, so a page left there is never deleted.
 
 ## Ordering & Pagination
 

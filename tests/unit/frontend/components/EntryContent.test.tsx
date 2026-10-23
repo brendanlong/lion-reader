@@ -69,7 +69,6 @@ function createEntry(overrides: Record<string, unknown> = {}) {
     siteName: null,
     unsubscribeUrl: null,
     fetchFullContent: false,
-    fullContentOriginal: null,
     fullContentCleaned: null,
     fullContentFetchedAt: null,
     fullContentError: null,

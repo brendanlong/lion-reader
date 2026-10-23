@@ -18,7 +18,7 @@
  */
 
 import { eq, sql, type SQL } from "drizzle-orm";
-import { db } from "../db";
+import { db, type DbOrTx } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { z } from "zod";
@@ -146,6 +146,12 @@ const JOB_DEFINITIONS = {
   backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
   // Process an OPML import in the background.
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
+  // Delete the archived full-content pages of hard-deleted entries. Queued in
+  // the deleting transaction; see src/server/services/full-content-archive.ts.
+  delete_full_content_archives: {
+    payload: z.object({ entryIds: z.array(z.string()) }),
+    lane: "one_time",
+  },
   // Fetch full content for entries a WebSub push just created, off the hub's
   // callback request. `pending` marks the feed's one not-yet-claimed job, which
   // new entries are appended to — see enqueueFullContentFetch.
@@ -291,15 +297,20 @@ export interface FinishJobOptions {
  * (e.g., when a feed is first subscribed to).
  *
  * @param options Job creation options
+ * @param executor Where to insert it: a transaction makes the job commit with
+ *   the change it follows up
  * @returns The created job
  */
-export async function createJob<T extends JobType>(options: CreateJobOptions<T>): Promise<Job> {
+export async function createJob<T extends JobType>(
+  options: CreateJobOptions<T>,
+  executor: DbOrTx = db
+): Promise<Job> {
   const { type, payload, nextRunAt = new Date() } = options;
 
   const id = generateUuidv7();
   const now = new Date();
 
-  const [job] = await db
+  const [job] = await executor
     .insert(jobs)
     .values({
       id,

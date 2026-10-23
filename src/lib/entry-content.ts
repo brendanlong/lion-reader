@@ -13,7 +13,6 @@
 
 export interface EntryContentFields {
   fullContentCleaned?: string | null;
-  fullContentOriginal?: string | null;
   contentCleaned: string | null;
   contentOriginal: string | null;
 }
@@ -31,14 +30,13 @@ export interface EntryContentView {
  */
 export function showsFullContent(entry: {
   fullContentCleaned?: string | null;
-  fullContentOriginal?: string | null;
   fullContentFetchedAt?: Date | null;
   fullContentError?: string | null;
   fetchFullContent?: boolean | null;
 }): boolean {
   return Boolean(
     entry.fetchFullContent &&
-    (entry.fullContentCleaned || entry.fullContentOriginal) &&
+    entry.fullContentCleaned &&
     entry.fullContentFetchedAt &&
     !entry.fullContentError
   );
@@ -54,7 +52,7 @@ export function selectDisplayedContent(
   view: EntryContentView
 ): string | null {
   if (view.showFullContent) {
-    return fields.fullContentCleaned ?? fields.fullContentOriginal ?? null;
+    return fields.fullContentCleaned ?? null;
   }
   if (view.showOriginal) {
     return fields.contentOriginal;

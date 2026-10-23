@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="October 19, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 22, 2026">
       <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -521,6 +521,12 @@ export default function PrivacyPolicyPage() {
               Images embedded in some articles (for example, images from imported Google Docs) are
               stored on Fly.io&apos;s Tigris object storage. These stored images are served from
               Tigris when you view the article.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              When Lion Reader fetches an article&apos;s full text from its website (for example for
+              a subscription with &quot;fetch full content&quot; on), it also keeps the whole web
+              page it downloaded, compressed, in a private Tigris bucket that nothing serves. The
+              page is deleted shortly after its article is deleted.
             </LegalParagraph>
           </LegalSubsection>
         </div>

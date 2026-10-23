@@ -12,9 +12,10 @@ import type { db as dbType } from "@/server/db";
 import { entries, narrationContent, subscriptions } from "@/server/db/schema";
 import { HttpFetchError } from "@/server/http/fetch";
 import { getAppErrorCode } from "@/server/errors";
-import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
+import { archiveFullContentOriginal } from "./full-content-archive";
 import { type FullEntry, getFullEntry } from "./entry-reads";
 import { articleContentFromAcquired, processArticleContent } from "./article-content";
 
@@ -24,7 +25,7 @@ import { articleContentFromAcquired, processArticleContent } from "./article-con
 export interface FetchFullContentResult {
   /** Whether the fetch was successful */
   success: boolean;
-  /** The raw HTML content from the URL */
+  /** The raw HTML content from the URL, archived rather than stored on the entry */
   contentOriginal?: string;
   /** The article body: Readability's extraction, or the content when already clean (set on success) */
   contentCleaned?: string;
@@ -96,8 +97,10 @@ export async function fetchFullContent(
  * user-initiated fetch (fetchAndStoreFullContent) and the background worker
  * (fetchFullContentForNewEntries below).
  *
- * Stores only the raw full-content columns; the read path sanitizes per read
- * (issue #1282).
+ * Stores only the raw cleaned content; the read path sanitizes per read (issue
+ * #1282). The fetched page goes to the archive (`archiveFullContentOriginal`)
+ * once the row is written, never the row itself (#2115); failing to archive it
+ * doesn't fail the write.
  *
  * Bumps `updated_at` only when the full content an entry view shows changes:
  * sync reports every bump as `entry_updated` to every subscriber, and clients
@@ -130,13 +133,11 @@ export async function persistFullContentResult(
   }
 
   // Compute hash of full content for separate summary caching
-  const fullContentForHash = result.contentCleaned ?? result.contentOriginal ?? "";
-  const fullContentHash = fullContentForHash
-    ? createHash("sha256").update(fullContentForHash, "utf8").digest("hex")
+  const fullContentHash = result.contentCleaned
+    ? createHash("sha256").update(result.contentCleaned, "utf8").digest("hex")
     : null;
 
   const fullContentUpdate = {
-    fullContentOriginal: result.contentOriginal ?? null,
     fullContentCleaned: result.contentCleaned ?? null,
     fullContentHash,
     fullContentFetchedAt: now,
@@ -147,9 +148,22 @@ export async function persistFullContentResult(
     .update(entries)
     .set({
       ...fullContentUpdate,
+      // An older fetch's page; the backfill archives what's left here.
+      fullContentOriginal: null,
       updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT DISTINCT FROM ${fullContentHash} THEN ${entries.updatedAt} ELSE ${now} END`,
     })
     .where(eq(entries.id, entryId));
+
+  if (result.contentOriginal) {
+    await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
+      // Error level: the article is stored, but every failure loses a page, so
+      // a lasting one (bad credentials, say) must surface in Sentry.
+      logger.error("Failed to archive full content original", {
+        entryId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   return fullContentUpdate;
 }
 
@@ -320,7 +334,7 @@ export async function fetchAndStoreFullContent(
   const now = new Date();
   // Persist the raw full-content columns onto the shared entry row (see note
   // above); sanitized for the response below (per-read sanitization, #1282).
-  const fullContentUpdate = await persistFullContentResult(db, entryId, result, now);
+  const fullContentUpdate = await persistFullContentResult(db, entry.id, result, now);
 
   if (!result.success || !fullContentUpdate) {
     logger.warn("Failed to fetch full content", {
@@ -367,17 +381,13 @@ export async function fetchAndStoreFullContent(
 
   // Sanitize the freshly-fetched full content for the response (raw is stored;
   // sanitization is per-read now — issue #1282).
-  const fullContent = await sanitizeEntryContentFamily("fullContent", {
-    original: fullContentUpdate.fullContentOriginal,
-    cleaned: fullContentUpdate.fullContentCleaned,
-  });
+  const fullContentCleaned = await sanitizeEntryHtmlAsync(fullContentUpdate.fullContentCleaned);
 
   return {
     success: true,
     entry: {
       ...entry,
-      fullContentOriginal: fullContent.original,
-      fullContentCleaned: fullContent.cleaned,
+      fullContentCleaned,
       fullContentFetchedAt: now,
       fullContentError: null,
     },

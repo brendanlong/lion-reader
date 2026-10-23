@@ -105,6 +105,7 @@ kill_timeout = 30
   STORAGE_ENDPOINT = "https://t3.storage.dev"
   STORAGE_REGION = "auto"
   STORAGE_PUBLIC_URL_BASE = "https://lion-reader-prod.t3.storage.dev/"
+  STORAGE_ARCHIVE_BUCKET = "lion-reader-archive" # private; terraform/tigris.tf
 
   # lionreader.com only. Newsletters.
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"

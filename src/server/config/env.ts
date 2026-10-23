@@ -385,6 +385,12 @@ export const storageConfig = {
   /** S3 bucket name for storing images */
   bucket: process.env.STORAGE_BUCKET,
 
+  /**
+   * Private bucket for content we keep but never serve (the archive functions in `src/server/storage/s3.ts`).
+   * Unset, that content is discarded. Must not be publicly readable.
+   */
+  archiveBucket: process.env.STORAGE_ARCHIVE_BUCKET,
+
   /** AWS access key ID or Tigris access key */
   accessKeyId: process.env.STORAGE_ACCESS_KEY_ID,
 

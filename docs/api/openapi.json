@@ -5984,6 +5984,8 @@
                           ]
                         },
                         "fullContentOriginal": {
+                          "deprecated": true,
+                          "description": "Always null. Use fullContentCleaned.",
                           "type": [
                             "string",
                             "null"
@@ -6302,6 +6304,8 @@
                             ]
                           },
                           "fullContentOriginal": {
+                            "deprecated": true,
+                            "description": "Always null. Use fullContentCleaned.",
                             "type": [
                               "string",
                               "null"
@@ -7878,6 +7882,8 @@
                           ]
                         },
                         "fullContentOriginal": {
+                          "deprecated": true,
+                          "description": "Always null. Use fullContentCleaned.",
                           "type": [
                             "string",
                             "null"

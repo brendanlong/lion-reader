@@ -73,9 +73,7 @@ export interface EntryContentBodyProps {
   /** Callback when swiping to previous article */
   onSwipePrevious?: () => void;
   // Full content fields
-  /** Full content original HTML (fetched from URL) */
-  fullContentOriginal?: string | null;
-  /** Full content cleaned HTML (fetched from URL), null if Readability was skipped */
+  /** Full content HTML (the article extracted from the page at the entry's URL) */
   fullContentCleaned?: string | null;
   /** Whether full content has been fetched */
   fullContentFetchedAt?: Date | null;
@@ -145,7 +143,6 @@ export function EntryContentBody({
   onSwipeNext,
   onSwipePrevious,
   // Full content props
-  fullContentOriginal,
   fullContentCleaned,
   fullContentFetchedAt,
   fullContentError,
@@ -171,7 +168,6 @@ export function EntryContentBody({
 
   const showFullContent = showsFullContent({
     fullContentCleaned,
-    fullContentOriginal,
     fullContentFetchedAt,
     fullContentError,
     fetchFullContent,
@@ -184,7 +180,7 @@ export function EntryContentBody({
   // Select content based on state
   // Priority: full content (if enabled and available) > cleaned feed content > original feed content
   const contentToDisplay = selectDisplayedContent(
-    { fullContentCleaned, fullContentOriginal, contentCleaned, contentOriginal },
+    { fullContentCleaned, contentCleaned, contentOriginal },
     { showFullContent, showOriginal }
   );
 

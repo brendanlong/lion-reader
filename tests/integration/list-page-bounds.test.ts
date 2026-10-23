@@ -301,6 +301,9 @@ beforeAll(async () => {
   await db.execute(sql`VACUUM ANALYZE subscription_entries`);
   await db.execute(sql`VACUUM ANALYZE entries`);
   await db.execute(sql`VACUUM ANALYZE tag_entries`);
+  // The small tables the pages join too, so their plans don't depend on the
+  // statistics earlier test files left behind.
+  await db.execute(sql`ANALYZE`);
 }, 120_000);
 
 afterAll(async () => {
