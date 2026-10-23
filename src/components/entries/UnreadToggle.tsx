@@ -31,9 +31,9 @@ interface UnreadToggleProps {
 /**
  * Toggle button for showing/hiding read entries.
  *
- * The button displays the current state (like sorting buttons):
- * - When `showUnreadOnly` is true: shows "Unread only" with eye-slash icon
- * - When `showUnreadOnly` is false: shows "Show all" with open eye icon
+ * The icon and tooltip show the current state (like sorting buttons):
+ * - When `showUnreadOnly` is true: "Unread only" with eye-slash icon
+ * - When `showUnreadOnly` is false: "Show all" with open eye icon
  *
  * The aria-label describes the action (what clicking will do).
  */

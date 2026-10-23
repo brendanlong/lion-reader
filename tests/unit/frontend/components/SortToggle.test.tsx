@@ -31,7 +31,7 @@ describe("SortToggle", () => {
         />
       );
       const button = screen.getByRole("button", { name: aria });
-      expect(button).toHaveTextContent(label);
+      expect(button).toHaveAttribute("title", label);
       expect(button).toHaveAttribute("aria-pressed", pressed);
       fireEvent.click(button);
       expect(onChange).toHaveBeenCalledWith(next);

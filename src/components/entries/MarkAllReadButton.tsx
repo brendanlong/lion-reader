@@ -49,12 +49,11 @@ export function MarkAllReadButton({
       <button
         type="button"
         onClick={() => setShowDialog(true)}
-        className="control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors"
+        className="control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2 transition-colors"
         title={`Mark all as read (${formatHotkey(SHORTCUTS.markAllRead.hotkey)})`}
         aria-label="Mark all as read"
       >
         <CheckCircleIcon className="h-5 w-5" />
-        <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
       </button>
 
       <ConfirmDialog
