@@ -7,8 +7,9 @@
  * Query parameters for GET:
  * - archive: 0|1 - filter by archived (read) state
  * - starred: 0|1 - filter by starred state
- * - sort: created|updated|archived - sort field (default: created). `updated`
- *   (last-modified) is approximated as `created`.
+ * - sort: created|updated|archived - ignored: every list sorts by `created`. No
+ *   client we know of needs the others, and `archived` would sort Saved by read
+ *   time, which has no index (#2114).
  * - order: asc|desc - sort order (default: desc)
  * - page: number - page number (default: 1)
  * - perPage: number - items per page (default: 30, max: 100)

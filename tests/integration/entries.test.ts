@@ -381,15 +381,14 @@ describe("Entries", () => {
     });
   });
 
-  describe("list with sortBy (Wallabag `sort` field)", () => {
-    it("sortBy=archived orders by read-change time and keeps never-read entries", async () => {
+  describe("list with sortBy readChanged (Recently Read)", () => {
+    it("lists only entries whose read state was set, by when", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
       await createTestSubscription(userId, feedId);
 
       const readId = await createTestEntry(feedId, { title: "Read" });
       const unreadId = await createTestEntry(feedId, { title: "Unread" });
-      // Unread entry: no read-state change (readChangedAt NULL).
       await createUserEntry(userId, readId);
       await createUserEntry(userId, unreadId, { readChangedAt: undefined });
       await db
@@ -397,11 +396,6 @@ describe("Entries", () => {
         .set({ readChangedAt: null })
         .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, unreadId)));
 
-      // sortBy=archived must NOT drop the never-read entry (unlike readChanged).
-      const archived = await listEntries(db, { userId, sortBy: "archived", showSpam: false });
-      expect(archived.items.map((e) => e.id).sort()).toEqual([readId, unreadId].sort());
-
-      // sortBy=readChanged (recently-read view) DOES exclude the never-read entry.
       const recentlyRead = await listEntries(db, {
         userId,
         sortBy: "readChanged",
@@ -410,54 +404,21 @@ describe("Entries", () => {
       expect(recentlyRead.items.map((e) => e.id)).toEqual([readId]);
     });
 
-    it("sortBy=readChanged within one subscription pages by read-change time", async () => {
+    it("rejects a list of its own rows, which has no read-time index (#2114)", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://example.com/feed.xml");
-      const otherFeedId = await createTestFeed("https://example.com/other.xml");
       const subscriptionId = await createTestSubscription(userId, feedId);
-      await createTestSubscription(userId, otherFeedId);
+      const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionId] });
+      const recentlyRead = { userId, sortBy: "readChanged" as const, showSpam: false };
 
-      const readAt = (day: number) => new Date(Date.UTC(2024, 0, day));
-      const ids: string[] = [];
-      for (const day of [1, 3, 2]) {
-        const id = await createTestEntry(feedId, { title: `Read on ${day}` });
-        await createUserEntry(userId, id, { read: true, readChangedAt: readAt(day) });
-        ids.push(id);
+      for (const scope of [
+        { subscriptionId },
+        { tagId },
+        { uncategorized: true },
+        { type: "saved" as const },
+      ]) {
+        await expect(listEntries(db, { ...recentlyRead, ...scope })).rejects.toThrow();
       }
-      const elsewhere = await createTestEntry(otherFeedId, { title: "Other feed" });
-      await createUserEntry(userId, elsewhere, { read: true, readChangedAt: readAt(4) });
-
-      const params = { userId, subscriptionId, sortBy: "readChanged" as const, showSpam: false };
-      const first = await listEntries(db, { ...params, limit: 2 });
-      expect(first.items.map((e) => e.id)).toEqual([ids[1], ids[2]]);
-      const second = await listEntries(db, { ...params, limit: 2, cursor: first.nextCursor });
-      expect(second.items.map((e) => e.id)).toEqual([ids[0]]);
-      expect(second.nextCursor).toBeUndefined();
-    });
-
-    // #683: the cursor sort key is decoded to a Temporal.Instant per row. For the
-    // archived sort a row's readChangedAt can be NULL, so decoding must be
-    // null-tolerant (no throw) and a NULL boundary row must not produce a cursor.
-    it("sortBy=archived tolerates a NULL sort key with pagination (no crash, no cursor)", async () => {
-      const userId = await createTestUser();
-      const feedId = await createTestFeed("https://example.com/feed.xml");
-      await createTestSubscription(userId, feedId);
-
-      // Two never-read entries: both readChangedAt NULL.
-      const aId = await createTestEntry(feedId, { title: "A" });
-      const bId = await createTestEntry(feedId, { title: "B" });
-      await createUserEntry(userId, aId, { readChangedAt: undefined });
-      await createUserEntry(userId, bId, { readChangedAt: undefined });
-      await db
-        .update(userEntries)
-        .set({ readChangedAt: null })
-        .where(eq(userEntries.userId, userId));
-
-      // limit:1 forces hasMore with a NULL-sort-key boundary row. Must not throw,
-      // and the offset-paginated archived sort emits no keyset cursor.
-      const page = await listEntries(db, { userId, sortBy: "archived", limit: 1, showSpam: false });
-      expect(page.items).toHaveLength(1);
-      expect(page.nextCursor).toBeUndefined();
     });
   });
 

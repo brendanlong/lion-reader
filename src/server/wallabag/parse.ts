@@ -60,7 +60,6 @@ export function parseTagLabels(raw: string | null | undefined): string[] {
 export function parseEntryListParams(url: URL): {
   archive: boolean | undefined;
   starred: boolean | undefined;
-  sort: "created" | "updated" | "archived";
   order: "asc" | "desc";
   page: number;
   perPage: number;
@@ -75,7 +74,6 @@ export function parseEntryListParams(url: URL): {
   return {
     archive: params.has("archive") ? params.get("archive") === "1" : undefined,
     starred: params.has("starred") ? params.get("starred") === "1" : undefined,
-    sort: (params.get("sort") as "created" | "updated" | "archived") ?? "created",
     order: (params.get("order") as "asc" | "desc") ?? "desc",
     page: Math.max(1, parseInt(params.get("page") ?? "1", 10) || 1),
     perPage: Math.min(Math.max(1, parseInt(params.get("perPage") ?? "30", 10) || 30), 100),

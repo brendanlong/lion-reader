@@ -73,6 +73,19 @@ const scopes: Record<ListName, Partial<ListEntriesParams>> = {
   collection: {},
 };
 /**
+ * The lists a showSpam page reads through the same rows. A tag's or
+ * Uncategorized's rows hold no spam, so with spam shown they filter the
+ * timeline instead.
+ */
+const SHOW_SPAM: ReadonlySet<ListName> = new Set([
+  "all",
+  "starred",
+  "subscription",
+  "recentlyRead",
+  "collection",
+]);
+
+/**
  * Each feed's newest three quarters have a score (and the big feed's a
  * position in the collection), so a page of the rows without one that walks
  * the date index instead reads past all of those first.
@@ -309,7 +322,9 @@ afterAll(async () => {
 
 const DATE_CASES = (Object.keys(scopes) as ListName[]).flatMap((list) =>
   (list === "recentlyRead" ? (["all"] as const) : (["all", "unread"] as const)).flatMap((filter) =>
-    (["newest", "oldest"] as const).map((sortOrder) => ({ list, filter, sortOrder }))
+    (SHOW_SPAM.has(list) ? [false, true] : [false]).flatMap((showSpam) =>
+      (["newest", "oldest"] as const).map((sortOrder) => ({ list, filter, showSpam, sortOrder }))
+    )
   )
 );
 
@@ -337,15 +352,15 @@ const RANKED_CASES = (Object.keys(scopes) as ListName[])
   );
 
 describe("entry list pages read a bounded number of rows", () => {
-  for (const { list, filter, sortOrder } of DATE_CASES) {
-    it(`${list}, ${filter}, ${sortOrder}`, async () => {
+  for (const { list, filter, showSpam, sortOrder } of DATE_CASES) {
+    it(`${list}, ${filter}${showSpam ? ", showSpam" : ""}, ${sortOrder}`, async () => {
       const params: ListEntriesParams = {
         userId,
         ...scopes[list],
         unreadOnly: filter === "unread",
         sortOrder,
         limit: LIMIT,
-        showSpam: false,
+        showSpam,
       };
       const first = await expectBoundedPage(params);
       expect(first.items.length).toBeGreaterThan(0);

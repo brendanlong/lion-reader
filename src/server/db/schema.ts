@@ -941,12 +941,6 @@ export const userEntries = pgTable(
     primaryKey({ columns: [table.userId, table.entryId] }),
     // For joins from entries table
     index("idx_user_entries_entry_id").on(table.entryId),
-    // Composite filter+sort index for the timeline list query.
-    index("idx_user_entries_published_or_fetched").on(
-      table.userId,
-      table.publishedOrFetchedAt.desc(),
-      table.entryId.desc()
-    ),
     // Delta sync's keyset.
     index("idx_user_entries_changed_at").on(table.userId, table.changedAt, table.entryId),
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
@@ -972,7 +966,6 @@ export const subscriptionEntries = pgTable(
     // Attribution" in src/server/CLAUDE.md).
     read: boolean("read").notNull().default(false),
     starred: boolean("starred").notNull().default(false),
-    isSpam: boolean("is_spam").notNull().default(false),
     score: doublePrecision("score"),
     // The article's place in this collection (#2064): lower sorts first, NULL
     // after every positioned one. Only collections' memberships have one.

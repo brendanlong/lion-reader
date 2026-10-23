@@ -264,7 +264,6 @@ export async function addEntriesToCollection(
             publishedOrFetchedAt: visibleEntries.publishedOrFetchedAt,
             read: visibleEntries.read,
             starred: visibleEntries.starred,
-            isSpam: visibleEntries.isSpam,
             score: visibleEntries.score,
             position: sql<number | null>`NULL::double precision`.as("position"),
           })

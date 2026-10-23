@@ -404,9 +404,8 @@ test.describe("Wallabag API happy path", () => {
         expect(body.total, query).toBe(0);
       }
 
-      // All three sort fields are accepted (not 500) and return the article.
-      // `updated` is approximated as `created` (no un-indexed GREATEST sort), but
-      // still yields the article — the client just gets it in created order.
+      // All three sort fields are accepted (not 500) and return the article, in
+      // created order: the others are ignored.
       for (const sort of ["updated", "archived", "created"]) {
         const sorted = await request.get(
           `/api/wallabag/api/entries?sort=${sort}&detail=metadata&perPage=100`,

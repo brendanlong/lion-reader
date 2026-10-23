@@ -470,8 +470,8 @@ export async function mergeSubscriptionIntoFeed(
     // sync.
     await tx.execute(sql`
       INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                        read, starred, is_spam)
-      SELECT ${survivor.id}::uuid, user_id, entry_id, published_or_fetched_at, read, starred, is_spam
+                                        read, starred)
+      SELECT ${survivor.id}::uuid, user_id, entry_id, published_or_fetched_at, read, starred
       FROM subscription_entries
       WHERE subscription_id = ${oldSubscriptionId}
       ON CONFLICT DO NOTHING

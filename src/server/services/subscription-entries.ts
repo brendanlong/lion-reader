@@ -47,7 +47,6 @@ export async function insertUserEntriesWithMemberships(
     missing AS (
       SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
              COALESCE(ue.read, c.read) AS state_read, COALESCE(ue.starred, false) AS state_starred,
-             COALESCE(ue.is_spam, c.is_spam) AS state_is_spam,
              (s.unsubscribed_at IS NULL)::int AS active_memberships,
              COALESCE(ue.published_or_fetched_at, c.published_or_fetched_at) AS published_or_fetched_at
       FROM c
@@ -64,9 +63,8 @@ export async function insertUserEntriesWithMemberships(
       ON CONFLICT DO NOTHING
     )
     INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                      read, starred, is_spam)
-    SELECT subscription_id, user_id, entry_id, published_or_fetched_at,
-           state_read, state_starred, state_is_spam
+                                      read, starred)
+    SELECT subscription_id, user_id, entry_id, published_or_fetched_at, state_read, state_starred
     FROM missing
     ON CONFLICT DO NOTHING
     RETURNING subscription_id, user_id, entry_id

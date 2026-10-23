@@ -223,7 +223,6 @@ const insertWithMembershipsSql = (label: string, candidates: string): Statement 
 missing AS (
   SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
          COALESCE(ue.read, c.read) AS state_read, COALESCE(ue.starred, false) AS state_starred,
-         COALESCE(ue.is_spam, c.is_spam) AS state_is_spam,
          (s.unsubscribed_at IS NULL)::int AS active_memberships,
          COALESCE(ue.published_or_fetched_at, c.published_or_fetched_at) AS published_or_fetched_at
   FROM c
@@ -240,9 +239,8 @@ new_rows AS (
   ON CONFLICT DO NOTHING
 )
 INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                  read, starred, is_spam)
-SELECT subscription_id, user_id, entry_id, published_or_fetched_at,
-       state_read, state_starred, state_is_spam
+                                  read, starred)
+SELECT subscription_id, user_id, entry_id, published_or_fetched_at, state_read, state_starred
 FROM missing
 ON CONFLICT DO NOTHING
 RETURNING subscription_id, entry_id`,
@@ -376,9 +374,9 @@ FOR NO KEY UPDATE OF subscriptions`,
     {
       label: "insert",
       sql: `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                  read, starred, is_spam)
+                                  read, starred)
 SELECT ${q(collection)}::uuid AS subscription_id, ve.user_id, ve.id, ve.published_or_fetched_at,
-       ve.read, ve.starred, ve.is_spam
+       ve.read, ve.starred
 FROM visible_entries ve
 WHERE ve.user_id = ${q(userId)} AND ve.id IN (${ids})
 ON CONFLICT DO NOTHING
@@ -648,13 +646,43 @@ const READS: Benchmark[] = [
   listBenchmark("list.score_unscored_deep", "/all, unread, by score, 2,500 rows deep", async () =>
     deep(appList({ sortBy: "score" }), 2500)
   ),
+  listBenchmark(
+    "list.score_unscored_first",
+    "/all, unread, by score, the page where the scored rows run out",
+    async (db) => {
+      const { n } = await one<{ n: number }>(
+        db,
+        `SELECT count(*)::int AS n FROM visible_entries
+WHERE user_id = ${q(U0)} AND NOT read AND NOT is_spam AND score IS NOT NULL`
+      );
+      return deep(appList({ sortBy: "score" }), n - 5);
+    }
+  ),
   listBenchmark("list.score_tag", "/tag/:id, by score", async () =>
     appList({ tagId: tagId(0, 1), sortBy: "score" })
+  ),
+  listBenchmark("list.all_show_spam", "/all, unread, showSpam", async () =>
+    appList({ showSpam: true })
+  ),
+  listBenchmark("list.recently_read_show_spam", "/recently-read, showSpam", async () =>
+    appList({ unreadOnly: false, sortBy: "readChanged", showSpam: true })
   ),
   listBenchmark(
     "list.collection_position",
     "/subscription/:id for a collection, by position",
     async () => appList({ subscriptionId: readingList, sortBy: "position" })
+  ),
+  listBenchmark(
+    "list.collection_position_last",
+    "/subscription/:id for a collection, by position, its last page",
+    async (db) => {
+      const { n } = await one<{ n: number }>(
+        db,
+        `SELECT count(*)::int AS n FROM subscription_entries
+WHERE subscription_id = ${q(readingList)} AND NOT read`
+      );
+      return deep(appList({ subscriptionId: readingList, sortBy: "position" }), n - 5);
+    }
   ),
   {
     name: "ssr.entries_get",
@@ -687,10 +715,10 @@ const READS: Benchmark[] = [
     async () => appList({ userId: U_KEEPS_UP })
   ),
   {
-    name: "wallabag.entries_archived",
+    name: "wallabag.entries",
     kind: "read",
-    source: "wallabag/entries.ts listWallabagEntries (sort archived, perPage 30, detail full)",
-    prepare: async () => ({ statements: await wallabagEntries({ sort: "archived" }) }),
+    source: "wallabag/entries.ts listWallabagEntries (perPage 30, detail full)",
+    prepare: async () => ({ statements: await wallabagEntries({}) }),
   },
   {
     name: "search",
@@ -1334,8 +1362,8 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.feed_id = ${q(newFeed)}
           {
             label: "copy_memberships",
             sql: `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at,
-                                  read, starred, is_spam)
-SELECT ${q(survivor)}::uuid, user_id, entry_id, published_or_fetched_at, read, starred, is_spam
+                                  read, starred)
+SELECT ${q(survivor)}::uuid, user_id, entry_id, published_or_fetched_at, read, starred
 FROM subscription_entries
 WHERE subscription_id = ${q(subMergeSource)}
 ON CONFLICT DO NOTHING`,
