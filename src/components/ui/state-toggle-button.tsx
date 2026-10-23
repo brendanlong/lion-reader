@@ -14,7 +14,7 @@ interface StateToggleButtonProps {
   icon: ReactNode;
 
   /**
-   * Names the current state; shown as the tooltip.
+   * The control's name or current state, shown as the tooltip.
    */
   label: string;
 
@@ -74,7 +74,7 @@ export function StateToggleButton({
     <button
       type="button"
       onClick={handleClick}
-      className={`control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors ${className}`}
+      className={`control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2 transition-colors ${className}`}
       title={label}
       aria-label={ariaLabel}
       aria-pressed={isPressed}
