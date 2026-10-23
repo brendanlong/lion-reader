@@ -456,6 +456,14 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
     return {
       entryIds: changed,
       counts: changed.length > 0 ? countsForSubscriptions([collection]) : undefined,
+      tagLists: changed.map((entryId) => {
+        const scope = entryMembershipScope(
+          subscriptionIdsOf(entries.get(entryId)!),
+          DEMO_SAVED_SUBSCRIPTION_ID,
+          (id) => subscriptions.get(id)?.tagIds
+        );
+        return { entryId, tagIds: [...scope.tagIds], uncategorized: scope.uncategorized };
+      }),
     };
   }
 

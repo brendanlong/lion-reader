@@ -9,7 +9,12 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { z } from "zod";
-import type { NewEntryListData, NewEntryListItem, unreadCountsSchema } from "@/lib/events/schemas";
+import type {
+  EntryTagLists,
+  NewEntryListData,
+  NewEntryListItem,
+  unreadCountsSchema,
+} from "@/lib/events/schemas";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   addServerEntryToLists,
@@ -39,7 +44,7 @@ import {
   type SubscriptionRow,
 } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
-import { setLeftCollectionLists } from "@/lib/local-db/entry-lists";
+import { setCollectionChangeInLists } from "@/lib/local-db/entry-lists";
 
 /**
  * Drops a deleted subscription's `subscriptions.get` data. Run once the server
@@ -197,8 +202,10 @@ export function applyTagDeleted(
 /**
  * Applies articles being added to or removed from a collection: the absolute
  * counts, each stored article's `subscriptionIds` (its collections, as the
- * picker shows them), and the collection's loaded entry lists. Idempotent, so the acting tab can apply
- * both its mutation response and the SSE event.
+ * picker shows them), and the loaded entry lists that changes: the
+ * collection's, and the tag and Uncategorized lists `tagLists` says it joined
+ * or left. Idempotent, so the acting tab can apply both its mutation response
+ * and the SSE event.
  */
 export function applyCollectionEntriesChange(
   utils: TRPCClientUtils,
@@ -208,20 +215,27 @@ export function applyCollectionEntriesChange(
     entryIds: string[];
     added: boolean;
     counts?: UnreadCounts;
+    tagLists: EntryTagLists;
   }
 ): void {
   const { subscriptionId, entryIds, added, counts } = change;
   if (counts) applyUnreadCounts(utils, queryClient, counts);
   const db = getLocalDb(queryClient);
+  const tagListsOf = new Map(change.tagLists.map((lists) => [lists.entryId, lists]));
   for (const entryId of entryIds) {
-    setLeftCollectionLists(db.lists, entryId, subscriptionId, !added);
+    const tagLists = tagListsOf.get(entryId);
+    setCollectionChangeInLists(db.lists, entryId, {
+      collectionId: subscriptionId,
+      added,
+      tagLists,
+    });
     setStoredEntryCollection(db.entries, entryId, subscriptionId, added);
     if (added) {
       // Its new membership places it in the collection's lists and those of
       // the collection's tags.
       const stored = db.entries.getSynced(entryId);
       if (stored) {
-        insertEntryIntoLists(db, stored);
+        insertEntryIntoLists(db, stored, tagLists);
         markEntrySortable(db, stored);
       }
     }

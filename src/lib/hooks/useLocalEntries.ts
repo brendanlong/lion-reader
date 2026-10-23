@@ -32,7 +32,8 @@ function useLocalDb(): LocalDb {
 
 /**
  * The entries of a loaded `entries.list` view, in list order. `openEntryId`
- * is listed even if it left the list's collection (`ListEntryRow.removed`).
+ * is listed even if leaving a collection took it out of the list
+ * (`ListEntryRow.removed`).
  */
 export function useEntryListEntries(
   input: EntryListFilters,

@@ -84,7 +84,10 @@ async function expectNoDrift(): Promise<void> {
   });
 }
 
-async function listIds(userId: string, filter: { subscriptionId?: string; tagId?: string }) {
+async function listIds(
+  userId: string,
+  filter: { subscriptionId?: string; tagId?: string; uncategorized?: boolean }
+) {
   const { items } = await listEntries(db, { userId, ...filter, showSpam: false });
   return items.map((item) => item.id).sort();
 }
@@ -387,6 +390,35 @@ describe("collections", () => {
 
       expect(await listIds(userId, { tagId })).toEqual([entryA, entryB, otherEntry].sort());
     });
+  });
+
+  it("reports the tag lists holding each changed article, as its lists list it", async () => {
+    const { userId, feedId, entryA, entryB, collectionId } = await setup();
+    const tagId = await createTestTag(userId, { subscriptionIds: [collectionId] });
+    const saved = await uploadArticle(db, userId, { content: "Body", title: "Paper" });
+    // Another user's tag on the same feed never reaches this user's lists.
+    const otherUser = await createTestUser();
+    const otherSubscription = await createTestSubscription(otherUser, feedId);
+    await createTestTag(otherUser, { subscriptionIds: [otherSubscription] });
+    const tagLists = async (added: boolean) => {
+      const change = added ? addEntriesToCollection : removeEntriesFromCollection;
+      const result = await change(db, userId, collectionId, [entryA, saved.id]);
+      return Object.fromEntries(result.tagLists.map(({ entryId, ...lists }) => [entryId, lists]));
+    };
+
+    expect(await tagLists(true)).toEqual({
+      [entryA]: { tagIds: [tagId], uncategorized: true },
+      // Saved is never Uncategorized.
+      [saved.id]: { tagIds: [tagId], uncategorized: false },
+    });
+    expect(await listIds(userId, { tagId })).toEqual([entryA, saved.id].sort());
+    expect(await listIds(userId, { uncategorized: true })).toEqual([entryA, entryB].sort());
+
+    expect(await tagLists(false)).toEqual({
+      [entryA]: { tagIds: [], uncategorized: true },
+      [saved.id]: { tagIds: [], uncategorized: false },
+    });
+    expect(await listIds(userId, { tagId })).toEqual([]);
   });
 
   describe("isolation", () => {

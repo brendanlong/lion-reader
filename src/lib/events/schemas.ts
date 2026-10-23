@@ -404,6 +404,17 @@ export const tagDeletedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
+/**
+ * The tag lists holding each of a collection change's entries after it: its
+ * active subscriptions' tags, and whether one of them is untagged
+ * (Uncategorized). Clients can't derive this from the subscriptions they've
+ * loaded, so it tells them which tag lists an entry joined or left.
+ */
+export const entryTagListsSchema = z.array(
+  z.object({ entryId: z.string(), tagIds: z.array(z.string()), uncategorized: z.boolean() })
+);
+export type EntryTagLists = z.infer<typeof entryTagListsSchema>;
+
 // Articles added to or removed from a collection. SSE-only: delta sync
 // re-delivers each changed entry through its user_entries.updated_at instead.
 export const collectionEntriesChangedEventSchema = z.object({
@@ -412,6 +423,7 @@ export const collectionEntriesChangedEventSchema = z.object({
   entryIds: z.array(z.string()),
   added: z.boolean(),
   counts: unreadCountsSchema,
+  tagLists: entryTagListsSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });

@@ -5,7 +5,8 @@
 /**
  * Tests for collection membership changes (#1806) reaching the client: the
  * collection_entries_changed event updates the stored entry's memberships, the
- * loaded lists of the collection (and of its tags, on an add) and the counts.
+ * loaded lists of the collection and the tag lists it joined or left, and the
+ * counts.
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -17,7 +18,6 @@ import { applyCollectionEntriesChange } from "@/lib/cache/operations";
 import { trpc } from "@/lib/trpc/client";
 import type { EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 import { createCounts, createRealTrpcUtils, storedCount } from "../../../utils/cache-test-helpers";
 
@@ -64,6 +64,10 @@ function seedList(queryClient: QueryClient, input: object, items: EntryRow[]): v
   });
 }
 
+/** In sub-1 alone, which is untagged. */
+const tagListsOf = (entryIds: string[]) =>
+  entryIds.map((entryId) => ({ entryId, tagIds: [], uncategorized: true }));
+
 const COUNTS = createCounts({
   all: { unread: 3 },
   subscriptions: [{ id: COLLECTION, unread: 1 }],
@@ -93,6 +97,7 @@ function setup(entries: { feed: EntryRow[]; collection: EntryRow[] }) {
         entryIds,
         added,
         counts: COUNTS,
+        tagLists: tagListsOf(entryIds),
         timestamp: "2024-07-02T00:00:00Z",
         updatedAt: "2024-07-02T00:00:00Z",
       })
@@ -122,46 +127,57 @@ describe("collection_entries_changed", () => {
     expect(ids("unreadCollection")).toEqual(["newer", "older"]);
   });
 
-  it("records the membership on the stored entry, which places it in the collection's tag lists", async () => {
-    const TAG_LIST = { tagId: "tag-2", sortOrder: "newest" as const, limit: 10 };
-    const rendered = renderHookWithTrpc(() => useEntryListEntries(TAG_LIST, null));
+  it("moves the entry into and out of the tag lists the server says it joined or left", async () => {
+    const list = (filter: object) => ({ ...filter, sortOrder: "newest" as const, limit: 10 });
+    const COLLECTION_TAG = list({ tagId: "tag-2" });
+    const FEED_TAG = list({ tagId: "tag-1" });
+    const UNCATEGORIZED = list({ uncategorized: true });
+    const rendered = renderHookWithTrpc(() => ({
+      collectionTag: useEntryListEntries(COLLECTION_TAG, null),
+      feedTag: useEntryListEntries(FEED_TAG, null),
+      uncategorized: useEntryListEntries(UNCATEGORIZED, null),
+    }));
     const { queryClient } = rendered;
     const utils = createRealTrpcUtils(queryClient);
+    const entry = makeEntry("a", "2024-06-01");
     act(() => {
-      writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
-        {
-          id: COLLECTION,
-          type: "collection",
-          url: null,
-          title: "Reading",
-          originalTitle: null,
-          description: null,
-          siteUrl: null,
-          subscribedAt: new Date("2024-01-01T00:00:00Z"),
-          unreadCount: 0,
-          tags: [{ id: "tag-2", name: "Science", color: null }],
-          fetchFullContent: false,
-        },
-      ]);
-      seedList(queryClient, FEED_LIST, [makeEntry("a", "2024-06-01")]);
-      seedList(queryClient, TAG_LIST, []);
+      seedList(queryClient, FEED_LIST, [entry]);
+      seedList(queryClient, COLLECTION_TAG, []);
+      seedList(queryClient, FEED_TAG, [entry]);
+      seedList(queryClient, UNCATEGORIZED, []);
     });
-    const change = (added: boolean) =>
+    // The client hasn't loaded the collection, so only the server knows its tags.
+    const change = (added: boolean, tagIds: string[], uncategorized: boolean) =>
       act(() =>
         applyCollectionEntriesChange(utils, queryClient, {
           subscriptionId: COLLECTION,
           entryIds: ["a"],
           added,
+          tagLists: [{ entryId: "a", tagIds, uncategorized }],
         })
+      );
+    const ids = () =>
+      Object.fromEntries(
+        Object.entries(rendered.result.current).map(([key, rows]) => [key, rows.map((e) => e.id)])
       );
     const stored = () => getLocalDb(queryClient).entries.getSynced("a")?.subscriptionIds;
 
-    change(true);
-    await waitFor(() => expect(rendered.result.current.map((e) => e.id)).toEqual(["a"]));
+    change(true, ["tag-1", "tag-2"], true);
+    await waitFor(() =>
+      expect(ids()).toEqual({ collectionTag: ["a"], feedTag: ["a"], uncategorized: ["a"] })
+    );
     expect(stored()).toEqual(["sub-1", COLLECTION]);
 
-    change(false);
+    change(false, ["tag-1"], false);
+    await waitFor(() =>
+      expect(ids()).toEqual({ collectionTag: [], feedTag: ["a"], uncategorized: [] })
+    );
     expect(stored()).toEqual(["sub-1"]);
+
+    change(true, ["tag-1", "tag-2"], true);
+    await waitFor(() =>
+      expect(ids()).toEqual({ collectionTag: ["a"], feedTag: ["a"], uncategorized: ["a"] })
+    );
   });
 
   it("hides a removed entry from the collection's lists once it's no longer open", async () => {
@@ -234,6 +250,7 @@ describe("collection_entries_changed", () => {
         subscriptionId: COLLECTION,
         entryIds: ["a"],
         added: false,
+        tagLists: tagListsOf(["a"]),
       })
     );
     await act(async () => {
@@ -277,6 +294,7 @@ describe("collection_entries_changed", () => {
             subscriptionId: COLLECTION,
             entryIds: [entryId],
             added: false,
+            tagLists: tagListsOf([entryId]),
           })
         );
       const ids = () => rendered.result.current.entries.map((e) => e.id);
