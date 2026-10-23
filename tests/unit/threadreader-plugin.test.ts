@@ -73,30 +73,26 @@ describe("renderThreadReaderPage", () => {
       publishedAt: new Date(1792708369 * 1000),
       canonicalUrl: THREAD_URL,
     });
-    expect(content?.html).toContain("He said a lot.");
+    expect(content?.html).toContain("<p>He said a lot.</p>");
     expect(content?.html).not.toContain("Preview of another thread");
     expect(content?.html).not.toContain("tw-permalink");
   });
 
-  it("keeps every tweet of a longer thread, in order", () => {
+  it("keeps every tweet of a longer thread, in order, from a link to any of them", () => {
     const html = page([
       tweet(1, THREAD_ID, "First tweet."),
-      tweet(
-        2,
-        "2113398193614655600",
-        'Second tweet with a <a href="https://example.com">link</a>.'
-      ),
-      tweet(3, "2113398193614655601", "Third tweet."),
+      tweet(2, "2113398193614655600", "Second tweet."),
+      tweet(3, "2113398193614655601", '<a href="https://example.com">example.com</a>'),
     ]);
 
-    const content = renderThreadReaderPage(html, THREAD_ID, THREAD_URL);
-
-    expect(content?.html).toMatch(/First tweet\.[\s\S]*Second tweet[\s\S]*Third tweet\./);
-    expect(content?.html).toContain('<a href="https://example.com">link</a>');
-    expect(content?.html).not.toContain("Preview of another thread");
+    for (const id of [THREAD_ID, "2113398193614655601"]) {
+      const content = renderThreadReaderPage(html, id, THREAD_URL);
+      expect(content?.html).toMatch(/First tweet\.[\s\S]*Second tweet\.[\s\S]*example\.com/);
+      expect(content?.html).not.toContain("Preview of another thread");
+    }
   });
 
-  it("declines a page whose first tweet isn't the requested thread", () => {
+  it("declines a page that doesn't have the requested tweet", () => {
     const html = page([tweet(1, "999", "Some other thread.")]);
     expect(renderThreadReaderPage(html, THREAD_ID, THREAD_URL)).toBeNull();
     expect(renderThreadReaderPage(page([]), THREAD_ID, THREAD_URL)).toBeNull();

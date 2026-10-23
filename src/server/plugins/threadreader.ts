@@ -14,8 +14,8 @@ import { logger } from "@/lib/logger";
  * of them: a one-tweet thread came out as a 9-tweet preview of an unrelated
  * thread. The thread's own tweets are the `div.content-tweet`s with ids
  * `tweet_1`, `tweet_2`, …; the previews' tweets have neither the id nor
- * `data-tweet`. This plugin hands Readability only the thread's tweets, which
- * it still cleans up (the tweets separate paragraphs with `<br>` runs).
+ * `data-tweet`. This plugin saves only the thread's tweets, and skips
+ * Readability: it drops tweets that are mostly a link or a quoted tweet.
  *
  * `threadreaderapp.com/robots.txt` allows `/thread/{id}.html`; it disallows
  * only the `/thread/{id}/fetch` and `/refresh` actions, which this never
@@ -30,6 +30,9 @@ export function parseThreadReaderId(url: URL): string | null {
 }
 
 const TWEET_ID_PATTERN = /^tweet_\d+$/;
+
+/** Tweets separate paragraphs with a run of `<br>`s. */
+const PARAGRAPH_BREAK = /(?:<br\s*\/?>\s*){2,}/i;
 
 interface ThreadTweet {
   html: string;
@@ -105,9 +108,10 @@ function extractThreadTweets(html: string): { tweets: ThreadTweet[]; publishedAt
 }
 
 /**
- * The thread on a fetched Thread Reader page, or null unless the page's first
- * tweet is the one the URL unrolls: anything else (a "thread not found" page,
- * changed markup) falls back to normal fetching.
+ * The thread on a fetched Thread Reader page, or null unless one of its tweets
+ * is the one the URL names (a link to any tweet of a thread unrolls the whole
+ * thread): anything else (a "thread not found" page, changed markup) falls
+ * back to normal fetching.
  */
 export function renderThreadReaderPage(
   html: string,
@@ -116,11 +120,14 @@ export function renderThreadReaderPage(
 ): SavedArticleContent | null {
   const { tweets, publishedAt } = extractThreadTweets(html);
   const first = tweets[0];
-  if (!first || first.tweetId !== threadId) return null;
+  if (!first || !tweets.some((tweet) => tweet.tweetId === threadId)) return null;
 
   const author = first.screenName ? `@${first.screenName}` : null;
   return {
-    html: tweets.map((tweet) => `<div>${tweet.html}</div>`).join("\n"),
+    html: tweets
+      .flatMap((tweet) => tweet.html.split(PARAGRAPH_BREAK))
+      .map((paragraph) => `<p>${paragraph.trim()}</p>`)
+      .join("\n"),
     title: socialPostTitle(stripHtml(first.html.split(/<br\b/i)[0]), author),
     author,
     publishedAt,
@@ -138,6 +145,7 @@ export const threadReaderPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
+      skipReadability: true,
       siteName: "Thread Reader",
 
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
