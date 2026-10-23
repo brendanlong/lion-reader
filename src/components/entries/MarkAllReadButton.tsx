@@ -54,7 +54,6 @@ export function MarkAllReadButton({
         aria-label="Mark all as read"
       >
         <CheckCircleIcon className="h-5 w-5" />
-        <span className="ui-text-sm ml-1.5 hidden sm:inline">Mark All Read</span>
       </button>
 
       <ConfirmDialog

@@ -14,9 +14,9 @@ import { UnreadToggle } from "@/components/entries/UnreadToggle";
 
 describe("UnreadToggle", () => {
   describe("showUnreadOnly=true state", () => {
-    it("displays 'Unread only' label when showUnreadOnly is true", () => {
+    it("names the 'Unread only' state in its tooltip", () => {
       render(<UnreadToggle showUnreadOnly={true} onToggle={vi.fn()} />);
-      expect(screen.getByText("Unread only")).toBeInTheDocument();
+      expect(screen.getByRole("button")).toHaveAttribute("title", "Unread only");
     });
 
     it("has aria-label 'Show read items' when showing unread only", () => {
@@ -29,17 +29,12 @@ describe("UnreadToggle", () => {
       render(<UnreadToggle showUnreadOnly={true} onToggle={vi.fn()} />);
       expect(screen.getByRole("button")).toHaveAttribute("aria-pressed", "false");
     });
-
-    it("has title matching aria-label for tooltip", () => {
-      render(<UnreadToggle showUnreadOnly={true} onToggle={vi.fn()} />);
-      expect(screen.getByRole("button")).toHaveAttribute("title", "Show read items");
-    });
   });
 
   describe("showUnreadOnly=false state", () => {
-    it("displays 'Show all' label when showUnreadOnly is false", () => {
+    it("names the 'Show all' state in its tooltip", () => {
       render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} />);
-      expect(screen.getByText("Show all")).toBeInTheDocument();
+      expect(screen.getByRole("button")).toHaveAttribute("title", "Show all");
     });
 
     it("has aria-label 'Hide read items' when showing all", () => {

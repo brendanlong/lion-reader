@@ -1,7 +1,7 @@
 /**
  * StateToggleButton Component
  *
- * A generic toggle button that displays different icons and labels based on state.
+ * A generic icon toggle button whose icon and tooltip reflect its state.
  * Used for toggles like unread filter and sort order.
  */
 
@@ -14,7 +14,7 @@ interface StateToggleButtonProps {
   icon: ReactNode;
 
   /**
-   * Label text to display (hidden on small screens).
+   * Names the current state; shown as the tooltip.
    */
   label: string;
 
@@ -42,7 +42,7 @@ interface StateToggleButtonProps {
 }
 
 /**
- * A toggle button with icon and label that changes based on state.
+ * An icon toggle button whose icon and tooltip change based on state.
  *
  * @example
  * ```tsx
@@ -75,12 +75,11 @@ export function StateToggleButton({
       type="button"
       onClick={handleClick}
       className={`control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors ${className}`}
-      title={ariaLabel}
+      title={label}
       aria-label={ariaLabel}
       aria-pressed={isPressed}
     >
       <span className="h-5 w-5">{icon}</span>
-      <span className="ui-text-sm ml-1.5 hidden sm:inline">{label}</span>
     </button>
   );
 }
