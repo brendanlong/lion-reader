@@ -14,7 +14,7 @@ import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
 import {
   subscriptionEntries,
   subscriptions,
-  subscriptionTags,
+  tagEntries,
   userEntries,
   visibleEntries,
 } from "@/server/db/schema";
@@ -28,7 +28,6 @@ import { publishEntryStates } from "@/server/services/entry-state";
 import {
   getSubscription,
   isCollectionSubscription,
-  isUserManagedSubscription,
   lockAndCountActiveSubscriptions,
   type Subscription,
 } from "@/server/services/subscriptions";
@@ -504,41 +503,24 @@ async function finishMembershipChange(
   return { entryIds: changedIds, counts, tagLists };
 }
 
-/**
- * The tag lists holding each article: its active subscriptions' tags, and
- * Uncategorized when one of them has none, matching the lists' definitions in
- * `entry-filters.ts`.
- */
+/** The tag lists holding each article, read from those lists' own rows. */
 async function listEntryTagLists(
   db: typeof dbType,
   userId: string,
   entryIds: string[]
 ): Promise<EntryTagLists> {
   const rows = await db
-    .select({ entryId: subscriptionEntries.entryId, tagId: subscriptionTags.tagId })
-    .from(subscriptionEntries)
-    .innerJoin(
-      subscriptions,
-      and(
-        eq(subscriptions.id, subscriptionEntries.subscriptionId),
-        isNull(subscriptions.unsubscribedAt),
-        isUserManagedSubscription()
-      )
-    )
-    .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, subscriptions.id))
-    .where(
-      and(eq(subscriptionEntries.userId, userId), inArray(subscriptionEntries.entryId, entryIds))
-    );
+    .select({ entryId: tagEntries.entryId, listId: tagEntries.listId })
+    .from(tagEntries)
+    .where(and(eq(tagEntries.userId, userId), inArray(tagEntries.entryId, entryIds)));
   const byEntry = new Map(
-    entryIds.map((entryId) => [
-      entryId,
-      { entryId, tagIds: new Set<string>(), uncategorized: false },
-    ])
+    entryIds.map((entryId) => [entryId, { entryId, tagIds: [] as string[], uncategorized: false }])
   );
   for (const row of rows) {
     const lists = byEntry.get(row.entryId)!;
-    if (row.tagId === null) lists.uncategorized = true;
-    else lists.tagIds.add(row.tagId);
+    // Uncategorized's list id is the user's.
+    if (row.listId === userId) lists.uncategorized = true;
+    else lists.tagIds.push(row.listId);
   }
-  return [...byEntry.values()].map((lists) => ({ ...lists, tagIds: [...lists.tagIds] }));
+  return [...byEntry.values()];
 }
