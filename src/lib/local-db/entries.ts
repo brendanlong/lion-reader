@@ -100,7 +100,8 @@ function toEntryRow(entry: EntryRow): EntryRow {
     subscriptionId: entry.subscriptionId,
     subscriptionIds: entry.subscriptionIds,
     positions: entry.positions,
-    tagLists: entry.tagLists,
+    // Unknown when a server a release behind sent none (during a deploy).
+    tagLists: entry.tagLists ?? null,
     type: entry.type,
     url: entry.url,
     title: entry.title,

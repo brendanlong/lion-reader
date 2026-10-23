@@ -404,6 +404,28 @@ describe("live inserts - filter targeting", () => {
     expect(ids("uncategorized")).toEqual(["collected"]);
   });
 
+  it("skips tag and Uncategorized lists for a stored row a server a release behind sent without tag lists", async () => {
+    const inputs = {
+      all: ALL,
+      tag1: { ...ALL, tagId: "tag-1" },
+      uncategorized: { ...ALL, uncategorized: true },
+    };
+    const { queryClient, ids } = renderLists(inputs);
+    seedEmpty(queryClient, inputs);
+    const withoutTagLists: Partial<EntryRow> = makeEntry("old", "2024-07-01");
+    delete withoutTagLists.tagLists;
+    act(() => {
+      const db = getLocalDb(queryClient);
+      upsertServerEntries(db.entries, [withoutTagLists as EntryRow]);
+      insertEntryIntoLists(db, db.entries.getSynced("old")!);
+    });
+
+    await waitFor(() => expect(ids("all")).toEqual(["old"]));
+    expect(getLocalDb(queryClient).entries.getSynced("old")?.tagLists).toBeNull();
+    expect(ids("tag1")).toEqual([]);
+    expect(ids("uncategorized")).toEqual([]);
+  });
+
   it("honors starred and unread filters", async () => {
     const inputs = { starred: { ...ALL, starredOnly: true }, unread: ALL };
     const { queryClient, ids, insert } = renderLists(inputs);
