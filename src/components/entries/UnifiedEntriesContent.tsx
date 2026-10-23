@@ -165,11 +165,18 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   if (!canRenderFromCache || !sub) {
     return <TitleSkeleton />;
   }
+  // Inline pieces, not a wrapper block, so the header's floated toolbar can sit
+  // on the site link's line.
   return (
-    <div className="min-w-0">
+    <>
       <TitleText>{sub.title ?? sub.originalTitle ?? untitledSubscriptionLabel(sub.type)}</TitleText>
-      <FeedSiteLink siteUrl={sub.siteUrl} className="mt-0.5" />
-    </div>
+      {sub.siteUrl && (
+        <>
+          <br />
+          <FeedSiteLink siteUrl={sub.siteUrl} />
+        </>
+      )}
+    </>
   );
 }
 

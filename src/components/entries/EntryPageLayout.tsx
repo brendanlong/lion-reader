@@ -30,23 +30,18 @@ import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
-// min-h-11 matches the toolbar's, so a one-line title centers on it and
-// a wrapped title grows downward while the toolbar stays pinned to the top.
-const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body min-h-11 font-bold";
+const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body font-bold";
 
 export function TitleSkeleton() {
-  return <SkeletonText width="w-48" className={TITLE_CLASSES} />;
+  return <SkeletonText width="w-48" className={`${TITLE_CLASSES} inline-flex`} />;
 }
 
 /**
- * Title text component - renders the h1 with proper styling.
+ * Title text component - renders the h1 with proper styling. It's inline so
+ * the header's floated toolbar can share its last line.
  */
 export function TitleText({ children }: { children: ReactNode }) {
-  return (
-    <h1 className={`${TITLE_CLASSES} flex min-w-0 items-center`}>
-      <span className="min-w-0 wrap-break-word">{children}</span>
-    </h1>
-  );
+  return <h1 className={`${TITLE_CLASSES} inline wrap-break-word`}>{children}</h1>;
 }
 
 interface EntryPageLayoutProps {
@@ -152,10 +147,12 @@ export function EntryPageLayout({
 
       {/* Main content area - hidden when viewing an entry */}
       <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
-        {/* Header with title and buttons */}
-        <div className="mb-4 flex items-start justify-between gap-4 sm:mb-6">
+        {/* The toolbar floats after the title, so it lands on the header's last
+            line (beside the title if it fits, else below it) and stays right
+            above the list. leading-11 makes each line as tall as the toolbar. */}
+        <div className="mb-4 flow-root leading-11 sm:mb-6">
           {titleSlot}
-          <div className="flex min-h-11 shrink-0 items-center gap-2">
+          <div className="float-right ml-4 flex min-h-11 items-center gap-2">
             <StateToggleButton
               icon={<SearchIcon className="h-5 w-5" />}
               label="Search"
