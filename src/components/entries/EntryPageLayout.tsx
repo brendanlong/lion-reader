@@ -30,15 +30,14 @@ import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
-const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body font-bold";
+const TITLE_CLASSES = "text-body font-bold";
 
 export function TitleSkeleton() {
-  return <SkeletonText width="w-48" className={`${TITLE_CLASSES} inline-flex`} />;
+  return <SkeletonText width="w-32" className={`${TITLE_CLASSES} inline-flex`} />;
 }
 
 /**
- * Title text component - renders the h1 with proper styling. It's inline so
- * the header's floated toolbar can share its last line.
+ * Title text component - renders the h1 with proper styling.
  */
 export function TitleText({ children }: { children: ReactNode }) {
   return <h1 className={`${TITLE_CLASSES} inline wrap-break-word`}>{children}</h1>;
@@ -148,9 +147,12 @@ export function EntryPageLayout({
       {/* Main content area - hidden when viewing an entry */}
       <div className={`mx-auto max-w-3xl px-4 py-4 sm:p-6 ${openEntryId ? "hidden" : ""}`}>
         {/* The toolbar floats after the title, so it lands on the header's last
-            line (beside the title if it fits, else below it) and stays right
-            above the list. leading-11 makes each line as tall as the toolbar. */}
-        <div className="mb-4 flow-root leading-11 sm:mb-6">
+            line (beside the title or site link if they leave room, else below
+            them) and stays right above the list; the title slot's pieces must
+            be inline for that. The title inherits its font size from here so
+            every line is exactly leading-11, the toolbar's min-h-11.
+            sm:leading-11 isn't redundant: sm:ui-text-2xl would override it. */}
+        <div className="ui-text-xl sm:ui-text-2xl mb-4 flow-root leading-11 sm:mb-6 sm:leading-11">
           {titleSlot}
           <div className="float-right ml-4 flex min-h-11 items-center gap-2">
             <StateToggleButton
