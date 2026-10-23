@@ -76,6 +76,7 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
     expect(entry.contentCleaned).toContain("hello");
+    expect(entry.fullContentOriginal).toBeNull();
     expect(entry.fullContentCleaned).toBeNull();
   });
 
@@ -116,6 +117,8 @@ describe("entries.get sanitized content", () => {
     const caller = createCaller(await createAuthContext(userId));
     const { entry } = await caller.entries.get({ id: entryId });
 
+    // Android builds before #2006 read this field; the article is in cleaned.
+    expect(entry.fullContentOriginal).toBeNull();
     expect(entry.fullContentCleaned).toContain("plugin article");
     expect(entry.fullContentCleaned).not.toContain("<script>");
     expect(entry.fullContentCleaned).not.toContain("onclick");

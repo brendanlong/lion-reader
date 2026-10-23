@@ -5983,6 +5983,14 @@
                             "null"
                           ]
                         },
+                        "fullContentOriginal": {
+                          "deprecated": true,
+                          "description": "Always null. Use fullContentCleaned.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "fullContentCleaned": {
                           "type": [
                             "string",
@@ -6030,6 +6038,7 @@
                         "contentCleaned",
                         "feedUrl",
                         "unsubscribeUrl",
+                        "fullContentOriginal",
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",
@@ -6294,6 +6303,14 @@
                               "null"
                             ]
                           },
+                          "fullContentOriginal": {
+                            "deprecated": true,
+                            "description": "Always null. Use fullContentCleaned.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "fullContentCleaned": {
                             "type": [
                               "string",
@@ -6347,6 +6364,7 @@
                           "contentCleaned",
                           "feedUrl",
                           "unsubscribeUrl",
+                          "fullContentOriginal",
                           "fullContentCleaned",
                           "fullContentFetchedAt",
                           "fullContentError",
@@ -7863,6 +7881,14 @@
                             "null"
                           ]
                         },
+                        "fullContentOriginal": {
+                          "deprecated": true,
+                          "description": "Always null. Use fullContentCleaned.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "fullContentCleaned": {
                           "type": [
                             "string",
@@ -7910,6 +7936,7 @@
                         "contentCleaned",
                         "feedUrl",
                         "unsubscribeUrl",
+                        "fullContentOriginal",
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",

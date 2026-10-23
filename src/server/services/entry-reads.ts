@@ -35,6 +35,15 @@ export const fullEntrySchema = entryListItemSchema.extend({
   feedUrl: z.string().nullable(),
   /** The unsubscribe link from an email's HTML. */
   unsubscribeUrl: z.string().nullable(),
+  /**
+   * Always null: the fetched page isn't served (#2115), and `fullContentCleaned`
+   * carries any article stored only as the original. Kept for Android builds
+   * before #2006, which declare it.
+   */
+  fullContentOriginal: z
+    .string()
+    .nullable()
+    .meta({ deprecated: true, description: "Always null. Use fullContentCleaned." }),
   fullContentCleaned: z.string().nullable(),
   fullContentFetchedAt: z.date().nullable(),
   fullContentError: z.string().nullable(),
@@ -61,7 +70,11 @@ type OfflineEntry = z.infer<typeof offlineEntrySchema>;
  */
 export type EntryFull = Omit<
   FullEntry,
-  "fullContentCleaned" | "fullContentFetchedAt" | "fullContentError" | "fetchFullContent"
+  | "fullContentOriginal"
+  | "fullContentCleaned"
+  | "fullContentFetchedAt"
+  | "fullContentError"
+  | "fetchFullContent"
 > & {
   /**
    * The sanitized fetched full article when the entry view shows it instead of
@@ -273,6 +286,7 @@ async function toFullEntry(row: EntryRow): Promise<FullEntry> {
     ...rest,
     contentOriginal: content.original,
     contentCleaned: content.cleaned,
+    fullContentOriginal: null,
     fullContentCleaned: sanitizedFullContent,
     fetchFullContent: row.fetchFullContent ?? false,
   };
