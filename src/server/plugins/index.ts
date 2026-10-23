@@ -14,6 +14,7 @@ import { youtubePlugin } from "./youtube";
 import { blueskyPlugin } from "./bluesky";
 import { linkedInPlugin } from "./linkedin";
 import { threadsPlugin } from "./threads";
+import { threadReaderPlugin } from "./threadreader";
 import { notionPlugin } from "./notion";
 import { substackPlugin } from "./substack";
 import type { FetchedPage, PluginWith, SavedArticleContent, UserFetchContext } from "./types";
@@ -38,6 +39,7 @@ const plugins = [
   blueskyPlugin,
   linkedInPlugin,
   threadsPlugin,
+  threadReaderPlugin,
   notionPlugin,
   substackPlugin,
 ];
