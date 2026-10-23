@@ -28,6 +28,7 @@ function makeEntry(overrides: Partial<EntryRow> = {}): EntryRow {
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
     positions: {},
+    tagLists: { tagIds: [], uncategorized: false },
     score: null,
     type: "web",
     url: "https://example.com/e1",

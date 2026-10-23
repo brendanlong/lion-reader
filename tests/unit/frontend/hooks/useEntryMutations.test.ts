@@ -62,6 +62,7 @@ function seedEntry(queryClient: QueryClient, overrides: Partial<EntryRow> = {}):
       subscriptionId: "sub-1",
       subscriptionIds: ["sub-1"],
       positions: {},
+      tagLists: { tagIds: [], uncategorized: false },
       score: null,
       type: "web",
       url: null,
@@ -570,8 +571,14 @@ describe("useEntryMutations concurrent mutations", () => {
     expect(input.entries.map((e) => e.id)).toEqual(["e1", "not-held"]);
   });
 
-  it("inserts an entry marked unread into the unread-only lists missing it", async () => {
-    const unreadOnly = { unreadOnly: true, sortOrder: "newest", limit: 10 } as const;
+  it("inserts an entry marked unread into the unread-only lists missing it, by its stored tag lists", async () => {
+    // Its subscription isn't stored: the tag lists it was listed with place it.
+    const unreadOnly = {
+      tagId: "tag-1",
+      unreadOnly: true,
+      sortOrder: "newest",
+      limit: 10,
+    } as const;
     const { result, queryClient } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), list: useEntryListEntries(unreadOnly, null) }),
       {
@@ -580,7 +587,7 @@ describe("useEntryMutations concurrent mutations", () => {
         },
       }
     );
-    seedEntry(queryClient, { read: true });
+    seedEntry(queryClient, { read: true, tagLists: { tagIds: ["tag-1"], uncategorized: false } });
     act(() => {
       queryClient.setQueryData([["entries", "list"], { input: unreadOnly, type: "infinite" }], {
         pages: [{ items: [], nextCursor: undefined }],

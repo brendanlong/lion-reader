@@ -32,6 +32,7 @@ import {
   createTestFeed,
   createTestIngestAddress,
   createTestSubscription,
+  createTestTag,
   createTestUser,
 } from "./helpers";
 
@@ -200,6 +201,36 @@ describe("SSE entry events", () => {
     } finally {
       await stream.close();
       await otherStream.close();
+    }
+  });
+
+  it("gives each subscriber a web entry's new_entry with their own tag lists (#2126)", async () => {
+    const tagger = await createTestUser({ emailPrefix: "sse-tagger" });
+    const plain = await createTestUser({ emailPrefix: "sse-plain" });
+    const feedId = await createTestFeed();
+    const tagId = await createTestTag(tagger, {
+      subscriptionIds: [await createTestSubscription(tagger, feedId)],
+    });
+    await createTestSubscription(plain, feedId);
+    const entryId = await createTestEntry(feedId, { userIds: [tagger, plain] });
+
+    const streams = [await openSseStream(tagger), await openSseStream(plain)];
+    try {
+      await waitForSubscribers(getFeedEventsChannel(feedId));
+      await publishFeedEvent({
+        type: "new_entry",
+        feedId,
+        entryId,
+        updatedAt: new Date(),
+        feedType: "web",
+      });
+      const [tagged, untagged] = await Promise.all(
+        streams.map((stream) => stream.waitFor("new_entry", (data) => data.entryId === entryId))
+      );
+      expect(tagged.tagLists).toEqual({ tagIds: [tagId], uncategorized: false });
+      expect(untagged.tagLists).toEqual({ tagIds: [], uncategorized: true });
+    } finally {
+      await Promise.all(streams.map((stream) => stream.close()));
     }
   });
 

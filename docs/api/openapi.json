@@ -5416,6 +5416,25 @@
                               "type": "number"
                             }
                           },
+                          "tagLists": {
+                            "type": "object",
+                            "properties": {
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "uncategorized": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "tagIds",
+                              "uncategorized"
+                            ],
+                            "additionalProperties": false
+                          },
                           "type": {
                             "type": "string",
                             "enum": [
@@ -5499,6 +5518,7 @@
                           "subscriptionId",
                           "subscriptionIds",
                           "positions",
+                          "tagLists",
                           "type",
                           "url",
                           "title",
@@ -5843,6 +5863,25 @@
                             "type": "number"
                           }
                         },
+                        "tagLists": {
+                          "type": "object",
+                          "properties": {
+                            "tagIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "uncategorized": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "tagIds",
+                            "uncategorized"
+                          ],
+                          "additionalProperties": false
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -5977,6 +6016,7 @@
                         "subscriptionId",
                         "subscriptionIds",
                         "positions",
+                        "tagLists",
                         "type",
                         "url",
                         "title",
@@ -6141,6 +6181,25 @@
                               "type": "number"
                             }
                           },
+                          "tagLists": {
+                            "type": "object",
+                            "properties": {
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "uncategorized": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "tagIds",
+                              "uncategorized"
+                            ],
+                            "additionalProperties": false
+                          },
                           "type": {
                             "type": "string",
                             "enum": [
@@ -6281,6 +6340,7 @@
                           "subscriptionId",
                           "subscriptionIds",
                           "positions",
+                          "tagLists",
                           "type",
                           "url",
                           "title",
@@ -6461,6 +6521,25 @@
                               "type": "number"
                             }
                           },
+                          "tagLists": {
+                            "type": "object",
+                            "properties": {
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "uncategorized": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "tagIds",
+                              "uncategorized"
+                            ],
+                            "additionalProperties": false
+                          },
                           "read": {
                             "type": "boolean"
                           },
@@ -6496,6 +6575,7 @@
                           "subscriptionId",
                           "subscriptionIds",
                           "positions",
+                          "tagLists",
                           "read",
                           "starred",
                           "score",
@@ -7242,6 +7322,25 @@
                               "type": "number"
                             }
                           },
+                          "tagLists": {
+                            "type": "object",
+                            "properties": {
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "uncategorized": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "tagIds",
+                              "uncategorized"
+                            ],
+                            "additionalProperties": false
+                          },
                           "read": {
                             "type": "boolean"
                           },
@@ -7277,6 +7376,7 @@
                           "subscriptionId",
                           "subscriptionIds",
                           "positions",
+                          "tagLists",
                           "read",
                           "starred",
                           "score",
@@ -7657,6 +7757,25 @@
                             "type": "number"
                           }
                         },
+                        "tagLists": {
+                          "type": "object",
+                          "properties": {
+                            "tagIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "uncategorized": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "tagIds",
+                            "uncategorized"
+                          ],
+                          "additionalProperties": false
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -7791,6 +7910,7 @@
                         "subscriptionId",
                         "subscriptionIds",
                         "positions",
+                        "tagLists",
                         "type",
                         "url",
                         "title",
@@ -9309,9 +9429,6 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "entryId": {
-                            "type": "string"
-                          },
                           "tagIds": {
                             "type": "array",
                             "items": {
@@ -9320,12 +9437,15 @@
                           },
                           "uncategorized": {
                             "type": "boolean"
+                          },
+                          "entryId": {
+                            "type": "string"
                           }
                         },
                         "required": [
-                          "entryId",
                           "tagIds",
-                          "uncategorized"
+                          "uncategorized",
+                          "entryId"
                         ],
                         "additionalProperties": false
                       }
@@ -9561,9 +9681,6 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "entryId": {
-                            "type": "string"
-                          },
                           "tagIds": {
                             "type": "array",
                             "items": {
@@ -9572,12 +9689,15 @@
                           },
                           "uncategorized": {
                             "type": "boolean"
+                          },
+                          "entryId": {
+                            "type": "string"
                           }
                         },
                         "required": [
-                          "entryId",
                           "tagIds",
-                          "uncategorized"
+                          "uncategorized",
+                          "entryId"
                         ],
                         "additionalProperties": false
                       }
@@ -10422,6 +10542,25 @@
                             "type": "string"
                           }
                         },
+                        "tagLists": {
+                          "type": "object",
+                          "properties": {
+                            "tagIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "uncategorized": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "tagIds",
+                            "uncategorized"
+                          ],
+                          "additionalProperties": false
+                        },
                         "updatedAt": {
                           "type": "string"
                         },
@@ -10515,6 +10654,7 @@
                         "entryId",
                         "subscriptionId",
                         "subscriptionIds",
+                        "tagLists",
                         "updatedAt",
                         "entry"
                       ],
@@ -13085,6 +13225,25 @@
                                   "type": "string"
                                 }
                               },
+                              "tagLists": {
+                                "type": "object",
+                                "properties": {
+                                  "tagIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "uncategorized": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "tagIds",
+                                  "uncategorized"
+                                ],
+                                "additionalProperties": false
+                              },
                               "entryId": {
                                 "type": "string"
                               },
@@ -13294,6 +13453,7 @@
                               "type",
                               "subscriptionId",
                               "subscriptionIds",
+                              "tagLists",
                               "entryId",
                               "timestamp",
                               "updatedAt"
@@ -13616,6 +13776,25 @@
                                   "type": "string"
                                 }
                               },
+                              "tagLists": {
+                                "type": "object",
+                                "properties": {
+                                  "tagIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "uncategorized": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "tagIds",
+                                  "uncategorized"
+                                ],
+                                "additionalProperties": false
+                              },
                               "score": {
                                 "type": [
                                   "number",
@@ -13640,7 +13819,8 @@
                               "counts",
                               "timestamp",
                               "updatedAt",
-                              "subscriptionIds"
+                              "subscriptionIds",
+                              "tagLists"
                             ],
                             "additionalProperties": false,
                             "title": "entry_state_changed"

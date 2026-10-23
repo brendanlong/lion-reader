@@ -21,6 +21,8 @@ import {
 } from "./entry-filters";
 import type { EntryType } from "@/lib/entry-types";
 import { entryListItemSchema } from "./entries";
+import { listEntryTagLists } from "./entry-tag-lists";
+import type { TagLists } from "@/lib/events/schemas";
 
 /**
  * The app's full-entry view (`entries.get`). Every content field is the
@@ -145,7 +147,7 @@ function selectEntryRows(db: typeof dbType, where: SQL | undefined, scope: FullC
     .where(where);
 }
 
-type EntryRow = Awaited<ReturnType<typeof selectEntryRows>>[number];
+type EntryRow = Awaited<ReturnType<typeof selectEntryRows>>[number] & { tagLists: TagLists };
 
 /**
  * Reads the user's visible entries among `entryIds` and maps each to an output
@@ -161,12 +163,17 @@ async function readEntries<T extends { id: string }>(
   toOutput: (row: EntryRow) => Promise<T>
 ): Promise<T[]> {
   if (entryIds.length === 0) return [];
-  const rows = await selectEntryRows(
-    db,
-    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
-    scope
+  const [rows, tagLists] = await Promise.all([
+    selectEntryRows(
+      db,
+      and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
+      scope
+    ),
+    listEntryTagLists(db, userId, entryIds),
+  ]);
+  const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, (row) =>
+    toOutput({ ...row, tagLists: tagLists.get(row.id)! })
   );
-  const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, toOutput);
   const byId = new Map(mapped.map((entry) => [entry.id, entry]));
   return entryIds.flatMap((id) => byId.get(id) ?? []);
 }
@@ -179,15 +186,18 @@ async function readEntry<T>(
   scope: FullContentScope,
   toOutput: (row: EntryRow) => Promise<T>
 ): Promise<T> {
-  const [row] = await selectEntryRows(
-    db,
-    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
-    scope
-  ).limit(1);
+  const [[row], tagLists] = await Promise.all([
+    selectEntryRows(
+      db,
+      and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
+      scope
+    ).limit(1),
+    listEntryTagLists(db, userId, [entryId]),
+  ]);
   if (!row) {
     throw errors.entryNotFound();
   }
-  return toOutput(row);
+  return toOutput({ ...row, tagLists: tagLists.get(entryId)! });
 }
 
 /**
@@ -533,6 +543,7 @@ async function toEntryFull(row: EntryRow): Promise<EntryFull> {
     subscriptionId: row.subscriptionId,
     subscriptionIds: row.subscriptionIds,
     positions: row.positions,
+    tagLists: row.tagLists,
     type: row.type,
     url: row.url,
     title: row.title,

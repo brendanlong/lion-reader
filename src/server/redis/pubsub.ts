@@ -78,10 +78,11 @@ const userEventSchema = z.discriminatedUnion("type", [
   // carry what the SSE route adds to a web feed's events itself: the user's
   // subscriptionId (for saved articles, the saved subscription's). It derives
   // a new entry's `subscriptionIds` unless the event carries them (a linked
-  // web entry may already be in the user's collections).
+  // web entry may already be in the user's collections), and reads its tag
+  // lists as it does a web feed's.
   // Like `feedId`, `feedType` is server-side only: the SSE route counts by
   // it, and clients get the payload's `type`.
-  newEntryEventSchema.omit({ subscriptionIds: true }).extend({
+  newEntryEventSchema.omit({ subscriptionIds: true, tagLists: true }).extend({
     userId: z.string(),
     ...serverTimestamp,
     feedType: z.enum(["web", "email", "saved"]),

@@ -797,6 +797,102 @@ describe("handleSyncEvent - entry_state_changed", () => {
 });
 
 // ============================================================================
+// Tag and Uncategorized lists (#2126)
+// ============================================================================
+
+describe("handleSyncEvent - tag and Uncategorized lists", () => {
+  // A subscription the client hasn't stored (its sidebar section collapsed):
+  // only the server knows its tags.
+  const UNSTORED = "sub-unstored";
+  const TAG_LIST = { tagId: "tag-2", limit: 25 };
+  const UNCATEGORIZED_LIST = { uncategorized: true, limit: 25 };
+  const PAYLOAD = {
+    type: "web" as const,
+    url: null,
+    title: "Arriving",
+    author: null,
+    summary: null,
+    publishedAt: "2024-07-01T00:00:00.000Z",
+    fetchedAt: "2024-07-01T00:00:00.000Z",
+    siteName: null,
+    feedTitle: "Unstored Feed",
+  };
+
+  beforeEach(() => {
+    expect(findSubscription(UNSTORED)).toBeUndefined();
+    seedList(TAG_LIST, []);
+    seedList(UNCATEGORIZED_LIST, []);
+  });
+
+  it("places a new entry by the event's tag lists", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createNewEntryEvent({
+        entryId: "tagged",
+        subscriptionId: UNSTORED,
+        subscriptionIds: [UNSTORED],
+        tagLists: { tagIds: ["tag-2"], uncategorized: false },
+        entry: PAYLOAD,
+      })
+    );
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createNewEntryEvent({
+        entryId: "untagged",
+        subscriptionId: UNSTORED,
+        subscriptionIds: [UNSTORED],
+        tagLists: { tagIds: [], uncategorized: true },
+        entry: PAYLOAD,
+      })
+    );
+
+    expect(listIds(TAG_LIST)).toEqual(["tagged"]);
+    expect(listIds(UNCATEGORIZED_LIST)).toEqual(["untagged"]);
+  });
+
+  it("places an entry marked unread elsewhere by the event's tag lists", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "unread-elsewhere",
+        read: false,
+        starred: false,
+        subscriptionId: UNSTORED,
+        subscriptionIds: [UNSTORED],
+        tagLists: { tagIds: ["tag-2"], uncategorized: true },
+        updatedAt: "2024-07-01T00:00:00.000Z",
+        entry: PAYLOAD,
+      })
+    );
+
+    expect(listIds(TAG_LIST)).toEqual(["unread-elsewhere"]);
+    expect(listIds(UNCATEGORIZED_LIST)).toEqual(["unread-elsewhere"]);
+  });
+
+  it("places a stored entry marked unread elsewhere by the event's tag lists, not its stored ones", () => {
+    // Stored read and in Uncategorized; its feed has been tagged since.
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-3",
+        read: false,
+        starred: false,
+        subscriptionIds: ["sub-2"],
+        tagLists: { tagIds: ["tag-2"], uncategorized: false },
+        updatedAt: "2024-07-01T00:00:00.000Z",
+      })
+    );
+
+    expect(listIds(TAG_LIST)).toEqual(["entry-3"]);
+    expect(listIds(UNCATEGORIZED_LIST)).toEqual([]);
+  });
+});
+
+// ============================================================================
 // mark_all_read Events
 // ============================================================================
 

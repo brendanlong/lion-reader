@@ -14,7 +14,6 @@ import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
 import {
   subscriptionEntries,
   subscriptions,
-  tagEntries,
   userEntries,
   visibleEntries,
 } from "@/server/db/schema";
@@ -25,6 +24,7 @@ import { publishUserEvent } from "@/server/redis/pubsub";
 import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-events";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { publishEntryStates } from "@/server/services/entry-state";
+import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   getSubscription,
   isCollectionSubscription,
@@ -484,10 +484,11 @@ async function finishMembershipChange(
   }
   // Source subscriptions' counts don't change; All (always included) can,
   // when an article's only route into view is a collection.
-  const [counts, tagLists] = await Promise.all([
+  const [counts, tagListsOf] = await Promise.all([
     getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]),
     listEntryTagLists(db, userId, changedIds),
   ]);
+  const tagLists = [...tagListsOf].map(([entryId, lists]) => ({ entryId, ...lists }));
 
   publishUserEvent({
     type: "collection_entries_changed",
@@ -501,26 +502,4 @@ async function finishMembershipChange(
   });
 
   return { entryIds: changedIds, counts, tagLists };
-}
-
-/** The tag lists holding each article, read from those lists' own rows. */
-async function listEntryTagLists(
-  db: typeof dbType,
-  userId: string,
-  entryIds: string[]
-): Promise<EntryTagLists> {
-  const rows = await db
-    .select({ entryId: tagEntries.entryId, listId: tagEntries.listId })
-    .from(tagEntries)
-    .where(and(eq(tagEntries.userId, userId), inArray(tagEntries.entryId, entryIds)));
-  const byEntry = new Map(
-    entryIds.map((entryId) => [entryId, { entryId, tagIds: [] as string[], uncategorized: false }])
-  );
-  for (const row of rows) {
-    const lists = byEntry.get(row.entryId)!;
-    // Uncategorized's list id is the user's.
-    if (row.listId === userId) lists.uncategorized = true;
-    else lists.tagIds.push(row.listId);
-  }
-  return [...byEntry.values()];
 }

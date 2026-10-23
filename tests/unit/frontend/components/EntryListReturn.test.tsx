@@ -66,7 +66,6 @@ function renderCollection() {
         rendered.queryClient,
         {
           subscriptionId: subscription.id,
-          entryIds: result.entryIds,
           added: false,
           counts: result.counts,
           tagLists: result.tagLists,

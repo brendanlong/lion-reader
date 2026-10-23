@@ -253,6 +253,18 @@ const updatedAtWithFallback = z.string().optional();
  */
 const subscriptionIdsSchema = z.array(z.string());
 
+/**
+ * The tag lists holding an entry: its active subscriptions' tags, and whether
+ * one of them is untagged (Uncategorized). Sent with every entry a client may
+ * place in its lists, since clients can't derive it from the subscriptions
+ * they've loaded.
+ */
+export const tagListsSchema = z.object({
+  tagIds: z.array(z.string()),
+  uncategorized: z.boolean(),
+});
+export type TagLists = z.infer<typeof tagListsSchema>;
+
 /** An entry's position in each active collection that gives it one (#2064), by subscription id. */
 export const entryPositionsSchema = z.record(z.string(), z.number());
 
@@ -260,6 +272,7 @@ export const newEntryEventSchema = z.object({
   type: z.literal("new_entry"),
   subscriptionId: z.string().nullable(),
   subscriptionIds: subscriptionIdsSchema,
+  tagLists: tagListsSchema,
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
@@ -282,7 +295,13 @@ export const newEntryEventSchema = z.object({
  * acting tab needn't wait for the event.
  */
 export const newEntryListItemSchema = newEntryEventSchema
-  .pick({ entryId: true, subscriptionId: true, subscriptionIds: true, updatedAt: true })
+  .pick({
+    entryId: true,
+    subscriptionId: true,
+    subscriptionIds: true,
+    tagLists: true,
+    updatedAt: true,
+  })
   .extend({ entry: newEntryListDataSchema });
 
 export type NewEntryListItem = z.infer<typeof newEntryListItemSchema>;
@@ -321,6 +340,7 @@ export const entryStateChangedEventSchema = z.object({
   subscriptionId: z.string().nullable().optional(),
   entry: newEntryListDataSchema.optional(),
   subscriptionIds: subscriptionIdsSchema,
+  tagLists: tagListsSchema,
   // The user's score and the entry's collection positions (#2064), which
   // travel with its state. Optional: a server a release behind sends neither.
   score: z.number().nullable().optional(),
@@ -404,15 +424,8 @@ export const tagDeletedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
-/**
- * The tag lists holding each of a collection change's entries after it: its
- * active subscriptions' tags, and whether one of them is untagged
- * (Uncategorized). Clients can't derive this from the subscriptions they've
- * loaded, so it tells them which tag lists an entry joined or left.
- */
-export const entryTagListsSchema = z.array(
-  z.object({ entryId: z.string(), tagIds: z.array(z.string()), uncategorized: z.boolean() })
-);
+/** Each of a collection change's entries' {@link tagListsSchema} after it. */
+export const entryTagListsSchema = z.array(tagListsSchema.extend({ entryId: z.string() }));
 export type EntryTagLists = z.infer<typeof entryTagListsSchema>;
 
 // Articles added to or removed from a collection. SSE-only: delta sync

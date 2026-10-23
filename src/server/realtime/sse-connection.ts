@@ -9,6 +9,7 @@ import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import { isWebSubscription } from "@/server/services/subscriptions";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
+import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   createPubSubSubscription,
   getFeedEventsChannel,
@@ -22,6 +23,7 @@ import {
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
 import type {
+  TagLists,
   NewEntryListData,
   entryUpdatedEventSchema,
   newEntryEventSchema,
@@ -151,6 +153,28 @@ export function startSseConnection({
   let queuedNewEntries = 0;
   const queuedNewEntrySubscriptionIds = new Set<string>();
 
+  /** The counts the last new_entry queued carries, for every queued one's subscriptions. */
+  async function readQueuedNewEntryCounts(): Promise<BulkUnreadCounts | undefined> {
+    if (queuedNewEntries > 0) return undefined;
+    const subscriptionIds = [...queuedNewEntrySubscriptionIds];
+    queuedNewEntrySubscriptionIds.clear();
+    try {
+      return await getBulkEntryRelatedCounts(
+        db,
+        userId,
+        subscriptionIds.map((id) => ({ subscriptionId: id }))
+      );
+    } catch (err) {
+      // Leave counts off; the client skips the count update and it
+      // self-heals on the next count-bearing event or refetch.
+      logger.error("Failed to compute new_entry counts", {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
   /**
    * Sends a new_entry event, whether it came from a web feed's channel or
    * the user's channel.
@@ -180,25 +204,21 @@ export function startSseConnection({
     }
     enqueueSend(async () => {
       queuedNewEntries--;
-      let counts: BulkUnreadCounts | undefined;
+      const countsRead = readQueuedNewEntryCounts();
+      let tagLists: TagLists;
       try {
-        if (queuedNewEntries === 0) {
-          const subscriptionIds = [...queuedNewEntrySubscriptionIds];
-          queuedNewEntrySubscriptionIds.clear();
-          counts = await getBulkEntryRelatedCounts(
-            db,
-            userId,
-            subscriptionIds.map((id) => ({ subscriptionId: id }))
-          );
-        }
+        // Per user: the event is the feed's, shared by every subscriber.
+        tagLists = (await listEntryTagLists(db, userId, [event.entryId])).get(event.entryId)!;
       } catch (err) {
-        // Leave counts off; the client skips the count update and it
-        // self-heals on the next count-bearing event or refetch.
-        logger.error("Failed to compute new_entry counts", {
+        // Without them the client can't place the entry; its lists pick it
+        // up on their next fetch.
+        logger.error("Failed to read new_entry tag lists", {
           userId,
           error: err instanceof Error ? err.message : String(err),
         });
+        return;
       }
+      const counts = await countsRead;
       if (closed) return;
       const cursor = new Date().toISOString();
       send(
@@ -207,6 +227,7 @@ export function startSseConnection({
           subscriptionId,
           // A new entry's one membership is its origin (#1846).
           subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
+          tagLists,
           entryId: event.entryId,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,

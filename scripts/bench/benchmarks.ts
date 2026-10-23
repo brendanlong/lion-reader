@@ -19,6 +19,7 @@ import {
   type ListEntriesParams,
 } from "@/server/services/entries";
 import { getEntries, getFullEntry } from "@/server/services/entry-reads";
+import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import { collectSyncChanges, collectSyncEvents, currentSyncCursors } from "@/server/services/sync";
 import { getSubscription } from "@/server/services/subscriptions";
 import { listTags } from "@/server/services/tags";
@@ -691,6 +692,18 @@ WHERE subscription_id = ${q(readingList)} AND NOT read`
     prepare: async (db) => {
       const { id } = await plainUnreadEntry(db);
       return { statements: await recordStatements("get", (app) => getFullEntry(app, U0, id)) };
+    },
+  },
+  {
+    name: "sse.new_entry_tag_lists",
+    kind: "read",
+    source:
+      "services/entry-tag-lists.ts listEntryTagLists, per subscriber and new_entry (realtime/sse-connection.ts)",
+    prepare: async (db) => {
+      const { id } = await plainUnreadEntry(db);
+      return {
+        statements: await recordStatements("tag lists", (app) => listEntryTagLists(app, U0, [id])),
+      };
     },
   },
   {

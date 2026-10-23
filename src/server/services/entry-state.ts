@@ -27,6 +27,7 @@ import {
 } from "./entry-filters";
 import type { EntryType } from "@/lib/entry-types";
 import { entryListItemSchema } from "./entries";
+import { listEntryTagLists } from "./entry-tag-lists";
 
 // ============================================================================
 // Types
@@ -60,6 +61,7 @@ export const markReadEntryStateSchema = entryListItemSchema.pick({
   subscriptionId: true,
   subscriptionIds: true,
   positions: true,
+  tagLists: true,
   read: true,
   starred: true,
   score: true,
@@ -228,7 +230,7 @@ async function selectEntryStates(
   userId: string,
   entryIds: string[]
 ): Promise<MarkReadEntryState[]> {
-  return db
+  const rows = db
     .select({
       id: visibleEntries.id,
       subscriptionId: subscriptions.id,
@@ -245,6 +247,18 @@ async function selectEntryStates(
     .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
+  return withTagListsOf(db, userId, entryIds, rows);
+}
+
+/** Adds each state's tag lists, read alongside the states. */
+async function withTagListsOf(
+  db: DbOrTx,
+  userId: string,
+  entryIds: string[],
+  states: PromiseLike<Omit<MarkReadEntryState, "tagLists">[]>
+): Promise<MarkReadEntryState[]> {
+  const [rows, tagLists] = await Promise.all([states, listEntryTagLists(db, userId, entryIds)]);
+  return rows.map((row) => ({ ...row, tagLists: tagLists.get(row.id)! }));
 }
 
 /**
@@ -461,7 +475,7 @@ async function selectStarredEntryStates(
   userId: string,
   entryIds: string[]
 ): Promise<MarkReadEntryState[]> {
-  return db
+  const rows = db
     .select({
       id: userEntries.entryId,
       subscriptionId: subscriptions.id,
@@ -479,6 +493,7 @@ async function selectStarredEntryStates(
     .leftJoinLateral(USER_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(USER_MEMBERSHIPS, USER_ROW))
     .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
+  return withTagListsOf(db, userId, entryIds, rows);
 }
 
 /**

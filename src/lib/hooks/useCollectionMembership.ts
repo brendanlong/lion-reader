@@ -60,7 +60,6 @@ export function useCollectionMembership(entryId: string) {
     onSuccess: (result, variables) =>
       applyCollectionEntriesChange(utils, queryClient, {
         subscriptionId: variables.id,
-        entryIds: result.entryIds,
         added: true,
         counts: result.counts,
         tagLists: result.tagLists,
@@ -71,7 +70,6 @@ export function useCollectionMembership(entryId: string) {
     onSuccess: (result, variables) =>
       applyCollectionEntriesChange(utils, queryClient, {
         subscriptionId: variables.id,
-        entryIds: result.entryIds,
         added: false,
         counts: result.counts,
         tagLists: result.tagLists,

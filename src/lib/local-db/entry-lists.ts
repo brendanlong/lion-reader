@@ -13,6 +13,7 @@ import { hashKey } from "@tanstack/react-query";
 import type { EntryRow } from "./entries";
 import type { SyncedCollection } from "./synced-collection";
 import type { EntryType } from "@/lib/entry-types";
+import type { TagLists } from "@/lib/events/schemas";
 import { ENTRY_SORT_DIRECTIONS, isRankedSort, type EntrySortOrder } from "@/lib/entry-sort";
 
 export type ListEntryRow = {
@@ -325,65 +326,27 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
 ]);
 
 /**
- * The lists an entry's memberships (`subscriptionIds`) put it in, as far as
- * the client knows them: the tags of its known subscriptions, whether one of
- * them is untagged (Uncategorized; never the saved subscription), and whether
- * it's in the saved subscription (Saved). Built only from what the client
- * knows, so it can miss a list (the entry then appears on that list's next
- * refresh) but never claims a wrong one.
- */
-export interface EntryMembershipScope {
-  tagIds: Set<string>;
-  uncategorized: boolean;
-  saved: boolean;
-}
-
-/**
- * @param tagIdsOf - A known subscription's tag ids, or undefined for one the
- *   caller doesn't know
- */
-export function entryMembershipScope(
-  subscriptionIds: readonly string[],
-  savedSubscriptionId: string | null | undefined,
-  tagIdsOf: (subscriptionId: string) => readonly string[] | undefined
-): EntryMembershipScope {
-  const tagIds = new Set<string>();
-  let uncategorized = false;
-  for (const id of subscriptionIds) {
-    // Uncategorized excludes the saved subscription, whatever its tags.
-    if (id === savedSubscriptionId) continue;
-    const subscriptionTagIds = tagIdsOf(id);
-    if (!subscriptionTagIds) continue;
-    for (const tagId of subscriptionTagIds) tagIds.add(tagId);
-    if (subscriptionTagIds.length === 0) uncategorized = true;
-  }
-  return {
-    tagIds,
-    uncategorized,
-    saved: !!savedSubscriptionId && subscriptionIds.includes(savedSubscriptionId),
-  };
-}
-
-/**
- * Whether an entry passes a list's membership and state filters. Search and
- * ordering-only keys aren't checked; callers that can't honor them skip such
- * lists (see `insertIntoMatchingLists`).
+ * Whether an entry passes a list's membership and state filters: tag and
+ * Uncategorized lists by the server's `tagLists`, Saved by membership in the
+ * saved subscription (unknown until its id is). Search and ordering-only keys
+ * aren't checked; callers that can't honor them skip such lists (see
+ * `insertIntoMatchingLists`).
  */
 export function entryMatchesList(
   input: EntryListFilters,
-  entry: Pick<EntryRow, "subscriptionIds" | "read" | "starred" | "type">,
-  scope: EntryMembershipScope
+  entry: Pick<EntryRow, "subscriptionIds" | "tagLists" | "read" | "starred" | "type">,
+  savedSubscriptionId: string | null | undefined
 ): boolean {
   if (input.subscriptionId && !entry.subscriptionIds.includes(input.subscriptionId)) return false;
-  if (input.tagId && !scope.tagIds.has(input.tagId)) return false;
-  if (input.uncategorized && !scope.uncategorized) return false;
+  if (input.tagId && !entry.tagLists.tagIds.includes(input.tagId)) return false;
+  if (input.uncategorized && !entry.tagLists.uncategorized) return false;
   if (input.starredOnly && !entry.starred) return false;
   if (input.unreadOnly && entry.read) return false;
   // Saved is a membership, like a collection; other types filter on the entry's.
-  if (input.type === "saved" ? !scope.saved : input.type && input.type !== entry.type) {
-    return false;
+  if (input.type === "saved") {
+    return !!savedSubscriptionId && entry.subscriptionIds.includes(savedSubscriptionId);
   }
-  return true;
+  return !input.type || input.type === entry.type;
 }
 
 /**
@@ -399,28 +362,31 @@ export function entryMatchesList(
 export function insertIntoMatchingLists(
   lists: EntryLists,
   entry: EntryRow,
-  scope: EntryMembershipScope
+  savedSubscriptionId: string | null | undefined
 ): void {
-  insertIntoListsWhere(lists, entry, (input) => entryMatchesList(input, entry, scope));
+  insertIntoListsWhere(lists, entry, (input) =>
+    entryMatchesList(input, entry, savedSubscriptionId)
+  );
 }
 
-/** The tag lists holding an entry, as the server reported them. */
-export interface TagListMembership {
-  tagIds: readonly string[];
-  uncategorized: boolean;
+/** An entry joining or leaving a collection, and the tag lists holding it after. */
+interface CollectionChange {
+  collectionId: string;
+  added: boolean;
+  tagLists: TagLists;
 }
 
 /**
  * Hides an entry from (or shows it again in) the loaded lists an entry's
  * joining or leaving a collection changes, whatever their other filters
- * (they can only narrow these): the collection's, and with `tagLists`, the
- * tag and Uncategorized lists. Recorded even where the entry isn't loaded
- * yet, so a page already in flight can't show it.
+ * (they can only narrow these): the collection's, and by `tagLists`, the tag
+ * and Uncategorized lists. Recorded even where the entry isn't loaded yet, so
+ * a page already in flight can't show it.
  */
 export function setCollectionChangeInLists(
   lists: EntryLists,
   entryId: string,
-  change: { collectionId: string; added: boolean; tagLists?: TagListMembership }
+  change: CollectionChange
 ): void {
   const rows: ListEntryRow[] = [];
   for (const [listKey, meta] of lists.meta) {
@@ -445,14 +411,9 @@ export function setCollectionChangeInLists(
 /** Whether the entry is in a list after the change, or undefined if the change can't move it. */
 function memberAfterCollectionChange(
   input: EntryListFilters,
-  {
-    collectionId,
-    added,
-    tagLists,
-  }: { collectionId: string; added: boolean; tagLists?: TagListMembership }
+  { collectionId, added, tagLists }: CollectionChange
 ): boolean | undefined {
   if (input.subscriptionId) return input.subscriptionId === collectionId ? added : undefined;
-  if (!tagLists) return undefined;
   if (input.tagId) return tagLists.tagIds.includes(input.tagId);
   if (input.uncategorized) return tagLists.uncategorized;
   return undefined;

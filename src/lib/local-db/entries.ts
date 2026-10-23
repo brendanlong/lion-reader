@@ -22,6 +22,7 @@
 
 import type { SyncedCollection } from "./synced-collection";
 import type { EntryType } from "@/lib/entry-types";
+import type { TagLists } from "@/lib/events/schemas";
 
 /** An entry's list-item fields as the server sends them. */
 export type EntryRow = {
@@ -37,6 +38,12 @@ export type EntryRow = {
   subscriptionIds: string[];
   /** Its position in each of those collections that gives it one (#2064); state group too. */
   positions: Record<string, number>;
+  /**
+   * The tag and Uncategorized lists holding it, as the server read them:
+   * the client never derives them from the subscriptions it has loaded.
+   * State group, with `subscriptionIds`.
+   */
+  tagLists: TagLists;
   type: EntryType;
   url: string | null;
   title: string | null;
@@ -68,9 +75,9 @@ export type EntryStore = SyncedCollection<StoredEntryRow>;
 
 export type EntryState = Pick<EntryRow, "read" | "starred">;
 
-/** A state write; the memberships, positions and score when the write carries them. */
+/** A state write; the memberships, tag lists, positions and score when the write carries them. */
 type EntryStateWrite = EntryState &
-  Partial<Pick<EntryRow, "subscriptionIds" | "positions" | "score">>;
+  Partial<Pick<EntryRow, "subscriptionIds" | "tagLists" | "positions" | "score">>;
 
 /** The fields an `entry_updated` event carries. */
 export type EntryMetadata = Pick<EntryRow, "title" | "author" | "summary" | "url" | "publishedAt">;
@@ -92,6 +99,7 @@ function toEntryRow(entry: EntryRow): EntryRow {
     subscriptionId: entry.subscriptionId,
     subscriptionIds: entry.subscriptionIds,
     positions: entry.positions,
+    tagLists: entry.tagLists,
     type: entry.type,
     url: entry.url,
     title: entry.title,
@@ -157,6 +165,7 @@ export function mergeServerEntry(
           starred: state.starred,
           score: state.score,
           subscriptionIds: state.subscriptionIds,
+          tagLists: state.tagLists,
           positions: state.positions,
         },
         stateFresh ? row.updatedAt : stored.stateUpdatedAt,
@@ -197,9 +206,9 @@ export function upsertServerEntries(store: EntryStore, rows: EntryRow[]): void {
 
 /**
  * Writes read/starred state from the server (a mutation response or
- * `entry_state_changed`), and the entry's `subscriptionIds`, `positions` and
- * `score` when it carries them (read with the same row, so as fresh as the
- * state).
+ * `entry_state_changed`), and the entry's `subscriptionIds`, `tagLists`,
+ * `positions` and `score` when it carries them (read with the same row, so as
+ * fresh as the state).
  */
 export function setServerEntryState(
   store: EntryStore,
@@ -212,6 +221,7 @@ export function setServerEntryState(
       read: state.read,
       starred: state.starred,
       ...(state.subscriptionIds && { subscriptionIds: state.subscriptionIds }),
+      ...(state.tagLists && { tagLists: state.tagLists }),
       ...(state.positions && { positions: state.positions }),
       ...(state.score !== undefined && { score: state.score }),
     },
@@ -222,24 +232,33 @@ export function setServerEntryState(
 
 /**
  * Adds a collection to (or removes it from) a stored entry's
- * `subscriptionIds`, after a membership change. The change's response carries
- * no `updatedAt`, so this moves no watermark: a page fetched before the change
- * that lands after it can revert the ids, which only matters until the next
- * write that carries them (any unread flip does).
+ * `subscriptionIds`, with the tag lists the membership change left it in. The
+ * change's response carries no `updatedAt`, so this moves no watermark: a page
+ * fetched before the change that lands after it can revert them, which only
+ * matters until the next write that carries them (any unread flip does).
  */
 export function setStoredEntryCollection(
   store: EntryStore,
   id: string,
-  collectionId: string,
-  added: boolean
+  change: { collectionId: string; added: boolean; tagLists: TagLists }
 ): void {
+  const { collectionId, added, tagLists } = change;
   const stored = store.getSynced(id);
-  if (!stored || stored.subscriptionIds.includes(collectionId) === added) return;
+  if (!stored) return;
+  if (stored.subscriptionIds.includes(collectionId) === added) {
+    store.upsert([{ ...stored, tagLists }]);
+    return;
+  }
   const subscriptionIds = added
     ? [...stored.subscriptionIds, collectionId]
     : stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
   store.upsert([
-    { ...stored, subscriptionIds, positions: withoutKey(stored.positions, collectionId) },
+    {
+      ...stored,
+      subscriptionIds,
+      tagLists,
+      positions: withoutKey(stored.positions, collectionId),
+    },
   ]);
 }
 

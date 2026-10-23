@@ -33,7 +33,8 @@ import {
   VISIBLE_ROW,
 } from "./entry-filters";
 import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
-import { entryPositionsSchema } from "@/lib/events/schemas";
+import { entryPositionsSchema, tagListsSchema } from "@/lib/events/schemas";
+import { withTagLists } from "./entry-tag-lists";
 import {
   ENTRY_SORT_BYS,
   ENTRY_SORT_DIRECTIONS,
@@ -124,6 +125,8 @@ export const entryListItemSchema = z.object({
   subscriptionIds: z.array(z.string()),
   /** Its position in each of those that gives it one (a collection's order, #2064). */
   positions: entryPositionsSchema,
+  /** The tag and Uncategorized lists holding it (`listEntryTagLists`). */
+  tagLists: tagListsSchema,
   type: z.enum(ENTRY_TYPES),
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -212,7 +215,7 @@ interface EntryListRow {
 /**
  * Maps a database row to an EntryListItem.
  */
-function toEntryListItem(row: EntryListRow): EntryListItem {
+function toEntryListItem(row: EntryListRow): Omit<EntryListItem, "tagLists"> {
   return {
     id: row.id,
     subscriptionId: row.subscriptionId,
@@ -379,7 +382,7 @@ export async function listEntries(
   ]);
   const firstPage = !params.cursor && !params.offset;
   return {
-    items: items.map(toEntryListItem),
+    items: await withTagLists(db, params.userId, items.map(toEntryListItem)),
     nextCursor,
     ...(sortable && { sortable }),
     ...(firstPage && page.sort && { sort: page.sort }),
@@ -882,7 +885,7 @@ async function searchEntries(
 
   const hasMore = queryResults.length > limit;
   const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-  const items = resultEntries.map(toEntryListItem);
+  const items = await withTagLists(db, params.userId, resultEntries.map(toEntryListItem));
 
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {

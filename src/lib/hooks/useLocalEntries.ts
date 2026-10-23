@@ -18,11 +18,9 @@ import {
   comparePlaces,
   entryListKey,
   entryMatchesList,
-  entryMembershipScope,
   type EntryListFilters,
   type ListSortableRow,
 } from "@/lib/local-db/entry-lists";
-import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import type { EntryRow } from "@/lib/local-db/entries";
 import { isRankedSort } from "@/lib/entry-sort";
 
@@ -111,14 +109,12 @@ const MATCHING_ENTRIES_LIMIT = 50;
 
 /**
  * Entries already in the store that match a list view's filters, in list
- * order — shown while the view's own first page loads. Tag, Uncategorized and
- * Saved membership come from the stored subscriptions and the saved
- * subscription's id, so nothing matches those views until they're known.
+ * order — shown while the view's own first page loads. Saved membership comes
+ * from the saved subscription's id, so nothing matches Saved until it's known.
  */
 export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
   const db = useLocalDb();
   const savedSubscriptionId = useSavedSubscriptionId();
-  const subscriptions = useLocalSubscriptions();
   const { data: entries } = useLiveQuery({
     query: (q) => q.from({ entry: db.entries.collection }),
   });
@@ -136,28 +132,12 @@ export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
       sortOrder,
       sortBy: isRankedSort(sortBy) ? sortBy : undefined,
     };
-    const needsScope = !!tagId || !!uncategorized || type === "saved";
-    const tagIds = new Map(
-      needsScope ? subscriptions.map((row) => [row.id, row.tags.map((tag) => tag.id)] as const) : []
-    );
-    const noScope = { tagIds: new Set<string>(), uncategorized: false, saved: false };
     return entries
-      .filter((entry) =>
-        entryMatchesList(
-          input,
-          entry,
-          needsScope
-            ? entryMembershipScope(entry.subscriptionIds, savedSubscriptionId, (id) =>
-                tagIds.get(id)
-              )
-            : noScope
-        )
-      )
+      .filter((entry) => entryMatchesList(input, entry, savedSubscriptionId))
       .sort(compareListEntries(input))
       .slice(0, MATCHING_ENTRIES_LIMIT);
   }, [
     entries,
-    subscriptions,
     savedSubscriptionId,
     subscriptionId,
     tagId,

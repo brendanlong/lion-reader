@@ -37,6 +37,7 @@ import {
 import type { Database } from "@/server/db";
 import { databaseNow, parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
+import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   getSubscriptionsByIds,
   isCollectionSubscription,
@@ -317,18 +318,24 @@ async function collectEntryEvents(
   const counted = visibleRows.filter(
     (row) => row.stateChanged || (row.metadataChanged && row.isNew)
   );
-  const counts =
+  const [counts, tagLists] = await Promise.all([
     counted.length > 0
-      ? await getBulkEntryRelatedCounts(
+      ? getBulkEntryRelatedCounts(
           db,
           userId,
           counted.map((row) => ({ id: row.id, subscriptionId: row.subscriptionId }))
         )
-      : undefined;
+      : undefined,
+    listEntryTagLists(
+      db,
+      userId,
+      visibleRows.map((row) => row.id)
+    ),
+  ]);
 
   const events: TimedEvent[] = visibleRows.flatMap((row) =>
     entryRowToSyncEvents(
-      { ...row, updatedAt: row.changedAt.toString() },
+      { ...row, tagLists: tagLists.get(row.id)!, updatedAt: row.changedAt.toString() },
       { newEntry: counts, stateChanged: counts }
     ).map((event) => ({ ...event, _sortTime: row.changedAt }))
   );

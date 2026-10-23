@@ -106,6 +106,7 @@ export function handleSyncEvent(
             id: event.entryId,
             ...state,
             subscriptionIds: event.subscriptionIds,
+            tagLists: event.tagLists,
             ...(event.positions && { positions: event.positions }),
             ...(event.score !== undefined && { score: event.score }),
             updatedAt: new Date(event.updatedAt),

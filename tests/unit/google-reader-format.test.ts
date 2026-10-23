@@ -97,6 +97,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
     id: "01912345-0000-7000-8000-000000000001",
     subscriptionId: "01912345-0000-7000-8000-000000000003",
     subscriptionIds: [],
+    tagLists: { tagIds: [], uncategorized: false },
     type: "web",
     url: "https://example.com/article",
     title: "An Article",
