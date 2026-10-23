@@ -297,8 +297,7 @@ const entryListSelectFields = {
  * The rows a list has of its own, which carry its sort key and copies of each
  * article's state: one subscription's memberships (the `subscriptionId`
  * filter, which the caller checks is the user's, or Saved's), or a
- * tag's or Uncategorized's `tag_entries`, which hold no spam, so a showSpam
- * tag list filters the timeline instead. Null for All and Starred, which read
+ * tag's or Uncategorized's `tag_entries`. Null for All and Starred, which read
  * `user_entries` itself. Joined on the user too: a list id alone
  * (Uncategorized's is the user's id) must never reach another user's rows
  * (SECURITY.md §7).
@@ -309,9 +308,7 @@ async function listRowsOf(db: typeof dbType, params: Omit<ListEntriesParams, "qu
     (params.type === "saved" && !params.tagId && !params.uncategorized
       ? await getSavedSubscriptionId(db, params.userId)
       : null);
-  const tagListId = params.showSpam
-    ? null
-    : (params.tagId ?? (params.uncategorized ? params.userId : null));
+  const tagListId = params.tagId ?? (params.uncategorized ? params.userId : null);
   const rows = subscriptionId
     ? { table: subscriptionEntries, inList: eq(subscriptionEntries.subscriptionId, subscriptionId) }
     : tagListId
@@ -378,7 +375,7 @@ export async function listEntries(
         .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
         .$dynamic()
     ),
-    params.cursor || params.offset ? undefined : listSortable(db, params, page),
+    params.cursor || params.offset ? undefined : page.sortable(),
   ]);
   const firstPage = !params.cursor && !params.offset;
   return {
@@ -387,21 +384,6 @@ export async function listEntries(
     ...(sortable && { sortable }),
     ...(firstPage && page.sort && { sort: page.sort }),
   };
-}
-
-/**
- * Which ranked sorts the list has values for, ignoring spam: a showSpam tag
- * or Uncategorized list has no rows of its own (`tag_entries` hold no spam),
- * so its lookup would walk every scored article the user has. A scored spam
- * article alone doesn't offer the sort.
- */
-async function listSortable(
-  db: typeof dbType,
-  params: ListEntriesParams,
-  page: NonNullable<Awaited<ReturnType<typeof planEntryPage>>>
-): Promise<EntrySortable | undefined> {
-  if (!params.showSpam) return page.sortable();
-  return (await planEntryPage(db, { ...params, showSpam: false }))?.sortable();
 }
 
 /** An entry as Google Reader's item lists key it (`listGreaderItemRefs`). */
@@ -618,23 +600,14 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
   // A subscription filter must be the user's; a tag's or Uncategorized's rows
-  // are by the join on them, and without rows (showSpam) its filter is.
+  // are by the join on them.
   const listRows = await listRowsOf(db, params);
-  if (listRows) {
-    if (
-      params.subscriptionId &&
-      !(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))
-    ) {
-      return null;
-    }
-  } else {
-    const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
-      paged: true,
-    });
-    if (subscriptionFilter === null) return null;
-    if (subscriptionFilter) conditions.push(subscriptionFilter);
+  if (
+    params.subscriptionId &&
+    !(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))
+  ) {
+    return null;
   }
-
   if (listRows) {
     conditions.push(...listRowStateConditions(listRows.table, params));
   }
