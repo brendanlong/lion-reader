@@ -26,6 +26,7 @@ import {
 } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import {
+  forgetStoredEntryTagLists,
   removeStoredEntryMemberships,
   setServerEntryState,
   setStoredEntryCollection,
@@ -143,8 +144,12 @@ export function applySubscriptionUpdate(
       .map((tag) => tag.id)
       .sort()
       .join();
-  // Tag feed counts change with the tags, and the collection picker searches by title.
-  if (!stored || tagIds(stored) !== tagIds(row)) utils.tags.list.invalidate();
+  // Tag feed counts change with the tags, and so may its entries' tag lists.
+  // The collection picker searches by title.
+  if (!stored || tagIds(stored) !== tagIds(row)) {
+    utils.tags.list.invalidate();
+    forgetStoredEntryTagLists(db.entries, (entry) => entry.subscriptionIds.includes(row.id));
+  }
   if (!stored || row.title !== stored.title) {
     void utils.subscriptions.list.invalidate({ type: "collection" });
   }
@@ -190,6 +195,8 @@ export function applyTagDeleted(
   const db = getLocalDb(queryClient);
   removeLiveTag(db.tags, tagId);
   removeTagCount(db.counts, tagId);
+  // Its entries may have moved to Uncategorized.
+  forgetStoredEntryTagLists(db.entries, (entry) => !!entry.tagLists?.tagIds.includes(tagId));
   for (const row of db.subscriptions.rows.allSynced()) {
     if (row.tags.some((t) => t.id === tagId)) {
       patchLiveSubscription(db.subscriptions, row.id, {

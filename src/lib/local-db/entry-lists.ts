@@ -327,7 +327,7 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
 
 /**
  * Whether an entry passes a list's membership and state filters: tag and
- * Uncategorized lists by the server's `tagLists`, Saved by membership in the
+ * Uncategorized lists by the server's `tagLists` (none while unknown), Saved by membership in the
  * saved subscription (unknown until its id is). Search and ordering-only keys
  * aren't checked; callers that can't honor them skip such lists (see
  * `insertIntoMatchingLists`).
@@ -338,8 +338,8 @@ export function entryMatchesList(
   savedSubscriptionId: string | null | undefined
 ): boolean {
   if (input.subscriptionId && !entry.subscriptionIds.includes(input.subscriptionId)) return false;
-  if (input.tagId && !entry.tagLists.tagIds.includes(input.tagId)) return false;
-  if (input.uncategorized && !entry.tagLists.uncategorized) return false;
+  if (input.tagId && !entry.tagLists?.tagIds.includes(input.tagId)) return false;
+  if (input.uncategorized && !entry.tagLists?.uncategorized) return false;
   if (input.starredOnly && !entry.starred) return false;
   if (input.unreadOnly && entry.read) return false;
   // Saved is a membership, like a collection; other types filter on the entry's.

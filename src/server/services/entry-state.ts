@@ -27,7 +27,7 @@ import {
 } from "./entry-filters";
 import type { EntryType } from "@/lib/entry-types";
 import { entryListItemSchema } from "./entries";
-import { listEntryTagLists } from "./entry-tag-lists";
+import { withTagLists } from "./entry-tag-lists";
 
 // ============================================================================
 // Types
@@ -247,18 +247,7 @@ async function selectEntryStates(
     .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
-  return withTagListsOf(db, userId, entryIds, rows);
-}
-
-/** Adds each state's tag lists, read alongside the states. */
-async function withTagListsOf(
-  db: DbOrTx,
-  userId: string,
-  entryIds: string[],
-  states: PromiseLike<Omit<MarkReadEntryState, "tagLists">[]>
-): Promise<MarkReadEntryState[]> {
-  const [rows, tagLists] = await Promise.all([states, listEntryTagLists(db, userId, entryIds)]);
-  return rows.map((row) => ({ ...row, tagLists: tagLists.get(row.id)! }));
+  return withTagLists(db, userId, entryIds, rows);
 }
 
 /**
@@ -493,7 +482,7 @@ async function selectStarredEntryStates(
     .leftJoinLateral(USER_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(USER_MEMBERSHIPS, USER_ROW))
     .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
-  return withTagListsOf(db, userId, entryIds, rows);
+  return withTagLists(db, userId, entryIds, rows);
 }
 
 /**

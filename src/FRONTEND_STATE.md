@@ -42,12 +42,12 @@ travel with the read/starred state (a membership change moves the server's
 `user_entries.updated_at`), and they decide which lists a live insert reaches
 (`insertEntryIntoLists`): a subscription or collection list by membership, tag
 and Uncategorized lists by the entry's `tagLists`, and Saved by membership in
-the saved subscription. `tagLists` come from the server with every entry
-(list items, `entries.get`, `new_entry`, `entry_state_changed`, markRead
-responses, collection changes) and travel with `subscriptionIds`: **never
-derive tag membership from the stored subscriptions**, which hold only the
-expanded sidebar sections (#2126). A retag doesn't re-deliver its entries, so
-their stored `tagLists` stay stale until the lists holding them refetch. The server lists
+the saved subscription. The server sends `tagLists` with every entry and they
+travel with `subscriptionIds`: **never derive tag membership from the stored
+subscriptions**, which hold only the expanded sidebar sections (#2126). A
+retag, an unsubscribe or a deleted tag re-delivers none of its entries, so it
+sets their stored `tagLists` to null (unknown): tag and Uncategorized lists
+skip them until the server sends them again. The server lists
 the saved subscription, but the subscription store never holds it (so no
 sidebar section shows it; Saved has its own nav item): its id is
 `LocalDb.saved`, taken from its row in any `subscriptions.list`/`get` result

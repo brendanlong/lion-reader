@@ -39,11 +39,12 @@ export type EntryRow = {
   /** Its position in each of those collections that gives it one (#2064); state group too. */
   positions: Record<string, number>;
   /**
-   * The tag and Uncategorized lists holding it, as the server read them:
-   * the client never derives them from the subscriptions it has loaded.
-   * State group, with `subscriptionIds`.
+   * The tag and Uncategorized lists holding it, as the server read them
+   * (`src/FRONTEND_STATE.md`), or null once a change the server doesn't
+   * re-deliver entries for (a retag, an unsubscribe, a deleted tag) may have
+   * moved them. State group, with `subscriptionIds`.
    */
-  tagLists: TagLists;
+  tagLists: TagLists | null;
   type: EntryType;
   url: string | null;
   title: string | null;
@@ -262,7 +263,10 @@ export function setStoredEntryCollection(
   ]);
 }
 
-/** Drops a deleted subscription from the stored entries' `subscriptionIds`. */
+/**
+ * Drops a deleted subscription from the stored entries' `subscriptionIds`;
+ * which tag lists still hold them is unknown until the server says.
+ */
 export function removeStoredEntryMemberships(store: EntryStore, subscriptionId: string): void {
   store.upsert(
     store
@@ -272,7 +276,21 @@ export function removeStoredEntryMemberships(store: EntryStore, subscriptionId: 
         ...entry,
         subscriptionIds: entry.subscriptionIds.filter((id) => id !== subscriptionId),
         positions: withoutKey(entry.positions, subscriptionId),
+        tagLists: null,
       }))
+  );
+}
+
+/** Marks the stored entries' tag lists unknown where `mayHaveMoved` says a change may have moved them. */
+export function forgetStoredEntryTagLists(
+  store: EntryStore,
+  mayHaveMoved: (entry: StoredEntryRow) => boolean
+): void {
+  store.upsert(
+    store
+      .allSynced()
+      .filter((entry) => entry.tagLists && mayHaveMoved(entry))
+      .map((entry) => ({ ...entry, tagLists: null }))
   );
 }
 

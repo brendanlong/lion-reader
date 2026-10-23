@@ -234,12 +234,17 @@ describe("SSE entry events", () => {
     }
   });
 
-  it("follows each new_entry of a burst with counts for its subscription", async () => {
+  it("follows each new_entry of a burst with counts for its subscription, and its own tag lists", async () => {
     const userId = await createTestUser({ emailPrefix: "sse-burst" });
     const feedIds = [await createTestFeed(), await createTestFeed()];
     const subscriptionIds = [
       await createTestSubscription(userId, feedIds[0]),
       await createTestSubscription(userId, feedIds[1]),
+    ];
+    const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionIds[0]] });
+    const tagListsOf = [
+      { tagIds: [tagId], uncategorized: false },
+      { tagIds: [], uncategorized: true },
     ];
     const published = [0, 1, 0, 1, 0].map((i) => ({ i, entryId: "" }));
     for (const p of published) {
@@ -261,7 +266,8 @@ describe("SSE entry events", () => {
         )
       );
       for (const p of published) {
-        await stream.waitFor("new_entry", (data) => data.entryId === p.entryId);
+        const data = await stream.waitFor("new_entry", (event) => event.entryId === p.entryId);
+        expect(data.tagLists).toEqual(tagListsOf[p.i]);
       }
 
       // How a burst splits into count-bearing events depends on timing, but

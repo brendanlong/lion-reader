@@ -11,12 +11,14 @@ import {
   mergeServerEntry,
   patchServerEntryMetadata,
   setServerEntryState,
+  setStoredEntryCollection,
   upsertServerEntries,
   type EntryRow,
   type EntryStore,
   type EntryWrite,
   type StoredEntryRow,
 } from "@/lib/local-db/entries";
+import type { TagLists } from "@/lib/events/schemas";
 
 const t1 = new Date("2026-07-05T00:00:01.000Z");
 const t2 = new Date("2026-07-05T00:00:02.000Z");
@@ -63,10 +65,11 @@ const state = (read: boolean, updatedAt: Date): EntryWrite => ({
   state: { read, starred: false },
   updatedAt,
 });
-/** A state write carrying memberships, as `entry_state_changed` does. */
+const TAGGED = { tagIds: ["tag-1"], uncategorized: false };
+/** A state write carrying memberships and tag lists, as `entry_state_changed` does. */
 const memberships = (subscriptionIds: string[], updatedAt: Date): EntryWrite => ({
   kind: "state",
-  state: { read: false, starred: false, subscriptionIds },
+  state: { read: false, starred: false, subscriptionIds, tagLists: TAGGED },
   updatedAt,
 });
 const meta = (title: string, updatedAt: Date): EntryWrite => ({
@@ -205,7 +208,8 @@ describe("mergeServerEntry", () => {
     expect(stored).toMatchObject({ stateUpdatedAt: t2, metadataUpdatedAt: t3, updatedAt: t3 });
   });
 
-  it.each<{ name: string; writes: EntryWrite[]; subscriptionIds: string[] }>([
+  // Tag lists travel with the memberships.
+  it.each<{ name: string; writes: EntryWrite[]; subscriptionIds: string[]; tagLists: TagLists }>([
     {
       name: "a page fetched before a membership change keeps the new memberships",
       writes: [
@@ -214,6 +218,7 @@ describe("mergeServerEntry", () => {
         row({ title: "Edited", updatedAt: t2 }),
       ],
       subscriptionIds: ["sub-1", "col-1"],
+      tagLists: TAGGED,
     },
     {
       name: "a page fetched before a metadata change takes its memberships",
@@ -223,14 +228,19 @@ describe("mergeServerEntry", () => {
         row({ subscriptionIds: [], updatedAt: t2 }),
       ],
       subscriptionIds: [],
+      tagLists: { tagIds: [], uncategorized: false },
     },
     {
       name: "a state write without memberships keeps them",
-      writes: [row({ subscriptionIds: ["sub-1", "col-1"], updatedAt: t1 }), state(true, t2)],
+      writes: [
+        row({ subscriptionIds: ["sub-1", "col-1"], tagLists: TAGGED, updatedAt: t1 }),
+        state(true, t2),
+      ],
       subscriptionIds: ["sub-1", "col-1"],
+      tagLists: TAGGED,
     },
-  ])("$name", ({ writes, subscriptionIds }) => {
-    expect(applyAll(writes)?.subscriptionIds).toEqual(subscriptionIds);
+  ])("$name", ({ writes, subscriptionIds, tagLists }) => {
+    expect(applyAll(writes)).toMatchObject({ subscriptionIds, tagLists });
   });
 
   it("keeps the summary with the rest of the metadata", () => {
@@ -286,6 +296,22 @@ describe("setServerEntryState", () => {
   it("ignores entries the store doesn't hold", () => {
     setServerEntryState(store, "missing", { read: true, starred: false, updatedAt: t2 });
     expect(store.collection.has("missing")).toBe(false);
+  });
+});
+
+describe("setStoredEntryCollection", () => {
+  it("takes the change's tag lists even when the entry's memberships already show it", () => {
+    // A page fetched after the add, landing before its event.
+    upsertServerEntries(store, [makeEntry({ subscriptionIds: ["sub-1", "col-1"] })]);
+    setStoredEntryCollection(store, "e1", {
+      collectionId: "col-1",
+      added: true,
+      tagLists: TAGGED,
+    });
+    expect(store.collection.get("e1")).toMatchObject({
+      subscriptionIds: ["sub-1", "col-1"],
+      tagLists: TAGGED,
+    });
   });
 });
 

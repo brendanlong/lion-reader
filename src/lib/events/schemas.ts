@@ -255,9 +255,8 @@ const subscriptionIdsSchema = z.array(z.string());
 
 /**
  * The tag lists holding an entry: its active subscriptions' tags, and whether
- * one of them is untagged (Uncategorized). Sent with every entry a client may
- * place in its lists, since clients can't derive it from the subscriptions
- * they've loaded.
+ * one of them is untagged (Uncategorized). Clients place entries by these
+ * alone (`src/FRONTEND_STATE.md`).
  */
 export const tagListsSchema = z.object({
   tagIds: z.array(z.string()),

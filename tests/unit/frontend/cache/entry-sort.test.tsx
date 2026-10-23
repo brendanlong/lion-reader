@@ -188,7 +188,7 @@ describe("sortable", () => {
       timestamp: "2024-07-02T00:00:00Z",
       updatedAt: "2024-07-02T00:00:00Z",
       subscriptionIds: entry.subscriptionIds,
-      tagLists: entry.tagLists,
+      tagLists: entry.tagLists ?? { tagIds: [], uncategorized: false },
       ...change,
     };
   }

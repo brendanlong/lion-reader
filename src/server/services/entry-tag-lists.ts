@@ -1,8 +1,7 @@
 /**
  * Which tag and Uncategorized lists hold an entry, read from those lists' own
- * rows (`tag_entries`). The server sends them with every entry a client may
- * place in its loaded lists, so clients never derive tag membership from the
- * subscriptions they happen to have loaded.
+ * rows (`tag_entries`), for the `tagLists` clients place entries by
+ * (`src/FRONTEND_STATE.md`).
  */
 
 import { and, eq, inArray } from "drizzle-orm";
@@ -33,16 +32,16 @@ export async function listEntryTagLists(
   return byEntry;
 }
 
-/** Adds each entry's {@link listEntryTagLists} to it. */
+/**
+ * Adds each entry's {@link listEntryTagLists} to it, read alongside `entries`
+ * (which must be among `entryIds`).
+ */
 export async function withTagLists<T extends { id: string }>(
   db: DbOrTx,
   userId: string,
-  entries: T[]
+  entryIds: readonly string[],
+  entries: T[] | PromiseLike<T[]>
 ): Promise<Array<T & { tagLists: TagLists }>> {
-  const tagLists = await listEntryTagLists(
-    db,
-    userId,
-    entries.map((entry) => entry.id)
-  );
-  return entries.map((entry) => ({ ...entry, tagLists: tagLists.get(entry.id)! }));
+  const [rows, tagLists] = await Promise.all([entries, listEntryTagLists(db, userId, entryIds)]);
+  return rows.map((row) => ({ ...row, tagLists: tagLists.get(row.id)! }));
 }

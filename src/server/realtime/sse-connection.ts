@@ -152,10 +152,38 @@ export function startSseConnection({
    */
   let queuedNewEntries = 0;
   const queuedNewEntrySubscriptionIds = new Set<string>();
+  /** Queued new_entry ids whose tag lists aren't read yet, and those read but not sent. */
+  const queuedNewEntryIds = new Set<string>();
+  const queuedTagLists = new Map<string, TagLists>();
 
-  /** The counts the last new_entry queued carries, for every queued one's subscriptions. */
+  /**
+   * An entry's tag lists, per user (a web feed's event is shared by every
+   * subscriber). The first new_entry of a burst reads every queued one's in a
+   * single lookup; undefined when that lookup failed.
+   */
+  async function takeQueuedTagLists(entryId: string): Promise<TagLists | undefined> {
+    if (!queuedTagLists.has(entryId)) {
+      // Itself too: an entry queued twice in a burst was taken by the first.
+      const entryIds = [...queuedNewEntryIds.add(entryId)];
+      queuedNewEntryIds.clear();
+      try {
+        for (const [id, lists] of await listEntryTagLists(db, userId, entryIds)) {
+          queuedTagLists.set(id, lists);
+        }
+      } catch (err) {
+        logger.error("Failed to read new_entry tag lists", {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    const tagLists = queuedTagLists.get(entryId);
+    queuedTagLists.delete(entryId);
+    return tagLists;
+  }
+
+  /** Counts for every queued new_entry's subscription, which the last one queued carries. */
   async function readQueuedNewEntryCounts(): Promise<BulkUnreadCounts | undefined> {
-    if (queuedNewEntries > 0) return undefined;
     const subscriptionIds = [...queuedNewEntrySubscriptionIds];
     queuedNewEntrySubscriptionIds.clear();
     try {
@@ -202,23 +230,16 @@ export function startSseConnection({
     if (subscriptionId && event.feedType !== "saved") {
       queuedNewEntrySubscriptionIds.add(subscriptionId);
     }
+    queuedNewEntryIds.add(event.entryId);
     enqueueSend(async () => {
       queuedNewEntries--;
-      const countsRead = readQueuedNewEntryCounts();
-      let tagLists: TagLists;
-      try {
-        // Per user: the event is the feed's, shared by every subscriber.
-        tagLists = (await listEntryTagLists(db, userId, [event.entryId])).get(event.entryId)!;
-      } catch (err) {
-        // Without them the client can't place the entry; its lists pick it
-        // up on their next fetch.
-        logger.error("Failed to read new_entry tag lists", {
-          userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return;
-      }
-      const counts = await countsRead;
+      const carriesCounts = queuedNewEntries === 0;
+      const tagLists = await takeQueuedTagLists(event.entryId);
+      // Without them the client can't place the entry, so it isn't sent (its
+      // lists pick it up on their next fetch), and the queued subscriptions'
+      // counts wait for the next new_entry.
+      if (!tagLists) return;
+      const counts = carriesCounts ? await readQueuedNewEntryCounts() : undefined;
       if (closed) return;
       const cursor = new Date().toISOString();
       send(

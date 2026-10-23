@@ -38,7 +38,7 @@ import {
   SEEDED_SAVED_SUBSCRIPTION_ID,
 } from "../../../utils/cache-test-helpers";
 import type { QueryClient } from "@tanstack/react-query";
-import { getLocalDb } from "@/lib/local-db/local-db";
+import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
 import { entryListKey } from "@/lib/local-db/entry-lists";
 import type { EntryRow } from "@/lib/local-db/entries";
 import type { CountedList } from "@/lib/local-db/counts";
@@ -889,6 +889,24 @@ describe("handleSyncEvent - tag and Uncategorized lists", () => {
 
     expect(listIds(TAG_LIST)).toEqual(["entry-3"]);
     expect(listIds(UNCATEGORIZED_LIST)).toEqual([]);
+  });
+
+  // The server re-delivers none of the entries these move, so their stored
+  // tag lists may be wrong: placing them from the store (a local mark-unread)
+  // skips tag and Uncategorized lists until the server sends them again.
+  it.each([
+    ["a retag of its subscription", createSubscriptionUpdatedEvent({ id: "sub-1" })],
+    ["its subscription's deletion", createSubscriptionDeletedEvent({ subscriptionId: "sub-1" })],
+    ["its tag's deletion", createTagDeletedEvent({ tagId: "tag-1" })],
+  ])("doesn't place a stored entry by its tag lists after %s", (_, event) => {
+    const list = { tagId: "tag-1", limit: 25 };
+    seedList(list, []);
+    handleSyncEvent(utils, queryClient, event);
+
+    insertEntryIntoLists(getLocalDb(queryClient), storedEntry("entry-2")!);
+
+    expect(storedEntry("entry-2")?.tagLists).toBeNull();
+    expect(listIds(list)).toEqual([]);
   });
 });
 

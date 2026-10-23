@@ -382,7 +382,12 @@ export async function listEntries(
   ]);
   const firstPage = !params.cursor && !params.offset;
   return {
-    items: await withTagLists(db, params.userId, items.map(toEntryListItem)),
+    items: await withTagLists(
+      db,
+      params.userId,
+      items.map((item) => item.id),
+      items.map(toEntryListItem)
+    ),
     nextCursor,
     ...(sortable && { sortable }),
     ...(firstPage && page.sort && { sort: page.sort }),
@@ -885,7 +890,12 @@ async function searchEntries(
 
   const hasMore = queryResults.length > limit;
   const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-  const items = await withTagLists(db, params.userId, resultEntries.map(toEntryListItem));
+  const items = await withTagLists(
+    db,
+    params.userId,
+    resultEntries.map((row) => row.id),
+    resultEntries.map(toEntryListItem)
+  );
 
   let nextCursor: string | undefined;
   if (hasMore && resultEntries.length > 0) {
