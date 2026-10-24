@@ -34,13 +34,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Toolchain
 
-- **Node 26** (`.nvmrc` is the source of truth). `pnpm install` refuses an older Node (`engine-strict`), but other scripts don't check: with `node_modules` already installed, everything passes until Playwright dies at collection with `TypeError: Cannot read properties of undefined (reading 'exports')` inside `@sentry/nextjs` — check `node --version` before debugging that. With no version manager available, unpack a toolchain into the worktree rather than touching system or `$HOME` config:
-
-  ```bash
-  mkdir -p .node26 && curl -sL https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz \
-    | tar -xJ -C .node26 --strip-components=1
-  export PATH="$PWD/.node26/bin:$PATH"
-  ```
+- **Node**: `pnpm` runs every script on the Node in `devEngines.runtime` (`package.json`), the newest release in that range when the lockfile was last updated, which it downloads into `node_modules` on install. Any Node ≥24 can run `pnpm` itself (the `engines` floor, which is also what Dependabot runs with), so you need no version manager. Run tools through `pnpm` (`pnpm exec playwright`, not a bare `npx`/`node`): on an older system Node, Playwright dies at collection with `TypeError: Cannot read properties of undefined (reading 'exports')` inside `@sentry/nextjs`.
 
 - **Rust** is pinned to the rustc Alpine ships in the Dockerfile's `rust-base` stage (`rust-toolchain.toml` says why). Bump the two together.
 
