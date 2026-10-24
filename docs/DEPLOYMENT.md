@@ -185,6 +185,10 @@ The deploy job runs in the `production` environment, so the token is an environm
 
 `.github/workflows/deploy.yml` deploys every commit that passes CI on `master`; its comments explain the gating, queueing and checkout. The Bunny CDN in front of the site (`terraform/bunny.tf`) needs no deploy step: it honors origin `Cache-Control`, so our headers decide what it caches (CDN section of `src/server/http/CLAUDE.md`).
 
+### 4. Weekly Release Notes
+
+`.github/workflows/release.yml` drafts each week's GitHub release with Claude. Give it an Anthropic API key as the `ANTHROPIC_API_KEY` secret of a `release-notes` environment limited to `master`, like `production` above.
+
 ---
 
 ## First Deployment
@@ -266,9 +270,14 @@ must be higher than the last.
    keytool -list -v -keystore lionreader-upload.jks -alias upload   # SHA256 line
    ```
 
-2. Add GitHub secrets: `ANDROID_RELEASE_KEYSTORE_BASE64`
-   (`base64 -w0 lionreader-upload.jks`), `ANDROID_RELEASE_KEYSTORE_PASSWORD`,
-   `ANDROID_RELEASE_KEY_ALIAS` (`upload`), `ANDROID_RELEASE_KEY_PASSWORD`.
+2. Create an `android-release` environment (**Settings** > **Environments**)
+   with yourself as a required reviewer, so no run can use the key until you
+   approve it, and deployment branches and tags limited to `master` and the
+   tag pattern `android-v*`. A leaked key lets anyone sign updates that every
+   GitHub install accepts. Add its environment secrets:
+   `ANDROID_RELEASE_KEYSTORE_BASE64` (`base64 -w0 lionreader-upload.jks`),
+   `ANDROID_RELEASE_KEYSTORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS` (`upload`),
+   `ANDROID_RELEASE_KEY_PASSWORD`.
 3. Set `ANDROID_APP_CERT_SHA256` on the server (see the table above) to the
    upload key's fingerprint, and, once Play App Signing is on, Play's key's
    (Play Console → Test and release → App integrity). The two builds are

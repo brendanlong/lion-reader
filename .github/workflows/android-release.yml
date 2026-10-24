@@ -27,6 +27,9 @@ jobs:
     name: Build and release
     # Manual releases are of master's head.
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master'
+    # The signing key is a secret of this environment, which needs a
+    # reviewer's approval for each run (docs/DEPLOYMENT.md).
+    environment: android-release
     runs-on: ubuntu-latest
     defaults:
       run:
