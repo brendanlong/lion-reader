@@ -14,7 +14,9 @@ ARG ASSET_PREFIX
 # security release reaches production as a Dependabot PR rather than whenever a
 # builder happens to re-pull a floating tag, and identical tags let Dependabot
 # bump them in one PR. Dependabot keeps the -alpineX.Y suffix, so moving Alpine
-# stays a deliberate edit (see the rust-base stage for why that matters).
+# stays a deliberate edit (see the rust-base stage for why that matters). Node
+# only publishes images for recent Alpine releases: once it stops building this
+# suffix, Dependabot goes quiet and Node updates stop until Alpine is bumped.
 FROM node:26.12.1-alpine3.24 AS base
 
 # Install the exact pnpm version from package.json
@@ -49,9 +51,10 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # Stage 3a: The Rust toolchain production compiles with
 # =============================================================================
 # The Alpine version decides which rustc production compiles with, so it only
-# moves when someone edits it; rust-toolchain.toml says why CI has to match. Its own stage so CI can run the check below with
-# `docker build --target rust-base .` in seconds — otherwise the bump that
-# breaks the pin passes CI and fails the deploy build.
+# moves when someone edits it; rust-toolchain.toml says why CI has to match.
+# Its own stage so CI can run the check below with `docker build --target
+# rust-base .` in seconds — otherwise the bump that breaks the pin passes CI
+# and fails the deploy build.
 FROM node:26.12.1-alpine3.24 AS rust-base
 
 WORKDIR /app

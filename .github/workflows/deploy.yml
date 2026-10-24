@@ -33,11 +33,20 @@ jobs:
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
-    # FLY_API_TOKEN is a secret of this environment, which only master may use.
+    # FLY_API_TOKEN is a secret of this environment. Its branch rule limits
+    # manual runs to master, but a workflow_run job always counts as being on
+    # master, so the `if` below has to do that check itself.
     environment: production
-    # workflow_run fires on every CI completion; only deploy when CI passed.
-    # Manual dispatch bypasses the gate intentionally.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # workflow_run fires on every CI completion; only deploy when CI passed on
+    # a push to this repo. `branches: [master]` above matches the *head* branch
+    # name, so without the event and repository checks a fork PR from a branch
+    # called master would deploy its own code with the token in scope.
+    # Manual dispatch bypasses the CI gate intentionally.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

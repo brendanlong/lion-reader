@@ -78,7 +78,7 @@ jobs:
       - name: Check GitHub Actions are pinned to commit SHAs
         if: ${{ !cancelled() }}
         run: |
-          if grep -nE '^\s*(- )?uses:\s*[^.][^@]*@' .github/workflows/*.yml | grep -vE '@[0-9a-f]{40}(\s|$)'; then
+          if grep -nE '^\s*(-\s+)?uses:\s*[^.][^@]*@' .github/workflows/*.y*ml | grep -vE '@[0-9a-f]{40}(\s|$)'; then
             echo "::error::Pin these actions to a full commit SHA with a '# vX.Y.Z' comment."
             exit 1
           fi
