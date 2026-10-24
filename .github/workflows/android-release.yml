@@ -106,8 +106,6 @@ jobs:
           ORG_GRADLE_PROJECT_lionReaderVersionCode: ${{ steps.version.outputs.code }}
           ORG_GRADLE_PROJECT_lionReaderReleaseKeystore: ${{ runner.temp }}/release.jks
           ORG_GRADLE_PROJECT_lionReaderReleaseKeystorePassword: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_lionReaderReleaseKeyAlias: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-          ORG_GRADLE_PROJECT_lionReaderReleaseKeyPassword: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: ./gradlew :androidApp:bundleRelease :androidApp:assembleRelease
 
       - name: Collect outputs

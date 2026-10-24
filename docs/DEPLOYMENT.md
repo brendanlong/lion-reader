@@ -275,9 +275,8 @@ must be higher than the last.
    approve it, and deployment branches and tags limited to `master` and the
    tag pattern `android-v*`. A leaked key lets anyone sign updates that every
    GitHub install accepts. Add its environment secrets:
-   `ANDROID_RELEASE_KEYSTORE_BASE64` (`base64 -w0 lionreader-upload.jks`),
-   `ANDROID_RELEASE_KEYSTORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS` (`upload`),
-   `ANDROID_RELEASE_KEY_PASSWORD`.
+   `ANDROID_RELEASE_KEYSTORE_BASE64` (`base64 -w0 lionreader-upload.jks`) and
+   `ANDROID_RELEASE_KEYSTORE_PASSWORD`.
 3. Set `ANDROID_APP_CERT_SHA256` on the server (see the table above) to the
    upload key's fingerprint, and, once Play App Signing is on, Play's key's
    (Play Console → Test and release → App integrity). The two builds are

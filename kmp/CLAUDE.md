@@ -88,17 +88,15 @@ keytool -genkeypair -v -keystore lionreader-dev.jks -alias dev \
 keytool -list -v -keystore lionreader-dev.jks -alias dev   # SHA256 line
 ```
 
-and point Gradle at it with the properties `lionReaderDevKeystore` (path),
-`lionReaderDevKeystorePassword`, `lionReaderDevKeyAlias` and
-`lionReaderDevKeyPassword` (e.g. in `~/.gradle/gradle.properties` on your own
-machine, or `ORG_GRADLE_PROJECT_*`). Without them, debug builds use the default
-debug key and can sign in only to dev servers.
+and point Gradle at it with the properties `lionReaderDevKeystore` (path) and
+`lionReaderDevKeystorePassword` (e.g. in `~/.gradle/gradle.properties` on your
+own machine, or `ORG_GRADLE_PROJECT_*`). Without them, debug builds use the
+default debug key and can sign in only to dev servers.
 
 CI (`.github/workflows/android.yml`) signs its debug build with the same key
-(secrets `ANDROID_DEV_KEYSTORE_BASE64`, `ANDROID_DEV_KEYSTORE_PASSWORD`,
-`ANDROID_DEV_KEY_ALIAS`, `ANDROID_DEV_KEY_PASSWORD`) and links the APK from a
-comment on the pull request, so a PR's build (not a fork's) or master's
-installs over any other debug build. Anyone who can push a branch can read
+(secrets `ANDROID_DEV_KEYSTORE_BASE64` and `ANDROID_DEV_KEYSTORE_PASSWORD`)
+and links the APK from a comment on the pull request, so a PR's build (not a
+fork's) or master's installs over any other debug build. Anyone who can push a branch can read
 those secrets (a workflow change can print them), which is why the key only
 covers the debug app.
 
