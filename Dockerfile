@@ -21,7 +21,14 @@ FROM node:26.12.1-alpine3.24 AS base
 
 # Install the exact pnpm version from package.json
 # (Node 26 no longer bundles corepack, so install pnpm directly via npm)
-RUN npm install -g pnpm@10.26.2
+RUN npm install -g pnpm@11.28.6
+
+# Scripts run on this image's Node, not a second copy from devEngines.runtime
+# (pnpm would pick the glibc build, which can't start on this musl image). The
+# deps stage is the only install: without VERIFY_DEPS_BEFORE_RUN=false, pnpm
+# re-installs before each build script whenever a cached deps layer is older
+# than the freshly copied manifests.
+ENV PNPM_CONFIG_RUNTIME=false PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false
 
 # Set working directory
 WORKDIR /app
