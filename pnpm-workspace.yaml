@@ -8,6 +8,8 @@ packages:
   - native/markdown
   - native/speech-encoder
 
+engineStrict: true
+
 # Supply-chain: only resolve package versions that have been on the registry for at
 # least this many minutes (10080 = 7 days), giving a compromised release time to be
 # caught and yanked before it reaches us. pnpm skips in-window versions and picks the
@@ -29,15 +31,13 @@ minimumReleaseAgeExclude:
   - fast-uri@3.1.9
   - body-parser@2.4.0
 
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
-
-onlyBuiltDependencies:
-  - "@sentry/cli"
-  - argon2
-  - esbuild
-  - protobufjs
+allowBuilds:
+  "@sentry/cli": true
+  argon2: true
+  esbuild: true
+  protobufjs: true
+  sharp: false
+  unrs-resolver: false
 
 # Transitive dependencies pinned above a vulnerable range. A dependency only
 # needs an entry here while its parent still resolves below the patched

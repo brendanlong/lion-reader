@@ -21,7 +21,7 @@ FROM node:26.12.1-alpine3.24 AS base
 
 # Install the exact pnpm version from package.json
 # (Node 26 no longer bundles corepack, so install pnpm directly via npm)
-RUN npm install -g pnpm@10.26.2
+RUN npm install -g pnpm@11.28.6
 
 # Set working directory
 WORKDIR /app
@@ -43,9 +43,11 @@ COPY native/markdown/package.json ./native/markdown/package.json
 COPY native/speech-encoder/package.json ./native/speech-encoder/package.json
 
 # Install all dependencies (including devDependencies for building)
-# Use --ignore-scripts because postinstall needs files not yet copied
+# Use --ignore-scripts because postinstall needs files not yet copied.
+# --no-runtime: scripts run on this image's Node, not a second copy from
+# devEngines.runtime (which would also be a glibc build on this musl image).
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --ignore-scripts
+    pnpm install --frozen-lockfile --ignore-scripts --no-runtime
 
 # =============================================================================
 # Stage 3a: The Rust toolchain production compiles with
