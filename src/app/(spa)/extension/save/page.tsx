@@ -65,7 +65,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   }
 
   // Check if this is a Google Doc and we need OAuth
-  const isGoogleDoc = url.includes("docs.google.com");
+  const isGoogleDoc = URL.parse(url)?.hostname === "docs.google.com";
   // The Google callback only adds scopes to an already-linked account, so
   // without one, just try the save (public docs need no auth)
   if (isGoogleDoc && (await getGoogleDocsGrant(session.user.id)).status === "missing-scopes") {
