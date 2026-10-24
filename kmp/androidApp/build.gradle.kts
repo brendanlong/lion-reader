@@ -1,4 +1,5 @@
 import com.android.build.api.variant.HostTestBuilder
+import java.security.KeyStore
 
 plugins {
     // AGP 9 compiles Kotlin itself (built-in Kotlin), so no kotlin-android plugin.
@@ -32,27 +33,11 @@ android {
     // the server can list in ANDROID_DEBUG_APP_CERT_SHA256 (see kmp/CLAUDE.md).
     // Without it, debug builds use the default debug key and can only sign in
     // to dev servers.
-    val devKeystore = providers.gradleProperty("lionReaderDevKeystore").orNull
-    val devSigning = devKeystore?.let {
-        signingConfigs.create("dev") {
-            storeFile = file(it)
-            storePassword = providers.gradleProperty("lionReaderDevKeystorePassword").get()
-            keyAlias = providers.gradleProperty("lionReaderDevKeyAlias").get()
-            keyPassword = providers.gradleProperty("lionReaderDevKeyPassword").get()
-        }
-    }
+    val devSigning = keystoreSigning("dev", "lionReaderDevKeystore")
 
     // The release (upload) key, from CI secrets. Without it, release builds are
     // unsigned.
-    val releaseKeystore = providers.gradleProperty("lionReaderReleaseKeystore").orNull
-    val releaseSigning = releaseKeystore?.let {
-        signingConfigs.create("release") {
-            storeFile = file(it)
-            storePassword = providers.gradleProperty("lionReaderReleaseKeystorePassword").get()
-            keyAlias = providers.gradleProperty("lionReaderReleaseKeyAlias").get()
-            keyPassword = providers.gradleProperty("lionReaderReleaseKeyPassword").get()
-        }
-    }
+    val releaseSigning = keystoreSigning("release", "lionReaderReleaseKeystore")
 
     buildTypes {
         debug {
@@ -160,3 +145,22 @@ fun com.android.build.api.dsl.VariantDimension.signInCallbackPath(path: String) 
     manifestPlaceholders["appLinkPath"] = path
     buildConfigField("String", "SIGN_IN_CALLBACK_PATH", "\"$path\"")
 }
+
+/**
+ * A signing config from the keystore at the `<property>` path, unlocked by `<property>Password`, or
+ * null when the path isn't set. Each keystore holds just its one key, and PKCS12 (keytool's
+ * default) has a single password for the store and its keys, so neither the alias nor a key
+ * password is asked for.
+ */
+fun keystoreSigning(name: String, property: String) =
+    providers.gradleProperty(property).orNull?.let { path ->
+        val keystore = file(path)
+        val password = providers.gradleProperty("${property}Password").get()
+        android.signingConfigs.create(name) {
+            storeFile = keystore
+            storePassword = password
+            keyAlias =
+                KeyStore.getInstance(keystore, password.toCharArray()).aliases().toList().single()
+            keyPassword = password
+        }
+    }

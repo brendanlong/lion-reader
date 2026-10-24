@@ -71,8 +71,6 @@ jobs:
         env:
           DEV_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEV_KEYSTORE_BASE64 }}
           DEV_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEV_KEYSTORE_PASSWORD }}
-          DEV_KEY_ALIAS: ${{ secrets.ANDROID_DEV_KEY_ALIAS }}
-          DEV_KEY_PASSWORD: ${{ secrets.ANDROID_DEV_KEY_PASSWORD }}
         run: |
           # Nothing the checks left running is around to read the key.
           ./gradlew --stop
@@ -80,8 +78,6 @@ jobs:
             echo "$DEV_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/dev.jks"
             export ORG_GRADLE_PROJECT_lionReaderDevKeystore="$RUNNER_TEMP/dev.jks"
             export ORG_GRADLE_PROJECT_lionReaderDevKeystorePassword="$DEV_KEYSTORE_PASSWORD"
-            export ORG_GRADLE_PROJECT_lionReaderDevKeyAlias="$DEV_KEY_ALIAS"
-            export ORG_GRADLE_PROJECT_lionReaderDevKeyPassword="$DEV_KEY_PASSWORD"
             echo "signed=true" >> "$GITHUB_OUTPUT"
           fi
           ./gradlew assembleDebug
