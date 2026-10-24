@@ -160,7 +160,8 @@ fun keystoreSigning(name: String, property: String) =
             storeFile = keystore
             storePassword = password
             keyAlias =
-                KeyStore.getInstance(keystore, password.toCharArray()).aliases().toList().single()
+                KeyStore.getInstance(keystore, password.toCharArray()).aliases().toList().singleOrNull()
+                    ?: error("$path must hold exactly one key")
             keyPassword = password
         }
     }
