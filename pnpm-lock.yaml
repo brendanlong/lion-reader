@@ -11,7 +11,7 @@ overrides:
   '@modelcontextprotocol/sdk>@hono/node-server': ^1.19.15
   express-rate-limit>ip-address: ^10.7.4
   '@discordjs/ws>ws': ^8.20.1
-  qs: ^6.16.0
+  qs: ^6.16.1
   express>body-parser: ^2.4.0
   postcss: ^8.5.10
   fast-xml-parser: ^5.8.0
