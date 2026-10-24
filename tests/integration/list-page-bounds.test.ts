@@ -146,12 +146,26 @@ async function explainPage(params: ListEntriesParams) {
   const lists = queries.filter((q) => q.query.includes('"visible_entries"'));
   if (lists.length === 0) throw new Error("listEntries ran no list query");
   const plans: PlanNode[] = [];
-  for (const list of lists) {
-    const result = await pool.query<{ "QUERY PLAN": [{ Plan: PlanNode }] }>(
-      `EXPLAIN (ANALYZE, FORMAT JSON) ${list.query}`,
-      list.params
-    );
-    plans.push(result.rows[0]["QUERY PLAN"][0].Plan);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // We test that an index serves each page's order, not whether the planner
+    // prefers it from this seed's statistics, which misestimate these lists
+    // enough to flip between the two. Penalizing sorts and bitmap scans (which
+    // lose the order) makes the planner take an ordered index if one exists;
+    // index choice and join order still follow the estimates.
+    await client.query("SET LOCAL enable_sort = off");
+    await client.query("SET LOCAL enable_bitmapscan = off");
+    for (const list of lists) {
+      const result = await client.query<{ "QUERY PLAN": [{ Plan: PlanNode }] }>(
+        `EXPLAIN (ANALYZE, FORMAT JSON) ${list.query}`,
+        list.params
+      );
+      plans.push(result.rows[0]["QUERY PLAN"][0].Plan);
+    }
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
   }
   return { page, plans };
 }
