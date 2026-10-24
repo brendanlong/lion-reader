@@ -149,11 +149,11 @@ async function explainPage(params: ListEntriesParams) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    // We test that a bounded plan exists, not that the planner picks it from
-    // this seed's statistics: those misestimate these lists (by 100x in CI)
-    // and flip the plan between runs. Penalizing sorts and bitmap scans (which
-    // can't return rows in order) leaves a sort only when no index serves the
-    // order, and that page still reads past the budget.
+    // We test that an index serves each page's order, not whether the planner
+    // prefers it from this seed's statistics, which misestimate these lists
+    // enough to flip between the two. Penalizing sorts and bitmap scans (which
+    // lose the order) makes the planner take an ordered index if one exists;
+    // index choice and join order still follow the estimates.
     await client.query("SET LOCAL enable_sort = off");
     await client.query("SET LOCAL enable_bitmapscan = off");
     for (const list of lists) {
