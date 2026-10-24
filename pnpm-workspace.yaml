@@ -14,7 +14,14 @@ packages:
 # newest one that has cleared the cooldown, so `pnpm add`/`update` need no special
 # handling. Set here (not per-machine global config) so everyone resolves identically.
 # We deliberately keep this applied to every package — high-usage, high-frequency
-# deps are the most attractive targets, so there's no minimumReleaseAgeExclude.
+# deps are the most attractive targets, so never exclude a package by name.
+#
+# Emergency patch (a security advisory names a fixed version we need now):
+# exempt that exact version, e.g. `- next@16.4.2` under minimumReleaseAgeExclude,
+# then `pnpm update next@16.4.2`. Before merging, review what's actually
+# published, which can differ from the git tag:
+# `npm diff --diff=next@16.4.1 --diff=next@16.4.2`. Delete the entry once the
+# version is past the cooldown.
 minimumReleaseAge: 10080
 
 ignoredBuiltDependencies:
