@@ -5,7 +5,8 @@
 # 1. Create a Fly.io account and install flyctl
 # 2. Run `fly launch --no-deploy` in the project directory
 # 3. Create a deploy token: `fly tokens create deploy`
-# 4. Add the token as a GitHub secret: FLY_API_TOKEN
+# 4. Add the token as a secret of the `production` environment: FLY_API_TOKEN
+#    (docs/DEPLOYMENT.md)
 
 name: Deploy
 
@@ -32,19 +33,21 @@ jobs:
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
+    # FLY_API_TOKEN is a secret of this environment, which only master may use.
+    environment: production
     # workflow_run fires on every CI completion; only deploy when CI passed.
     # Manual dispatch bypasses the gate intentionally.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Deploy the exact commit CI validated (workflow_run runs on the
           # default branch's ref, which may have moved past head_sha).
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Fly.io CLI
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
       - name: Deploy to Fly.io
         # GIT_COMMIT_SHA (read by src/server/config/env.ts for the outgoing

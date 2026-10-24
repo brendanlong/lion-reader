@@ -35,21 +35,21 @@ jobs:
       run:
         working-directory: kmp
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Matches gradle/gradle-daemon-jvm.properties and the toolchain version in
       # the catalog, so Gradle finds it instead of provisioning another JDK.
-      - uses: actions/setup-java@v6.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
 
       # Also validates the wrapper jar. Writes the cache only on master.
-      - uses: gradle/actions/setup-gradle@v6.4.0
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       # The Kotlin/Native toolchain `check` compiles :shared's iOS targets with
       # (outside the Gradle user home, so setup-gradle doesn't cache it).
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('kmp/gradle/libs.versions.toml') }}
@@ -89,7 +89,7 @@ jobs:
       - name: Upload debug APK
         id: upload
         if: steps.debug.outputs.signed == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lion-reader-debug-${{ github.event.pull_request.head.sha || github.sha }}
           path: kmp/androidApp/build/outputs/apk/debug/androidApp-debug.apk
@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload reports
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-reports
           path: kmp/*/build/reports/

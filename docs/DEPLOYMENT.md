@@ -171,14 +171,15 @@ flyctl tokens create deploy -x 999999h
 
 This creates a long-lived deploy token. Copy the token value.
 
-### 2. Add Token to GitHub Secrets
+### 2. Add Token to the `production` Environment
+
+The deploy job runs in the `production` environment, so the token is an environment secret, not a repository secret: only jobs that name the environment can read it, and the branch rule keeps those to `master`.
 
 1. Go to your GitHub repository
-2. Navigate to **Settings** > **Secrets and variables** > **Actions**
-3. Click **New repository secret**
-4. Name: `FLY_API_TOKEN`
-5. Value: Paste the token from step 1
-6. Click **Add secret**
+2. Navigate to **Settings** > **Environments** and create (or open) `production`
+3. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `master`
+4. Under **Environment secrets**, click **Add environment secret**
+5. Name: `FLY_API_TOKEN`; Value: paste the token from step 1
 
 ### 3. Deploy Workflow
 
