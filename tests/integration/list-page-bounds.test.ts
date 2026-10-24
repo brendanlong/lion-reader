@@ -146,12 +146,26 @@ async function explainPage(params: ListEntriesParams) {
   const lists = queries.filter((q) => q.query.includes('"visible_entries"'));
   if (lists.length === 0) throw new Error("listEntries ran no list query");
   const plans: PlanNode[] = [];
-  for (const list of lists) {
-    const result = await pool.query<{ "QUERY PLAN": [{ Plan: PlanNode }] }>(
-      `EXPLAIN (ANALYZE, FORMAT JSON) ${list.query}`,
-      list.params
-    );
-    plans.push(result.rows[0]["QUERY PLAN"][0].Plan);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // We test that a bounded plan exists, not that the planner picks it from
+    // this seed's statistics: those misestimate these lists (by 100x in CI)
+    // and flip the plan between runs. Penalizing sorts and bitmap scans (which
+    // can't return rows in order) leaves a sort only when no index serves the
+    // order, and that page still reads past the budget.
+    await client.query("SET LOCAL enable_sort = off");
+    await client.query("SET LOCAL enable_bitmapscan = off");
+    for (const list of lists) {
+      const result = await client.query<{ "QUERY PLAN": [{ Plan: PlanNode }] }>(
+        `EXPLAIN (ANALYZE, FORMAT JSON) ${list.query}`,
+        list.params
+      );
+      plans.push(result.rows[0]["QUERY PLAN"][0].Plan);
+    }
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
   }
   return { page, plans };
 }
