@@ -25,6 +25,8 @@ packages:
 minimumReleaseAge: 10080
 
 minimumReleaseAgeExclude:
+  # Remove each once past the cooldown: 2026-10-26 for fast-uri, 2026-10-29
+  # for the other two.
   - serialize-javascript@7.1.3
   - fast-uri@3.1.9
   - body-parser@2.4.0
@@ -39,29 +41,44 @@ onlyBuiltDependencies:
   - esbuild
   - protobufjs
 
-# Transitive dependencies pinned above a vulnerable range. A dependency only
-# needs an entry here while its parent still resolves below the patched
-# version — once the parent's own range catches up, drop the override rather
-# than leaving a floor nobody is enforcing.
+# Transitive dependencies held above a vulnerable range, as caret floors so
+# they keep floating to new releases (never exact versions). A dependency only
+# needs an entry here while its parent's own range still admits a vulnerable
+# version — once it catches up, drop the override rather than leaving a floor
+# nobody is enforcing. Each comment names the advisory and the parent to watch.
 overrides:
+  # GHSA-72gr-qfp7-vwhw, GHSA-4hxc-9384-m385: until trpc-to-openapi wants h3 >=1.15.9
   trpc-to-openapi>h3: ^1.15.9
+  # GHSA-m5mm-p8h7-m29v: until @rollup/plugin-terser wants serialize-javascript >=7.1.3
   serialize-javascript: ^7.1.3
-  "@modelcontextprotocol/sdk>hono": ^4.13.5
+  # GHSA-5r4p-p66f-jhc7 and earlier: until @modelcontextprotocol/sdk wants hono >=4.13.11
+  "@modelcontextprotocol/sdk>hono": ^4.13.11
+  # GHSA-frvp-7c67-39w9: until @modelcontextprotocol/sdk wants @hono/node-server >=1.19.15
   "@modelcontextprotocol/sdk>@hono/node-server": ^1.19.15
+  # GHSA-rxp7-6hxx-x8q5: until express-rate-limit wants ip-address >=10.7.4
   express-rate-limit>ip-address: ^10.7.4
-  "@discordjs/ws>ws": ^8.20.1
+  # GHSA-96hv-2xvq-fx4p: until @discordjs/ws wants ws >=8.21.0
+  "@discordjs/ws>ws": ^8.21.0
+  # GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx: until co-body (via trpc-to-openapi)
+  # wants qs >=6.16.0; the floor matches body-parser's own ^6.16.1
   qs: ^6.16.1
+  # GHSA-27r3-jxmh-p828: until express wants body-parser >=2.4.0
   express>body-parser: ^2.4.0
-  postcss: ^8.5.10
-  fast-xml-parser: ^5.8.0
-  js-yaml: ^4.3.1
+  # GHSA-fxqj-rqcc-2cmp and earlier: until @tailwindcss/postcss wants postcss >=8.5.23
+  postcss: ^8.5.23
+  # GHSA-w74x-v6f9-j3xg and siblings: until ajv wants fast-uri >=3.1.9
   fast-uri: ^3.1.9
+  # GHSA-c83g-rgw3-j3cx, GHSA-73wf-gq98-2v4g: until webpack and
+  # update-browserslist-db want browserslist >=4.28.7
   browserslist@4: ^4.28.7
+  # GHSA-4x5r-pxfx-6jf8: until workbox-build, @rollup/plugin-babel and the
+  # Babel plugins' peer ranges want @babel/core >=7.29.6
   "@babel/core@7": ^7.29.6
+  # GHSA-p498-v437-472g: until eslint wants @humanfs/node >=0.16.8
   "@humanfs/node@0": ^0.16.8
-  # brace-expansion is pulled in at three majors at once, and the advisory
-  # patches each separately, so it needs one floor per major rather than a
-  # single range that would drag 1.x/2.x consumers onto 5.x.
+  # GHSA-q2hr-2g5m-vwhr and earlier: until minimatch 3/5/10 want the patched
+  # brace-expansion. It's pulled in at three majors, each patched separately, so
+  # it needs one floor per major rather than one range dragging all onto 5.x.
   brace-expansion@1: ^1.1.21
-  brace-expansion@2: ^2.1.4
-  brace-expansion@5: ^5.0.9
+  brace-expansion@2: ^2.1.7
+  brace-expansion@5: ^5.0.12
