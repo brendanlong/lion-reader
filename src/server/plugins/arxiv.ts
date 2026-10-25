@@ -3,9 +3,9 @@ import {
   buildArxivAbsUrl,
   buildArxivHtmlUrl,
   extractPaperId,
-  formatArxivAuthors,
   parseArxivAbsMetadata,
 } from "@/server/feed/arxiv";
+import { formatAuthors } from "@/server/feed/authors";
 import { fetchPluginPage } from "./fetch-page";
 import { logger } from "@/lib/logger";
 
@@ -123,7 +123,7 @@ export async function fetchArxivPaper(
   return {
     html: content.html,
     title: metadata?.title ?? null,
-    author: metadata ? formatArxivAuthors(metadata.authors) : null,
+    author: metadata ? formatAuthors(metadata.authors) : null,
     excerpt: metadata?.summary ?? null,
     publishedAt: null,
     canonicalUrl: content.finalUrl,

@@ -95,6 +95,21 @@ describe("parseRss", () => {
 
       expect(result.entries[0].author).toBe("John Doe");
     });
+
+    it("credits every dc:creator", () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <channel>
+            <item>
+              <title>Co-written post</title>
+              <dc:creator>Ada Lovelace</dc:creator>
+              <dc:creator>Alan Turing</dc:creator>
+            </item>
+          </channel>
+        </rss>`;
+
+      expect(parseRss(xml).entries[0].author).toBe("Ada Lovelace and Alan Turing");
+    });
   });
 
   describe("WebSub discovery", () => {

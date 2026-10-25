@@ -21,7 +21,9 @@ pub struct ParsedEntry {
     pub guid: Option<String>,
     pub link: Option<String>,
     pub title: Option<String>,
-    pub author: Option<String>,
+    /// Every author name, in document order. Several elements may each name
+    /// one author (Atom `<author>`, RSS `dc:creator`).
+    pub authors: Vec<String>,
     pub content: Option<String>,
     pub summary: Option<String>,
     /// Media RSS `media:description` (Atom parser only — YouTube).

@@ -3,6 +3,7 @@
  * Parses JSON Feed from a string, returning entries synchronously.
  */
 
+import { formatAuthors } from "../authors";
 import type { ParsedEntry } from "../types";
 import type { FeedParseResult } from "./types";
 
@@ -35,11 +36,16 @@ interface JsonFeedItem {
   language?: string;
 }
 
+function authorNames(authors: unknown): string[] {
+  if (!Array.isArray(authors)) return [];
+  return authors.flatMap((author: JsonFeedAuthor | null) =>
+    typeof author?.name === "string" ? [author.name] : []
+  );
+}
+
 function extractAuthor(item: JsonFeedItem): string | undefined {
-  if (item.authors && item.authors.length > 0 && item.authors[0].name) {
-    return item.authors[0].name;
-  }
-  return item.author?.name;
+  const names = authorNames(item.authors);
+  return formatAuthors(names.length > 0 ? names : authorNames([item.author])) ?? undefined;
 }
 
 function parseJsonFeedDate(dateString: string | undefined): Date | undefined {

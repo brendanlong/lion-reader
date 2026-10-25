@@ -37,6 +37,9 @@ struct Item {
     /// `content:encoded` element (None when that element was empty), used to
     /// decide whether a `<description>` may also populate `content`.
     content_encoded: Option<String>,
+    /// RSS `<author>` values, used only when the item has no `dc:creator`
+    /// (which names authors rather than email addresses).
+    rss_authors: Vec<String>,
 }
 
 struct RssHandler {
@@ -115,13 +118,11 @@ impl SaxHandler for RssHandler {
                         self.state = State::InItem;
                     }
                     State::InItemAuthor => {
-                        if item.entry.author.is_none() {
-                            item.entry.author = Some(text);
-                        }
+                        item.rss_authors.push(text);
                         self.state = State::InItem;
                     }
                     State::InItemDcCreator => {
-                        item.entry.author = Some(text);
+                        item.entry.authors.push(text);
                         self.state = State::InItem;
                     }
                     _ => {}
@@ -286,13 +287,11 @@ impl SaxHandler for RssHandler {
                     self.state = State::InItem;
                 }
                 State::InItemAuthor => {
-                    if item.entry.author.is_none() {
-                        item.entry.author = decoded.clone();
-                    }
+                    item.rss_authors.extend(decoded.clone());
                     self.state = State::InItem;
                 }
                 State::InItemDcCreator => {
-                    item.entry.author = decoded.clone();
+                    item.entry.authors.extend(decoded.clone());
                     self.state = State::InItem;
                 }
                 State::InItemPubDate => {
@@ -319,7 +318,10 @@ impl SaxHandler for RssHandler {
 
         // End of item — add to entries.
         if tag == "item" {
-            if let Some(item) = self.current.take() {
+            if let Some(mut item) = self.current.take() {
+                if item.entry.authors.is_empty() {
+                    item.entry.authors = item.rss_authors;
+                }
                 self.feed.entries.push(item.entry);
                 self.state = if self.is_rdf {
                     State::Initial
@@ -385,6 +387,29 @@ mod tests {
                 value: "Mon, 01 Jan 2024 12:00:00 GMT".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn collects_every_author_preferring_dc_creator() {
+        let xml = r#"<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+              <channel>
+                <item>
+                  <guid>both</guid>
+                  <author>a@example.com (Ada)</author>
+                  <dc:creator>Ada Lovelace</dc:creator>
+                  <dc:creator></dc:creator>
+                  <dc:creator><![CDATA[Alan Turing]]></dc:creator>
+                </item>
+                <item>
+                  <guid>rss-only</guid>
+                  <author>a@example.com</author>
+                  <author>b@example.com</author>
+                </item>
+              </channel>
+            </rss>"#;
+        let feed = parse_rss(xml).unwrap();
+        assert_eq!(feed.entries[0].authors, ["Ada Lovelace", "Alan Turing"]);
+        assert_eq!(feed.entries[1].authors, ["a@example.com", "b@example.com"]);
     }
 
     #[test]

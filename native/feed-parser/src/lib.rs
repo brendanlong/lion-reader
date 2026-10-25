@@ -30,7 +30,7 @@ pub struct RawParsedEntry {
     pub guid: Option<String>,
     pub link: Option<String>,
     pub title: Option<String>,
-    pub author: Option<String>,
+    pub authors: Vec<String>,
     /// Absent when `content_is_summary` is set — the caller reuses `summary`.
     pub content: Option<String>,
     pub summary: Option<String>,
@@ -93,7 +93,7 @@ fn convert_entry(entry: core::types::ParsedEntry) -> RawParsedEntry {
         guid: entry.guid,
         link: entry.link,
         title: entry.title,
-        author: entry.author,
+        authors: entry.authors,
         content: if content_is_summary {
             None
         } else {

@@ -9,6 +9,7 @@
  */
 
 import type { DateCandidate, RawParsedFeed } from "@lion-reader/feed-parser";
+import { formatAuthors } from "../authors";
 import { isUpdatePeriod, type SyndicationHints } from "../types";
 import type { FeedParseResult } from "./types";
 
@@ -74,7 +75,7 @@ export function toFeedParseResult(
       guid: entry.guid,
       link: entry.link,
       title: entry.title,
-      author: entry.author,
+      author: formatAuthors(entry.authors) ?? undefined,
       // contentIsSummary: identical content crosses the boundary once (as
       // summary) and is reused here, so both fields share one JS string.
       content: entry.contentIsSummary ? entry.summary : entry.content,
