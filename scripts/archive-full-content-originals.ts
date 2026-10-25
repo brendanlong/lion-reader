@@ -22,7 +22,9 @@
  * didn't archive, so it's left alone. Rerun both until `upload` archives
  * nothing on a fresh restore.
  *
- * `--pause-ms` spaces batches out so `clear` doesn't saturate production's I/O.
+ * A batch's uploads run in parallel, so `upload`'s `--batch-size` is also how
+ * many uploads are in flight. `--pause-ms` spaces batches out so neither step
+ * saturates the database's I/O.
  */
 
 import { fileURLToPath } from "node:url";
@@ -88,16 +90,22 @@ export async function uploadFullContentOriginals(
     `);
     if (rows.length === 0) break;
 
+    // Uploads are independent (each page has its own key), so a batch's run
+    // at once: `--batch-size` is also the upload concurrency.
+    const results = await Promise.allSettled(
+      rows.map((row) => archiveFullContentOriginal(row.id, row.original))
+    );
     const lines: string[] = [];
-    for (const row of rows) {
-      try {
-        await archiveFullContentOriginal(row.id, row.original);
+    results.forEach((result, i) => {
+      const row = rows[i];
+      if (result.status === "fulfilled") {
         lines.push(JSON.stringify({ id: row.id, fetchedAt: row.fetched_at } satisfies ArchivedRow));
-      } catch (err) {
+      } else {
         failedUploads++;
+        const err: unknown = result.reason;
         log(`upload failed for ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
-    }
+    });
     if (lines.length > 0) await appendFile(manifestPath, lines.map((l) => `${l}\n`).join(""));
     archived += lines.length;
 
