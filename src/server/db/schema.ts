@@ -662,38 +662,24 @@ export const entries = pgTable(
   (table) => [
     // Unique constraint on owner feed + guid
     unique("uq_entries_owner_feed_guid").on(table.ownerFeedId, table.guid),
-    // For listing entries by feed, ordered by time (UUIDv7 is time-ordered)
+    // A poll's fanout (owner_feed_id = $1 AND id = ANY(...)), the feeds delete
+    // cascade and account deletion's archived-page read.
     index("idx_entries_owner_feed").on(table.ownerFeedId, table.id),
-    // For finding entries by fetched time (visibility filtering)
+    // The feed stats and admin feeds pages' per-feed COUNT(*) and MIN(fetched_at)
+    // as an index-only scan; idx_entries_owner_feed would read one heap page per
+    // entry (#2157).
     index("idx_entries_owner_feed_fetched").on(table.ownerFeedId, table.fetchedAt),
-    // No query filters on is_spam here, but nearly every row shares its key
-    // with its neighbours, so B-tree deduplication makes this a fraction of
-    // idx_entries_owner_feed's size, and the planner picks it for plain
-    // owner_feed_id lookups (most of this table's index scans in production).
-    // Keep it.
-    index("idx_entries_owner_feed_spam").on(table.ownerFeedId, table.isSpam),
-    // For filtering by entry type
-    index("idx_entries_type").on(table.type),
-    // sync.events / Wallabag delta: seek changed entries within a feed
-    // (owner_feed_id = <subscribed/saved feed> AND updated_at >= cursor). Backs
-    // the entry-side arm of the sync.events UNION rewrite (#1105). Migration 0094.
-    index("idx_entries_owner_feed_updated_at").on(table.ownerFeedId, table.updatedAt),
     // Unique global Google Reader item id; backs the greader_item_id -> UUID
     // reverse lookup (greaderItemIdsToUuids) with an index seek.
     uniqueIndex("idx_entries_greader_item_id").on(table.greaderItemId),
-    // Email and saved owners (#1846, migration 0137): duplicate detection and
-    // delta sync's per-owner seek, partial on the owner being set.
+    // Email and saved owners (#1846, migration 0137): every lookup by owner
+    // (dedup, saved-by-URL, List-Unsubscribe) and the owner's delete cascade,
+    // partial on the owner being set.
     uniqueIndex("uq_entries_owner_subscription_guid")
       .on(table.ownerSubscriptionId, table.guid)
       .where(sql`owner_subscription_id IS NOT NULL`),
     uniqueIndex("uq_entries_owner_user_guid")
       .on(table.ownerUserId, table.guid)
-      .where(sql`owner_user_id IS NOT NULL`),
-    index("idx_entries_owner_subscription_updated_at")
-      .on(table.ownerSubscriptionId, table.updatedAt)
-      .where(sql`owner_subscription_id IS NOT NULL`),
-    index("idx_entries_owner_user_updated_at")
-      .on(table.ownerUserId, table.updatedAt)
       .where(sql`owner_user_id IS NOT NULL`),
     // The pushed arm of currentEntryIdsSql. Partial: only WebSub feeds' entries
     // are ever pushed.
@@ -711,10 +697,6 @@ export const entries = pgTable(
     //   Finds an entry's twins in other feeds for the redirect-merge dedup (#1861). Migration 0125,
     //   with the statistics object entries_guid_canonical_stats on the same expression, without
     //   which the planner doesn't pick it.
-    // - idx_entries_published_coalesce: (COALESCE(published_at, fetched_at) DESC, id DESC)
-    //   Enables limit pushdown for "all entries" queries. Migration 0060.
-    // - idx_entries_owner_feed_published_coalesce: (owner_feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)
-    //   Enables seek + limit pushdown for per-feed/subscription queries. Migration 0061.
     //
     // Type-specific check constraints (created via raw SQL in migrations):
     // - entries_spam_only_email: spam fields only for email entries

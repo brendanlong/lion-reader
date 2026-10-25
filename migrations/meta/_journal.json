@@ -1275,6 +1275,13 @@
       "when": 1792444663053,
       "tag": "0182_drop_user_entries_pair_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1792444664053,
+      "tag": "0183_drop_redundant_entries_indexes",
+      "breakpoints": true
     }
   ]
 }
