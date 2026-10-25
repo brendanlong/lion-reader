@@ -984,11 +984,6 @@ export const subscriptionEntries = pgTable(
       columns: [table.subscriptionId, table.userId],
       foreignColumns: [subscriptions.id, subscriptions.userId],
     }).onDelete("cascade"),
-    index("idx_subscription_entries_timeline").on(
-      table.subscriptionId,
-      table.publishedOrFetchedAt.desc(),
-      table.entryId.desc()
-    ),
     index("idx_subscription_entries_read_timeline").on(
       table.subscriptionId,
       table.read,

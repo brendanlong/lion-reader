@@ -1254,6 +1254,27 @@
       "when": 1792444660053,
       "tag": "0179_user_entries_read_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1792444661053,
+      "tag": "0180_drop_subscription_entries_pair_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1792444662053,
+      "tag": "0181_drop_tag_entries_pair_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1792444663053,
+      "tag": "0182_drop_user_entries_pair_indexes",
+      "breakpoints": true
     }
   ]
 }
