@@ -16,9 +16,9 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
   function it mirrors**. Keep names stable so comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.
-- `baseline.json` is a run of master after phase 7 of #1846 (2026-10-13), for
-  seeing which benchmarks are heavy and how they plan, not the "before" of a
-  comparison.
+- `baseline.json` is a run with the read-keyed list indexes (#2151, 2026-10-25),
+  for seeing which benchmarks are heavy and how they plan, not the "before" of
+  a comparison. Re-record it when an index it names is dropped.
 
 ## Running
 
