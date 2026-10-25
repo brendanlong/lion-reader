@@ -36,9 +36,8 @@ export const fullEntrySchema = entryListItemSchema.extend({
   /** The unsubscribe link from an email's HTML. */
   unsubscribeUrl: z.string().nullable(),
   /**
-   * Always null: the fetched page isn't served (#2115), and `fullContentCleaned`
-   * carries any article stored only as the original. Kept for Android builds
-   * before #2006, which declare it.
+   * Always null: the fetched page isn't served (#2115). Kept for Android
+   * builds before #2006, which declare it (#2127).
    */
   fullContentOriginal: z
     .string()
