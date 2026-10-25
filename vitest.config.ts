@@ -40,9 +40,12 @@ export default defineConfig({
         test: {
           name: "integration",
           include: ["tests/integration/**/*.test.{ts,tsx}"],
-          // The files share one database, and one file's cleanup would
-          // delete rows another is using.
-          fileParallelism: false,
+          globalSetup: ["./tests/integration/global-setup.ts"],
+          setupFiles: ["./tests/integration/worker-setup.ts"],
+          // Each worker holds up to a full app pool of Postgres connections
+          // (peak ~50 of the default 100 at 4) and needs its own Redis logical
+          // DB (16 by default). More workers barely help: 57s at 4, 50s at 8.
+          maxWorkers: 4,
           sequence: { groupOrder: 2 },
         },
       },

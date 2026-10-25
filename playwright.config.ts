@@ -25,7 +25,7 @@ const useProductionBuild = !!process.env.CI || process.env.E2E_PRODUCTION === "t
 export default defineConfig({
   testDir: "./tests/e2e",
   // Tests share one database and one app server; run serially to avoid
-  // cross-test interference (matches vitest's fileParallelism: false).
+  // cross-test interference.
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
