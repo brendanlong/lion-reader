@@ -107,6 +107,49 @@ describe("sorting by score", () => {
     expect(pages).toEqual(await order({ sortBy: "score", sortOrder: "lowest" }));
   });
 
+  // Each list's indexes hold its unread and read rows as separate runs, which
+  // a page showing both merges (#2151): a tie, each range and a page boundary
+  // all span both states here.
+  it("merges read and unread entries into one order", async () => {
+    const read = [{ id: ids[4] }, { id: ids[2] }, { id: ids[0] }];
+    await markEntriesRead(db, userId, read, true);
+    try {
+      for (const scope of [{}, { tagId }, { subscriptionId }]) {
+        expect(await order({ ...scope, sortBy: "score" })).toEqual([
+          ids[3],
+          ids[4],
+          ids[1],
+          ids[2],
+          ids[5],
+          ids[0],
+        ]);
+        expect(await order({ ...scope, sortOrder: "oldest" })).toEqual(ids);
+        expect(
+          (await list({ ...scope, sortOrder: "newest", offset: 1, limit: 3 })).items.map(
+            (item) => item.id
+          )
+        ).toEqual([ids[4], ids[3], ids[2]]);
+
+        const pages: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await list({
+            ...scope,
+            sortBy: "score",
+            sortOrder: "lowest",
+            limit: 2,
+            cursor,
+          });
+          pages.push(...page.items.map((item) => item.id));
+          cursor = page.nextCursor;
+        } while (cursor);
+        expect(pages).toEqual([ids[2], ids[1], ids[4], ids[3], ids[5], ids[0]]);
+      }
+    } finally {
+      await markEntriesRead(db, userId, read, false);
+    }
+  });
+
   it("returns each entry's score", async () => {
     const items = (await list({ sortBy: "score" })).items;
     expect(items.map((item) => item.score)).toEqual([9, 5, 5, -1, null, null]);
