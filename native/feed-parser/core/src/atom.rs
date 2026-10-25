@@ -244,7 +244,7 @@ impl SaxHandler for AtomHandler {
                     self.state = State::InEntry;
                 }
                 State::InEntryAuthorName => {
-                    entry.entry.author = decoded.clone();
+                    entry.entry.authors.extend(decoded.clone());
                     self.state = State::InEntryAuthor;
                 }
                 State::InEntryAuthor if tag == "author" => {
@@ -318,7 +318,21 @@ mod tests {
         assert_eq!(entry.link.as_deref(), Some("https://example.com/entry-1"));
         assert_eq!(entry.summary.as_deref(), Some("Summary"));
         assert_eq!(entry.content.as_deref(), Some("Full content"));
-        assert_eq!(entry.author.as_deref(), Some("John Doe"));
+        assert_eq!(entry.authors, ["John Doe"]);
+    }
+
+    #[test]
+    fn collects_every_entry_author() {
+        let xml = r#"<feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <id>urn:1</id>
+                <author><name>Ada Lovelace</name></author>
+                <author><email>no-name@example.com</email></author>
+                <author><name>Alan Turing</name></author>
+              </entry>
+            </feed>"#;
+        let feed = parse_atom(xml).unwrap();
+        assert_eq!(feed.entries[0].authors, ["Ada Lovelace", "Alan Turing"]);
     }
 
     #[test]

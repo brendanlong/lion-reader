@@ -9,7 +9,6 @@ import {
   buildArxivHtmlUrl,
   buildArxivAbsUrl,
   parseArxivAbsMetadata,
-  formatArxivAuthors,
 } from "../../src/server/feed/arxiv";
 
 /**
@@ -201,27 +200,5 @@ describe("parseArxivAbsMetadata", () => {
       summary: null,
       authors: [],
     });
-  });
-});
-
-describe("formatArxivAuthors", () => {
-  it("returns null for an empty list", () => {
-    expect(formatArxivAuthors([])).toBeNull();
-  });
-
-  it("returns the single author unchanged", () => {
-    expect(formatArxivAuthors(["Ada Lovelace"])).toBe("Ada Lovelace");
-  });
-
-  it("joins two authors with 'and'", () => {
-    expect(formatArxivAuthors(["Ada Lovelace", "Alan Turing"])).toBe(
-      "Ada Lovelace and Alan Turing"
-    );
-  });
-
-  it("collapses three or more authors to 'First Author et al.'", () => {
-    expect(formatArxivAuthors(["Bowen Baker", "Joost Huizinga", "Leo Gao"])).toBe(
-      "Bowen Baker et al."
-    );
   });
 });
