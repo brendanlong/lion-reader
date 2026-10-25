@@ -5,9 +5,5 @@
   "description": "Native (Rust) Markdown rendering: comrak (GFM) + pulldown-latex (TeX to MathML) behind one N-API call.",
   "main": "index.js",
   "type": "commonjs",
-  "types": "index.d.ts",
-  "scripts": {
-    "build": "node ../build.mjs markdown",
-    "build:debug": "node ../build.mjs markdown --debug"
-  }
+  "types": "index.d.ts"
 }

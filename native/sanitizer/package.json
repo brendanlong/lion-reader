@@ -5,9 +5,5 @@
   "description": "Native (Rust) entry-HTML sanitizer: MathJax CHTML->MathML, inline-SVG sanitization, and the lol_html allow-list pass, behind one N-API call, plus absolutizeUrls.",
   "main": "index.js",
   "type": "commonjs",
-  "types": "index.d.ts",
-  "scripts": {
-    "build": "node ../build.mjs sanitizer",
-    "build:debug": "node ../build.mjs sanitizer --debug"
-  }
+  "types": "index.d.ts"
 }
