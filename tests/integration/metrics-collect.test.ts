@@ -3,8 +3,8 @@
  *
  * `metricsEnabled` is read from the environment at module load (and the db
  * module imports the metrics module), so METRICS_ENABLED is set in a hoisted
- * block before any import. Integration files run serially, so gauge deltas
- * around a test's own inserts are stable.
+ * block before any import. No other file runs against this worker's database
+ * at the same time, so gauge deltas around a test's own inserts are stable.
  */
 import { describe, it, expect, afterAll, vi } from "vitest";
 import { inArray } from "drizzle-orm";
