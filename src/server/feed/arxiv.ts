@@ -189,15 +189,3 @@ export function parseArxivAbsMetadata(html: string): ArxivPaperMetadata {
 
   return { title, summary, authors };
 }
-
-/**
- * Format an arXiv author list into the single `author` string a saved article
- * stores. Papers can carry dozens of authors, so a long list collapses to
- * "First Author et al." rather than an unwieldy full byline.
- */
-export function formatArxivAuthors(authors: string[]): string | null {
-  if (authors.length === 0) return null;
-  if (authors.length === 1) return authors[0];
-  if (authors.length === 2) return `${authors[0]} and ${authors[1]}`;
-  return `${authors[0]} et al.`;
-}

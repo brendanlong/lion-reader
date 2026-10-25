@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { HttpFetchError } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
+import { formatAuthors } from "@/server/feed/authors";
 
 // ============================================================================
 // Constants
@@ -360,7 +361,7 @@ async function fetchLessWrongPost(postId: string): Promise<LessWrongPostContent 
     postId: post._id,
     title: post.title,
     html,
-    author: authors.length > 0 ? authors.join(", ") : null,
+    author: formatAuthors(authors),
     publishedAt: post.postedAt ? new Date(post.postedAt) : null,
     url: post.pageUrl,
   };

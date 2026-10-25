@@ -18,7 +18,7 @@ export interface RawParsedEntry {
   guid?: string;
   link?: string;
   title?: string;
-  author?: string;
+  authors: string[];
   /** Absent when `contentIsSummary` is set — reuse `summary`. */
   content?: string;
   summary?: string;

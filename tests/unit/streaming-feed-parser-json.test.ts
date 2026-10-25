@@ -58,6 +58,25 @@ describe("parseJson", () => {
     });
   });
 
+  it("credits every named author", () => {
+    const json = JSON.stringify({
+      version: "https://jsonfeed.org/version/1.1",
+      title: "Feed",
+      items: [
+        {
+          id: "1",
+          authors: [
+            { name: "Ada Lovelace" },
+            { url: "https://example.com" },
+            { name: "Alan Turing" },
+          ],
+        },
+      ],
+    });
+
+    expect(parseJson(json).entries[0].author).toBe("Ada Lovelace and Alan Turing");
+  });
+
   describe("JSON Feed 1.0 compatibility", () => {
     it("supports deprecated author field", () => {
       const json = JSON.stringify({

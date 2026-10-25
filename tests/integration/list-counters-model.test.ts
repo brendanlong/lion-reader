@@ -696,32 +696,39 @@ function pickOp(rng: ReturnType<typeof prng>): Op {
  * excluded (#1117). Covers every subscription and tag, including other users',
  * unsubscribed and deleted ones and the saved subscription, whose lists are empty.
  */
-async function expectBadgesMatchLists(userId: string): Promise<void> {
+async function expectBadgesMatchLists(userId: string, context: string): Promise<void> {
   const expectBadge = async (filter: CountEntriesParams, label: string) => {
-    const page = await listEntries(db, {
-      userId,
-      ...filter,
-      unreadOnly: true,
-      showSpam: false,
-      limit: 1000,
-      maxLimit: 1000,
-    });
-    expect(page.nextCursor, label).toBeUndefined();
-    expect((await countEntries(db, userId, filter)).unread, label).toBe(page.items.length);
+    const [page, count] = await Promise.all([
+      listEntries(db, {
+        userId,
+        ...filter,
+        unreadOnly: true,
+        showSpam: false,
+        limit: 1000,
+        maxLimit: 1000,
+      }),
+      countEntries(db, userId, filter),
+    ]);
+    expect(page.nextCursor, `${context}\n${label}`).toBeUndefined();
+    expect(count.unread, `${context}\n${label}`).toBe(page.items.length);
   };
 
-  await expectBadge({}, "All");
-  await expectBadge({ starredOnly: true }, "Starred");
-  await expectBadge({ type: "saved" }, "Saved");
-  await expectBadge({ uncategorized: true }, "Uncategorized");
-  // Every user's tags and subscriptions: another user's must count 0, as
-  // their lists show nothing.
-  for (const tag of await db.select({ id: tags.id }).from(tags)) {
-    await expectBadge({ tagId: tag.id }, `tag ${tag.id}`);
-  }
-  for (const sub of await db.select({ id: subscriptions.id }).from(subscriptions)) {
-    await expectBadge({ subscriptionId: sub.id }, `subscription ${sub.id}`);
-  }
+  const [allTags, allSubscriptions] = await Promise.all([
+    db.select({ id: tags.id }).from(tags),
+    db.select({ id: subscriptions.id }).from(subscriptions),
+  ]);
+  await Promise.all([
+    expectBadge({}, "All"),
+    expectBadge({ starredOnly: true }, "Starred"),
+    expectBadge({ type: "saved" }, "Saved"),
+    expectBadge({ uncategorized: true }, "Uncategorized"),
+    // Every user's tags and subscriptions: another user's must count 0, as
+    // their lists show nothing.
+    ...allTags.map((tag) => expectBadge({ tagId: tag.id }, `tag ${tag.id}`)),
+    ...allSubscriptions.map((sub) =>
+      expectBadge({ subscriptionId: sub.id }, `subscription ${sub.id}`)
+    ),
+  ]);
 }
 
 describe("unread counters under random operations", () => {
@@ -739,7 +746,7 @@ describe("unread counters under random operations", () => {
         await createWorld({ withSaved: false }),
       ];
       currentWorlds = worlds;
-      await expectBadgesMatchLists(worlds[0].userId);
+      await expectBadgesMatchLists(worlds[0].userId, `seed ${seed}, setup`);
 
       const history: string[] = [];
       for (let step = 0; step < STEPS; step++) {
@@ -754,7 +761,14 @@ describe("unread counters under random operations", () => {
         const world = worlds[index];
         history.push(await pickOp(rng)(world, rng));
         const context = `seed ${seed}, step ${step}:\n${history.slice(-5).join("\n")}`;
-        for (const w of worlds) await expectCountersMatchModel(w.userId, context);
+        // Read-only checks, concurrently: the step's writes are done, so every
+        // order sees the same state.
+        await Promise.all([
+          ...worlds.map((w) => expectCountersMatchModel(w.userId, context)),
+          countUnheldUserEntries(db).then((n) => expect(n, context).toBe(0)),
+          expectBadgesMatchLists(world.userId, context),
+        ]);
+        // Last and alone: it writes whatever drift it finds.
         expect(await reconcileCounters(db), context).toEqual({
           userEntriesFixed: 0,
           membershipsFixed: 0,
@@ -763,8 +777,6 @@ describe("unread counters under random operations", () => {
           usersFixed: 0,
           tagsFixed: 0,
         });
-        expect(await countUnheldUserEntries(db), context).toBe(0);
-        await expectBadgesMatchLists(world.userId);
       }
     },
     120_000

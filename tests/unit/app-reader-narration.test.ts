@@ -13,6 +13,8 @@ const ARTICLE =
   "<p>Last <b>paragraph</b>.</p>";
 
 const messages: { type: string; paragraphs?: string[]; paragraph?: number }[] = [];
+/** The document as the app reader left it, before any test interacts with it. */
+let prepared: HTMLElement;
 
 beforeAll(async () => {
   // The app's reader document: its header and summary ahead of the article.
@@ -22,6 +24,7 @@ beforeAll(async () => {
     ARTICLE;
   window.lionReader = { postMessage: (message) => messages.push(JSON.parse(message)) };
   await import("@/lib/narration/app-reader");
+  prepared = document.body.cloneNode(true) as HTMLElement;
 });
 
 describe("the app reader's narration", () => {
@@ -35,11 +38,11 @@ describe("the app reader's narration", () => {
   });
 
   it("numbers the article's elements as the web does, and leaves the rest alone", () => {
-    const article = document.body.cloneNode(true) as HTMLElement;
+    expect(prepared.querySelector(".lr-header [data-para-id]")).toBeNull();
+    expect(prepared.firstElementChild?.className).toBe("lr-header");
+    const article = prepared.cloneNode(true) as HTMLElement;
     article.querySelectorAll(".lr-header, .lr-summary").forEach((el) => el.remove());
     expect(article.innerHTML).toBe(htmlToClientNarration(ARTICLE).processedHtml);
-    expect(document.querySelector(".lr-header [data-para-id]")).toBeNull();
-    expect(document.body.firstElementChild?.className).toBe("lr-header");
   });
 
   it("highlights a paragraph's element", () => {
