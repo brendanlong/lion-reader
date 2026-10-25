@@ -120,6 +120,13 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
+      # Keeps compiled dependencies between runs, so a change to one crate
+      # rebuilds that crate rather than every dependency of every crate.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          workspaces: native
+
       - name: Build native modules
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: pnpm build:native
@@ -154,13 +161,7 @@ jobs:
           # Without this a red run saves nothing, so a PR iterating on a Rust
           # failure never warms its own branch cache.
           cache-on-failure: true
-          workspaces: |
-            native/feed-parser
-            native/markdown
-            native/pdf
-            native/readability
-            native/sanitizer
-            native/speech-encoder
+          workspaces: native
 
       # First because it compiles nothing: a misformatted PR fails in seconds
       # rather than after the test and clippy builds. The husky pre-commit hook
@@ -176,7 +177,7 @@ jobs:
       # lint:native` so the job needs no Node toolchain; keep them in sync.
       - name: Run Rust tests
         if: ${{ !cancelled() }}
-        run: ./scripts/cargo-native.sh test --workspace
+        run: ./scripts/cargo-native.sh test --workspace --no-fail-fast
 
       - name: Run clippy
         if: ${{ !cancelled() }}

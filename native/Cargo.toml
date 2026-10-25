@@ -1,0 +1,31 @@
+# One workspace for every native crate, so shared dependencies compile once
+# into one target/ and cargo builds the crates in parallel.
+#
+# Each N-API module's pure logic lives in a ./core crate so `cargo test` can
+# link it without Node's N-API symbols; the module crate is only the wrapper.
+[workspace]
+resolver = "2"
+members = [
+  "feed-parser",
+  "feed-parser/core",
+  "markdown",
+  "markdown/core",
+  "pdf",
+  "readability",
+  "sanitizer",
+  "sanitizer/core",
+  "speech-encoder",
+  "speech-encoder/core",
+]
+
+[profile.release]
+lto = true
+opt-level = 3
+
+# The PDF helper (native/build.mjs builds it with this profile). Its ~170
+# dependencies make fat LTO cost ~100s per relink; thin LTO took 11s and
+# converted real PDFs to identical output at the same speed. The N-API modules
+# stay on fat LTO: thin made the sanitizer 3-5% slower.
+[profile.release-pdf]
+inherits = "release"
+lto = "thin"

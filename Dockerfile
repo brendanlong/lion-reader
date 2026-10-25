@@ -93,20 +93,13 @@ FROM rust-base AS native-builder
 # speech-encoder compiles Fraunhofer FDK AAC, which is C++.
 RUN apk add --no-cache g++
 
-# .dockerignore excludes native/*/target/ and native/*/*.node so local build
+# .dockerignore excludes native/target/ and native/*/*.node so local build
 # artifacts can't leak into (or bust the cache of) this layer.
 COPY native ./native
 
 RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
-    --mount=type=cache,id=cargo-target,target=/app/native/sanitizer/target \
-    --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
-    --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
-    --mount=type=cache,id=cargo-target-markdown,target=/app/native/markdown/target \
-    --mount=type=cache,id=cargo-target-speech-encoder,target=/app/native/speech-encoder/target \
-    --mount=type=cache,id=cargo-target-pdf,target=/app/native/pdf/target \
-    for crate in sanitizer readability feed-parser markdown speech-encoder pdf; do \
-      node native/build.mjs "$crate" || exit 1; \
-    done
+    --mount=type=cache,id=cargo-target-native,target=/app/native/target \
+    node native/build.mjs
 
 # =============================================================================
 # Stage 4: Build the application

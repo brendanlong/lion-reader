@@ -3,7 +3,7 @@
  *
  * These are the properties the walk exists to guarantee, tested generically
  * rather than one markup shape at a time — the per-shape expectations live in
- * `html-to-narration-input.test.ts` and `client-paragraph-ids.test.ts`.
+ * `html-to-narration-input.timing.test.ts` and `client-paragraph-ids.test.ts`.
  *
  1. **Coverage**: every word in the entry is narrated exactly once — the
  *    property the run partition exists to guarantee (see the module docs on

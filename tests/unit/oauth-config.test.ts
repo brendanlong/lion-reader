@@ -26,8 +26,8 @@ describe("OAuth resource identifiers", () => {
 
   afterEach(() => {
     // Restore precisely: assigning `undefined` would coerce to the string
-    // "undefined" and pollute getIssuer() for later unit tests (files share one
-    // worker — fileParallelism is disabled).
+    // "undefined" and pollute getIssuer() for later unit test files run by the
+    // same worker.
     if (original === undefined) {
       delete process.env.NEXT_PUBLIC_APP_URL;
     } else {
