@@ -696,7 +696,7 @@ function pickOp(rng: ReturnType<typeof prng>): Op {
  * excluded (#1117). Covers every subscription and tag, including other users',
  * unsubscribed and deleted ones and the saved subscription, whose lists are empty.
  */
-async function expectBadgesMatchLists(userId: string): Promise<void> {
+async function expectBadgesMatchLists(userId: string, context: string): Promise<void> {
   const expectBadge = async (filter: CountEntriesParams, label: string) => {
     const [page, count] = await Promise.all([
       listEntries(db, {
@@ -709,8 +709,8 @@ async function expectBadgesMatchLists(userId: string): Promise<void> {
       }),
       countEntries(db, userId, filter),
     ]);
-    expect(page.nextCursor, label).toBeUndefined();
-    expect(count.unread, label).toBe(page.items.length);
+    expect(page.nextCursor, `${context}\n${label}`).toBeUndefined();
+    expect(count.unread, `${context}\n${label}`).toBe(page.items.length);
   };
 
   const [allTags, allSubscriptions] = await Promise.all([
@@ -746,7 +746,7 @@ describe("unread counters under random operations", () => {
         await createWorld({ withSaved: false }),
       ];
       currentWorlds = worlds;
-      await expectBadgesMatchLists(worlds[0].userId);
+      await expectBadgesMatchLists(worlds[0].userId, `seed ${seed}, setup`);
 
       const history: string[] = [];
       for (let step = 0; step < STEPS; step++) {
@@ -766,7 +766,7 @@ describe("unread counters under random operations", () => {
         await Promise.all([
           ...worlds.map((w) => expectCountersMatchModel(w.userId, context)),
           countUnheldUserEntries(db).then((n) => expect(n, context).toBe(0)),
-          expectBadgesMatchLists(world.userId),
+          expectBadgesMatchLists(world.userId, context),
         ]);
         // Last and alone: it writes whatever drift it finds.
         expect(await reconcileCounters(db), context).toEqual({
