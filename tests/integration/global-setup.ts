@@ -1,8 +1,18 @@
+/**
+ * Gives each integration worker its own copy of the migrated test database and
+ * its own Redis logical DB, so files can run in parallel even though they clean
+ * up with table-wide deletes and `flushdb()`.
+ */
 import Redis from "ioredis";
 import pg from "pg";
 import type { TestProject } from "vitest/node";
 
-import { workerDatabaseUrl } from "./worker-services";
+declare module "vitest" {
+  interface ProvidedContext {
+    /** Indexed by `VITEST_POOL_ID - 1`. */
+    workerServices: { databaseUrl: string; redisUrl: string }[];
+  }
+}
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -15,10 +25,20 @@ function databaseName(url: string): string {
 }
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const baseUrl = requireEnv("DATABASE_URL");
+  const baseDatabaseUrl = requireEnv("DATABASE_URL");
+  const baseRedisUrl = requireEnv("REDIS_URL");
   const workers = project.config.maxWorkers;
 
-  const redis = new Redis(requireEnv("REDIS_URL"));
+  const services = Array.from({ length: workers }, (_, i) => {
+    const databaseUrl = new URL(baseDatabaseUrl);
+    databaseUrl.pathname = `${databaseUrl.pathname}_${i + 1}`;
+    // Logical DB 0 stays the dev default.
+    const redisUrl = new URL(baseRedisUrl);
+    redisUrl.pathname = `/${i + 1}`;
+    return { databaseUrl: databaseUrl.toString(), redisUrl: redisUrl.toString() };
+  });
+
+  const redis = new Redis(baseRedisUrl);
   try {
     const [, databases] = (await redis.config("GET", "databases")) as [string, string];
     if (workers >= Number(databases)) {
@@ -32,26 +52,33 @@ export default async function setup(project: TestProject): Promise<() => Promise
 
   // CREATE DATABASE fails while anything is connected to the template, so this
   // connects to the maintenance database and copies one at a time.
-  const adminUrl = new URL(baseUrl);
+  const adminUrl = new URL(baseDatabaseUrl);
   adminUrl.pathname = "/postgres";
-  const admin = new pg.Client({ connectionString: adminUrl.toString() });
-  await admin.connect();
-  const template = databaseName(baseUrl);
-  const copies = Array.from({ length: workers }, (_, i) =>
-    databaseName(workerDatabaseUrl(baseUrl, i + 1))
-  );
-  const dropCopies = async () => {
-    for (const copy of copies) {
-      await admin.query(`DROP DATABASE IF EXISTS ${copy} WITH (FORCE)`);
+  const template = databaseName(baseDatabaseUrl);
+  const copies = services.map(({ databaseUrl }) => databaseName(databaseUrl));
+  const withAdmin = async (run: (admin: pg.Client) => Promise<void>) => {
+    const admin = new pg.Client({ connectionString: adminUrl.toString() });
+    await admin.connect();
+    try {
+      await run(admin);
+    } finally {
+      await admin.end();
     }
   };
-  await dropCopies();
-  for (const copy of copies) {
-    await admin.query(`CREATE DATABASE ${copy} TEMPLATE ${template}`);
-  }
+  const dropCopies = () =>
+    withAdmin(async (admin) => {
+      for (const copy of copies) {
+        await admin.query(`DROP DATABASE IF EXISTS ${copy} WITH (FORCE)`);
+      }
+    });
 
-  return async () => {
-    await dropCopies();
-    await admin.end();
-  };
+  await dropCopies();
+  await withAdmin(async (admin) => {
+    for (const copy of copies) {
+      await admin.query(`CREATE DATABASE ${copy} TEMPLATE ${template}`);
+    }
+  });
+
+  project.provide("workerServices", services);
+  return dropCopies;
 }
