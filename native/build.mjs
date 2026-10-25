@@ -1,6 +1,6 @@
 /**
- * `node native/build.mjs [--debug]` builds every native crate in one cargo call
- * and copies each artifact next to its crate: native/<crate>/<crate>.node, or,
+ * `node native/build.mjs [--debug]` builds every native crate in the native/
+ * workspace and copies each artifact next to its crate: native/<crate>/<crate>.node, or,
  * for a crate that is an executable (it has a src/main.rs),
  * native/<crate>/lion-reader-<crate>.
  *

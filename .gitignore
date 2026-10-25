@@ -39,7 +39,7 @@ bower_components
 
 # Compiled binary addons (https://nodejs.org/api/addons.html)
 build/Release
-native/target/
+native/**/target/
 native/*/*.node
 native/.built-tree
 native/pdf/lion-reader-pdf
