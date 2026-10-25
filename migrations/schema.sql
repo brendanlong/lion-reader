@@ -1278,23 +1278,9 @@ CREATE INDEX idx_entries_owner_feed_fetched ON public.entries USING btree (owner
 
 CREATE INDEX idx_entries_owner_feed_last_seen ON public.entries USING btree (owner_feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
 
-CREATE INDEX idx_entries_owner_feed_published_coalesce ON public.entries USING btree (owner_feed_id, COALESCE(published_at, fetched_at) DESC, id DESC);
-
 CREATE INDEX idx_entries_owner_feed_pushed ON public.entries USING btree (owner_feed_id, pushed_at) WHERE ((type = 'web'::public.feed_type) AND (pushed_at IS NOT NULL));
 
-CREATE INDEX idx_entries_owner_feed_spam ON public.entries USING btree (owner_feed_id, is_spam);
-
-CREATE INDEX idx_entries_owner_feed_updated_at ON public.entries USING btree (owner_feed_id, updated_at);
-
-CREATE INDEX idx_entries_owner_subscription_updated_at ON public.entries USING btree (owner_subscription_id, updated_at) WHERE (owner_subscription_id IS NOT NULL);
-
-CREATE INDEX idx_entries_owner_user_updated_at ON public.entries USING btree (owner_user_id, updated_at) WHERE (owner_user_id IS NOT NULL);
-
-CREATE INDEX idx_entries_published_coalesce ON public.entries USING btree (COALESCE(published_at, fetched_at) DESC, id DESC);
-
 CREATE INDEX idx_entries_search_vector ON public.entries USING gin (search_vector);
-
-CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
 CREATE INDEX idx_entries_web_guid_canonical ON public.entries USING btree (regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
 
