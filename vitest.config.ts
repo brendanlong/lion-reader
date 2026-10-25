@@ -17,7 +17,23 @@ export default defineConfig({
     projects: [
       {
         extends: true,
-        test: { name: "unit", include: ["tests/unit/**/*.test.{ts,tsx}"] },
+        test: {
+          name: "unit",
+          include: ["tests/unit/**/*.test.{ts,tsx}"],
+          exclude: ["tests/unit/**/*.timing.test.{ts,tsx}"],
+          sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // Wall-clock budgets (ReDoS guards, deadlines) flake when other
+          // files compete for the CPU, so they run alone, after the rest.
+          name: "unit-timing",
+          include: ["tests/unit/**/*.timing.test.{ts,tsx}"],
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+        },
       },
       {
         extends: true,
@@ -27,6 +43,7 @@ export default defineConfig({
           // The files share one database, and one file's cleanup would
           // delete rows another is using.
           fileParallelism: false,
+          sequence: { groupOrder: 2 },
         },
       },
     ],

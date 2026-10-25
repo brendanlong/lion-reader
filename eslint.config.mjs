@@ -147,6 +147,21 @@ const eslintConfig = defineConfig([
       "vitest/no-focused-tests": ["error", { fixable: false }],
     },
   },
+  {
+    files: ["tests/unit/**/*.{ts,tsx}"],
+    ignores: ["tests/unit/**/*.timing.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "performance",
+          property: "now",
+          message:
+            "Wall-clock budgets go in a *.timing.test.ts file, which runs alone (vitest.config.ts).",
+        },
+      ],
+    },
+  },
   // Restricted imports for all of src/. They share one block (plus one
   // override per exempt file or directory) because a later
   // `no-restricted-imports` block for the same files replaces an earlier one's
