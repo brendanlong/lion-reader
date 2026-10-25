@@ -153,9 +153,10 @@ async function getSavedSubscription(
  * "Newest visible" is the subscription's newest membership by sort key
  * (`COALESCE(published_at, fetched_at)`, matching stream ordering): read state
  * is ignored (a read article is still the stream's newest item) and spam is
- * included, so a feed with an unread item always has a newest. It's a LATERAL
- * `LIMIT 1` per subscription off `idx_subscription_entries_timeline`, so
- * O(subscriptions) index seeks.
+ * included, so a feed with an unread item always has a newest. It's the later
+ * of the newest unread and newest read membership, each one seek of
+ * `idx_subscription_entries_read_timeline` (which keys on read before the
+ * date), so O(subscriptions) index seeks.
  */
 export async function getGreaderUnreadCounts(
   db: typeof dbType,
@@ -174,15 +175,13 @@ export async function getGreaderUnreadCounts(
   const result = await db.execute(sql`
     SELECT subscriptions.greader_stream_id AS stream_id,
       subscriptions.unread_count AS unread,
-      latest.newest AS newest
+      GREATEST(
+        (SELECT max(se.published_or_fetched_at) FROM subscription_entries se
+          WHERE se.subscription_id = subscriptions.id AND NOT se.read),
+        (SELECT max(se.published_or_fetched_at) FROM subscription_entries se
+          WHERE se.subscription_id = subscriptions.id AND se.read)
+      ) AS newest
     FROM subscriptions
-    LEFT JOIN LATERAL (
-      SELECT se.published_or_fetched_at AS newest
-      FROM subscription_entries se
-      WHERE se.subscription_id = subscriptions.id
-      ORDER BY se.published_or_fetched_at DESC, se.entry_id DESC
-      LIMIT 1
-    ) latest ON true
     WHERE subscriptions.user_id = ${userId}::uuid
       AND subscriptions.unsubscribed_at IS NULL
       AND NOT ${subscriptionsService.isCollectionSubscription()}

@@ -475,12 +475,51 @@ function assertOnePaging(params: { cursor?: string; offset?: number }): void {
 /** The columns a page's rows are ordered by, in their index's order. */
 type SortKeys = readonly [value: AnyColumn, ts: AnyColumn, id: AnyColumn];
 
+/** The names `planEntryPage`'s `sortFields` select the sort keys as. */
+const SORT_ALIASES = ["sort_value", "sort_ts", "sort_id"] as const;
+
+/** The selected sort keys, to order a merge of runs by. */
+const SELECTED_SORT_KEYS = [
+  sql`${sql.identifier(SORT_ALIASES[0])}`,
+  sql`${sql.identifier(SORT_ALIASES[1])}`,
+  sql`${sql.identifier(SORT_ALIASES[2])}`,
+] as const;
+
+/**
+ * The first `count` rows after `offset` of `select`'s runs, merged in
+ * `merged` order. A list's indexes key on (list, read, sort) (#2151), so
+ * they hold its unread rows and its read ones as two sorted runs, and a page
+ * showing both reads the head of each and merges them with `UNION ALL`. Each
+ * run needs its own LIMIT, or Postgres may fetch both runs whole.
+ */
+function selectRuns<T extends PgSelect>(
+  runs: SQL[][],
+  select: (run: SQL[]) => T,
+  merged: SQL[],
+  count: number,
+  offset = 0
+): T {
+  const [first, ...rest] = runs.map((run) => select(run));
+  if (!first) throw new Error("selectRuns: no runs");
+  if (rest.length === 0) return first.limit(count).offset(offset) as T;
+  const union = rest.reduce(
+    (left, right) =>
+      left.unionAll(right.limit(count + offset) as Parameters<T["unionAll"]>[0]) as unknown as T,
+    first.limit(count + offset) as T
+  );
+  return (merged.length > 0 ? union.orderBy(...merged) : union).limit(count).offset(offset) as T;
+}
+
 /**
  * The ORDER BY of a scan of an index on (`keys`), every column `DESC` or
  * every column `ASC`, with `NULLS LAST`: spelled exactly as the scan returns
  * rows, read forward or backward, or Postgres sorts the whole range instead.
  */
-function indexScanOrder(keys: SortKeys, indexDesc: boolean, forward: boolean): SQL[] {
+function indexScanOrder(
+  keys: SortKeys | typeof SELECTED_SORT_KEYS,
+  indexDesc: boolean,
+  forward: boolean
+): SQL[] {
   const direction = sql.raw(indexDesc === forward ? "DESC" : "ASC");
   const nulls = sql.raw(forward ? "NULLS LAST" : "NULLS FIRST");
   const [value, ts, id] = keys;
@@ -568,18 +607,25 @@ function resolveSort(
 async function listHasValues(
   db: typeof dbType,
   conditions: SQL[],
+  readRuns: SQL[][],
   listRows: ListRows | null,
   sort: RankedSortBy
 ): Promise<boolean> {
   const { keys, indexDesc } = rankedSortKeys(sort, listRows);
-  const query = db
-    .select({ one: sql`1` })
-    .from(visibleEntries)
-    .$dynamic();
-  const rows = await (listRows ? query.innerJoin(listRows.table, listRows.on) : query)
-    .where(and(...conditions, isNotNull(keys[0])))
-    .orderBy(...indexScanOrder(keys, indexDesc, true))
-    .limit(1);
+  const rows = await selectRuns(
+    readRuns,
+    (run) => {
+      const query = db
+        .select({ one: sql`1` })
+        .from(visibleEntries)
+        .$dynamic();
+      return (listRows ? query.innerJoin(listRows.table, listRows.on) : query)
+        .where(and(...conditions, ...run, isNotNull(keys[0])))
+        .orderBy(...indexScanOrder(keys, indexDesc, true));
+    },
+    [],
+    1
+  );
   return rows.length > 0;
 }
 
@@ -642,6 +688,11 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     )
   );
 
+  // A page showing both read states reads one run of each (`selectRuns`).
+  const readColumn = listRows ? listRows.table.read : visibleEntries.read;
+  const bothStates: SQL[][] =
+    params.unreadOnly || params.readOnly ? [[]] : [[sql`NOT ${readColumn}`], [sql`${readColumn}`]];
+
   // A request that names no sort gets the list's default: a subscription
   // whose members have positions (with the list's filters) in their order, so
   // a book opens at its first chapter, and any other list newest first. A
@@ -651,7 +702,7 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     positionable && !params.sortBy && !params.sortOrder
       ? params.cursor
         ? isRankedCursor(params.cursor)
-        : await listHasValues(db, conditions, listRows, "position")
+        : await listHasValues(db, conditions, bothStates, listRows, "position")
       : undefined;
   const { sortBy, sortOrder, reversed } = resolveSort(
     params,
@@ -662,6 +713,9 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   // joins them, which can't fan out, and pages through their index: walking
   // the user's timeline instead reads every article outside the list.
   const timelineSort = sortBy !== "readChanged";
+
+  // Recently Read's index doesn't key on read.
+  const readRuns = timelineSort ? bothStates : [[]];
 
   // Recently Read lists only entries whose read state was ever set.
   if (!timelineSort) {
@@ -721,10 +775,15 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
           )
         );
       }
-      const page = await joinRows(build())
-        .where(and(...valued))
-        .orderBy(...indexScanOrder(keys, indexDesc, forward))
-        .limit(limit + 1);
+      const page = await selectRuns(
+        readRuns,
+        (run) =>
+          joinRows(build())
+            .where(and(...valued, ...run))
+            .orderBy(...indexScanOrder(keys, indexDesc, forward)),
+        indexScanOrder(SELECTED_SORT_KEYS, indexDesc, forward),
+        limit + 1
+      );
       rows.push(...(page as PageRow[]));
     }
     if (rows.length <= limit) {
@@ -733,10 +792,15 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
       if (cursor?.value === null && tsBound) {
         unvalued.push(afterInScan([ts, id], tsBound, true));
       }
-      const page = await joinRows(build())
-        .where(and(...unvalued))
-        .orderBy(...indexScanOrder(keys, indexDesc, indexDesc))
-        .limit(limit + 1 - rows.length);
+      const page = await selectRuns(
+        readRuns,
+        (run) =>
+          joinRows(build())
+            .where(and(...unvalued, ...run))
+            .orderBy(...indexScanOrder(keys, indexDesc, indexDesc)),
+        indexScanOrder(SELECTED_SORT_KEYS, indexDesc, indexDesc),
+        limit + 1 - rows.length
+      );
       rows.push(...(page as PageRow[]));
     }
     const { items, nextCursor } = paginate(rows);
@@ -761,13 +825,19 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     // join on a list's rows (one per list and article), so no DISTINCT ON
     // dedup is needed and the (sortColumn, id) keyset cursor resumes cleanly
     // over unique rows.
-    const rows = await joinRows(build())
-      .where(and(...page))
-      .orderBy(
-        ...(descending ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)])
-      )
-      .limit(limit + 1)
-      .offset(params.offset ?? 0);
+    const order = (ts: AnyColumn | SQL, id: AnyColumn | SQL) =>
+      descending ? [desc(ts), desc(id)] : [asc(ts), asc(id)];
+    const [, sortTs, sortId] = SELECTED_SORT_KEYS;
+    const rows = await selectRuns(
+      readRuns,
+      (run) =>
+        joinRows(build())
+          .where(and(...page, ...run))
+          .orderBy(...order(sortColumn, idColumn)),
+      order(sortTs, sortId),
+      limit + 1,
+      params.offset
+    );
     const { items, nextCursor } = paginate(rows as PageRow[]);
     return { items: items as Awaited<T>, nextCursor };
   };
@@ -779,8 +849,12 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
       // mapWith decodes it to a Temporal.Instant so the cursor never loses the
       // microseconds a JS Date would truncate — which corrupted keyset pagination
       // (#680, #683).
-      sortTs: sql`${sortColumn}`.mapWith(parseTimestamptz),
-      sortValue: ranked ? sql<number | null>`${ranked.keys[0]}`.mapWith(Number) : sql<null>`NULL`,
+      sortTs: sql`${sortColumn}`.mapWith(parseTimestamptz).as(SORT_ALIASES[1]),
+      sortValue: (ranked
+        ? sql<number | null>`${ranked.keys[0]}`.mapWith(Number)
+        : sql<null>`NULL`
+      ).as(SORT_ALIASES[0]),
+      sortId: sql<string>`${idColumn}`.as(SORT_ALIASES[2]),
     },
 
     read: <T extends PgSelect>(build: () => T) =>
@@ -795,8 +869,9 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     sortable: async (): Promise<EntrySortable | undefined> => {
       if (!timelineSort) return undefined;
       const [score, positioned] = await Promise.all([
-        listHasValues(db, conditions, listRows, "score"),
-        positionable && (hasPositions ?? listHasValues(db, conditions, listRows, "position")),
+        listHasValues(db, conditions, bothStates, listRows, "score"),
+        positionable &&
+          (hasPositions ?? listHasValues(db, conditions, bothStates, listRows, "position")),
       ]);
       return { score, position: positioned };
     },

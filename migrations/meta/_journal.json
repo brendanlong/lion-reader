@@ -1233,6 +1233,27 @@
       "when": 1792444657053,
       "tag": "0176_tag_entries_spam",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1792444658053,
+      "tag": "0177_subscription_entries_read_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1792444659053,
+      "tag": "0178_tag_entries_read_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1792444660053,
+      "tag": "0179_user_entries_read_indexes",
+      "breakpoints": true
     }
   ]
 }

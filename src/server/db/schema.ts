@@ -989,6 +989,12 @@ export const subscriptionEntries = pgTable(
       table.publishedOrFetchedAt.desc(),
       table.entryId.desc()
     ),
+    index("idx_subscription_entries_read_timeline").on(
+      table.subscriptionId,
+      table.read,
+      table.publishedOrFetchedAt.desc(),
+      table.entryId.desc()
+    ),
     index("idx_subscription_entries_user_entry").on(table.userId, table.entryId),
   ]
 );
