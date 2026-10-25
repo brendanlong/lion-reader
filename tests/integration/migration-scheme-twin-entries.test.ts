@@ -150,10 +150,13 @@ describe("migration 0109: merge scheme-twin entries", () => {
         fetchedAt: t2,
         updatedAt: t2,
         lastSeenAt: t3,
-        fullContentOriginal: "full text",
         fullContentHash: "full-hash",
         fullContentFetchedAt: t2,
       });
+      // The app no longer maps this column (#2115); the migration predates that.
+      await db.execute(
+        sql`UPDATE entries SET full_content_original = 'full text' WHERE id = ${loser}`
+      );
       // A second group on the same feed.
       const survivor2 = await createTestEntry(feedId, { guid: "http://example.com/?p=3" });
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -252,7 +255,10 @@ describe("migration 0109: merge scheme-twin entries", () => {
       expect(merged.updatedAt).toEqual(t2);
       expect(merged.lastSeenAt).toEqual(t3);
       expect(merged.publishedAt).toEqual(survivorPublishedAt);
-      expect(merged.fullContentOriginal).toBe("full text");
+      const { rows } = await db.execute<{ original: string | null }>(
+        sql`SELECT full_content_original AS original FROM entries WHERE id = ${survivor}`
+      );
+      expect(rows[0].original).toBe("full text");
       expect(merged.fullContentHash).toBe("full-hash");
       expect(await db.select().from(entries).where(eq(entries.id, otherFeedEntry))).toHaveLength(1);
       const savedRows = await db

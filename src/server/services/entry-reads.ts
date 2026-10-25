@@ -129,20 +129,13 @@ const entryReadSelectFields = {
  */
 type FullContentScope = "all" | "shown";
 
-/**
- * The full article, raw. A plugin fetch from before 4d18f516 stored its
- * article only as the original, which the backfill of #2115 moves into
- * `full_content_cleaned`; until it has run, fall back to it.
- */
-const fullContentArticleSql = sql<
-  string | null
->`COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal})`;
-
 /** The full-content body, raw. */
 function fullContentBodyFields(scope: FullContentScope) {
   const loaded = scope === "all" ? sql`true` : sql`${subscriptions.fetchFullContent}`;
   return {
-    fullContentCleaned: sql<string | null>`CASE WHEN ${loaded} THEN ${fullContentArticleSql} END`,
+    fullContentCleaned: sql<
+      string | null
+    >`CASE WHEN ${loaded} THEN ${visibleEntries.fullContentCleaned} END`,
   };
 }
 
@@ -224,7 +217,7 @@ const entryRawContentSelectFields = {
   contentOriginal: visibleEntries.contentOriginal,
   contentCleaned: visibleEntries.contentCleaned,
   contentHash: visibleEntries.contentHash,
-  fullContentCleaned: fullContentArticleSql,
+  fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentHash: visibleEntries.fullContentHash,
 };
 
@@ -367,7 +360,7 @@ export interface ExportableEntry {
 const shownFullContentSelectFields = {
   fullContent: sql<
     string | null
-  >`CASE WHEN ${subscriptions.fetchFullContent} THEN ${fullContentArticleSql} END`,
+  >`CASE WHEN ${subscriptions.fetchFullContent} THEN ${visibleEntries.fullContentCleaned} END`,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   fetchFullContent: subscriptions.fetchFullContent,
