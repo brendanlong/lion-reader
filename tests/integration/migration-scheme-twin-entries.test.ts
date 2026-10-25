@@ -32,6 +32,8 @@ import {
 
 // Migration 0137 renamed entries.feed_id to owner_feed_id (and this index with
 // it), so the file's statements are replayed against the current names.
+// Migration 0185 dropped full_content_original, so the statement that merged it
+// (with the rest of the full-content columns) is left out.
 const INDEX_NAME = "uq_entries_owner_feed_guid_canonical";
 
 const migrationStatements = readFileSync(
@@ -45,7 +47,7 @@ const migrationStatements = readFileSync(
       .replace(/\bfeed_id\b/g, "owner_feed_id")
       .replace(/\buq_entries_feed_guid_canonical\b/g, INDEX_NAME)
   )
-  .filter((statement) => statement.length > 0);
+  .filter((statement) => statement.length > 0 && !statement.includes("full_content_original"));
 
 const createIndexStatement = migrationStatements[migrationStatements.length - 1];
 const mergeStatements = migrationStatements.slice(0, -1);
@@ -150,13 +152,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
         fetchedAt: t2,
         updatedAt: t2,
         lastSeenAt: t3,
-        fullContentHash: "full-hash",
-        fullContentFetchedAt: t2,
       });
-      // The app no longer maps this column (#2115); the migration predates that.
-      await db.execute(
-        sql`UPDATE entries SET full_content_original = 'full text' WHERE id = ${loser}`
-      );
       // A second group on the same feed.
       const survivor2 = await createTestEntry(feedId, { guid: "http://example.com/?p=3" });
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -255,11 +251,6 @@ describe("migration 0109: merge scheme-twin entries", () => {
       expect(merged.updatedAt).toEqual(t2);
       expect(merged.lastSeenAt).toEqual(t3);
       expect(merged.publishedAt).toEqual(survivorPublishedAt);
-      const { rows } = await db.execute<{ original: string | null }>(
-        sql`SELECT full_content_original AS original FROM entries WHERE id = ${survivor}`
-      );
-      expect(rows[0].original).toBe("full text");
-      expect(merged.fullContentHash).toBe("full-hash");
       expect(await db.select().from(entries).where(eq(entries.id, otherFeedEntry))).toHaveLength(1);
       const savedRows = await db
         .select({ id: entries.id })

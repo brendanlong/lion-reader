@@ -670,7 +670,6 @@ CREATE TABLE public.entries (
     list_unsubscribe_https text,
     list_unsubscribe_post boolean,
     last_seen_at timestamp with time zone,
-    full_content_original text,
     full_content_cleaned text,
     full_content_fetched_at timestamp with time zone,
     full_content_error text,
@@ -692,7 +691,6 @@ CREATE TABLE public.entries (
 ALTER TABLE ONLY public.entries ALTER COLUMN content_original SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN summary SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN content_cleaned SET COMPRESSION lz4;
-ALTER TABLE ONLY public.entries ALTER COLUMN full_content_original SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN full_content_cleaned SET COMPRESSION lz4;
 
 CREATE SEQUENCE public.entries_greader_item_id_seq
@@ -1071,7 +1069,6 @@ CREATE VIEW public.visible_entries AS
     e.list_unsubscribe_post,
     e.created_at,
     ue.changed_at AS updated_at,
-    e.full_content_original,
     e.full_content_cleaned,
     e.full_content_fetched_at,
     e.full_content_error,
