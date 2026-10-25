@@ -662,16 +662,19 @@ export const entries = pgTable(
   (table) => [
     // Unique constraint on owner feed + guid
     unique("uq_entries_owner_feed_guid").on(table.ownerFeedId, table.guid),
-    // Plain owner_feed_id lookups: a poll's fanout, subscribe-time populate.
+    // A poll's fanout (owner_feed_id = $1 AND id = ANY(...)), the feeds delete
+    // cascade and account deletion's archived-page read.
     index("idx_entries_owner_feed").on(table.ownerFeedId, table.id),
-    // Feed stats' per-feed COUNT(*) and MIN(fetched_at) as an index-only scan;
-    // idx_entries_owner_feed would read one heap page per entry (#2157).
+    // The feed stats and admin feeds pages' per-feed COUNT(*) and MIN(fetched_at)
+    // as an index-only scan; idx_entries_owner_feed would read one heap page per
+    // entry (#2157).
     index("idx_entries_owner_feed_fetched").on(table.ownerFeedId, table.fetchedAt),
     // Unique global Google Reader item id; backs the greader_item_id -> UUID
     // reverse lookup (greaderItemIdsToUuids) with an index seek.
     uniqueIndex("idx_entries_greader_item_id").on(table.greaderItemId),
-    // Email and saved owners (#1846, migration 0137): duplicate detection and
-    // the owner's delete cascade, partial on the owner being set.
+    // Email and saved owners (#1846, migration 0137): every lookup by owner
+    // (dedup, saved-by-URL, List-Unsubscribe) and the owner's delete cascade,
+    // partial on the owner being set.
     uniqueIndex("uq_entries_owner_subscription_guid")
       .on(table.ownerSubscriptionId, table.guid)
       .where(sql`owner_subscription_id IS NOT NULL`),
