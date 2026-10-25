@@ -20,10 +20,11 @@ describe("formatAuthors", () => {
     );
   });
 
-  it("lists every author up to the limit", () => {
-    const listed = formatAuthors(names(MAX_LISTED_AUTHORS));
-    expect(listed).not.toContain("et al.");
-    for (const name of names(MAX_LISTED_AUTHORS)) expect(listed).toContain(name);
+  it("lists every author up to the limit, comma-separated with a final 'and'", () => {
+    const listed = names(MAX_LISTED_AUTHORS);
+    expect(formatAuthors(listed)).toBe(
+      `${listed.slice(0, -1).join(", ")}, and ${listed[listed.length - 1]}`
+    );
   });
 
   it("collapses lists past the limit to 'First Author et al.'", () => {
