@@ -42,6 +42,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -50,9 +51,14 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.lionreader.app.ui.AppMotion
+import com.lionreader.app.ui.ArticleLayer
+import com.lionreader.app.ui.ArticlePrefetch
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.LionReaderTheme
+import com.lionreader.app.ui.READER_ARTICLE
+import com.lionreader.app.ui.READER_LIST
+import com.lionreader.app.ui.ReaderSceneStrategy
 import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
@@ -255,11 +261,49 @@ class MainActivity : ComponentActivity() {
             }
             hadArticle = articleOpen
         }
+        val prefetch =
+            remember(account) { ArticlePrefetch(account.reader, lifecycle.coroutineScope) }
+        fun closeArticle() {
+            backStack.removeLastOrNull()
+        }
+        @Composable
+        fun Article(
+            opened: EntryKey?,
+            besideList: Boolean,
+            shown: Boolean,
+            emptied: Boolean,
+            onReady: (EntryKey) -> Unit,
+        ) =
+            EntryScreen(
+                graph,
+                account,
+                opened,
+                onShown = home::opened,
+                onBack = ::closeArticle,
+                besideList = besideList,
+                shown = shown,
+                emptied = emptied,
+                prefetched = prefetch::take,
+                onReady = onReady,
+            )
+        val readerScene = remember {
+            ReaderSceneStrategy { list ->
+                ArticleLayer(
+                    open = backStack.lastOrNull() as? EntryKey,
+                    animate = settings.animations,
+                    onBack = ::closeArticle,
+                    list = list,
+                    article = { opened, shown, emptied, onReady ->
+                        Article(opened, besideList = false, shown, emptied, onReady)
+                    },
+                )
+            }
+        }
         NavDisplay(
             backStack = backStack,
             // Behind the panes (and the gap between them), which don't all paint their own.
             modifier = Modifier.background(MaterialTheme.colorScheme.background),
-            sceneStrategies = listOf(listDetail),
+            sceneStrategies = if (twoPane) listOf(listDetail) else listOf(readerScene, listDetail),
             onBack = { backStack.removeLastOrNull() },
             transitionSpec = { transitions.forward },
             popTransitionSpec = { transitions.back },
@@ -270,7 +314,7 @@ class MainActivity : ComponentActivity() {
                         metadata =
                             ListDetailSceneStrategy.listPane(
                                 detailPlaceholder = { NoArticlePlaceholder() }
-                            )
+                            ) + mapOf(READER_LIST to true)
                     ) {
                         HomeScreen(
                             model = home,
@@ -280,6 +324,7 @@ class MainActivity : ComponentActivity() {
                                 backStack.removeAll { it is EntryKey }
                                 backStack.add(EntryKey.openedFrom(id, home.shownIds()))
                             },
+                            onPress = prefetch::press,
                             onSettings = { backStack.add(SettingsKey) },
                             pageScrolling = settings.pageScrolling,
                             pageTurns = graph.pageTurns,
@@ -289,16 +334,16 @@ class MainActivity : ComponentActivity() {
                     // string, list included, and ends up in saved state.
                     entry<EntryKey>(
                         { key: EntryKey -> key.id },
-                        metadata = ListDetailSceneStrategy.detailPane(),
+                        metadata =
+                            ListDetailSceneStrategy.detailPane() + mapOf(READER_ARTICLE to true),
                     ) { key ->
-                        EntryScreen(
-                            graph,
-                            account,
-                            ids = key.listIds,
-                            startId = key.id,
-                            onShown = home::opened,
-                            onBack = { backStack.removeLastOrNull() },
+                        // Beside the list; full screen, it's the reader scene's.
+                        Article(
+                            key,
                             besideList = twoPane,
+                            shown = true,
+                            emptied = false,
+                            onReady = {},
                         )
                     }
                     entry<SettingsKey> {

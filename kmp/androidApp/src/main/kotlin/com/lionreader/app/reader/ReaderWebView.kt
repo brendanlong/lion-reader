@@ -31,7 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -60,6 +60,7 @@ import com.lionreader.app.ui.PageTurns
 import com.lionreader.app.ui.scrollbar
 import com.lionreader.shared.reader.AppearanceTokens
 import com.lionreader.shared.reader.linkTarget
+import com.lionreader.shared.reader.readerDocument
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -71,18 +72,32 @@ import org.json.JSONObject
  * than file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and
  * embeds), with the article's header in it too. It fills the page and scrolls itself: sized to its
  * content inside a scrolling layout, a WebView stays blank until it has measured.
+ *
+ * It shows [content] ([readerContent]) in a page with [shell] ([readerShell]), swapping each new
+ * article into the page it has rather than loading another, which is what makes an article appear
+ * at once; a new shell (another font, theme or text size) loads a new page. A new [visit] shows it
+ * afresh even when it's unchanged (from [position], not where the last visit left it). [onDrawn] is
+ * called once the page's next frame draws [content] (and on recomposing while it does, so a new
+ * [onDrawn] hears too), so a screen can wait for the article rather than show the last one.
+ * [hidden]: it's behind something else, so it's kept from accessibility services and focus.
  */
 @Composable
 fun ReaderWebView(
-    document: String,
+    shell: String,
+    content: String,
+    visit: Any?,
     position: ReadingPosition,
+    narration: ReaderNarration,
+    paging: ReaderPaging,
+    hidden: Boolean,
+    onDrawn: () -> Unit,
     modifier: Modifier = Modifier,
-    narration: ReaderNarration = ReaderNarration(),
-    paging: ReaderPaging = ReaderPaging(),
 ) {
     val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
-    val losses = remember { RendererLosses() }
+    // Giving up is on the article: the next visit, or article, in this page tries again.
+    val losses = remember(visit) { RendererLosses() }
+    val currentLosses by rememberUpdatedState(losses)
     val turns = paging.turns
     if (turns != null) {
         DisposableEffect(turns) {
@@ -92,9 +107,11 @@ fun ReaderWebView(
     }
     if (losses.gaveUp) {
         Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
+        // What the page shows instead.
+        SideEffect { onDrawn() }
         return
     }
-    var linkPress by remember(document) { mutableStateOf<LinkPress?>(null) }
+    var linkPress by remember(content) { mutableStateOf<LinkPress?>(null) }
     var scrolled by remember { mutableStateOf<ScrollIndicatorState?>(null) }
     Box(modifier.scrollbar { scrolled }) {
         key(losses.generation) {
@@ -141,7 +158,7 @@ fun ReaderWebView(
                                             WebViewAssetLoader.AssetsPathHandler(context),
                                         )
                                         .build(),
-                                    onRendererLost = losses::lost,
+                                    onRendererLost = { currentLosses.lost(it) },
                                 )
                         }
                 },
@@ -149,23 +166,17 @@ fun ReaderWebView(
                     // It mustn't be used any more; a new one is on its way.
                     if (view.rendererLost) return@AndroidView
                     view.position = position
-                    if (view.tag != document) {
-                        view.tag = document
-                        view.sideScrollers = emptyList()
-                        view.pageReady = false
-                        view.restoring = true
-                        view.loadDataWithBaseURL(
-                            "$ASSET_ORIGIN/",
-                            document,
-                            "text/html",
-                            "utf-8",
-                            null,
-                        )
-                    }
+                    view.onDrawn = onDrawn
+                    view.show(shell, content, visit)
+                    view.importantForAccessibility =
+                        if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                        else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                    view.isFocusable = !hidden
                     view.smoothScroll = paging.smoothScroll
                     view.pageScrolling = paging.swipes
                     view.highlight(narration.paragraph, narration.autoScroll)
                     view.onListenFrom = narration.onListenFrom
+                    if (view.drawn == content) onDrawn()
                 },
                 onRelease = { it.destroy() },
             )
@@ -173,27 +184,6 @@ fun ReaderWebView(
         linkPress?.let { LinkMenu(it) { linkPress = null } }
     }
 }
-
-/**
- * Starts the WebView's engine (once per process) when the app next goes idle, so the first article
- * doesn't wait for it. For a screen to call once its own content is showing: it blocks the main
- * thread meanwhile.
- */
-@Composable
-fun WarmUpWebView() {
-    val context = LocalContext.current.applicationContext
-    LaunchedEffect(Unit) {
-        if (webViewWarm) return@LaunchedEffect
-        webViewWarm = true
-        Looper.myQueue().addIdleHandler {
-            // A missing or updating WebView package should cost articles, not the whole app.
-            runCatching { WebView(context).destroy() }
-            false
-        }
-    }
-}
-
-private var webViewWarm = false
 
 /**
  * How far down the article the reader is ([fraction] of its height), kept outside the WebView,
@@ -326,6 +316,97 @@ data class ReaderPaging(
 private class ReaderView(context: Context) : WebView(context) {
     var sideScrollers: List<SideScroller> = emptyList()
 
+    /**
+     * The shell of the page loaded, the address of the load (each its own, so the WebView's reports
+     * about a load it has since replaced are told apart), and whether it has finished.
+     */
+    private var shell: String? = null
+    private var load: String? = null
+    private var loads = 0
+    private var shellLoaded = false
+
+    /** What's shown, and on which visit. */
+    private var content: String? = null
+    private var visit: Any? = null
+
+    /** The content the page's next frame draws, once the WebView has said so. */
+    var drawn: String? = null
+        private set
+
+    var onDrawn: () -> Unit = {}
+    private var drawRequests = 0L
+
+    /** Shows [content] in a page with [shell], on [visit]: see [ReaderWebView]. */
+    fun show(shell: String, content: String, visit: Any?) {
+        // Nothing is shown afresh: a new visit to an empty page is the same empty page.
+        val sameVisit = visit == this.visit || content.isEmpty()
+        if (shell == this.shell && content == this.content && sameVisit) return
+        this.content = content
+        this.visit = visit
+        drawn = null
+        // A draw still to be reported is of what was shown before.
+        drawRequests++
+        pageReady = false
+        restoring = true
+        if (shell == this.shell && shellLoaded) {
+            // Its scripts (narration.js) and the reader's place go with it, so the page is as a
+            // load of it would leave it.
+            evaluateJavascript(
+                "lionNarration.replaceArticle(${JSONObject.quote(content)});" +
+                    " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight)"
+            ) {
+                restoring = false
+            }
+            reportWhenDrawn(content)
+            return
+        }
+        this.shell = shell
+        shellLoaded = false
+        sideScrollers = emptyList()
+        val address = "$ASSET_ORIGIN/?load=${++loads}"
+        load = address
+        loadDataWithBaseURL(address, readerDocument(shell, content), "text/html", "utf-8", null)
+    }
+
+    /** A load is about to draw its first frame: what it shows can be. */
+    fun onCommitVisible(url: String?) {
+        if (url != load || rendererLost) return
+        content?.let(::reportWhenDrawn)
+    }
+
+    /**
+     * A load has finished, everything in it (images included) laid out: articles can be swapped in,
+     * and for an unchanged article the place is exactly where it was.
+     */
+    fun onLoaded(url: String?) {
+        if (url != load || rendererLost) return
+        shellLoaded = true
+        if (!restoring) return
+        evaluateJavascript(
+            "window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight)"
+        ) {
+            restoring = false
+        }
+    }
+
+    /**
+     * Requested right behind a change, which the page runs first, so it answers with the first
+     * frame that has it.
+     */
+    private fun reportWhenDrawn(content: String) {
+        val request = drawRequests
+        postVisualStateCallback(
+            request,
+            object : VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (requestId != drawRequests || content != this@ReaderView.content) return
+                    drawn = content
+                    onDrawn()
+                }
+            },
+        )
+    }
+
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
     /** Its renderer is gone, so it can only be destroyed. */
@@ -366,23 +447,6 @@ private class ReaderView(context: Context) : WebView(context) {
         scrolledTo = t
         val range = computeVerticalScrollRange()
         if (!restoring && !rendererLost && range > 0) position.fraction = t.toFloat() / range
-    }
-
-    /**
-     * Once everything in the page (images included) is laid out, so for an unchanged article the
-     * place is exactly where it was. Checked in the page, as a load this one replaced can report
-     * finishing too.
-     */
-    fun onLoaded() {
-        if (!restoring || rendererLost) return
-        evaluateJavascript(
-            "(function () {" +
-                " if (document.readyState !== 'complete') return false;" +
-                " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight);" +
-                " return true; })()"
-        ) { done ->
-            if (done == "true") restoring = false
-        }
     }
 
     init {
@@ -651,8 +715,12 @@ private class ReaderWebViewClient(
         request: WebResourceRequest,
     ): WebResourceResponse? = assets.shouldInterceptRequest(request.url)
 
+    override fun onPageCommitVisible(view: WebView, url: String?) {
+        (view as? ReaderView)?.onCommitVisible(url)
+    }
+
     override fun onPageFinished(view: WebView, url: String?) {
-        (view as? ReaderView)?.onLoaded()
+        (view as? ReaderView)?.onLoaded(url)
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

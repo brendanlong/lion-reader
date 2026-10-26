@@ -37,6 +37,8 @@
   // Layout settles as images and fonts load; blocks reach their edges as they
   // scroll.
   new ResizeObserver(report).observe(document.body);
+  // Another article replacing this one (lionNarration.replaceArticle).
+  new MutationObserver(report).observe(document.body, { childList: true });
   // A wide view's body keeps its (capped) size but moves.
   window.addEventListener("resize", report);
   document.fonts.ready.then(report);

@@ -5,9 +5,9 @@ the Compose app; upcoming work is in `docs/native-app-plan.md`. The app is
 **offline-first**: the UI reads only the local SQLDelight database (`Reader`),
 which `SyncEngine` keeps in step with the server. The UI is native per
 platform; only the article is a WebView (`ReaderWebView`, showing
-`readerDocument`). Each signed-in account has **its own database**
-(`Accounts`, `AccountSession`). How each part works is in the KDoc of the
-class doing it.
+`readerShell` with each article swapped in). Each signed-in account has **its
+own database** (`Accounts`, `AccountSession`). How each part works is in the
+KDoc of the class doing it.
 
 ## Rules
 
@@ -33,6 +33,9 @@ class doing it.
   `LionReaderDatabase.Schema`: it adds the search index's triggers.
 - Database work never runs on the main thread. `Reader` switches to its own
   context; `SyncEngine` doesn't switch threads, so call it on IO.
+- On a phone the article screen stays composed behind the list between
+  articles (`ArticleLayer`): anything it does that a hidden screen mustn't
+  (marking read, narration, the volume buttons, a toast) waits for its `shown`.
 - A list row is one TalkBack/Switch Access stop with its buttons as custom
   actions: a new row control needs a matching action. Where something changes
   without focus moving, a polite live region says what.

@@ -75,17 +75,13 @@ private fun fontFaces(assetOrigin: String): String =
 data class ReaderHeader(val title: String, val byline: String, val url: String? = null)
 
 /**
- * A complete document for the article: the [header], escaped, the AI [summary] if shown, and the
- * body. The summary and body are the server's sanitized HTML (sanitized on every read); they are
- * inserted verbatim and never re-sanitized here. Our script goes in the head, ahead of it, so no
- * unclosed element in the body can swallow it. The document is loaded at [assetOrigin], where the
- * app serves its bundled fonts, scripts and the web's `reader-prose.css` (the fixes for feed
- * markup, which reads the theme from the `--edge-strong`/`--surface-*` variables set here).
+ * The reader page up to its body: everything but the article, so one page can show article after
+ * article ([readerContent], swapped into its body by `lionNarration.replaceArticle`). Our scripts
+ * go in the head, so nothing in an article can swallow them. The page is loaded at [assetOrigin],
+ * where the app serves its bundled fonts, scripts and the web's `reader-prose.css` (the fixes for
+ * feed markup, which reads the theme from the `--edge-strong`/`--surface-*` variables set here).
  */
-fun readerDocument(
-    header: ReaderHeader,
-    summary: String?,
-    body: String,
+fun readerShell(
     settings: AppSettings,
     tokens: AppearanceTokens,
     colors: ReaderColors,
@@ -150,9 +146,16 @@ fun readerDocument(
         </head>
         <body class="reader-prose">
         """
-        .trimIndent() +
-        // After trimIndent, so feed text can't change the template's indentation.
-        "<header class=\"lr-header\"><h1>" +
+        .trimIndent()
+}
+
+/**
+ * An article for a [readerShell]'s body: the [header], escaped, the AI [summary] if shown, and the
+ * body. The summary and body are the server's sanitized HTML (sanitized on every read); they are
+ * inserted verbatim and never re-sanitized here.
+ */
+fun readerContent(header: ReaderHeader, summary: String?, body: String): String =
+    "<header class=\"lr-header\"><h1>" +
         (webUrl(header.url)?.let { "<a href=\"${escapeHtml(it)}\">${escapeHtml(header.title)}</a>" }
             ?: escapeHtml(header.title)) +
         "</h1>" +
@@ -160,9 +163,10 @@ fun readerDocument(
         (summary?.let {
             "<aside class=\"lr-summary\"><p class=\"lr-summary-label\">AI Summary</p>$it</aside>"
         } ?: "") +
-        body +
-        "</body></html>"
-}
+        body
+
+/** A whole page: [shell] showing [content]. */
+fun readerDocument(shell: String, content: String): String = "$shell$content</body></html>"
 
 /**
  * [href] if it's a web page outside the article: not the reader's own [assetOrigin], which a

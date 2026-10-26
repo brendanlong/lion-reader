@@ -25,17 +25,13 @@ class ReaderDocumentTest {
     @Test
     fun headerTextIsEscaped() {
         val html =
-            readerDocument(
+            readerContent(
                 ReaderHeader(
                     title = "<img src=x onerror=alert(1)> & \"quotes\"",
                     byline = "<script>alert(1)</script> · O'Brien",
                 ),
                 null,
                 "",
-                AppSettings(),
-                tokens,
-                colors,
-                ORIGIN,
             )
         assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt; &amp; &quot;quotes&quot;"))
         assertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt; · O&#39;Brien"))
@@ -46,15 +42,7 @@ class ReaderDocumentTest {
     @Test
     fun theTitleLinksToAWebAddressOnly() {
         fun titleOf(url: String?) =
-            readerDocument(
-                    ReaderHeader("Title", "Feed", url),
-                    null,
-                    "",
-                    AppSettings(),
-                    tokens,
-                    colors,
-                    ORIGIN,
-                )
+            readerContent(ReaderHeader("Title", "Feed", url), null, "")
                 .substringAfter("<h1>")
                 .substringBefore("</h1>")
 
@@ -69,15 +57,14 @@ class ReaderDocumentTest {
     @Test
     fun bodyIsInsertedVerbatim() {
         val body = "<pre>\n        indented code\n</pre>"
-        val html = readerDocument(header, null, body, AppSettings(), tokens, colors, ORIGIN)
+        val html = readerContent(header, null, body)
         assertTrue(html.contains(body))
     }
 
     @Test
     fun summaryGoesVerbatimBetweenTheHeaderAndTheBody() {
         val summary = "<ul><li>Point one</li></ul>"
-        val html =
-            readerDocument(header, summary, "<p>Body</p>", AppSettings(), tokens, colors, ORIGIN)
+        val html = readerContent(header, summary, "<p>Body</p>")
         val headerEnd = html.indexOf("</header>")
         val summaryAt = html.indexOf(summary)
         assertTrue(headerEnd in 0 until summaryAt)
@@ -87,14 +74,14 @@ class ReaderDocumentTest {
     @Test
     fun sizeCombinesTextSizeAndFontAdjustment() {
         val settings = AppSettings(font = ReaderFont.MERRIWEATHER, textSize = TextSize.LARGE)
-        val html = readerDocument(header, null, "", settings, tokens, colors, ORIGIN)
+        val html = readerShell(settings, tokens, colors, ORIGIN)
         assertTrue(html.contains("font-size: ${1.125 * 0.929}rem"))
         assertTrue(html.contains("line-height: 1.8"))
     }
 
     @Test
     fun scriptsAndStylesheetsComeOnlyFromTheAssetOrigin() {
-        val html = readerDocument(header, null, "", AppSettings(), tokens, colors, ORIGIN)
+        val html = readerShell(AppSettings(), tokens, colors, ORIGIN)
         val csp = html.substringAfter("Content-Security-Policy\" content=\"").substringBefore('"')
         assertTrue(csp.startsWith("default-src 'none'; "))
         assertTrue(

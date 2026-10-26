@@ -121,6 +121,7 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.navigationevent.compose)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.webkit)
 

@@ -52,9 +52,11 @@ fetches user-influenced URLs and must never be usable to reach internal services
   content access; the one message channel is limited to the asset origin's main
   frame, the app reads only layout, narration text and taps from it, and calls
   back only `lionNarration.highlight(number|null, boolean)`,
-  `lionNarration.selectedParagraph()` (read as an integer or null) and
-  `window.scrollTo` with numbers of its own. Every
-  navigation leaves for the browser. Header text (title, byline) enters only via
+  `lionNarration.selectedParagraph()` (read as an integer or null),
+  `lionNarration.replaceArticle` with the same article HTML a page load gets
+  (`readerContent`, passed as a JSON-quoted string, so nothing in it is ever
+  evaluated as script by the app) and `window.scrollTo` with numbers of its own.
+  Every navigation leaves for the browser. Header text (title, byline) enters only via
   `escapeHtml`, and the title links to the entry only when it's http(s) (`webUrl`,
   which also gates the link menu, Open original and Share). Loosening any of this
   needs a security review.
