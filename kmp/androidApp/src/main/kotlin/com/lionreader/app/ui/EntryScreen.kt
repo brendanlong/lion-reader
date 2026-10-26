@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -112,13 +113,19 @@ fun EntryScreen(
     onBack: () -> Unit,
     /** Beside the list, where going back closes the article rather than leaving it. */
     besideList: Boolean,
+    /** SPIKE: on screen, not hidden behind the list. */
+    shown: Boolean = true,
+    /** SPIKE: tells each opening apart (EntryKey.opening), so each recentres the pager. */
+    opening: Long = 0,
+    /** SPIKE: whether the page on screen is ready to show its article; called on every change. */
+    onReady: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     // EntryKey.openedFrom always lists the entry it opens.
     // SPIKE: pages keep their slots across opens (the screen stays composed, hidden, between
     // them), so an article opens in the slot on screen and reuses its attached WebView.
     val pager = rememberPagerState(initialPage = VIRTUAL_START) { VIRTUAL_PAGES }
-    val offset = remember(ids, startId) { pager.currentPage - ids.indexOf(startId) }
+    val offset = remember(ids, startId, opening) { pager.currentPage - ids.indexOf(startId) }
     val idAt = { page: Int -> ids.getOrNull(page - offset) }
     val entryId = idAt(pager.settledPage) ?: startId
     android.util.Log.i(
@@ -158,7 +165,8 @@ fun EntryScreen(
     // Null while unknown (e.g. offline): only summaries already on the device show then.
     val summariesAvailable by produceState<Boolean?>(null) { value = account.summariesAvailable() }
 
-    MarkReadOnArrival(account.reader, entryId, onShown)
+    // SPIKE: once it's on screen, and after what showing it needs.
+    if (shown) MarkReadOnArrival(account.reader, entryId, onShown)
 
     val actions: @Composable RowScope.() -> Unit = actions@{
         val current = entry ?: return@actions
@@ -362,6 +370,9 @@ fun EntryScreen(
                             ),
                         // The volume buttons turn the page on screen, not its neighbours'.
                         active = page == pager.currentPage,
+                        onReady = if (page == pager.currentPage) onReady else { _, _ -> },
+                        // Neighbours wait until the article is on screen.
+                        load = shown || page == pager.currentPage,
                     )
                 }
             }
@@ -439,13 +450,16 @@ private fun EntryPage(
     onEntry: (String, EntryDetail?) -> Unit,
     narration: ReaderNarration,
     active: Boolean,
+    onReady: (String, Boolean) -> Unit,
+    load: Boolean,
 ) {
     val context = LocalContext.current
     // SPIKE: keyed on the entry, as the page's slot outlives it (collectAsStateWithLifecycle keeps
     // the last article's value when its flow changes).
     val articleState = remember(entryId) { mutableStateOf(ArticlePrefetch.take(entryId)) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(entryId, lifecycle) {
+    LaunchedEffect(entryId, lifecycle, load) {
+        if (!load) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             account.reader.article(entryId).collect {
                 android.os.Trace.beginSection("SPIKE article emitted $entryId")
@@ -504,8 +518,15 @@ private fun EntryPage(
             turns = graph.pageTurns.takeIf { active },
             smoothScroll = settings.animations,
         ),
+        onDrawn = { drawn -> if (content != null) onReady(entryId, drawn) },
     )
-    if (current == null || content != null) return
+    if (current == null) {
+        SideEffect { onReady(entryId, false) }
+        return
+    }
+    if (content != null) return
+    // Its loading view is ready as soon as it's composed.
+    SideEffect { onReady(entryId, true) }
     val byline = byline(context, current)
     val title = current.title ?: "Untitled"
     val scroll = rememberScrollState()

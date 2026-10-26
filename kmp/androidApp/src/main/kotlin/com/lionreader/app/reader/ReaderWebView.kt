@@ -81,6 +81,8 @@ fun ReaderWebView(
     modifier: Modifier = Modifier,
     narration: ReaderNarration = ReaderNarration(),
     paging: ReaderPaging = ReaderPaging(),
+    /** SPIKE: whether the page's next frame draws [content]; called on every change. */
+    onDrawn: (Boolean) -> Unit = {},
 ) {
     val shown = remember { arrayOfNulls<ReaderView>(1) }
     val losses = remember { RendererLosses() }
@@ -120,6 +122,8 @@ fun ReaderWebView(
                     view.pageScrolling = paging.swipes
                     view.highlight(narration.paragraph, narration.autoScroll)
                     view.onListenFrom = narration.onListenFrom
+                    view.onDrawn = onDrawn
+                    onDrawn(view.drawn == content)
                 },
                 onRelease = { ReaderPool.give(it) },
             )
@@ -346,6 +350,33 @@ private class ReaderView(context: Context) : WebView(context) {
 
     private var shellLoaded = false
 
+    /** SPIKE: the content the page's next frame draws, once the WebView says so. */
+    var drawn by mutableStateOf<String?>(null)
+        private set
+
+    private var drawRequest = 0L
+
+    /** Told at once when the page's next frame draws its content (not a frame later). */
+    var onDrawn: (Boolean) -> Unit = {}
+
+    private fun reportDrawn(content: String) {
+        val request = ++drawRequest
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.VISUAL_STATE_CALLBACK)) {
+            drawn = content
+            return
+        }
+        WebViewCompat.postVisualStateCallback(this, request) {
+            android.os.Trace.beginSection(
+                "SPIKE visual state ${it == request && this.content == content}"
+            )
+            android.os.Trace.endSection()
+            if (it == request && this.content == content) {
+                drawn = content
+                onDrawn(true)
+            }
+        }
+    }
+
     /**
      * Shows [content] in [shell]: swapped into the page if that's the shell it has loaded, which is
      * what makes opening an article fast; loaded whole otherwise.
@@ -365,6 +396,8 @@ private class ReaderView(context: Context) : WebView(context) {
             ) {
                 restoring = false
             }
+            // Right behind the swap, which the page runs first.
+            reportDrawn(content)
             return
         }
         this.shell = shell
@@ -456,6 +489,7 @@ private class ReaderView(context: Context) : WebView(context) {
      * finishing too.
      */
     fun onLoaded() {
+        if (!shellLoaded) content?.let(::reportDrawn)
         shellLoaded = true
         if (!restoring || rendererLost) return
         evaluateJavascript(

@@ -270,12 +270,23 @@ class MainActivity : ComponentActivity() {
         // SPIKE: the article layer, composed from the first open on and hidden behind the list
         // while it shows.
         var lastArticle by remember { mutableStateOf<EntryKey?>(null) }
+        // The page on screen, and whether it's ready to show its article: the layer stays behind
+        // the list until it is for the article just opened, so it never flashes the last one.
+        var pageReady by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+        var revealed by remember { mutableStateOf<EntryKey?>(null) }
         val readerScene = remember {
             ReaderSceneStrategy {
                 val open = backStack.lastOrNull() as? EntryKey
                 val shown = open ?: lastArticle ?: return@ReaderSceneStrategy
                 SideEffect { if (open != null) lastArticle = open }
-                Box(Modifier.fillMaxSize().zIndex(if (open != null) 1f else -1f)) {
+                val readyNow = open != null && pageReady == (open.id to true)
+                SideEffect { if (readyNow) revealed = open }
+                val visible = open != null && (readyNow || revealed == open)
+                if (visible) {
+                    android.os.Trace.beginSection("SPIKE layer visible")
+                    android.os.Trace.endSection()
+                }
+                Box(Modifier.fillMaxSize().zIndex(if (visible) 1f else -1f)) {
                     EntryScreen(
                         graph,
                         account,
@@ -284,6 +295,9 @@ class MainActivity : ComponentActivity() {
                         onShown = home::opened,
                         onBack = { backStack.removeLastOrNull() },
                         besideList = false,
+                        opening = shown.opening,
+                        shown = visible,
+                        onReady = { id, ready -> pageReady = id to ready },
                     )
                 }
             }

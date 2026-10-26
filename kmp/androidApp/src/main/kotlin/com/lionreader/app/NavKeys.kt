@@ -10,7 +10,12 @@ import kotlinx.serialization.Serializable
 
 /** An article opened from a list, and that list's order at the time (for paging). */
 @Serializable
-internal data class EntryKey(val id: String, val listIds: List<String>) : NavKey {
+internal data class EntryKey(
+    val id: String,
+    val listIds: List<String>,
+    /** SPIKE: tells each opening apart, even of the same article. */
+    val opening: Long = 0,
+) : NavKey {
     companion object {
         /**
          * Opened from [list]: only the ids within [PAGE_REACH] of it, which bounds the key's size
@@ -18,9 +23,14 @@ internal data class EntryKey(val id: String, val listIds: List<String>) : NavKey
          */
         fun openedFrom(id: String, list: List<String>): EntryKey {
             val at = list.indexOf(id)
-            if (at < 0) return EntryKey(id, listOf(id))
+            val opening = System.nanoTime()
+            if (at < 0) return EntryKey(id, listOf(id), opening)
             val from = maxOf(0, at - PAGE_REACH)
-            return EntryKey(id, list.subList(from, minOf(list.size, at + PAGE_REACH + 1)).toList())
+            return EntryKey(
+                id,
+                list.subList(from, minOf(list.size, at + PAGE_REACH + 1)).toList(),
+                opening,
+            )
         }
     }
 }
