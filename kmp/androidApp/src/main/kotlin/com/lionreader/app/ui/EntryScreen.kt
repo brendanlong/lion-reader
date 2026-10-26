@@ -173,10 +173,14 @@ internal fun EntryScreen(
     val entry = window.idAt(pager.targetPage)?.let(articles::entry)
     val coroutines = rememberCoroutineScope()
     val tokens = remember { appearanceTokens(context) }
-    // Null while unknown (e.g. offline): only summaries already on the device show then.
     val stillShown by rememberUpdatedState(shown)
+    // Null while unknown (e.g. offline): only summaries already on the device show then. Asked
+    // again each opening (it may have been offline), once it's on screen: a request mustn't hold
+    // up showing it.
     val summariesAvailable by
-        produceState<Boolean?>(null, opened?.opening) { value = account.summariesAvailable() }
+        produceState<Boolean?>(null, opened?.opening.takeIf { shown }) {
+            if (shown) value = account.summariesAvailable()
+        }
 
     if (shown && entryId != null) MarkReadOnArrival(account.reader, entryId, onShown)
 

@@ -338,7 +338,9 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** Shows [content] in a page with [shell], on [visit]: see [ReaderWebView]. */
     fun show(shell: String, content: String, visit: Any?) {
-        if (shell == this.shell && content == this.content && visit == this.visit) return
+        // Nothing is shown afresh: a new visit to an empty page is the same empty page.
+        val sameVisit = visit == this.visit || content.isEmpty()
+        if (shell == this.shell && content == this.content && sameVisit) return
         this.content = content
         this.visit = visit
         drawn = null
