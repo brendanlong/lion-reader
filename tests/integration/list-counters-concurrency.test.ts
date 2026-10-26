@@ -265,7 +265,9 @@ describe("unread counters under concurrent writes", () => {
   it("deleting a user survives a deadlock with a write holding one of their articles", async () => {
     // The deletion's cascade locks the user before their rows, the reverse of
     // a mark-read, which holds the row and then locks the user (for All): it
-    // must retry rather than fail (#2092).
+    // must retry rather than fail (#2092). Postgres may abort either side, and
+    // only the deletion retries: a write for a user being deleted may fail
+    // (#2174).
     const userId = await createTestUser();
     const { entryIds } = await feedWithEntries(userId, 1);
 
@@ -280,11 +282,21 @@ describe("unread counters under concurrent writes", () => {
       );
       const deletion = deleteUser(db, userId);
       await waitUntilBlockedBy(rows[0].pid);
-      await client.query(
-        "UPDATE user_entries SET read = true WHERE user_id = $1 AND entry_id = $2",
-        [userId, entryIds[0]]
-      );
-      await client.query("COMMIT");
+      const write = await client
+        .query("UPDATE user_entries SET read = true WHERE user_id = $1 AND entry_id = $2", [
+          userId,
+          entryIds[0],
+        ])
+        .then(
+          () => null,
+          (err: unknown) => err
+        );
+      if (write === null) {
+        await client.query("COMMIT");
+      } else {
+        expect(write).toMatchObject({ code: "40P01" });
+        await client.query("ROLLBACK");
+      }
       await deletion;
     } finally {
       await client.end();
