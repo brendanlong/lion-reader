@@ -80,36 +80,15 @@ function archived(entryId: string): string[] {
     .map(([, object]) => gunzipSync(object).toString("utf8"));
 }
 
-async function storedOriginal(entryId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ original: entries.fullContentOriginal })
-    .from(entries)
-    .where(eq(entries.id, entryId));
-  return row.original;
-}
-
 describe("persistFullContentResult", () => {
-  it("archives the fetched page instead of storing it on the entry", async () => {
+  it("archives the fetched page", async () => {
     const entryId = await createTestEntry(await createTestFeed());
 
     await persistFullContentResult(db, entryId, success);
 
     expect(archived(entryId)).toEqual([PAGE]);
-    expect(await storedOriginal(entryId)).toBeNull();
     const [row] = await db.select().from(entries).where(eq(entries.id, entryId));
     expect(row.fullContentCleaned).toBe("<p>Article</p>");
-  });
-
-  // Left on the row, the backfill would archive it over the newer page.
-  it("clears a page an earlier fetch stored on the row", async () => {
-    const entryId = await createTestEntry(await createTestFeed(), {
-      fullContentOriginal: "<html>older page</html>",
-    });
-
-    await persistFullContentResult(db, entryId, success);
-
-    expect(await storedOriginal(entryId)).toBeNull();
-    expect(archived(entryId)).toEqual([PAGE]);
   });
 
   it("stores the article even when the archive refuses the page", async () => {

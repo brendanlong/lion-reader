@@ -148,8 +148,6 @@ export async function persistFullContentResult(
     .update(entries)
     .set({
       ...fullContentUpdate,
-      // An older fetch's page; the backfill archives what's left here.
-      fullContentOriginal: null,
       updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT DISTINCT FROM ${fullContentHash} THEN ${entries.updatedAt} ELSE ${now} END`,
     })
     .where(eq(entries.id, entryId));
