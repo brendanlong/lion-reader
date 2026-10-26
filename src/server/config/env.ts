@@ -352,7 +352,10 @@ export const usageLimitsConfig = {
   /** Maximum feed response size in bytes (default: 10MB). Checked during streaming to avoid OOM. */
   maxFeedSizeBytes: parseInt(process.env.MAX_FEED_SIZE_BYTES || String(10 * 1024 * 1024), 10),
 
-  /** Maximum number of entries to parse from a single feed (default: 100). */
+  /**
+   * Maximum number of entries kept from a single feed (default: 100). The
+   * parsers keep the first ones, since feeds list their newest entries first.
+   */
   maxFeedEntries: parseInt(process.env.MAX_FEED_ENTRIES || "100", 10),
 
   /**

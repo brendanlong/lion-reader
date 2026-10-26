@@ -3,6 +3,7 @@
  * Parses JSON Feed from a string, returning entries synchronously.
  */
 
+import { usageLimitsConfig } from "../../config/env";
 import { formatAuthors } from "../authors";
 import type { ParsedEntry } from "../types";
 import type { FeedParseResult } from "./types";
@@ -101,7 +102,7 @@ export function parseJson(content: string): FeedParseResult {
   }
 
   const items = parsed.items as JsonFeedItem[];
-  const entries = items.map(parseJsonFeedItem);
+  const entries = items.slice(0, usageLimitsConfig.maxFeedEntries).map(parseJsonFeedItem);
 
   return {
     title: typeof parsed.title === "string" ? parsed.title.trim() || undefined : undefined,

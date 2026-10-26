@@ -48,6 +48,7 @@ struct RssHandler {
     state: State,
     buf: String,
     is_rdf: bool,
+    max_entries: usize,
 }
 
 impl SaxHandler for RssHandler {
@@ -322,7 +323,9 @@ impl SaxHandler for RssHandler {
                 if item.entry.authors.is_empty() {
                     item.entry.authors = item.rss_authors;
                 }
-                self.feed.entries.push(item.entry);
+                if self.feed.entries.len() < self.max_entries {
+                    self.feed.entries.push(item.entry);
+                }
                 self.state = if self.is_rdf {
                     State::Initial
                 } else {
@@ -339,14 +342,17 @@ impl SaxHandler for RssHandler {
     }
 }
 
-/// Parses an RSS feed (RSS 2.0 or RSS 1.0/RDF) from a string.
-pub fn parse_rss(content: &str) -> Result<ParsedFeed, String> {
+/// Parses an RSS feed (RSS 2.0 or RSS 1.0/RDF) from a string, keeping its
+/// first `max_entries` items. The rest are still parsed (channel elements may
+/// follow them) but dropped as soon as each closes.
+pub fn parse_rss(content: &str, max_entries: usize) -> Result<ParsedFeed, String> {
     let mut handler = RssHandler {
         feed: ParsedFeed::default(),
         current: None,
         state: State::Initial,
         buf: String::new(),
         is_rdf: false,
+        max_entries,
     };
     run_sax(content, true, &mut handler)?;
     Ok(handler.feed)
@@ -372,7 +378,7 @@ mod tests {
                 </item>
               </channel>
             </rss>"#;
-        let feed = parse_rss(xml).unwrap();
+        let feed = parse_rss(xml, usize::MAX).unwrap();
         assert_eq!(feed.title.as_deref(), Some("Example Feed"));
         assert_eq!(feed.site_url.as_deref(), Some("https://example.com"));
         assert_eq!(feed.ttl_minutes, Some(60.0));
@@ -407,7 +413,7 @@ mod tests {
                 </item>
               </channel>
             </rss>"#;
-        let feed = parse_rss(xml).unwrap();
+        let feed = parse_rss(xml, usize::MAX).unwrap();
         assert_eq!(feed.entries[0].authors, ["Ada Lovelace", "Alan Turing"]);
         assert_eq!(feed.entries[1].authors, ["a@example.com", "b@example.com"]);
     }
@@ -425,13 +431,13 @@ mod tests {
             <!-- unclosed comment swallows the rest
             <item><title>Never seen</title></item>
         "#;
-        let feed = parse_rss(xml).unwrap();
+        let feed = parse_rss(xml, usize::MAX).unwrap();
         assert_eq!(feed.title.as_deref(), Some("Feed"));
         assert_eq!(feed.entries.len(), 1);
         assert_eq!(feed.entries[0].guid.as_deref(), Some("p1"));
 
         let xml = r#"<rss><channel><title>Feed</title><item><guid>p1</guid></item><description><![CDATA[never closed"#;
-        let feed = parse_rss(xml).unwrap();
+        let feed = parse_rss(xml, usize::MAX).unwrap();
         assert_eq!(feed.title.as_deref(), Some("Feed"));
         assert_eq!(feed.entries.len(), 1);
     }
@@ -440,11 +446,15 @@ mod tests {
     fn truncated_feed_implicitly_closes_open_elements() {
         // htmlparser2 fired onclosetag for every still-open element at EOF,
         // so a truncated feed keeps its last partially-written entry.
-        let feed = parse_rss("<rss><channel><title>Feed").unwrap();
+        let feed = parse_rss("<rss><channel><title>Feed", usize::MAX).unwrap();
         assert_eq!(feed.title.as_deref(), Some("Feed"));
         assert!(feed.entries.is_empty());
 
-        let feed = parse_rss("<rss><channel><title>Feed</title><item><title>Post").unwrap();
+        let feed = parse_rss(
+            "<rss><channel><title>Feed</title><item><title>Post",
+            usize::MAX,
+        )
+        .unwrap();
         assert_eq!(feed.title.as_deref(), Some("Feed"));
         assert_eq!(feed.entries.len(), 1);
         assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
@@ -454,8 +464,11 @@ mod tests {
     fn end_tag_dispatch_matches_htmlparser2_stack_semantics() {
         // An end tag closes down to its nearest open match (</item> closes
         // the unclosed <title> first)...
-        let feed = parse_rss("<rss><channel><item><title>Post</item><item><guid>g2</guid></item>")
-            .unwrap();
+        let feed = parse_rss(
+            "<rss><channel><item><title>Post</item><item><guid>g2</guid></item>",
+            usize::MAX,
+        )
+        .unwrap();
         assert_eq!(feed.entries.len(), 2);
         assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
         assert_eq!(feed.entries[1].guid.as_deref(), Some("g2"));
@@ -464,6 +477,7 @@ mod tests {
         // text buffer keeps accumulating across it.
         let feed = parse_rss(
             "<rss><channel><item><description>foo</p>bar</description></item></channel></rss>",
+            usize::MAX,
         )
         .unwrap();
         assert_eq!(feed.entries[0].summary.as_deref(), Some("foobar"));
@@ -471,7 +485,11 @@ mod tests {
 
         // A deep close (</channel> while inside an item title) captures the
         // title and pushes the entry on the way out.
-        let feed = parse_rss("<rss><channel><item><title>Post</channel></rss>").unwrap();
+        let feed = parse_rss(
+            "<rss><channel><item><title>Post</channel></rss>",
+            usize::MAX,
+        )
+        .unwrap();
         assert_eq!(feed.entries.len(), 1);
         assert_eq!(feed.entries[0].title.as_deref(), Some("Post"));
     }
@@ -490,7 +508,7 @@ mod tests {
             </item>
           </channel>
         </rss>"#;
-        let feed = parse_rss(xml).unwrap();
+        let feed = parse_rss(xml, usize::MAX).unwrap();
         assert_eq!(feed.site_url.as_deref(), Some("https://example.com"));
         assert_eq!(feed.description.as_deref(), Some("Test description"));
         assert_eq!(
@@ -498,5 +516,31 @@ mod tests {
             Some("https://example.com/post-1")
         );
         assert_eq!(feed.entries[0].date_candidates.len(), 1);
+    }
+
+    #[test]
+    fn keeps_first_max_entries_and_channel_elements_after_them() {
+        let xml = r#"<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+          <channel>
+            <item><guid>g1</guid></item>
+            <item><guid>g2</guid></item>
+            <item><guid>g3</guid></item>
+            <title>Feed</title>
+            <atom:link rel="hub" href="https://hub.example.com/"/>
+          </channel>
+        </rss>"#;
+        let feed = parse_rss(xml, 2).unwrap();
+        let guids: Vec<_> = feed.entries.iter().map(|e| e.guid.as_deref()).collect();
+        assert_eq!(guids, [Some("g1"), Some("g2")]);
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
+        assert_eq!(feed.hub_url.as_deref(), Some("https://hub.example.com/"));
+
+        // RDF puts items outside <channel>; a dropped item must still return
+        // the parser to the state that reads elements after it.
+        let rdf = r#"<rdf:RDF><item><guid>g1</guid></item><item><guid>g2</guid></item>
+          <channel><title>Feed</title></channel></rdf:RDF>"#;
+        let feed = parse_rss(rdf, 1).unwrap();
+        assert_eq!(feed.entries.len(), 1);
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
     }
 }

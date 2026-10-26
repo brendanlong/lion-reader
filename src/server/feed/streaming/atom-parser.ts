@@ -13,6 +13,7 @@ import {
   parseAtom as nativeParseAtom,
   parseAtomAsync as nativeParseAtomAsync,
 } from "@lion-reader/feed-parser";
+import { usageLimitsConfig } from "../../config/env";
 import type { FeedParseResult } from "./types";
 import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
 
@@ -23,7 +24,10 @@ import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
  * @returns Parsed feed metadata and entries
  */
 export function parseAtom(content: string): FeedParseResult {
-  return toFeedParseResult(nativeParseAtom(content), parseAtomDate);
+  return toFeedParseResult(
+    nativeParseAtom(content, usageLimitsConfig.maxFeedEntries),
+    parseAtomDate
+  );
 }
 
 /**
@@ -35,7 +39,10 @@ export async function parseAtomAsync(content: string): Promise<FeedParseResult> 
   if (content.length <= PARSE_INLINE_MAX_CHARS) {
     return parseAtom(content);
   }
-  return toFeedParseResult(await nativeParseAtomAsync(content), parseAtomDate);
+  return toFeedParseResult(
+    await nativeParseAtomAsync(content, usageLimitsConfig.maxFeedEntries),
+    parseAtomDate
+  );
 }
 
 function parseAtomDate(dateString: string): Date | undefined {

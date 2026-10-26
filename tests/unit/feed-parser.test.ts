@@ -3,8 +3,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseFeed, detectFeedType } from "../../src/server/feed/parser";
+import { parseFeed, parseFeedAsync, detectFeedType } from "../../src/server/feed/parser";
 import { UnknownFeedFormatError } from "../../src/server/feed/streaming/parser";
+import { PARSE_INLINE_MAX_CHARS } from "../../src/server/feed/streaming/native-result";
+import { usageLimitsConfig } from "../../src/server/config/env";
 
 describe("detectFeedType", () => {
   describe("RSS detection", () => {
@@ -316,6 +318,37 @@ describe("parseFeed", () => {
       expect(rssFeed.items[0].pubDate).toEqual(atomFeed.items[0].pubDate);
       expect(rssFeed.items[0].pubDate).toEqual(jsonParsed.items[0].pubDate);
     });
+  });
+
+  describe("entry limit", () => {
+    // Long enough that parseFeedAsync takes the native thread-pool path.
+    const padding = "x".repeat(PARSE_INLINE_MAX_CHARS / 10);
+    const guids = Array.from({ length: usageLimitsConfig.maxFeedEntries + 1 }, (_, i) => `p${i}`);
+    const feeds = {
+      rss: `<rss version="2.0"><channel>${guids
+        .map((g) => `<item><guid>${g}</guid><description>${padding}</description></item>`)
+        .join("")}<title>Feed</title></channel></rss>`,
+      atom: `<feed xmlns="http://www.w3.org/2005/Atom">${guids
+        .map((g) => `<entry><id>${g}</id><summary>${padding}</summary></entry>`)
+        .join("")}<title>Feed</title></feed>`,
+      json: JSON.stringify({
+        version: "https://jsonfeed.org/version/1.1",
+        items: guids.map((id) => ({ id, content_text: padding })),
+        title: "Feed",
+      }),
+    };
+
+    it.each(Object.entries(feeds))(
+      "keeps the first maxFeedEntries %s entries and the metadata after them",
+      async (_format, content) => {
+        expect(content.length).toBeGreaterThan(PARSE_INLINE_MAX_CHARS);
+        const expected = guids.slice(0, usageLimitsConfig.maxFeedEntries);
+        for (const feed of [parseFeed(content), await parseFeedAsync(content)]) {
+          expect(feed.items.map((item) => item.guid)).toEqual(expected);
+          expect(feed.title).toBe("Feed");
+        }
+      }
+    );
   });
 });
 
