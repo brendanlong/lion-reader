@@ -109,7 +109,7 @@ async function feedWithEntries(userId: string, count: number) {
 function fanOutNewEntries(feedIds: string[]): Array<Promise<unknown>> {
   return feedIds.map(async (feedId) => {
     const entryId = await createTestEntry(feedId);
-    await createUserEntriesForFeed(feedId, [entryId], null);
+    await createUserEntriesForFeed(db, feedId, [entryId], null);
   });
 }
 
@@ -249,7 +249,7 @@ describe("unread counters under concurrent writes", () => {
     const existing: string[] = [];
     for (const feedId of feeds) {
       const entryId = await createTestEntry(feedId);
-      await createUserEntriesForFeed(feedId, [entryId], null);
+      await createUserEntriesForFeed(db, feedId, [entryId], null);
       existing.push(entryId);
     }
 
@@ -349,7 +349,7 @@ describe("unread counters under concurrent writes", () => {
         await client.query("UPDATE subscriptions SET unsubscribed_at = now() WHERE id = $1", [
           subscriptionId,
         ]);
-        const fanout = createUserEntriesForFeed(feedId, [entryId], read ? new Date() : null);
+        const fanout = createUserEntriesForFeed(db, feedId, [entryId], read ? new Date() : null);
         // Commit only once the fan-out is waiting on the unsubscribe's lock,
         // so the race this test is about always happens.
         await waitUntilBlockedBy(rows[0].pid);
@@ -432,7 +432,7 @@ describe("a fan-out that loses a deadlock (#1846)", () => {
         first,
         entryId,
       ]);
-      const fanout = createUserEntriesForFeed(feedId, [entryId], null);
+      const fanout = createUserEntriesForFeed(db, feedId, [entryId], null);
       await waitUntilBlockedBy(rows[0].pid);
       await other.query(
         `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)

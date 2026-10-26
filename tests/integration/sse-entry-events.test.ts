@@ -122,7 +122,7 @@ describe("SSE entry events", () => {
         getFeedEventsChannel(webFeedId)
       );
 
-      const email = await processInboundEmail({
+      const email = await processInboundEmail(db, {
         to: `${ingestToken}@ingest.lionreader.com`,
         from: { address: sender, name: "News" },
         subject: "Issue 1",

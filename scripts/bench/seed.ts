@@ -22,9 +22,11 @@
 
 import { Client } from "pg";
 
+import { generateContentHash } from "@/server/feed/entry-processor";
 import {
   ANCHOR,
   COLLECTIONS,
+  FEED_ITEM_COLUMNS,
   FIRST_POOL_FEED,
   KEEPS_UP_IDX,
   WEB,
@@ -35,6 +37,8 @@ import {
   savedSubscriptionId,
   subscriptionId,
   SPARSE_TAG,
+  U0_INGEST_TOKEN,
+  feedItem,
   tagId,
   tagName,
   userEmail,
@@ -775,6 +779,12 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
      SELECT id, email, ${A} - interval '900 days', ${A}, ${A} - interval '900 days', ${A} - interval '900 days'
      FROM bench_user ORDER BY email`
   );
+  // The address `write.receive_email` mails.
+  await step(
+    "ingest address",
+    `INSERT INTO ingest_addresses (id, user_id, token, created_at) VALUES ($1, $2, $3, ${A} - interval '900 days')`,
+    [benchUuid("ingest:0"), userId(0), U0_INGEST_TOKEN]
+  );
   await step(
     "feeds",
     `INSERT INTO feeds (id, url, title, site_url,
@@ -799,7 +809,25 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   );
   await step("paragraphs", PARAGRAPHS);
   await step("entry plan", ENTRY_PLAN);
+  // Fresh whenever the benchmarks run, so a merge onto it populates the
+  // survivor rather than scheduling a refetch (`shouldRefetchOnSubscribe`).
+  await step(
+    "fresh merge target",
+    `UPDATE feeds SET stale_at = ${A} + interval '100 years' WHERE id = $1`,
+    [webFeedId(WEB.mergeTarget)]
+  );
   await step("entries", ENTRIES);
+  // See `feedItem`.
+  const popular = await client.query<Parameters<typeof feedItem>[0] & { id: string }>(
+    `SELECT id, ${FEED_ITEM_COLUMNS} FROM entries WHERE owner_feed_id = $1`,
+    [webFeedId(WEB.popular)]
+  );
+  await step(
+    "popular feed hashes",
+    `UPDATE entries SET content_hash = v.hash
+     FROM unnest($1::uuid[], $2::text[]) AS v(id, hash) WHERE entries.id = v.id`,
+    [popular.rows.map((e) => e.id), popular.rows.map((e) => generateContentHash(feedItem(e)))]
+  );
   const tagRows = plan.users.flatMap((u) =>
     Array.from({ length: u.tags }, (_, k) => [tagId(u.idx, k + 1), userId(u.idx), tagName(k + 1)])
   );

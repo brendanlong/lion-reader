@@ -7,7 +7,7 @@
 
 import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
-import { db } from "../db";
+import type { db as dbType } from "../db";
 import { generateSummary } from "../html/summary";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
@@ -164,7 +164,10 @@ function generateEmailContentHash(subject: string, content: string): string {
  * @param email - The normalized inbound email
  * @returns Processing result
  */
-export async function processInboundEmail(email: InboundEmail): Promise<ProcessEmailResult> {
+export async function processInboundEmail(
+  db: typeof dbType,
+  email: InboundEmail
+): Promise<ProcessEmailResult> {
   // 0. Check email content size before any processing
   const contentSize = (email.html?.length ?? 0) + (email.text?.length ?? 0);
   if (contentSize > usageLimitsConfig.maxEmailSizeBytes) {

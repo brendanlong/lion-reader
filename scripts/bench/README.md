@@ -8,22 +8,23 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
 
 - `seed.ts` builds the dataset: production's row counts as of 2026-10-05 and
   its heaviest libraries. Its header says how the text is generated.
-- `benchmarks.ts` holds the benchmarks. A read records the statements its
+- `benchmarks.ts` holds the benchmarks. Each records the statements its
   service function actually sends (`record.ts`), so it can't drift from the
-  app; add new reads that way. A write still reproduces its function's SQL by
-  hand and cites it, because the services open their own transactions and
-  recording one would commit it: **change a write benchmark together with the
-  function it mirrors**. Keep names stable so comparisons line up.
+  app; add new ones that way. A function a benchmark records must take `db`
+  rather than use the global one, and the seeded data must lead it down the
+  path the benchmark names (`record.ts` says why). Keep names stable so
+  comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.
-- `baseline.json` is a run without the redundant `entries` indexes (#2157,
-  2026-10-25), for seeing which benchmarks are heavy and how they plan, not
-  the "before" of a comparison. Re-record it when an index it names is dropped.
+- `baseline.json` is a run from 2026-10-26 (#2171), for seeing which
+  benchmarks are heavy and how they plan, not the "before" of a comparison.
+  Re-record it when an index it names is dropped or a benchmark's statements
+  change.
 
 ## Running
 
 ```bash
-pnpm build:native      # once per checkout: the reads run the app's code, sanitizer included
+pnpm build:native      # once per checkout: the benchmarks run the app's code, sanitizer included
 pnpm services          # as a background task: throwaway Postgres + Redis
 pnpm bench:db:seed     # ~3 minutes; refuses to wipe a database that isn't a benchmark one
 pnpm bench:db          # ~6 minutes; prints a table, writes scripts/bench/results/<time>-<sha>.json

@@ -119,8 +119,8 @@ describe("membership write paths (#1846)", () => {
     const aliceSub = await createTestSubscription(alice, feedId);
     const bobSub = await createTestSubscription(bob, feedId);
 
-    await createUserEntriesForFeed(feedId, entryIds, null);
-    await createUserEntriesForFeed(feedId, entryIds, null);
+    await createUserEntriesForFeed(db, feedId, entryIds, null);
+    await createUserEntriesForFeed(db, feedId, entryIds, null);
 
     expect(await membershipsOf(alice)).toEqual(
       pairs([aliceSub, entryIds[0]], [aliceSub, entryIds[1]])
@@ -172,7 +172,7 @@ describe("membership write paths (#1846)", () => {
     const twin = await createTestEntry(newFeedId, { guid: "https://example.com/a" });
     const fresh = await createTestEntry(newFeedId);
 
-    await createUserEntriesForFeed(newFeedId, [twin, fresh], null);
+    await createUserEntriesForFeed(db, newFeedId, [twin, fresh], null);
 
     const [{ id: survivor }] = await db
       .select({ id: subscriptions.id })
@@ -286,7 +286,7 @@ describe("membership write paths (#1846)", () => {
     const token = `token-${generateUuidv7()}`;
     await createTestIngestAddress(userId, { token });
 
-    const result = await processInboundEmail({
+    const result = await processInboundEmail(db, {
       to: `${token}@ingest.lionreader.com`,
       from: { address: "news@example.com", name: "News" },
       subject: "Hello",

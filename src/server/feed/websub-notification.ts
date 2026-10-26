@@ -143,7 +143,7 @@ export async function ingestWebsubNotification(
     // The database clock: the entries' pushed_at is compared with the poll's
     // last_fetched_at (`currentEntryIdsSql`).
     const now = new Date((await databaseNow(db)).epochMilliseconds);
-    const result = await processEntries(feedId, parsedFeed, {
+    const result = await processEntries(db, feedId, parsedFeed, {
       fetchedAt: now,
       pushed: true,
       // A push never advances last_fetched_at, so this stays the last full poll:

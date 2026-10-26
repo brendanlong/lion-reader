@@ -45,7 +45,7 @@ async function receiveEmail(
 ) {
   const token = `token-${generateUuidv7()}`;
   await createTestIngestAddress(userId, { token });
-  return processInboundEmail({
+  return processInboundEmail(db, {
     to: `${token}@ingest.lionreader.com`,
     from: { address: "news@example.com", name: "The News" },
     subject: "Hello",

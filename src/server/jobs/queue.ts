@@ -481,7 +481,7 @@ export function getJobPayload<T extends JobType>(job: Job, type: T): JobPayloads
  * @param nextRunAt When the job should run (default: now)
  * @returns The job (created or existing)
  */
-export async function ensureFeedJob(feedId: string, nextRunAt?: Date): Promise<Job> {
+export async function ensureFeedJob(db: DbOrTx, feedId: string, nextRunAt?: Date): Promise<Job> {
   const now = new Date();
   const runAt = nextRunAt ?? now;
   const id = generateUuidv7();
@@ -549,7 +549,7 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
  * @param feedId The feed ID
  * @returns The upserted job
  */
-export async function scheduleFeedRefreshNow(feedId: string): Promise<Job> {
+export async function scheduleFeedRefreshNow(db: DbOrTx, feedId: string): Promise<Job> {
   const now = new Date();
   const nowIso = now.toISOString();
   const id = generateUuidv7();

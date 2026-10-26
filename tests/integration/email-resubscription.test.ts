@@ -102,7 +102,7 @@ describe("Email subscriptions", () => {
         unsubscribedAt: new Date(),
       });
 
-      const result = await processInboundEmail(createTestEmail(token, senderEmail));
+      const result = await processInboundEmail(db, createTestEmail(token, senderEmail));
 
       expect(result.success).toBe(true);
       expect(result.subscriptionId).toBe(subscriptionId);
@@ -119,7 +119,7 @@ describe("Email subscriptions", () => {
       });
       await blockSender(userId, senderEmail);
 
-      const result = await processInboundEmail(createTestEmail(token, senderEmail));
+      const result = await processInboundEmail(db, createTestEmail(token, senderEmail));
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Sender blocked");
@@ -137,7 +137,7 @@ describe("Email subscriptions", () => {
       // Wait a bit to ensure timestamps would differ
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      const result = await processInboundEmail(createTestEmail(token, senderEmail));
+      const result = await processInboundEmail(db, createTestEmail(token, senderEmail));
 
       expect(result.success).toBe(true);
       const subscription = await getSubscription(subscriptionId);
@@ -152,6 +152,7 @@ describe("Email subscriptions", () => {
     const { token } = await createTestIngestAddress(userId);
 
     const result = await processInboundEmail(
+      db,
       createTestEmail(token, "New-Sender@example.com", "Welcome!")
     );
 
@@ -177,7 +178,7 @@ describe("Email subscriptions", () => {
       await subscriber.subscribe(channel);
       const messages = waitForMessages(subscriber, channel, 2);
 
-      const result = await processInboundEmail(createTestEmail(token, "news@example.com"));
+      const result = await processInboundEmail(db, createTestEmail(token, "news@example.com"));
 
       const [created, newEntry] = (await messages).map((message) => JSON.parse(message));
       expect(created).toMatchObject({

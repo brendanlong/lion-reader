@@ -13,6 +13,7 @@
  * - 500: Transient processing failure - Mailgun WILL retry (same signed triple)
  */
 
+import { db } from "@/server/db";
 import { processInboundEmail } from "@/server/email/process-inbound";
 import {
   isTimestampFresh,
@@ -124,7 +125,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // 6. Process the email
   try {
-    const result = await processInboundEmail(email);
+    const result = await processInboundEmail(db, email);
 
     // Processing reached a durable decision (accepted or deliberately rejected),
     // so mark the token seen to reject future replays. Deliberately NOT done in

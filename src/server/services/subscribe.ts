@@ -175,7 +175,7 @@ export async function createSubscription(
   const feedId = feedRecord.id;
 
   // 2. Ensure background fetch job exists
-  await ensureFeedJob(feedId);
+  await ensureFeedJob(db, feedId);
 
   // A plugin may opt a source into full-content-by-default (e.g. Bluesky, whose
   // RSS drops embedded content). Applied only to a fresh subscribe below; a
@@ -386,7 +386,7 @@ export async function subscribeToUrl(
   // The job queue is single-flight per feed, so concurrent subscribes coalesce
   // into one fetch. An already-active subscription has nothing to populate.
   if (stale && !result.alreadyActive) {
-    await scheduleFeedRefreshNow(existing.id);
+    await scheduleFeedRefreshNow(db, existing.id);
   }
   return result;
 }
@@ -539,9 +539,9 @@ export async function mergeSubscriptionIntoFeed(
   // Unconditional, not just for a new survivor: retention deletes the job of a
   // feed with no active subscriber, so a merge can be what brings the feed back.
   if (!survivorWasActive && !populate) {
-    await scheduleFeedRefreshNow(newFeed.id);
+    await scheduleFeedRefreshNow(db, newFeed.id);
   } else {
-    await ensureFeedJob(newFeed.id);
+    await ensureFeedJob(db, newFeed.id);
   }
 
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: survivor.id }], {

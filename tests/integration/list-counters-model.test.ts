@@ -617,7 +617,7 @@ OPS.push(
       // A fetch of the shared feed: one statement fanning out to every world
       // still subscribed (createUserEntriesForFeed, as the fetch job does).
       const entryId = await createTestEntry(sharedFeedId);
-      await createUserEntriesForFeed(sharedFeedId, [entryId], null);
+      await createUserEntriesForFeed(db, sharedFeedId, [entryId], null);
       for (const world of currentWorlds) world.entryIds.push(entryId);
       return `fan out ${entryId}`;
     },
@@ -655,7 +655,7 @@ OPS.push(
           .where(and(eq(blockedSenders.userId, w.userId), eq(blockedSenders.senderEmail, sender)));
         if (blocked) await caller.blockedSenders.unblock({ id: blocked.id });
       }
-      const result = await processInboundEmail({
+      const result = await processInboundEmail(db, {
         to: `${w.ingestToken}@ingest.lionreader.com`,
         from: { address: sender, name: "Letters" },
         subject: "Issue",
