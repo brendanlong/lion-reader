@@ -73,5 +73,5 @@ internal class ArticlePages(hiddenSummaries: Set<String> = emptySet()) {
 }
 
 @Composable
-internal fun rememberArticlePages(): ArticlePages =
-    rememberSaveable(saver = ArticlePages.saver) { ArticlePages() }
+internal fun rememberArticlePages(visit: Any?): ArticlePages =
+    rememberSaveable(visit, saver = ArticlePages.saver) { ArticlePages() }

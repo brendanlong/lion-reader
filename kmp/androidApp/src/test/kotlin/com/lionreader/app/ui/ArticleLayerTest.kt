@@ -1,5 +1,6 @@
 package com.lionreader.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Text
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +26,8 @@ class ArticleLayerTest {
     private val list = listOf("a", "b")
     private var open by mutableStateOf<EntryKey?>(null)
     private var closes = 0
+    private var listBacks = 0
+    private var searching by mutableStateOf(false)
     /** What the page on screen tells once it has drawn its article: the latest. */
     private var pageDrew: () -> Unit = {}
 
@@ -37,7 +40,11 @@ class ArticleLayerTest {
                     closes++
                     open = null
                 },
-                list = { Text("The list") },
+                list = {
+                    // Like the list's search, which Back closes.
+                    BackHandler(enabled = searching) { listBacks++ }
+                    Text("The list")
+                },
             ) { opened, _, onReady ->
                 if (opened != null) {
                     Text("Article ${opened.id}")
@@ -85,6 +92,8 @@ class ArticleLayerTest {
     @Test
     fun backClosesTheArticleOnScreenOnly() {
         setContent()
+        searching = true
+        composeRule.waitForIdle()
         openArticle("a")
         drawPage()
 
@@ -92,7 +101,17 @@ class ArticleLayerTest {
         composeRule.waitForIdle()
 
         assertEquals(1, closes)
+        assertEquals(0, listBacks)
         composeRule.onNodeWithText("Article a").assertDoesNotExist()
         composeRule.onNodeWithText("The list").assertExists()
+    }
+
+    @Test
+    fun aNewLayerShowsTheArticleAlreadyOpen() {
+        // As after rotation: its pages are new, so there's no last article to flash.
+        open = EntryKey.openedFrom("a", list)
+        setContent()
+
+        composeRule.onNodeWithText("Article a").assertExists()
     }
 }

@@ -123,9 +123,9 @@ internal fun EntryScreen(
     onBack: () -> Unit,
     /** Beside the list, where going back closes the article rather than leaving it. */
     besideList: Boolean,
-    shown: Boolean = true,
-    prefetched: (String) -> ArticleState? = { null },
-    onReady: (EntryKey) -> Unit = {},
+    shown: Boolean,
+    prefetched: (String) -> ArticleState?,
+    onReady: (EntryKey) -> Unit,
 ) {
     val context = LocalContext.current
     // The pager's length comes from the window, and the window from the page on screen when the
@@ -137,7 +137,8 @@ internal fun EntryScreen(
             PageWindow.opening(opened, at = pager.currentPage)
         }
     val entryId = window.idAt(pager.settledPage)
-    val articles = rememberArticlePages()
+    // Each opening starts afresh: as if the screen were new, as it is beside the list.
+    val articles = rememberArticlePages(opened?.opening)
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
     // Only while on screen, so a notice from the background (or behind the list) waits to be seen.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -335,6 +336,11 @@ internal fun EntryScreen(
         val pageConfig = LocalViewConfiguration.current
         // The pager waits for a bigger drag, so the reader decides first (pagerViewConfiguration).
         CompositionLocalProvider(LocalViewConfiguration provides pagerViewConfiguration()) {
+            // An article opened while the pager was still moving (a swipe, then back, then a tap)
+            // opens at rest on its page, the one on screen when it opened.
+            LaunchedEffect(window) {
+                if (pager.isScrollInProgress) pager.scrollToPage(pager.currentPage)
+            }
             // Anything else reaching a page outside the list (TalkBack's page turns) comes back.
             LaunchedEffect(window, pager.settledPage) {
                 window.inList(pager.settledPage)?.let { pager.animateScrollToPage(it) }
@@ -365,6 +371,7 @@ internal fun EntryScreen(
                         graph,
                         account,
                         pageId,
+                        opened?.opening,
                         tokens,
                         showSummary = pageId == null || articles.summaryShown(pageId),
                         onEntry = articles::loaded,
@@ -477,6 +484,8 @@ private fun EntryPage(
     graph: AppGraph,
     account: AccountSession,
     entryId: String?,
+    /** The opening it's part of: each shows its article afresh. */
+    opening: Long?,
     tokens: AppearanceTokens,
     showSummary: Boolean,
     onEntry: (String, EntryDetail?) -> Unit,
@@ -497,9 +506,10 @@ private fun EntryPage(
                     .collectAsStateWithLifecycle(remember { prefetched(entryId) })
                     .value
         }
-    val entry = rememberShownArticle(entryId, (article as? ArticleState.Shown)?.entry)
+    val visit = entryId to opening
+    val entry = rememberShownArticle(visit, (article as? ArticleState.Shown)?.entry)
     // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
-    val position = rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() }
+    val position = rememberSaveable(visit, saver = ReadingPosition.Saver) { ReadingPosition() }
     if (entryId != null) {
         // Null once it's gone (e.g. deleted) or can't be read, and when the page
         // leaves: the top bar shows only what's on a page now.
@@ -524,8 +534,8 @@ private fun EntryPage(
     ReaderWebView(
         rememberReaderShell(settings, tokens),
         content,
+        visit,
         position,
-        Modifier.fillMaxSize(),
         narration,
         ReaderPaging(
             swipes = settings.pageScrolling,
@@ -534,6 +544,7 @@ private fun EntryPage(
         ),
         hidden = !shown,
         onDrawn = { if (content.isNotEmpty()) onReady?.invoke() },
+        modifier = Modifier.fillMaxSize(),
     )
     when {
         article == ArticleState.Unreadable ->
@@ -546,8 +557,10 @@ private fun EntryPage(
             )
         entry != null && body == null && download != null ->
             MissingBody(graph, entry, byline(context, entry), download, active, settings)
-        // Gone (deleted, or no longer visible).
-        article is ArticleState.Shown && entry == null -> {}
+        // Gone (deleted, or no longer visible): an empty page, over whatever the WebView last
+        // showed.
+        article is ArticleState.Shown && entry == null ->
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))
         // Its article is drawn, or not here yet.
         else -> return
     }
@@ -660,14 +673,15 @@ private fun SummaryButton(
 }
 
 /**
- * The article as the page first showed its body: an edit, and the new body it brings, wait for the
- * next visit rather than reloading what's being read. Read and starred stay live, and a summary
- * arriving where there was none shows; one going (its body replaced in the background) stays.
- * Remembered, not saved: recreating the activity shows the article as it is then.
+ * The article as the page first showed its body on this [visit] (the article, and the opening it's
+ * part of): an edit, and the new body it brings, wait for the next visit rather than reloading
+ * what's being read. Read and starred stay live, and a summary arriving where there was none shows;
+ * one going (its body replaced in the background) stays. Remembered, not saved: recreating the
+ * activity shows the article as it is then.
  */
 @Composable
-internal fun rememberShownArticle(entryId: String?, latest: EntryDetail?): EntryDetail? {
-    val shown = remember(entryId) { arrayOfNulls<EntryDetail>(1) }
+internal fun rememberShownArticle(visit: Any?, latest: EntryDetail?): EntryDetail? {
+    val shown = remember(visit) { arrayOfNulls<EntryDetail>(1) }
     if (latest == null) return null
     val first = shown[0]
     val current =

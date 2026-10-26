@@ -267,14 +267,19 @@ class MainActivity : ComponentActivity() {
             backStack.removeLastOrNull()
         }
         @Composable
-        fun Article(opened: EntryKey?, shown: Boolean, onReady: (EntryKey) -> Unit) =
+        fun Article(
+            opened: EntryKey?,
+            besideList: Boolean,
+            shown: Boolean,
+            onReady: (EntryKey) -> Unit,
+        ) =
             EntryScreen(
                 graph,
                 account,
                 opened,
                 onShown = home::opened,
                 onBack = ::closeArticle,
-                besideList = twoPane,
+                besideList = besideList,
                 shown = shown,
                 prefetched = prefetch::take,
                 onReady = onReady,
@@ -286,7 +291,9 @@ class MainActivity : ComponentActivity() {
                     animate = settings.animations,
                     onBack = ::closeArticle,
                     list = list,
-                    article = { opened, shown, onReady -> Article(opened, shown, onReady) },
+                    article = { opened, shown, onReady ->
+                        Article(opened, besideList = false, shown, onReady)
+                    },
                 )
             }
         }
@@ -329,7 +336,7 @@ class MainActivity : ComponentActivity() {
                             ListDetailSceneStrategy.detailPane() + mapOf(READER_ARTICLE to true),
                     ) { key ->
                         // Beside the list; full screen, it's the reader scene's.
-                        Article(key, shown = true, onReady = {})
+                        Article(key, besideList = twoPane, shown = true, onReady = {})
                     }
                     entry<SettingsKey> {
                         SettingsScreen(
