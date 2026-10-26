@@ -10,6 +10,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -75,6 +76,7 @@ class ArticleStateTest {
         db.bodyQueries.put("a", "<p>Body</p>", 11L, 0L, "Body", 1L)
         assertEquals("<p>Body</p>", shown.last())
         val reads = driver.bodyReads
+        assertTrue(reads > 0)
         reader.setRead(listOf("a"), true)
         reader.setStarred("a", true)
         db.bodyQueries.put("a", "<p>Edited</p>", 13L, 0L, "Edited", 2L)

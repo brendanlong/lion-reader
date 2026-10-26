@@ -5,9 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.os.Looper
 import android.view.KeyEvent
-import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -118,18 +116,6 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             LionReaderTheme(settings.theme) { App() }
-        }
-        warmUpWebView()
-    }
-
-    /**
-     * Starts the WebView's engine once the app has drawn and is idle, so the first article doesn't
-     * wait for it. Later WebViews in the process start fast.
-     */
-    private fun warmUpWebView() {
-        Looper.myQueue().addIdleHandler {
-            if (!isDestroyed) WebView(this).destroy()
-            false
         }
     }
 
