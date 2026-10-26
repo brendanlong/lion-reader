@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -172,6 +173,27 @@ fun ReaderWebView(
         linkPress?.let { LinkMenu(it) { linkPress = null } }
     }
 }
+
+/**
+ * Starts the WebView's engine (once per process) when the app next goes idle, so the first article
+ * doesn't wait for it. For a screen to call once its own content is showing: it blocks the main
+ * thread meanwhile.
+ */
+@Composable
+fun WarmUpWebView() {
+    val context = LocalContext.current.applicationContext
+    LaunchedEffect(Unit) {
+        if (webViewWarm) return@LaunchedEffect
+        webViewWarm = true
+        Looper.myQueue().addIdleHandler {
+            // A missing or updating WebView package should cost articles, not the whole app.
+            runCatching { WebView(context).destroy() }
+            false
+        }
+    }
+}
+
+private var webViewWarm = false
 
 /**
  * How far down the article the reader is ([fraction] of its height), kept outside the WebView,

@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.core.content.edit
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.narration.CloudSpeechRequests
 import com.lionreader.app.narration.CloudVoices
@@ -190,10 +191,26 @@ private fun cloudVoiceCache(context: Context, dbName: String) =
  */
 private const val MAX_ROW_BYTES = 16L * 1024 * 1024
 
+/**
+ * Write-ahead logging, so the UI's reads don't wait behind sync's write transactions: without it,
+ * Android gives the database a single connection.
+ */
+private class WalCallback : AndroidSqliteDriver.Callback(AppSchema) {
+    override fun onConfigure(db: SupportSQLiteDatabase) {
+        db.enableWriteAheadLogging()
+    }
+}
+
 /** Accounts' databases, and their cloud narration audio in the cache. */
 internal class AndroidAccountStorage(private val context: Context) : AccountStorage {
     override fun openDatabase(name: String) =
-        AndroidSqliteDriver(AppSchema, context, name, windowSizeBytes = MAX_ROW_BYTES)
+        AndroidSqliteDriver(
+            AppSchema,
+            context,
+            name,
+            callback = WalCallback(),
+            windowSizeBytes = MAX_ROW_BYTES,
+        )
 
     override fun delete(name: String) {
         context.deleteDatabase(name)

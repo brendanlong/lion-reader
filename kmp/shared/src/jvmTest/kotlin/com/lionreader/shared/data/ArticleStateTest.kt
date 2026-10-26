@@ -10,15 +10,21 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 class ArticleStateTest {
-    /** Throws [failure] from every query while it's set, as Android does for an oversized row. */
+    /**
+     * Throws [failure] from every query while it's set, as Android does for an oversized row, and
+     * counts the queries reading a body.
+     */
     private class FailingDriver(private val driver: SqlDriver) : SqlDriver by driver {
         var failure: Exception? = null
+        var bodyReads = 0
 
         override fun <R> executeQuery(
             identifier: Int?,
@@ -28,13 +34,15 @@ class ArticleStateTest {
             binders: (SqlPreparedStatement.() -> Unit)?,
         ): QueryResult<R> {
             failure?.let { throw it }
+            if (sql.contains("SELECT content")) bodyReads++
             return driver.executeQuery(identifier, sql, mapper, parameters, binders)
         }
     }
 
     private val driver =
         FailingDriver(JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { AppSchema.create(it) })
-    private val reader = Reader(LionReaderDatabase(driver), { 0L }, Dispatchers.Unconfined) {}
+    private val db = LionReaderDatabase(driver)
+    private val reader = Reader(db, { 0L }, Dispatchers.Unconfined) {}
 
     @AfterTest fun close() = driver.close()
 
@@ -56,5 +64,25 @@ class ArticleStateTest {
         driver.failure = CancellationException("The account's session has ended")
 
         assertFailsWith<CancellationException> { runBlocking { reader.article("a").first() } }
+    }
+
+    @Test
+    fun aBodyArrivingWhileOpenShowsAndIsntReadAgainOnLaterChanges() = runBlocking {
+        db.entryQueries.insertIgnore("a", "web", 0L, 0L, 0L, 0L)
+        val shown = mutableListOf<String?>()
+        val page =
+            launch(Dispatchers.Unconfined) { reader.entry("a").collect { shown += it?.content } }
+
+        db.bodyQueries.put("a", "<p>Body</p>", 11L, 0L, "Body", 1L)
+        assertEquals("<p>Body</p>", shown.last())
+        val reads = driver.bodyReads
+        assertTrue(reads > 0)
+        reader.setRead(listOf("a"), true)
+        reader.setStarred("a", true)
+        db.bodyQueries.put("a", "<p>Edited</p>", 13L, 0L, "Edited", 2L)
+
+        assertEquals(reads, driver.bodyReads)
+        assertEquals("<p>Body</p>", shown.last())
+        page.cancel()
     }
 }
