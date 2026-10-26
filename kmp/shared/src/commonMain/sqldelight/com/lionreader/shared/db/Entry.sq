@@ -127,9 +127,8 @@ WHERE id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :su
   AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1);
 
 selectById:
-SELECT v.*, b.content, s.html AS ai_summary
+SELECT v.*, s.html AS ai_summary
 FROM entry_view v
-LEFT JOIN entry_body b ON b.entry_id = v.id
 LEFT JOIN entry_summary s ON s.entry_id = v.id
 WHERE v.id = ?;
 

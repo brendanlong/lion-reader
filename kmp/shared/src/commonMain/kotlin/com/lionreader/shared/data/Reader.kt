@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.withContext
 
 /** Which list the user is looking at. */
@@ -263,8 +264,19 @@ class Reader(
                 emit(ArticleState.Unreadable)
             }
 
+    /**
+     * The entry, live, but its body only until one is on the device: a page keeps the body it first
+     * showed, and SQLDelight re-runs a query on any change to its tables, so a live body would be
+     * read again on every read, star and download (each one, during a sync).
+     */
     fun entry(id: String): Flow<EntryDetail?> =
-        db.entryQueries.selectById(id).asFlow().mapToOneOrNull(context).map { row ->
+        combine(
+            db.entryQueries.selectById(id).asFlow().mapToOneOrNull(context),
+            db.bodyQueries.content(id).asFlow().mapToOneOrNull(context).transformWhile {
+                emit(it)
+                it.isNullOrEmpty()
+            },
+        ) { row, content ->
             row?.let {
                 EntryDetail(
                     id = it.id,
@@ -275,7 +287,7 @@ class Reader(
                     sortAtMillis = it.sort_at,
                     read = it.effective_read == 1L,
                     starred = it.effective_starred == 1L,
-                    content = it.content,
+                    content = content,
                     summary = it.ai_summary,
                 )
             }
