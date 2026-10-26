@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
+import androidx.compose.ui.zIndex
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -56,6 +57,8 @@ import com.lionreader.app.ui.ArticlePrefetch
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.LionReaderTheme
+import com.lionreader.app.ui.READER_ROLE
+import com.lionreader.app.ui.ReaderSceneStrategy
 import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
@@ -264,11 +267,32 @@ class MainActivity : ComponentActivity() {
             }
             hadArticle = articleOpen
         }
+        // SPIKE: the article layer, composed from the first open on and hidden behind the list
+        // while it shows.
+        var lastArticle by remember { mutableStateOf<EntryKey?>(null) }
+        val readerScene = remember {
+            ReaderSceneStrategy {
+                val open = backStack.lastOrNull() as? EntryKey
+                val shown = open ?: lastArticle ?: return@ReaderSceneStrategy
+                SideEffect { if (open != null) lastArticle = open }
+                Box(Modifier.fillMaxSize().zIndex(if (open != null) 1f else -1f)) {
+                    EntryScreen(
+                        graph,
+                        account,
+                        ids = shown.listIds,
+                        startId = shown.id,
+                        onShown = home::opened,
+                        onBack = { backStack.removeLastOrNull() },
+                        besideList = false,
+                    )
+                }
+            }
+        }
         NavDisplay(
             backStack = backStack,
             // Behind the panes (and the gap between them), which don't all paint their own.
             modifier = Modifier.background(MaterialTheme.colorScheme.background),
-            sceneStrategies = listOf(listDetail),
+            sceneStrategies = if (twoPane) listOf(listDetail) else listOf(readerScene, listDetail),
             onBack = { backStack.removeLastOrNull() },
             transitionSpec = { transitions.forward },
             popTransitionSpec = { transitions.back },
@@ -279,7 +303,7 @@ class MainActivity : ComponentActivity() {
                         metadata =
                             ListDetailSceneStrategy.listPane(
                                 detailPlaceholder = { NoArticlePlaceholder() }
-                            )
+                            ) + mapOf(READER_ROLE to "home")
                     ) {
                         HomeScreen(
                             model = home,
@@ -298,7 +322,8 @@ class MainActivity : ComponentActivity() {
                     // string, list included, and ends up in saved state.
                     entry<EntryKey>(
                         { key: EntryKey -> key.id },
-                        metadata = ListDetailSceneStrategy.detailPane(),
+                        metadata =
+                            ListDetailSceneStrategy.detailPane() + mapOf(READER_ROLE to "article"),
                     ) { key ->
                         EntryScreen(
                             graph,

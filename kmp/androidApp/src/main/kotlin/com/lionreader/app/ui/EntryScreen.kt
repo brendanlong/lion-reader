@@ -4,6 +4,7 @@ import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,7 +93,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -115,9 +115,17 @@ fun EntryScreen(
 ) {
     val context = LocalContext.current
     // EntryKey.openedFrom always lists the entry it opens.
-    val pages = ids
-    val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
-    val entryId = pages[pager.settledPage]
+    // SPIKE: pages keep their slots across opens (the screen stays composed, hidden, between
+    // them), so an article opens in the slot on screen and reuses its attached WebView.
+    val pager = rememberPagerState(initialPage = VIRTUAL_START) { VIRTUAL_PAGES }
+    val offset = remember(ids, startId) { pager.currentPage - ids.indexOf(startId) }
+    val idAt = { page: Int -> ids.getOrNull(page - offset) }
+    val entryId = idAt(pager.settledPage) ?: startId
+    android.util.Log.i(
+        "SPIKE",
+        "start=${startId.takeLast(4)} idx=${ids.indexOf(startId)} n=${ids.size} offset=$offset " +
+            "current=${pager.currentPage} settled=${pager.settledPage} target=${pager.targetPage}",
+    )
     val articles = rememberArticlePages()
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
     // Only while on screen, so a notice from the background waits to be seen.
@@ -144,7 +152,7 @@ fun EntryScreen(
         supply = graph.narrator::supply,
     )
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val entry = articles.entry(pages[pager.targetPage])
+    val entry = articles.entry(idAt(pager.targetPage) ?: startId)
     val coroutines = rememberCoroutineScope()
     val tokens = remember { appearanceTokens(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
@@ -250,7 +258,7 @@ fun EntryScreen(
                             heading()
                             contentDescription =
                                 "${shown.title ?: "Untitled"}, " +
-                                    "${pager.settledPage + 1} of ${pages.size}"
+                                    "${pager.settledPage - offset + 1} of ${ids.size}"
                         }
                     )
                 },
@@ -314,7 +322,6 @@ fun EntryScreen(
         CompositionLocalProvider(LocalViewConfiguration provides pagerViewConfiguration()) {
             HorizontalPager(
                 state = pager,
-                key = { pages[it] },
                 // The neighbours are ready before a swipe: creating a page's
                 // WebView mid-swipe blanks the one on screen for a frame, and
                 // the next page's narration (its Listen button) comes from its
@@ -329,26 +336,26 @@ fun EntryScreen(
                     ),
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) { page ->
+                val pageId = idAt(page) ?: return@HorizontalPager
                 CompositionLocalProvider(LocalViewConfiguration provides pageConfig) {
                     EntryPage(
                         graph,
                         account,
-                        pages[page],
+                        pageId,
                         tokens,
-                        showSummary = articles.summaryShown(pages[page]),
+                        showSummary = articles.summaryShown(pageId),
                         onEntry = articles::loaded,
                         narration =
                             ReaderNarration(
-                                paragraph =
-                                    narration?.takeIf { it.entryId == pages[page] }?.paragraph,
+                                paragraph = narration?.takeIf { it.entryId == pageId }?.paragraph,
                                 autoScroll = settings.narrationAutoScroll,
-                                onParagraphs = { articles.extracted(pages[page], it) },
+                                onParagraphs = { articles.extracted(pageId, it) },
                                 onListenFrom = { paragraph ->
-                                    listenFrom(graph, articles, pages[page], paragraph)
+                                    listenFrom(graph, articles, pageId, paragraph)
                                 },
                                 // Only while this article is the one being narrated.
                                 onSeek = { paragraph ->
-                                    if (graph.narrator.state.value?.entryId == pages[page]) {
+                                    if (graph.narrator.state.value?.entryId == pageId) {
                                         graph.narrator.seekToParagraph(paragraph)
                                     }
                                 },
@@ -434,14 +441,20 @@ private fun EntryPage(
     active: Boolean,
 ) {
     val context = LocalContext.current
-    val article by
-        remember(entryId) {
-                account.reader.article(entryId).onEach {
-                    android.os.Trace.beginSection("SPIKE article emitted $entryId")
-                    android.os.Trace.endSection()
-                }
+    // SPIKE: keyed on the entry, as the page's slot outlives it (collectAsStateWithLifecycle keeps
+    // the last article's value when its flow changes).
+    val articleState = remember(entryId) { mutableStateOf(ArticlePrefetch.take(entryId)) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(entryId, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            account.reader.article(entryId).collect {
+                android.os.Trace.beginSection("SPIKE article emitted $entryId")
+                android.os.Trace.endSection()
+                articleState.value = it
             }
-            .collectAsStateWithLifecycle(remember(entryId) { ArticlePrefetch.take(entryId) })
+        }
+    }
+    val article = articleState.value
     android.os.Trace.beginSection(
         "SPIKE EntryPage ${if (article == null) "empty" else "loaded"} $entryId"
     )
@@ -466,35 +479,40 @@ private fun EntryPage(
         )
         return
     }
-    val current = entry ?: return
+    // SPIKE: the WebView stays in the page's slot whatever its article's state, empty until the
+    // article (and its body) is loaded, so the slot never drops and re-attaches it.
+    val current = entry
+    val content = current?.content
+    val shell = rememberReaderShell(settings, tokens)
+    val articleContent =
+        if (current == null || content == null) ""
+        else {
+            val header =
+                ReaderHeader(current.title ?: "Untitled", byline(context, current), current.url)
+            val summary = current.summary?.takeIf { showSummary }
+            // Not rebuilt on every recomposition (each narration step is one).
+            remember(header, summary, content) { readerContent(header, summary, content) }
+        }
+    ReaderWebView(
+        shell,
+        articleContent,
+        position,
+        Modifier.fillMaxSize(),
+        narration,
+        ReaderPaging(
+            swipes = settings.pageScrolling,
+            turns = graph.pageTurns.takeIf { active },
+            smoothScroll = settings.animations,
+        ),
+    )
+    if (current == null || content != null) return
     val byline = byline(context, current)
     val title = current.title ?: "Untitled"
-    val content = current.content
-    if (content != null) {
-        val header = ReaderHeader(title, byline, current.url)
-        val summary = current.summary?.takeIf { showSummary }
-        val shell = rememberReaderShell(settings, tokens)
-        // Not rebuilt on every recomposition (each narration step is one).
-        val articleContent =
-            remember(header, summary, content) { readerContent(header, summary, content) }
-        ReaderWebView(
-            shell,
-            articleContent,
-            position,
-            Modifier.fillMaxSize(),
-            narration,
-            ReaderPaging(
-                swipes = settings.pageScrolling,
-                turns = graph.pageTurns.takeIf { active },
-                smoothScroll = settings.animations,
-            ),
-        )
-        return
-    }
     val scroll = rememberScrollState()
     Column(
         modifier =
             Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
                 .pageSwipes(
                     rememberPageTurner(scroll, graph.pageTurns, PageLayer.ARTICLE, active),
                     settings.pageScrolling,
@@ -640,6 +658,9 @@ object ArticlePrefetch {
 
     fun take(id: String): ArticleState? = result?.takeIf { it.first == id }?.second
 }
+
+private const val VIRTUAL_PAGES = 1_000_000
+private const val VIRTUAL_START = VIRTUAL_PAGES / 2
 
 /** SPIKE: the article's byline, as its page shows it. */
 fun byline(context: android.content.Context, entry: EntryDetail): String =
