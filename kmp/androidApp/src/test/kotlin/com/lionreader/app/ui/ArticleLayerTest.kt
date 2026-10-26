@@ -30,6 +30,8 @@ class ArticleLayerTest {
     private var searching by mutableStateOf(false)
     /** What the page on screen tells once it has drawn its article: the latest. */
     private var pageDrew: () -> Unit = {}
+    /** The article the layer was last given to show. */
+    private var given: EntryKey? = null
 
     private fun setContent() {
         composeRule.setContent {
@@ -45,8 +47,9 @@ class ArticleLayerTest {
                     BackHandler(enabled = searching) { listBacks++ }
                     Text("The list")
                 },
-            ) { opened, _, onReady ->
-                if (opened != null) {
+            ) { opened, _, emptied, onReady ->
+                SideEffect { given = opened.takeUnless { emptied } }
+                if (opened != null && !emptied) {
                     Text("Article ${opened.id}")
                     SideEffect { pageDrew = { onReady(opened) } }
                 }
@@ -102,6 +105,8 @@ class ArticleLayerTest {
 
         assertEquals(1, closes)
         assertEquals(0, listBacks)
+        // Nothing left in it to play, or to show by mistake.
+        composeRule.runOnIdle { assertEquals(null, given) }
         composeRule.onNodeWithText("Article a").assertDoesNotExist()
         composeRule.onNodeWithText("The list").assertExists()
     }

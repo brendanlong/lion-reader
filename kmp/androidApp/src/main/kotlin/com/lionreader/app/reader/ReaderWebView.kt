@@ -95,7 +95,9 @@ fun ReaderWebView(
 ) {
     val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
-    val losses = remember { RendererLosses() }
+    // Giving up is on the article: the next visit, or article, in this page tries again.
+    val losses = remember(visit) { RendererLosses() }
+    val currentLosses by rememberUpdatedState(losses)
     val turns = paging.turns
     if (turns != null) {
         DisposableEffect(turns) {
@@ -156,7 +158,7 @@ fun ReaderWebView(
                                             WebViewAssetLoader.AssetsPathHandler(context),
                                         )
                                         .build(),
-                                    onRendererLost = losses::lost,
+                                    onRendererLost = { currentLosses.lost(it) },
                                 )
                         }
                 },

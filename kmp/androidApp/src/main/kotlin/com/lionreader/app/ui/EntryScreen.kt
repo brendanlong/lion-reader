@@ -109,7 +109,8 @@ import kotlinx.coroutines.withContext
  * On a phone the screen outlives openings ([ArticleLayer]): it waits behind the list while that's
  * on screen, so opening an article swaps it into a page that's ready rather than building one. Only
  * while [shown] does it mark articles read, follow narration, take the volume buttons and load the
- * neighbouring articles. [prefetched] is the list's read of an article being opened
+ * neighbouring articles; once the article has closed its pages are [emptied], keeping their places
+ * but with nothing left to play. [prefetched] is the list's read of an article being opened
  * ([ArticlePrefetch]); [onReady] is told once the page on screen draws [opened], so the screen can
  * wait to be shown rather than show the last article.
  */
@@ -124,6 +125,7 @@ internal fun EntryScreen(
     /** Beside the list, where going back closes the article rather than leaving it. */
     besideList: Boolean,
     shown: Boolean,
+    emptied: Boolean,
     prefetched: (String) -> ArticleState?,
     onReady: (EntryKey) -> Unit,
 ) {
@@ -172,7 +174,9 @@ internal fun EntryScreen(
     val coroutines = rememberCoroutineScope()
     val tokens = remember { appearanceTokens(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
-    val summariesAvailable by produceState<Boolean?>(null) { value = account.summariesAvailable() }
+    val stillShown by rememberUpdatedState(shown)
+    val summariesAvailable by
+        produceState<Boolean?>(null, opened?.opening) { value = account.summariesAvailable() }
 
     if (shown && entryId != null) MarkReadOnArrival(account.reader, entryId, onShown)
 
@@ -214,6 +218,8 @@ internal fun EntryScreen(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
+                            // Not once the article has closed.
+                            if (!stillShown) return@launch
                             // A 4xx says why (the provider is busy, or rejected the
                             // user's own key).
                             val reason = e.apiFailure().message
@@ -398,7 +404,7 @@ internal fun EntryScreen(
                         // The volume buttons turn the page on screen, not its neighbours'.
                         active = shown && onScreen,
                         shown = shown,
-                        load = shown || onScreen,
+                        load = !emptied && (shown || onScreen),
                         prefetched = prefetched,
                         // A new one for each opening, so the page says so again even when it
                         // already showed the article.
@@ -497,24 +503,25 @@ private fun EntryPage(
     onReady: (() -> Unit)?,
 ) {
     val context = LocalContext.current
-    // Keyed: the page outlives its article, and a flow's state keeps the last one's value.
+    // What this visit of the article (one opening) has; the page outlives it.
+    val visit = entryId to opening
+    // Keyed, as a flow's state keeps the last one's value (and the body it reads, the first).
     val article =
-        key(entryId, load) {
+        key(visit, load) {
             if (entryId == null || !load) null
             else
                 remember { account.reader.article(entryId) }
                     .collectAsStateWithLifecycle(remember { prefetched(entryId) })
                     .value
         }
-    val visit = entryId to opening
     val entry = rememberShownArticle(visit, (article as? ArticleState.Shown)?.entry)
     // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
     val position = rememberSaveable(visit, saver = ReadingPosition.Saver) { ReadingPosition() }
     if (entryId != null) {
         // Null once it's gone (e.g. deleted) or can't be read, and when the page
         // leaves: the top bar shows only what's on a page now.
-        LaunchedEffect(entry) { onEntry(entryId, entry) }
-        DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
+        LaunchedEffect(entry, onEntry) { onEntry(entryId, entry) }
+        DisposableEffect(entryId, onEntry) { onDispose { onEntry(entryId, null) } }
     }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val download = entryId?.let { id ->

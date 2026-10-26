@@ -21,6 +21,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.zIndex
 import androidx.navigation3.runtime.NavEntry
@@ -77,8 +78,9 @@ private class ReaderScene(
  * The [list], and the article over it once [open]'s page has drawn it, never a frame of the last
  * article. Waiting, the article ([article]: the article to show, whether it's [shown], and what to
  * tell once the page on screen has drawn it) is behind the list: composed and drawn, so it's ready
- * at once, but out of reach of touch, accessibility services and focus. It slides in and out as a
- * screen change does, and follows the predictive back gesture.
+ * at once, but out of reach of touch, accessibility services and focus, and with no article once it
+ * has closed. It slides in and out as a screen change does, and follows the predictive back
+ * gesture.
  */
 @Composable
 internal fun ArticleLayer(
@@ -86,7 +88,9 @@ internal fun ArticleLayer(
     animate: Boolean,
     onBack: () -> Unit,
     list: @Composable () -> Unit,
-    article: @Composable (opened: EntryKey?, shown: Boolean, onReady: (EntryKey) -> Unit) -> Unit,
+    article:
+        @Composable
+        (opened: EntryKey?, shown: Boolean, emptied: Boolean, onReady: (EntryKey) -> Unit) -> Unit,
 ) {
     // A new layer (rotation, a restored process) shows what's open at once: its pages are new, so
     // there's no last article to flash.
@@ -100,11 +104,15 @@ internal fun ArticleLayer(
     }
     val coroutines = rememberCoroutineScope()
     val onTop = shown || away.value < 1f
+    // Typing goes to the article, not a search field it covers (the keyboard goes with it).
+    val focus = LocalFocusManager.current
+    LaunchedEffect(shown) { if (shown) focus.clearFocus() }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { translationX = -(1f - away.value) * COVERED_DRIFT * size.width }
                 .background(MaterialTheme.colorScheme.background)
+                .then(if (shown) Modifier.outOfFocusReach() else Modifier)
         ) {
             list()
         }
@@ -116,8 +124,7 @@ internal fun ArticleLayer(
                     if (shown) Modifier
                     else
                         Modifier.clearAndSetSemantics {}
-                            .focusProperties { onEnter = { cancelFocusChange() } }
-                            .focusGroup()
+                            .outOfFocusReach()
                             .pointerInput(Unit) {
                                 awaitPointerEventScope {
                                     while (true) {
@@ -131,7 +138,7 @@ internal fun ArticleLayer(
                             }
                 )
         ) {
-            article(open ?: drawn, shown) { drawn = it }
+            article(open ?: drawn, shown, open == null && !onTop) { drawn = it }
             ArticleBackHandler(
                 enabled = shown,
                 onProgress = { coroutines.launch { away.snapTo(it) } },
@@ -141,6 +148,11 @@ internal fun ArticleLayer(
         }
     }
 }
+
+private fun Modifier.outOfFocusReach() = focusProperties {
+    onEnter = { cancelFocusChange() }
+}
+    .focusGroup()
 
 /**
  * Back for the article over the list, as an overlay's: ahead of the list's own (its search's, say)

@@ -271,6 +271,7 @@ class MainActivity : ComponentActivity() {
             opened: EntryKey?,
             besideList: Boolean,
             shown: Boolean,
+            emptied: Boolean,
             onReady: (EntryKey) -> Unit,
         ) =
             EntryScreen(
@@ -281,6 +282,7 @@ class MainActivity : ComponentActivity() {
                 onBack = ::closeArticle,
                 besideList = besideList,
                 shown = shown,
+                emptied = emptied,
                 prefetched = prefetch::take,
                 onReady = onReady,
             )
@@ -291,8 +293,8 @@ class MainActivity : ComponentActivity() {
                     animate = settings.animations,
                     onBack = ::closeArticle,
                     list = list,
-                    article = { opened, shown, onReady ->
-                        Article(opened, besideList = false, shown, onReady)
+                    article = { opened, shown, emptied, onReady ->
+                        Article(opened, besideList = false, shown, emptied, onReady)
                     },
                 )
             }
@@ -336,7 +338,13 @@ class MainActivity : ComponentActivity() {
                             ListDetailSceneStrategy.detailPane() + mapOf(READER_ARTICLE to true),
                     ) { key ->
                         // Beside the list; full screen, it's the reader scene's.
-                        Article(key, besideList = twoPane, shown = true, onReady = {})
+                        Article(
+                            key,
+                            besideList = twoPane,
+                            shown = true,
+                            emptied = false,
+                            onReady = {},
+                        )
                     }
                     entry<SettingsKey> {
                         SettingsScreen(
