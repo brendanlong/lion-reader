@@ -154,28 +154,35 @@ fn run_guarded<T>(label: &str, f: impl FnOnce() -> std::result::Result<T, String
         .map_err(|message| Error::new(Status::GenericFailure, format!("{label}: {message}")))
 }
 
-fn run_parse_rss(content: &str) -> Result<RawParsedFeed> {
-    run_guarded("RSS parse failed", || core::rss::parse_rss(content)).map(convert_feed)
+fn run_parse_rss(content: &str, max_entries: u32) -> Result<RawParsedFeed> {
+    run_guarded("RSS parse failed", || {
+        core::rss::parse_rss(content, max_entries as usize)
+    })
+    .map(convert_feed)
 }
 
-fn run_parse_atom(content: &str) -> Result<RawParsedFeed> {
-    run_guarded("Atom parse failed", || core::atom::parse_atom(content)).map(convert_feed)
+fn run_parse_atom(content: &str, max_entries: u32) -> Result<RawParsedFeed> {
+    run_guarded("Atom parse failed", || {
+        core::atom::parse_atom(content, max_entries as usize)
+    })
+    .map(convert_feed)
 }
 
 fn run_parse_opml(content: &str) -> Result<RawOpmlResult> {
     run_guarded("OPML parse failed", || core::opml::parse_opml(content)).map(convert_opml)
 }
 
-/// Parses an RSS feed (RSS 2.0 or RSS 1.0/RDF). Synchronous.
+/// Parses an RSS feed (RSS 2.0 or RSS 1.0/RDF), keeping its first
+/// `max_entries` items. Synchronous.
 #[napi]
-pub fn parse_rss(content: String) -> Result<RawParsedFeed> {
-    run_parse_rss(&content)
+pub fn parse_rss(content: String, max_entries: u32) -> Result<RawParsedFeed> {
+    run_parse_rss(&content, max_entries)
 }
 
-/// Parses an Atom feed. Synchronous.
+/// Parses an Atom feed, keeping its first `max_entries` entries. Synchronous.
 #[napi]
-pub fn parse_atom(content: String) -> Result<RawParsedFeed> {
-    run_parse_atom(&content)
+pub fn parse_atom(content: String, max_entries: u32) -> Result<RawParsedFeed> {
+    run_parse_atom(&content, max_entries)
 }
 
 /// Parses an OPML file. Synchronous.
@@ -184,10 +191,12 @@ pub fn parse_opml(content: String) -> Result<RawOpmlResult> {
     run_parse_opml(&content)
 }
 
+type ParseFn<T> = Box<dyn Fn(&str) -> Result<T> + Send>;
+
 /// Runs one of the `run_parse_*` functions on the libuv thread pool.
 pub struct ParseJob<T> {
     content: String,
-    parse: fn(&str) -> Result<T>,
+    parse: ParseFn<T>,
 }
 
 impl<T: ToNapiValue + TypeName + Send + 'static> Task for ParseJob<T> {
@@ -206,20 +215,20 @@ impl<T: ToNapiValue + TypeName + Send + 'static> Task for ParseJob<T> {
 /// Async form of `parseRss`: runs on the libuv thread pool so large feeds
 /// never block the event loop.
 #[napi(ts_return_type = "Promise<RawParsedFeed>")]
-pub fn parse_rss_async(content: String) -> AsyncTask<ParseJob<RawParsedFeed>> {
+pub fn parse_rss_async(content: String, max_entries: u32) -> AsyncTask<ParseJob<RawParsedFeed>> {
     AsyncTask::new(ParseJob {
         content,
-        parse: run_parse_rss,
+        parse: Box::new(move |content| run_parse_rss(content, max_entries)),
     })
 }
 
 /// Async form of `parseAtom`: runs on the libuv thread pool so large feeds
 /// never block the event loop.
 #[napi(ts_return_type = "Promise<RawParsedFeed>")]
-pub fn parse_atom_async(content: String) -> AsyncTask<ParseJob<RawParsedFeed>> {
+pub fn parse_atom_async(content: String, max_entries: u32) -> AsyncTask<ParseJob<RawParsedFeed>> {
     AsyncTask::new(ParseJob {
         content,
-        parse: run_parse_atom,
+        parse: Box::new(move |content| run_parse_atom(content, max_entries)),
     })
 }
 
@@ -229,6 +238,6 @@ pub fn parse_atom_async(content: String) -> AsyncTask<ParseJob<RawParsedFeed>> {
 pub fn parse_opml_async(content: String) -> AsyncTask<ParseJob<RawOpmlResult>> {
     AsyncTask::new(ParseJob {
         content,
-        parse: run_parse_opml,
+        parse: Box::new(run_parse_opml),
     })
 }

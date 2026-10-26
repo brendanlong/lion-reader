@@ -13,6 +13,7 @@ import {
   parseRss as nativeParseRss,
   parseRssAsync as nativeParseRssAsync,
 } from "@lion-reader/feed-parser";
+import { usageLimitsConfig } from "../../config/env";
 import type { FeedParseResult } from "./types";
 import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
 
@@ -23,7 +24,7 @@ import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
  * @returns Parsed feed metadata and entries
  */
 export function parseRss(content: string): FeedParseResult {
-  return toFeedParseResult(nativeParseRss(content), parseRssDate);
+  return toFeedParseResult(nativeParseRss(content, usageLimitsConfig.maxFeedEntries), parseRssDate);
 }
 
 /**
@@ -35,7 +36,10 @@ export async function parseRssAsync(content: string): Promise<FeedParseResult> {
   if (content.length <= PARSE_INLINE_MAX_CHARS) {
     return parseRss(content);
   }
-  return toFeedParseResult(await nativeParseRssAsync(content), parseRssDate);
+  return toFeedParseResult(
+    await nativeParseRssAsync(content, usageLimitsConfig.maxFeedEntries),
+    parseRssDate
+  );
 }
 
 function parseRssDate(dateString: string): Date | undefined {

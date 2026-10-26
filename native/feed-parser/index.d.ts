@@ -72,11 +72,14 @@ export interface RawOpmlResult {
   hasBody: boolean;
 }
 
-/** Parses an RSS feed (RSS 2.0 or RSS 1.0/RDF). Synchronous. */
-export function parseRss(content: string): RawParsedFeed;
+/**
+ * Parses an RSS feed (RSS 2.0 or RSS 1.0/RDF), keeping its first `maxEntries`
+ * items. Synchronous.
+ */
+export function parseRss(content: string, maxEntries: number): RawParsedFeed;
 
-/** Parses an Atom feed. Synchronous. */
-export function parseAtom(content: string): RawParsedFeed;
+/** Parses an Atom feed, keeping its first `maxEntries` entries. Synchronous. */
+export function parseAtom(content: string, maxEntries: number): RawParsedFeed;
 
 /** Parses an OPML file. Synchronous. */
 export function parseOpml(content: string): RawOpmlResult;
@@ -85,13 +88,13 @@ export function parseOpml(content: string): RawOpmlResult;
  * Async form of `parseRss`: runs on the libuv thread pool so large feeds
  * never block the event loop.
  */
-export function parseRssAsync(content: string): Promise<RawParsedFeed>;
+export function parseRssAsync(content: string, maxEntries: number): Promise<RawParsedFeed>;
 
 /**
  * Async form of `parseAtom`: runs on the libuv thread pool so large feeds
  * never block the event loop.
  */
-export function parseAtomAsync(content: string): Promise<RawParsedFeed>;
+export function parseAtomAsync(content: string, maxEntries: number): Promise<RawParsedFeed>;
 
 /**
  * Async form of `parseOpml`: runs on the libuv thread pool so large OPML

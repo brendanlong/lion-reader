@@ -12,16 +12,9 @@ import {
   parseFeedAsync as parseFeedAsyncInternal,
   detectFeedType as detectFeedTypeInternal,
 } from "./streaming/parser";
-import { usageLimitsConfig } from "../config/env";
 import { startFeedParseTimer } from "../metrics/metrics";
 
-/**
- * Converts a FeedParseResult to a ParsedFeed, applying the entry count limit.
- * Entries beyond the limit are silently dropped (we keep the most recent ones,
- * which are typically at the top of the feed).
- */
 function resultToParsedFeed(result: FeedParseResult): ParsedFeed {
-  const limit = usageLimitsConfig.maxFeedEntries;
   return {
     title: result.title,
     description: result.description,
@@ -31,7 +24,7 @@ function resultToParsedFeed(result: FeedParseResult): ParsedFeed {
     selfUrl: result.selfUrl,
     ttlMinutes: result.ttlMinutes,
     syndication: result.syndication,
-    items: result.entries.slice(0, limit),
+    items: result.entries,
   };
 }
 

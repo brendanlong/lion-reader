@@ -50,6 +50,7 @@ struct AtomHandler {
     /// a <source> we ignore element mapping so those children don't clobber
     /// the entry.
     source_depth: u32,
+    max_entries: usize,
 }
 
 impl SaxHandler for AtomHandler {
@@ -256,7 +257,9 @@ impl SaxHandler for AtomHandler {
 
         if tag == "entry" {
             if let Some(entry) = self.current.take() {
-                self.feed.entries.push(entry.entry);
+                if self.feed.entries.len() < self.max_entries {
+                    self.feed.entries.push(entry.entry);
+                }
                 self.state = State::InFeed;
                 self.in_feed_level = true;
             }
@@ -271,8 +274,9 @@ impl SaxHandler for AtomHandler {
     }
 }
 
-/// Parses an Atom feed from a string.
-pub fn parse_atom(content: &str) -> Result<ParsedFeed, String> {
+/// Parses an Atom feed from a string, keeping its first `max_entries`
+/// entries (see `parse_rss`).
+pub fn parse_atom(content: &str, max_entries: usize) -> Result<ParsedFeed, String> {
     let mut handler = AtomHandler {
         feed: ParsedFeed::default(),
         current: None,
@@ -280,6 +284,7 @@ pub fn parse_atom(content: &str) -> Result<ParsedFeed, String> {
         buf: String::new(),
         in_feed_level: false,
         source_depth: 0,
+        max_entries,
     };
     run_sax(content, true, &mut handler)?;
     Ok(handler.feed)
@@ -306,7 +311,7 @@ mod tests {
                 <author><name>John Doe</name></author>
               </entry>
             </feed>"#;
-        let feed = parse_atom(xml).unwrap();
+        let feed = parse_atom(xml, usize::MAX).unwrap();
         assert_eq!(feed.title.as_deref(), Some("Example Atom Feed"));
         assert_eq!(feed.site_url.as_deref(), Some("https://example.com"));
         assert_eq!(
@@ -331,7 +336,7 @@ mod tests {
                 <author><name>Alan Turing</name></author>
               </entry>
             </feed>"#;
-        let feed = parse_atom(xml).unwrap();
+        let feed = parse_atom(xml, usize::MAX).unwrap();
         assert_eq!(feed.entries[0].authors, ["Ada Lovelace", "Alan Turing"]);
     }
 
@@ -350,7 +355,7 @@ mod tests {
                 <updated>2024-07-07T09:00:00Z</updated>
               </entry>
             </feed>"#;
-        let feed = parse_atom(xml).unwrap();
+        let feed = parse_atom(xml, usize::MAX).unwrap();
         let entry = &feed.entries[0];
         assert_eq!(entry.guid.as_deref(), Some("urn:entry:guid"));
         assert_eq!(entry.title.as_deref(), Some("My Title"));
@@ -361,5 +366,18 @@ mod tests {
                 value: "2024-07-07T09:00:00Z".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn keeps_first_max_entries_and_feed_elements_after_them() {
+        let xml = r#"<feed xmlns="http://www.w3.org/2005/Atom">
+              <entry><id>urn:1</id></entry>
+              <entry><id>urn:2</id></entry>
+              <title>Feed</title>
+            </feed>"#;
+        let feed = parse_atom(xml, 1).unwrap();
+        assert_eq!(feed.entries.len(), 1);
+        assert_eq!(feed.entries[0].guid.as_deref(), Some("urn:1"));
+        assert_eq!(feed.title.as_deref(), Some("Feed"));
     }
 }
