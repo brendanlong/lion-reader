@@ -564,6 +564,10 @@
         )
       );
       return element === null ? null : narrationParagraphForElement(paragraphMap, element);
+    },
+    replaceArticle(html) {
+      document.body.innerHTML = html;
+      paragraphMap = prepare();
     }
   };
   var hadSelectionAtPointerDown = false;

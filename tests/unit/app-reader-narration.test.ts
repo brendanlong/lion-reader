@@ -129,4 +129,23 @@ describe("the app reader's narration", () => {
       paragraph: narrationParagraphForElement(web.paragraphMap, element),
     });
   });
+
+  it("narrates, numbers and highlights an article that replaces this one", () => {
+    const next = "<p>Another article.</p><p>Its <i>second</i> paragraph.</p>";
+    const before = messages.length;
+    window.lionNarration?.replaceArticle('<header class="lr-header"><h1>Next</h1></header>' + next);
+
+    const nextWeb = withEndOfArticle(htmlToClientNarration(next));
+    expect(messages.slice(before)).toEqual([
+      { type: "narration", paragraphs: splitNarrationParagraphs(nextWeb.narrationText) },
+    ]);
+    const article = document.body.cloneNode(true) as HTMLElement;
+    article.querySelector(".lr-header")?.remove();
+    expect(article.innerHTML).toBe(htmlToClientNarration(next).processedHtml);
+
+    window.lionNarration?.highlight(1, false);
+    expect(document.querySelector(".lr-narrating")?.getAttribute("data-para-id")).toBe(
+      `para-${nextWeb.paragraphMap[1].o}`
+    );
+  });
 });

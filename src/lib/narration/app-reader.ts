@@ -5,10 +5,11 @@
  * web's own walk over the browser's own parse of it, the way
  * `htmlToClientNarration` does on the web.
  *
- * Talks to the app over its `lionReader` message channel: it sends the
- * article's narration once (`{type: "narration"}`) and the paragraph the user
- * tapped (`{type: "seek"}`), and the app calls `lionNarration.highlight` and
- * `lionNarration.selectedParagraph` (for "Listen" on a selection).
+ * Talks to the app over its `lionReader` message channel: it sends each
+ * article's narration (`{type: "narration"}`) and the paragraph the user
+ * tapped (`{type: "seek"}`), and the app calls `lionNarration.highlight`,
+ * `lionNarration.selectedParagraph` (for "Listen" on a selection) and
+ * `lionNarration.replaceArticle` (to show another article in the same page).
  *
  * @module narration/app-reader
  */
@@ -35,6 +36,8 @@ declare global {
       /** `smooth`: scroll to it smoothly rather than jumping (off when the app's animations are). */
       highlight(paragraph: number | null, scroll: boolean, smooth?: boolean): void;
       selectedParagraph(): number | null;
+      /** Replaces the article (header, summary and body), as loading a page with it would. */
+      replaceArticle(html: string): void;
     };
   }
 }
@@ -72,7 +75,7 @@ function prepare(): ParagraphMapEntry[] {
   }
 }
 
-const paragraphMap = prepare();
+let paragraphMap = prepare();
 
 window.lionNarration = {
   highlight(paragraph, scroll, smooth = true) {
@@ -113,6 +116,11 @@ window.lionNarration = {
         )
       );
     return element === null ? null : narrationParagraphForElement(paragraphMap, element);
+  },
+
+  replaceArticle(html) {
+    document.body.innerHTML = html;
+    paragraphMap = prepare();
   },
 };
 
