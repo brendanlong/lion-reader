@@ -8,7 +8,7 @@
 
 import { createHash } from "crypto";
 import { eq, and, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
-import { db } from "../db";
+import type { db as dbType } from "../db";
 import { entries, userEntries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishFeedEvent, publishUserEvent } from "../redis/pubsub";
@@ -333,6 +333,7 @@ function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feed
  *   guid (a concurrent run of the same feed inserted it first)
  */
 export async function createEntry(
+  db: typeof dbType,
   feedId: string,
   parsedEntry: ParsedEntry,
   contentHash: string,
@@ -371,6 +372,7 @@ export async function createEntry(
  * @returns The updated entry
  */
 export async function updateEntryContent(
+  db: typeof dbType,
   entryId: string,
   parsedEntry: ParsedEntry,
   contentHash: string,
@@ -419,7 +421,11 @@ const existingEntryColumns = {
   lastSeenAt: entries.lastSeenAt,
 };
 
-async function loadExistingEntry(feedId: string, guid: string): Promise<CachedEntryInfo> {
+async function loadExistingEntry(
+  db: typeof dbType,
+  feedId: string,
+  guid: string
+): Promise<CachedEntryInfo> {
   const [existing] = await db
     .select(existingEntryColumns)
     .from(entries)
@@ -443,6 +449,7 @@ async function loadExistingEntry(feedId: string, guid: string): Promise<CachedEn
  * @returns Processing result for this entry
  */
 async function processEntryWithCache(
+  db: typeof dbType,
   feedId: string,
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
@@ -465,7 +472,15 @@ async function processEntryWithCache(
     // Note: the new_entry event is NOT published here — processEntries
     // publishes it after createUserEntriesForFeed so the SSE endpoint's
     // per-user count computation sees the entry in visible_entries.
-    const entry = await createEntry(feedId, parsedEntry, contentHash, fetchedAt, feedUrl, pushed);
+    const entry = await createEntry(
+      db,
+      feedId,
+      parsedEntry,
+      contentHash,
+      fetchedAt,
+      feedUrl,
+      pushed
+    );
 
     if (entry) {
       // Add to cache so duplicate GUIDs in same feed don't create duplicates
@@ -489,14 +504,14 @@ async function processEntryWithCache(
 
     // A concurrent run of this feed (e.g. a push during a poll) created it
     // after we loaded the cache; carry on with that row as an existing entry.
-    existing = await loadExistingEntry(feedId, guid);
+    existing = await loadExistingEntry(db, feedId, guid);
     existingEntriesMap.set(guidKey, existing);
   }
 
   // Entry exists - check if content changed
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
-    const entry = await updateEntryContent(existing.id, parsedEntry, contentHash, feedUrl);
+    const entry = await updateEntryContent(db, existing.id, parsedEntry, contentHash, feedUrl);
 
     // Update cache with new hash
     existingEntriesMap.set(guidKey, { ...existing, contentHash });
@@ -548,7 +563,11 @@ async function processEntryWithCache(
  * @param entryIds - Array of entry IDs seen in this fetch
  * @param lastSeenAt - The poll's timestamp, which becomes `last_entries_updated_at`
  */
-async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Promise<void> {
+async function updateEntriesLastSeenAt(
+  db: typeof dbType,
+  entryIds: string[],
+  lastSeenAt: Date
+): Promise<void> {
   if (entryIds.length === 0) {
     return;
   }
@@ -566,7 +585,11 @@ async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Pr
  * them current until the next poll (`currentEntryIdsSql`). Like
  * `updateEntriesLastSeenAt`, it leaves `updated_at` alone.
  */
-async function updateEntriesPushedAt(entryIds: string[], pushedAt: Date): Promise<void> {
+async function updateEntriesPushedAt(
+  db: typeof dbType,
+  entryIds: string[],
+  pushedAt: Date
+): Promise<void> {
   if (entryIds.length === 0) {
     return;
   }
@@ -596,6 +619,7 @@ async function updateEntriesPushedAt(entryIds: string[], pushedAt: Date): Promis
  * @returns The memberships it added
  */
 export async function createUserEntriesForFeed(
+  db: typeof dbType,
   feedId: string,
   entryIds: string[],
   previousLastFetchedAt: Date | null
@@ -667,6 +691,7 @@ type FanOutLink = Awaited<ReturnType<typeof insertUserEntriesWithMemberships>>[n
  * @returns The ids of the entries it announced to anyone
  */
 async function announceLinkedEntries(
+  db: typeof dbType,
   links: FanOutLink[],
   feedTitle: string | null
 ): Promise<Set<string>> {
@@ -757,10 +782,11 @@ async function announceLinkedEntries(
  * @returns Processing result with counts and entry details
  *
  * @example
- * const result = await processEntries(feedId, parsedFeed);
+ * const result = await processEntries(db, feedId, parsedFeed);
  * console.log(`New: ${result.newCount}, Updated: ${result.updatedCount}`);
  */
 export async function processEntries(
+  db: typeof dbType,
   feedId: string,
   feed: ParsedFeed,
   options: ProcessEntriesOptions = {}
@@ -818,6 +844,7 @@ export async function processEntries(
   for (const item of feed.items) {
     try {
       const result = await processEntryWithCache(
+        db,
         feedId,
         item,
         fetchedAt,
@@ -897,11 +924,12 @@ export async function processEntries(
   // The timestamp used here should match feeds.lastEntriesUpdatedAt
   if (pushed) {
     await updateEntriesPushedAt(
+      db,
       results.filter((r) => !r.isNew).map((r) => r.id),
       fetchedAt
     );
   } else if (shouldUpdateVisibility) {
-    await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
+    await updateEntriesLastSeenAt(db, allEntryIds, fetchedAt);
   }
 
   // Fan out user_entries for ALL entries in this fetch, not just the ones that
@@ -920,7 +948,7 @@ export async function processEntries(
   // Existing subscribers already have rows for existing entries; new subscribers
   // get rows at subscription time.
   const links = shouldUpdateVisibility
-    ? await createUserEntriesForFeed(feedId, allEntryIds, previousLastFetchedAt ?? null)
+    ? await createUserEntriesForFeed(db, feedId, allEntryIds, previousLastFetchedAt ?? null)
     : [];
 
   const feedAnnouncedIds = results.filter((r) => r.isNew && !r.isBackfill).map((r) => r.id);
@@ -956,6 +984,7 @@ export async function processEntries(
   let linkAnnounced = new Set<string>();
   try {
     linkAnnounced = await announceLinkedEntries(
+      db,
       links.filter((link) => !feedAnnounced.has(link.entryId)),
       feedTitle ?? null
     );

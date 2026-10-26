@@ -1393,7 +1393,7 @@ describe("sync.events", () => {
           refetchedAt,
           entryId,
         ]);
-        const fanOut = createUserEntriesForFeed(feedId, [entryId], null);
+        const fanOut = createUserEntriesForFeed(db, feedId, [entryId], null);
         await expect
           .poll(
             async () =>

@@ -417,7 +417,7 @@ describe("Job Queue", () => {
   describe("feed job helpers", () => {
     it("ensureFeedJob creates a new job", async () => {
       const feedId = generateUuidv7();
-      const job = await ensureFeedJob(feedId);
+      const job = await ensureFeedJob(db, feedId);
 
       expect(job.type).toBe("fetch_feed");
       expect(getJobPayload(job, "fetch_feed").feedId).toBe(feedId);
@@ -429,7 +429,7 @@ describe("Job Queue", () => {
       // Fire several concurrent ensureFeedJob calls for the same feed. The
       // partial unique index + ON CONFLICT must collapse these to a single row
       // (the old UPDATE-then-INSERT could let several inserts win the race).
-      const results = await Promise.all(Array.from({ length: 8 }, () => ensureFeedJob(feedId)));
+      const results = await Promise.all(Array.from({ length: 8 }, () => ensureFeedJob(db, feedId)));
 
       const allJobs = await listJobs({ type: "fetch_feed" });
       expect(allJobs).toHaveLength(1);
@@ -446,7 +446,7 @@ describe("Job Queue", () => {
       await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: scheduled });
 
       // Re-ensuring should not disturb an already-scheduled next_run_at.
-      const job = await ensureFeedJob(feedId);
+      const job = await ensureFeedJob(db, feedId);
       expect(job.nextRunAt!.getTime()).toBe(scheduled.getTime());
     });
 
@@ -469,7 +469,7 @@ describe("Job Queue", () => {
 
     it("scheduleFeedRefreshNow creates a force-reprocess job set to run now", async () => {
       const feedId = generateUuidv7();
-      const job = await scheduleFeedRefreshNow(feedId);
+      const job = await scheduleFeedRefreshNow(db, feedId);
 
       expect(job.type).toBe("fetch_feed");
       const payload = getJobPayload(job, "fetch_feed");
@@ -486,7 +486,7 @@ describe("Job Queue", () => {
       const future = new Date(Date.now() + 3 * 60 * 60 * 1000);
       await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: future });
 
-      const job = await scheduleFeedRefreshNow(feedId);
+      const job = await scheduleFeedRefreshNow(db, feedId);
 
       // Coalesced onto the existing single job, pulled forward, token merged in,
       // feedId preserved.
@@ -499,7 +499,7 @@ describe("Job Queue", () => {
 
     it("finishJob consumes the forceReprocess token on a successful run", async () => {
       const feedId = generateUuidv7();
-      await scheduleFeedRefreshNow(feedId);
+      await scheduleFeedRefreshNow(db, feedId);
       const claimed = await claimJob();
       const claimedAt = getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt;
       expect(typeof claimedAt).toBe("string");
@@ -523,7 +523,7 @@ describe("Job Queue", () => {
       // must NOT drop sub2's request — it keeps the token and pulls next_run to
       // now so the fetch re-runs and covers sub2.
       const feedId = generateUuidv7();
-      await scheduleFeedRefreshNow(feedId);
+      await scheduleFeedRefreshNow(db, feedId);
       const claimed = await claimJob();
       const claimedAt = getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt!;
 
@@ -555,7 +555,7 @@ describe("Job Queue", () => {
       expect(getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt).toBeUndefined();
 
       // A subscribe arms the job during the run.
-      await scheduleFeedRefreshNow(feedId);
+      await scheduleFeedRefreshNow(db, feedId);
 
       const finished = await finishJob(claimed!.id, {
         success: true,

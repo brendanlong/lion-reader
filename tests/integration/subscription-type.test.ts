@@ -88,7 +88,7 @@ describe("subscriptions.type", () => {
       insert: async (userId) => {
         const token = `token-${generateUuidv7()}`;
         await createTestIngestAddress(userId, { token });
-        const result = await processInboundEmail({
+        const result = await processInboundEmail(db, {
           to: `${token}@ingest.lionreader.com`,
           from: { address: "news@example.com", name: "News" },
           subject: "Hello",

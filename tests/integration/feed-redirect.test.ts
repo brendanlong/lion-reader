@@ -227,7 +227,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [oldEntry1]);
 
       // Create job for old feed
-      await ensureFeedJob(oldFeedId);
+      await ensureFeedJob(db, oldFeedId);
 
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(
@@ -612,7 +612,7 @@ describe("Feed Redirect Handling", () => {
       // sweep here - backdating created_at past DEAD_FEED_JOB_GRACE_MS (1h) is
       // all it takes for the job to be eligible.
       const staleSubId = await createTestSubscription(userId, newFeedId);
-      await ensureFeedJob(newFeedId);
+      await ensureFeedJob(db, newFeedId);
       await db
         .update(jobs)
         .set({ createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) })
@@ -629,7 +629,7 @@ describe("Feed Redirect Handling", () => {
       // The merge finds an existing (unsubscribed) subscription row to
       // reactivate, so it creates no new subscription rows at all.
       await createTestSubscription(userId, oldFeedId);
-      await ensureFeedJob(oldFeedId);
+      await ensureFeedJob(db, oldFeedId);
 
       await migrateSubscriptionsToExistingFeed(
         db,
@@ -661,7 +661,7 @@ describe("Feed Redirect Handling", () => {
       });
       const otherUserId = await createTestUser({ emailPrefix: "other" });
       await createTestSubscription(otherUserId, newFeedId);
-      await ensureFeedJob(newFeedId, scheduledFor);
+      await ensureFeedJob(db, newFeedId, scheduledFor);
 
       await createTestSubscription(userId, oldFeedId);
       await migrateSubscriptionsToExistingFeed(
@@ -717,7 +717,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userB, [oldEntry]);
 
       // Create job for old feed
-      await ensureFeedJob(oldFeedId);
+      await ensureFeedJob(db, oldFeedId);
 
       // Simulate the redirect migration
       await migrateSubscriptionsToExistingFeed(
@@ -811,7 +811,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [oldOnlyEntry, sharedEntryOld]);
 
       // Create job for old feed
-      await ensureFeedJob(oldFeedId);
+      await ensureFeedJob(db, oldFeedId);
 
       // Perform the redirect migration
       await migrateSubscriptionsToExistingFeed(
@@ -830,7 +830,7 @@ describe("Feed Redirect Handling", () => {
       // Simulate the new feed syncing - this calls the actual sync code
       // which should NOT create user_entries for entries with GUIDs the user
       // already has from the old feed (sharedEntryNew has same GUID as sharedEntryOld)
-      await createUserEntriesForFeed(newFeedId, [sharedEntryNew, newOnlyEntry], null);
+      await createUserEntriesForFeed(db, newFeedId, [sharedEntryNew, newOnlyEntry], null);
 
       // Query entries via the API
       const caller = createCaller(await createAuthContext(userId));
@@ -901,7 +901,7 @@ describe("Feed Redirect Handling", () => {
 
       // Simulate new feed sync - creates user_entries for all subscribers (A and B)
       // User B already has user_entry from before, ON CONFLICT DO NOTHING handles this
-      await createUserEntriesForFeed(newFeedId, [newEntry], null);
+      await createUserEntriesForFeed(db, newFeedId, [newEntry], null);
 
       // Query entries for User A
       const ctxA = await createAuthContext(userA);
@@ -1114,7 +1114,7 @@ describe("Feed Redirect Handling", () => {
       });
 
       // First sync - should add newUniqueEntry but skip newSharedEntry (duplicate GUID)
-      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry], null);
+      await createUserEntriesForFeed(db, newFeedId, [newSharedEntry, newUniqueEntry], null);
 
       const afterFirstSync = await getUserEntries(userId);
       // Should have: oldSharedEntry + newUniqueEntry = 2
@@ -1122,7 +1122,7 @@ describe("Feed Redirect Handling", () => {
       expect(afterFirstSync.length).toBe(2);
 
       // Second sync with same entries - should not change anything
-      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry], null);
+      await createUserEntriesForFeed(db, newFeedId, [newSharedEntry, newUniqueEntry], null);
 
       const afterSecondSync = await getUserEntries(userId);
       expect(afterSecondSync.length).toBe(2);
@@ -1136,6 +1136,7 @@ describe("Feed Redirect Handling", () => {
       });
 
       await createUserEntriesForFeed(
+        db,
         newFeedId,
         [newSharedEntry, newUniqueEntry, anotherNewEntry],
         null

@@ -885,7 +885,7 @@ describe("WebSub Integration", () => {
   describe("content push ingest", () => {
     /** next_run_at of the feed's single fetch_feed job. */
     async function feedJobNextRun(feedId: string): Promise<Date> {
-      const existing = await ensureFeedJob(feedId);
+      const existing = await ensureFeedJob(db, feedId);
       expect(existing.nextRunAt).not.toBeNull();
       return existing.nextRunAt as Date;
     }
@@ -901,7 +901,7 @@ describe("WebSub Integration", () => {
         lastFetchedAt,
         lastEntriesUpdatedAt: lastFetchedAt,
       });
-      await ensureFeedJob(feed.id, new Date(Date.now() + 60 * 1000));
+      await ensureFeedJob(db, feed.id, new Date(Date.now() + 60 * 1000));
 
       const deadline = lastFetchedAt.getTime() + WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000;
 
@@ -929,7 +929,7 @@ describe("WebSub Integration", () => {
         Date.now() - (WEBSUB_BACKUP_POLL_INTERVAL_SECONDS + 6 * 60 * 60) * 1000
       );
       const feed = await createTestFeed({ websubActive: true, lastFetchedAt });
-      await ensureFeedJob(feed.id, new Date(Date.now() + 12 * 60 * 60 * 1000));
+      await ensureFeedJob(db, feed.id, new Date(Date.now() + 12 * 60 * 60 * 1000));
 
       expect(await ingestWebsubNotification(feed, rssWithArticle("overdue"))).toBe("processed");
 
@@ -941,7 +941,7 @@ describe("WebSub Integration", () => {
       // establishes one - so don't push it out.
       const feed = await createTestFeed({ websubActive: true, lastFetchedAt: null });
       const scheduled = new Date(Date.now() + 60 * 1000);
-      await ensureFeedJob(feed.id, scheduled);
+      await ensureFeedJob(db, feed.id, scheduled);
 
       expect(await ingestWebsubNotification(feed, rssWithArticle("first"))).toBe("processed");
 
@@ -957,7 +957,7 @@ describe("WebSub Integration", () => {
         bodyHash: "hash-of-the-last-poll",
       });
       const scheduled = new Date(Date.now() + 60 * 1000);
-      await ensureFeedJob(feed.id, scheduled);
+      await ensureFeedJob(db, feed.id, scheduled);
 
       expect(await ingestWebsubNotification(feed, "this is not a feed")).toBe("unparseable");
 
