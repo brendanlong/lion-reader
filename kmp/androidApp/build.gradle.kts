@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 kotlin { jvmToolchain(libs.versions.jdk.get().toInt()) }
@@ -39,6 +40,9 @@ android {
     // unsigned.
     val releaseSigning = keystoreSigning("release", "lionReaderReleaseKeystore")
 
+    // The release-based build types the baseline profile plugin adds.
+    val profilingBuildTypes = listOf("nonMinifiedRelease", "benchmarkRelease")
+
     buildTypes {
         debug {
             // Installs alongside the release app.
@@ -57,6 +61,19 @@ android {
             )
             releaseSigning?.let { signingConfig = it }
         }
+        // The baseline profile plugin builds these from release to generate and measure the
+        // profile. Generating needs an account with articles, so they're the debug app (its id,
+        // key and http), installing over the one a developer has signed in on their device.
+        for (name in profilingBuildTypes) {
+            create(name) {
+                applicationIdSuffix = ".debug"
+                signInCallbackPath("/oauth/app-callback/debug")
+                devSigning?.let { signingConfig = it }
+            }
+        }
+    }
+    for (name in profilingBuildTypes) {
+        sourceSets.getByName(name).manifest.srcFile("src/debug/AndroidManifest.xml")
     }
 
     buildFeatures {
@@ -95,9 +112,11 @@ class RobolectricRepo(@get:Internal val dir: String) : CommandLineArgumentProvid
 
 androidComponents {
     // Compose UI tests need ui-test-manifest, which is debug-only; running the
-    // same tests again against release adds time and nothing else.
-    beforeVariants(selector().withBuildType("release")) { variant ->
-        variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+    // same tests again against release-based builds adds time and nothing else.
+    beforeVariants(selector().all()) { variant ->
+        if (variant.buildType != "debug") {
+            variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+        }
     }
 }
 
@@ -123,6 +142,9 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.webkit)
+    // Installs the baseline profile on devices whose store doesn't (sideloaded APKs).
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
 
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
