@@ -31,7 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -60,6 +60,7 @@ import com.lionreader.app.ui.PageTurns
 import com.lionreader.app.ui.scrollbar
 import com.lionreader.shared.reader.AppearanceTokens
 import com.lionreader.shared.reader.linkTarget
+import com.lionreader.shared.reader.readerDocument
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -71,14 +72,24 @@ import org.json.JSONObject
  * than file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and
  * embeds), with the article's header in it too. It fills the page and scrolls itself: sized to its
  * content inside a scrolling layout, a WebView stays blank until it has measured.
+ *
+ * It shows [content] ([readerContent]) in a page with [shell] ([readerShell]), swapping each new
+ * article into the page it has rather than loading another, which is what makes an article appear
+ * at once; a new shell (another font, theme or text size) loads a new page. [onDrawn] is called
+ * once the page's next frame draws [content], and again whenever it changes while it does, so a
+ * screen can wait for the article rather than show the last one. [hidden]: it's behind something
+ * else, so it's kept from accessibility services and focus.
  */
 @Composable
 fun ReaderWebView(
-    document: String,
+    shell: String,
+    content: String,
     position: ReadingPosition,
     modifier: Modifier = Modifier,
     narration: ReaderNarration = ReaderNarration(),
     paging: ReaderPaging = ReaderPaging(),
+    hidden: Boolean = false,
+    onDrawn: () -> Unit = {},
 ) {
     val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
@@ -92,9 +103,11 @@ fun ReaderWebView(
     }
     if (losses.gaveUp) {
         Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
+        // What the page shows instead.
+        SideEffect { onDrawn() }
         return
     }
-    var linkPress by remember(document) { mutableStateOf<LinkPress?>(null) }
+    var linkPress by remember(content) { mutableStateOf<LinkPress?>(null) }
     var scrolled by remember { mutableStateOf<ScrollIndicatorState?>(null) }
     Box(modifier.scrollbar { scrolled }) {
         key(losses.generation) {
@@ -149,23 +162,17 @@ fun ReaderWebView(
                     // It mustn't be used any more; a new one is on its way.
                     if (view.rendererLost) return@AndroidView
                     view.position = position
-                    if (view.tag != document) {
-                        view.tag = document
-                        view.sideScrollers = emptyList()
-                        view.pageReady = false
-                        view.restoring = true
-                        view.loadDataWithBaseURL(
-                            "$ASSET_ORIGIN/",
-                            document,
-                            "text/html",
-                            "utf-8",
-                            null,
-                        )
-                    }
+                    view.onDrawn = onDrawn
+                    view.show(shell, content)
+                    view.importantForAccessibility =
+                        if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                        else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                    view.isFocusable = !hidden
                     view.smoothScroll = paging.smoothScroll
                     view.pageScrolling = paging.swipes
                     view.highlight(narration.paragraph, narration.autoScroll)
                     view.onListenFrom = narration.onListenFrom
+                    if (view.drawn == content) onDrawn()
                 },
                 onRelease = { it.destroy() },
             )
@@ -173,27 +180,6 @@ fun ReaderWebView(
         linkPress?.let { LinkMenu(it) { linkPress = null } }
     }
 }
-
-/**
- * Starts the WebView's engine (once per process) when the app next goes idle, so the first article
- * doesn't wait for it. For a screen to call once its own content is showing: it blocks the main
- * thread meanwhile.
- */
-@Composable
-fun WarmUpWebView() {
-    val context = LocalContext.current.applicationContext
-    LaunchedEffect(Unit) {
-        if (webViewWarm) return@LaunchedEffect
-        webViewWarm = true
-        Looper.myQueue().addIdleHandler {
-            // A missing or updating WebView package should cost articles, not the whole app.
-            runCatching { WebView(context).destroy() }
-            false
-        }
-    }
-}
-
-private var webViewWarm = false
 
 /**
  * How far down the article the reader is ([fraction] of its height), kept outside the WebView,
@@ -326,6 +312,67 @@ data class ReaderPaging(
 private class ReaderView(context: Context) : WebView(context) {
     var sideScrollers: List<SideScroller> = emptyList()
 
+    /** The shell of the page loaded, whether it has finished loading, and the content shown. */
+    private var shell: String? = null
+    private var shellLoaded = false
+    private var content: String? = null
+
+    /** The content the page's next frame draws, once the WebView has said so. */
+    var drawn: String? = null
+        private set
+
+    var onDrawn: () -> Unit = {}
+    private var drawRequests = 0L
+
+    /** Shows [content] in a page with [shell]: see [ReaderWebView]. */
+    fun show(shell: String, content: String) {
+        if (shell == this.shell && content == this.content) return
+        this.content = content
+        drawn = null
+        pageReady = false
+        restoring = true
+        if (shell == this.shell && shellLoaded) {
+            // Its scripts (narration.js) and the reader's place go with it, so the page is as a
+            // load of it would leave it.
+            evaluateJavascript(
+                "lionNarration.replaceArticle(${JSONObject.quote(content)});" +
+                    " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight)"
+            ) {
+                restoring = false
+            }
+            reportWhenDrawn(content)
+            return
+        }
+        this.shell = shell
+        shellLoaded = false
+        sideScrollers = emptyList()
+        loadDataWithBaseURL(
+            "$ASSET_ORIGIN/",
+            readerDocument(shell, content),
+            "text/html",
+            "utf-8",
+            null,
+        )
+    }
+
+    /**
+     * Requested right behind a change, which the page runs first, so it answers with the first
+     * frame that has it.
+     */
+    private fun reportWhenDrawn(content: String) {
+        val request = ++drawRequests
+        postVisualStateCallback(
+            request,
+            object : VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (requestId != drawRequests) return
+                    drawn = content
+                    onDrawn()
+                }
+            },
+        )
+    }
+
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
     /** Its renderer is gone, so it can only be destroyed. */
@@ -369,19 +416,25 @@ private class ReaderView(context: Context) : WebView(context) {
     }
 
     /**
-     * Once everything in the page (images included) is laid out, so for an unchanged article the
-     * place is exactly where it was. Checked in the page, as a load this one replaced can report
-     * finishing too.
+     * The page has loaded, once everything in it (images included) is laid out: so for an unchanged
+     * article the place is exactly where it was. Checked in the page, as a load this one replaced
+     * can report finishing too.
      */
     fun onLoaded() {
-        if (!restoring || rendererLost) return
+        if (rendererLost) return
+        val restore =
+            if (restoring)
+                "window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight);"
+            else ""
         evaluateJavascript(
-            "(function () {" +
-                " if (document.readyState !== 'complete') return false;" +
-                " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight);" +
-                " return true; })()"
+            "(function () { if (document.readyState !== 'complete') return false; $restore return true; })()"
         ) { done ->
-            if (done == "true") restoring = false
+            if (done != "true") return@evaluateJavascript
+            restoring = false
+            if (!shellLoaded) {
+                shellLoaded = true
+                content?.let(::reportWhenDrawn)
+            }
         }
     }
 

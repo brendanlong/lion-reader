@@ -86,7 +86,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.R
-import com.lionreader.app.reader.WarmUpWebView
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.NavSubscription
@@ -106,6 +105,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 fun HomeScreen(
     model: HomeViewModel,
     onOpen: (String) -> Unit,
+    /** A finger went down on an article: [onOpen] may follow ([ArticlePrefetch]). */
+    onPress: (String) -> Unit = {},
     /** Whether to highlight the open article: only beside it, where both are on screen. */
     showSelection: Boolean = false,
     onSettings: () -> Unit,
@@ -126,7 +127,6 @@ fun HomeScreen(
     val search by model.search.collectAsStateWithLifecycle()
     val searchResults by model.searchResults.collectAsStateWithLifecycle()
     val shown by model.shown.collectAsStateWithLifecycle()
-    if (timeline != null) WarmUpWebView()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -265,6 +265,7 @@ fun HomeScreen(
                             model.opened(it)
                             onOpen(it)
                         },
+                        onPress = onPress,
                         onToggleRead = model::toggleRead,
                         onToggleStar = model::toggleStar,
                         onLoadMore = { if (text == null) model.loadMore() },
@@ -659,6 +660,7 @@ private fun EntryList(
     selectedId: String?,
     emptyText: String,
     onOpen: (String) -> Unit,
+    onPress: (String) -> Unit,
     onToggleRead: (TimelineItem) -> Unit,
     onToggleStar: (TimelineItem) -> Unit,
     onLoadMore: () -> Unit,
@@ -696,6 +698,7 @@ private fun EntryList(
                     item,
                     selected = item.id == selectedId,
                     onOpen = { onOpen(item.id) },
+                    onPress = { onPress(item.id) },
                     onToggleRead = { onToggleRead(item) },
                     onToggleStar = { onToggleStar(item) },
                 )
@@ -797,12 +800,21 @@ private fun EntryRow(
     item: TimelineItem,
     selected: Boolean,
     onOpen: () -> Unit,
+    onPress: () -> Unit,
     onToggleRead: () -> Unit,
     onToggleStar: () -> Unit,
 ) {
+    val currentPress by rememberUpdatedState(onPress)
     Row(
         modifier =
             Modifier.fillMaxWidth()
+                // Watches, not handles: the tap is the click's.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        currentPress()
+                    }
+                }
                 .clickable(onClickLabel = "Open", onClick = onOpen)
                 .background(
                     if (selected) MaterialTheme.colorScheme.secondaryContainer

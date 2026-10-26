@@ -1,6 +1,7 @@
 package com.lionreader.app
 
 import androidx.navigation3.runtime.NavKey
+import kotlin.random.Random
 import kotlinx.serialization.Serializable
 
 // Serializable so the back stack survives rotation and process death
@@ -8,9 +9,17 @@ import kotlinx.serialization.Serializable
 
 @Serializable internal data object HomeKey : NavKey
 
-/** An article opened from a list, and that list's order at the time (for paging). */
+/**
+ * An article opened from a list, and that list's order at the time (for paging). Each opening is
+ * its own ([opening]), even of the same article from the same list: the article layer starts each
+ * from the page on screen, and shows it once that page has drawn it.
+ */
 @Serializable
-internal data class EntryKey(val id: String, val listIds: List<String>) : NavKey {
+internal data class EntryKey(
+    val id: String,
+    val listIds: List<String>,
+    val opening: Long = Random.nextLong(),
+) : NavKey {
     companion object {
         /**
          * Opened from [list]: only the ids within [PAGE_REACH] of it, which bounds the key's size

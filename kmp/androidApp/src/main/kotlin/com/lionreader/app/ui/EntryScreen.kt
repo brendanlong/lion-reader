@@ -1,9 +1,11 @@
 package com.lionreader.app.ui
 
+import android.content.Context
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -48,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
@@ -63,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.repeatOnLifecycle
 import com.lionreader.app.AppGraph
+import com.lionreader.app.EntryKey
 import com.lionreader.app.R
 import com.lionreader.app.openWebPage
 import com.lionreader.app.reader.ASSET_ORIGIN
@@ -84,7 +90,9 @@ import com.lionreader.shared.narration.NarrationState
 import com.lionreader.shared.reader.AppearanceTokens
 import com.lionreader.shared.reader.ReaderColors
 import com.lionreader.shared.reader.ReaderHeader
-import com.lionreader.shared.reader.readerDocument
+import com.lionreader.shared.reader.readerContent
+import com.lionreader.shared.reader.readerShell
+import com.lionreader.shared.settings.AppSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -94,31 +102,47 @@ import kotlinx.coroutines.withContext
 
 /**
  * Articles of the list they were opened from, one per page: swiping left or right moves to the next
- * or previous one, and each is marked read when it settles on screen. [ids] is the list's order
- * when the screen opened, kept fixed so entries arriving meanwhile don't shift the pages.
+ * or previous one, and each is marked read when it settles on screen. [opened] is the article
+ * opened and the list's order then, kept fixed so entries arriving meanwhile don't shift the pages;
+ * null before any is, when the pages wait, loaded but empty.
+ *
+ * On a phone the screen outlives openings ([ArticleLayer]): it waits behind the list while that's
+ * on screen, so opening an article swaps it into a page that's ready rather than building one. Only
+ * while [shown] does it mark articles read, follow narration, take the volume buttons and load the
+ * neighbouring articles. [prefetched] is the list's read of an article being opened
+ * ([ArticlePrefetch]); [onReady] is told once the page on screen draws [opened], so the screen can
+ * wait to be shown rather than show the last article.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EntryScreen(
+internal fun EntryScreen(
     graph: AppGraph,
     account: AccountSession,
-    ids: List<String>,
-    startId: String,
+    opened: EntryKey?,
     onShown: (String) -> Unit,
     onBack: () -> Unit,
     /** Beside the list, where going back closes the article rather than leaving it. */
     besideList: Boolean,
+    shown: Boolean = true,
+    prefetched: (String) -> ArticleState? = { null },
+    onReady: (EntryKey) -> Unit = {},
 ) {
     val context = LocalContext.current
-    // EntryKey.openedFrom always lists the entry it opens.
-    val pages = ids
-    val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
-    val entryId = pages[pager.settledPage]
+    // The pager's length comes from the window, and the window from the page on screen when the
+    // article opened.
+    lateinit var window: PageWindow
+    val pager = rememberPagerState(initialPage = PageWindow.START) { window.pageCount }
+    window =
+        rememberSaveable(opened, saver = PageWindow.Saver) {
+            PageWindow.opening(opened, at = pager.currentPage)
+        }
+    val entryId = window.idAt(pager.settledPage)
     val articles = rememberArticlePages()
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
-    // Only while on screen, so a notice from the background waits to be seen.
+    // Only while on screen, so a notice from the background (or behind the list) waits to be seen.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle) {
+    LaunchedEffect(lifecycle, shown) {
+        if (!shown) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             graph.narrator.notice.filterNotNull().collect {
                 Toast.makeText(context, it, Toast.LENGTH_LONG).show()
@@ -126,27 +150,30 @@ fun EntryScreen(
             }
         }
     }
-    NarrationFollowsPage(
-        narration,
-        entryId,
-        articles.paragraphs(entryId),
-        articles.entry(entryId),
-        started =
-            LocalLifecycleOwner.current.lifecycle
-                .currentStateAsState()
-                .value
-                .isAtLeast(Lifecycle.State.STARTED),
-        follow = graph.narrator::follow,
-        supply = graph.narrator::supply,
-    )
+    val started =
+        LocalLifecycleOwner.current.lifecycle
+            .currentStateAsState()
+            .value
+            .isAtLeast(Lifecycle.State.STARTED)
+    if (entryId != null) {
+        NarrationFollowsPage(
+            narration,
+            entryId,
+            articles.paragraphs(entryId),
+            articles.entry(entryId),
+            started = started && shown,
+            follow = graph.narrator::follow,
+            supply = graph.narrator::supply,
+        )
+    }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val entry = articles.entry(pages[pager.targetPage])
+    val entry = window.idAt(pager.targetPage)?.let(articles::entry)
     val coroutines = rememberCoroutineScope()
     val tokens = remember { appearanceTokens(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
     val summariesAvailable by produceState<Boolean?>(null) { value = account.summariesAvailable() }
 
-    MarkReadOnArrival(account.reader, entryId, onShown)
+    if (shown && entryId != null) MarkReadOnArrival(account.reader, entryId, onShown)
 
     val actions: @Composable RowScope.() -> Unit = actions@{
         val current = entry ?: return@actions
@@ -241,12 +268,12 @@ fun EntryScreen(
                     Box(
                         Modifier.fillMaxWidth().height(1.dp).semantics {
                             // Once it's loaded, so a slow page isn't announced twice.
-                            val shown = articles.entry(entryId) ?: return@semantics
+                            val loaded = entryId?.let(articles::entry) ?: return@semantics
                             liveRegion = LiveRegionMode.Polite
                             heading()
                             contentDescription =
-                                "${shown.title ?: "Untitled"}, " +
-                                    "${pager.settledPage + 1} of ${pages.size}"
+                                "${loaded.title ?: "Untitled"}, " +
+                                    "${pager.settledPage - window.first + 1} of ${window.ids.size}"
                         }
                     )
                 },
@@ -308,9 +335,12 @@ fun EntryScreen(
         val pageConfig = LocalViewConfiguration.current
         // The pager waits for a bigger drag, so the reader decides first (pagerViewConfiguration).
         CompositionLocalProvider(LocalViewConfiguration provides pagerViewConfiguration()) {
+            // Anything else reaching a page outside the list (TalkBack's page turns) comes back.
+            LaunchedEffect(window, pager.settledPage) {
+                window.inList(pager.settledPage)?.let { pager.animateScrollToPage(it) }
+            }
             HorizontalPager(
                 state = pager,
-                key = { pages[it] },
                 // The neighbours are ready before a swipe: creating a page's
                 // WebView mid-swipe blanks the one on screen for a frame, and
                 // the next page's narration (its Listen button) comes from its
@@ -323,34 +353,52 @@ fun EntryScreen(
                         pager,
                         snapAnimationSpec = if (settings.animations) spring() else snap(),
                     ),
-                modifier = Modifier.padding(padding).fillMaxSize(),
+                modifier =
+                    Modifier.padding(padding)
+                        .fillMaxSize()
+                        .nestedScroll(rememberStayInList(pager, window)),
             ) { page ->
+                val pageId = window.idAt(page)
+                val onScreen = page == pager.currentPage
                 CompositionLocalProvider(LocalViewConfiguration provides pageConfig) {
                     EntryPage(
                         graph,
                         account,
-                        pages[page],
+                        pageId,
                         tokens,
-                        showSummary = articles.summaryShown(pages[page]),
+                        showSummary = pageId == null || articles.summaryShown(pageId),
                         onEntry = articles::loaded,
                         narration =
                             ReaderNarration(
-                                paragraph =
-                                    narration?.takeIf { it.entryId == pages[page] }?.paragraph,
+                                paragraph = narration?.takeIf { it.entryId == pageId }?.paragraph,
                                 autoScroll = settings.narrationAutoScroll,
-                                onParagraphs = { articles.extracted(pages[page], it) },
+                                onParagraphs = { paragraphs ->
+                                    pageId?.let { articles.extracted(it, paragraphs) }
+                                },
                                 onListenFrom = { paragraph ->
-                                    listenFrom(graph, articles, pages[page], paragraph)
+                                    pageId?.let { listenFrom(graph, articles, it, paragraph) }
                                 },
                                 // Only while this article is the one being narrated.
                                 onSeek = { paragraph ->
-                                    if (graph.narrator.state.value?.entryId == pages[page]) {
+                                    if (
+                                        pageId != null &&
+                                            graph.narrator.state.value?.entryId == pageId
+                                    ) {
                                         graph.narrator.seekToParagraph(paragraph)
                                     }
                                 },
                             ),
                         // The volume buttons turn the page on screen, not its neighbours'.
-                        active = page == pager.currentPage,
+                        active = shown && onScreen,
+                        shown = shown,
+                        load = shown || onScreen,
+                        prefetched = prefetched,
+                        // A new one for each opening, so the page says so again even when it
+                        // already showed the article.
+                        onReady =
+                            if (onScreen && opened != null && pageId == opened.id) {
+                                { onReady(opened) }
+                            } else null,
                     )
                 }
             }
@@ -418,100 +466,109 @@ internal fun MarkReadOnArrival(reader: Reader, entryId: String, onShown: (String
     }
 }
 
+/**
+ * One page: [entryId]'s article, or nothing (before any opens, and outside the list), in a reader
+ * page that stays whatever it shows, so a new article swaps into it. A neighbour waits for [load].
+ * [onReady] (given to the page being opened) is told once the page is ready to be seen: its article
+ * drawn, or what shows instead (it can't be read, is gone, or is still downloading).
+ */
 @Composable
 private fun EntryPage(
     graph: AppGraph,
     account: AccountSession,
-    entryId: String,
+    entryId: String?,
     tokens: AppearanceTokens,
     showSummary: Boolean,
     onEntry: (String, EntryDetail?) -> Unit,
     narration: ReaderNarration,
     active: Boolean,
+    shown: Boolean,
+    load: Boolean,
+    prefetched: (String) -> ArticleState?,
+    onReady: (() -> Unit)?,
 ) {
     val context = LocalContext.current
-    val article by
-        remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
+    // Keyed: the page outlives its article, and a flow's state keeps the last one's value.
+    val article =
+        key(entryId, load) {
+            if (entryId == null || !load) null
+            else
+                remember { account.reader.article(entryId) }
+                    .collectAsStateWithLifecycle(remember { prefetched(entryId) })
+                    .value
+        }
     val entry = rememberShownArticle(entryId, (article as? ArticleState.Shown)?.entry)
     // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
     val position = rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() }
-    // Null once it's gone (e.g. deleted) or can't be read, and when the page
-    // leaves: the top bar shows only what's on a page now.
-    LaunchedEffect(entry) { onEntry(entryId, entry) }
-    DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
+    if (entryId != null) {
+        // Null once it's gone (e.g. deleted) or can't be read, and when the page
+        // leaves: the top bar shows only what's on a page now.
+        LaunchedEffect(entry) { onEntry(entryId, entry) }
+        DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
+    }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val download =
-        rememberBodyDownload(entryId, entry) {
-            withContext(Dispatchers.IO) { account.sync.ensureContent(entryId) }
+    val download = entryId?.let { id ->
+        rememberBodyDownload(id, entry) {
+            withContext(Dispatchers.IO) { account.sync.ensureContent(id) }
         }
+    }
+    val body = entry?.content
+    val content =
+        if (entry == null || body == null) ""
+        else {
+            val header = ReaderHeader(entry.title ?: "Untitled", byline(context, entry), entry.url)
+            val summary = entry.summary?.takeIf { showSummary }
+            // Not rebuilt on every recomposition (each narration step is one).
+            remember(header, summary, body) { readerContent(header, summary, body) }
+        }
+    ReaderWebView(
+        rememberReaderShell(settings, tokens),
+        content,
+        position,
+        Modifier.fillMaxSize(),
+        narration,
+        ReaderPaging(
+            swipes = settings.pageScrolling,
+            turns = graph.pageTurns.takeIf { active },
+            smoothScroll = settings.animations,
+        ),
+        hidden = !shown,
+        onDrawn = { if (content.isNotEmpty()) onReady?.invoke() },
+    )
+    when {
+        article == ArticleState.Unreadable ->
+            Text(
+                "Lion Reader couldn't open this article. It may be too large for this device.",
+                modifier =
+                    Modifier.fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(16.dp),
+            )
+        entry != null && body == null && download != null ->
+            MissingBody(graph, entry, byline(context, entry), download, active, settings)
+        // Gone (deleted, or no longer visible).
+        article is ArticleState.Shown && entry == null -> {}
+        // Its article is drawn, or not here yet.
+        else -> return
+    }
+    if (onReady != null) SideEffect { onReady() }
+}
 
-    if (article == ArticleState.Unreadable) {
-        Text(
-            "Lion Reader couldn't open this article. It may be too large for this device.",
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-        )
-        return
-    }
-    val current = entry ?: return
-    val byline =
-        listOfNotNull(
-                current.source,
-                // Like the web, the author is left out when it's the feed's name.
-                current.author?.takeUnless {
-                    it.trim().equals(current.source?.trim(), ignoreCase = true)
-                },
-                DateUtils.formatDateTime(
-                    context,
-                    current.sortAtMillis,
-                    DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
-                ),
-            )
-            .joinToString(" · ")
-    val title = current.title ?: "Untitled"
-    val content = current.content
-    if (content != null) {
-        val colors = MaterialTheme.colorScheme
-        val readerColors =
-            ReaderColors(
-                text = colors.onSurface.css(),
-                muted = colors.onSurfaceVariant.css(),
-                link = colors.primary.css(),
-                background = colors.surface.css(),
-                border = colors.outlineVariant.css(),
-                codeBackground = colors.surfaceContainer.css(),
-            )
-        val header = ReaderHeader(title, byline, current.url)
-        val summary = current.summary?.takeIf { showSummary }
-        // Not rebuilt on every recomposition (each narration step is one).
-        val document =
-            remember(header, summary, content, settings, tokens, readerColors) {
-                readerDocument(
-                    header,
-                    summary,
-                    content,
-                    settings,
-                    tokens,
-                    readerColors,
-                    ASSET_ORIGIN,
-                )
-            }
-        ReaderWebView(
-            document,
-            position,
-            Modifier.fillMaxSize(),
-            narration,
-            ReaderPaging(
-                swipes = settings.pageScrolling,
-                turns = graph.pageTurns.takeIf { active },
-                smoothScroll = settings.animations,
-            ),
-        )
-        return
-    }
+/** An article whose body isn't on the device: downloading it, or why it can't be. */
+@Composable
+private fun MissingBody(
+    graph: AppGraph,
+    entry: EntryDetail,
+    byline: String,
+    download: BodyDownload,
+    active: Boolean,
+    settings: AppSettings,
+) {
     val scroll = rememberScrollState()
     Column(
         modifier =
             Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
                 .pageSwipes(
                     rememberPageTurner(scroll, graph.pageTurns, PageLayer.ARTICLE, active),
                     settings.pageScrolling,
@@ -520,7 +577,7 @@ private fun EntryPage(
                 .verticalScroll(scroll, enabled = !settings.pageScrolling)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(entry.title ?: "Untitled", style = MaterialTheme.typography.headlineSmall)
         Text(
             byline,
             style = MaterialTheme.typography.labelLarge,
@@ -536,6 +593,38 @@ private fun EntryPage(
         } else {
             CircularProgressIndicator(modifier = Modifier.padding(vertical = 32.dp))
         }
+    }
+}
+
+/** The byline under an article's title. */
+private fun byline(context: Context, entry: EntryDetail): String =
+    listOfNotNull(
+            entry.source,
+            // Like the web, the author is left out when it's the feed's name.
+            entry.author?.takeUnless { it.trim().equals(entry.source?.trim(), ignoreCase = true) },
+            DateUtils.formatDateTime(
+                context,
+                entry.sortAtMillis,
+                DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
+            ),
+        )
+        .joinToString(" · ")
+
+/** The reader page for [settings] and the app's theme, before any article ([readerShell]). */
+@Composable
+private fun rememberReaderShell(settings: AppSettings, tokens: AppearanceTokens): String {
+    val colors = MaterialTheme.colorScheme
+    val readerColors =
+        ReaderColors(
+            text = colors.onSurface.css(),
+            muted = colors.onSurfaceVariant.css(),
+            link = colors.primary.css(),
+            background = colors.surface.css(),
+            border = colors.outlineVariant.css(),
+            codeBackground = colors.surfaceContainer.css(),
+        )
+    return remember(settings, tokens, readerColors) {
+        readerShell(settings, tokens, readerColors, ASSET_ORIGIN)
     }
 }
 
@@ -577,7 +666,7 @@ private fun SummaryButton(
  * Remembered, not saved: recreating the activity shows the article as it is then.
  */
 @Composable
-internal fun rememberShownArticle(entryId: String, latest: EntryDetail?): EntryDetail? {
+internal fun rememberShownArticle(entryId: String?, latest: EntryDetail?): EntryDetail? {
     val shown = remember(entryId) { arrayOfNulls<EntryDetail>(1) }
     if (latest == null) return null
     val first = shown[0]
