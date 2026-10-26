@@ -1282,6 +1282,20 @@
       "when": 1792444664053,
       "tag": "0183_drop_redundant_entries_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1792970954239,
+      "tag": "0184_visible_entries_drop_full_content_original",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1792970954240,
+      "tag": "0185_drop_entries_full_content_original",
+      "breakpoints": true
     }
   ]
 }
