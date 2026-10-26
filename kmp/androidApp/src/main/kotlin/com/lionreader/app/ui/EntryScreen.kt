@@ -52,7 +52,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
@@ -351,10 +350,6 @@ internal fun EntryScreen(
             LaunchedEffect(window) {
                 if (pager.isScrollInProgress) pager.scrollToPage(pager.currentPage)
             }
-            // Anything else reaching a page outside the list (TalkBack's page turns) comes back.
-            LaunchedEffect(window, pager.settledPage) {
-                window.inList(pager.settledPage)?.let { pager.animateScrollToPage(it) }
-            }
             HorizontalPager(
                 state = pager,
                 // The neighbours are ready before a swipe: creating a page's
@@ -369,10 +364,7 @@ internal fun EntryScreen(
                         pager,
                         snapAnimationSpec = if (settings.animations) spring() else snap(),
                     ),
-                modifier =
-                    Modifier.padding(padding)
-                        .fillMaxSize()
-                        .nestedScroll(rememberStayInList(pager, window)),
+                modifier = Modifier.padding(padding).fillMaxSize().stayInList(pager, window),
             ) { page ->
                 val pageId = window.idAt(page)
                 val onScreen = page == pager.currentPage
