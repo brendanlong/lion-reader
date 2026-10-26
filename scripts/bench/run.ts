@@ -311,7 +311,6 @@ async function iterate(
     // delete trigger removes the rows they check only after the delete that
     // runs an immediate check, so they hold only at commit (migration 0133).
     await client.query("SET CONSTRAINTS subscription_entries_user_id_entry_id_fkey DEFERRED");
-    for (const sql of prepared.setup ?? []) await client.query(sql);
   }
   try {
     const before = await walLsn(client);

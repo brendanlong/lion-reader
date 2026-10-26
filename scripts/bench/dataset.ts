@@ -7,6 +7,8 @@
 
 import { createHash } from "node:crypto";
 
+import type { ParsedEntry } from "@/server/feed/types";
+
 /** "Now" for the seeded data: the date production's row counts were taken. */
 export const ANCHOR = "2026-10-05T12:00:00Z";
 
@@ -60,6 +62,31 @@ export const WEB = {
   history: 6,
 } as const;
 export const FIRST_POOL_FEED = 7;
+
+/**
+ * A seeded web entry as its feed lists it, from these `entries` columns. The
+ * seed stores the content hash a fetch computes from it for the popular feed,
+ * so a fetch benchmark relisting those entries finds them unchanged.
+ */
+export const FEED_ITEM_COLUMNS = "guid, url, title, author, content_cleaned";
+export function feedItem(entry: {
+  guid: string;
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  content_cleaned: string | null;
+}): ParsedEntry {
+  return {
+    guid: entry.guid,
+    link: entry.url ?? undefined,
+    title: entry.title ?? undefined,
+    author: entry.author ?? undefined,
+    content: entry.content_cleaned ?? undefined,
+  };
+}
+
+/** U0's email ingest address is `${U0_INGEST_TOKEN}@…`. */
+export const U0_INGEST_TOKEN = "bench-u0";
 
 export const webFeedId = (idx: number): string => benchUuid(`feed:web:${idx}`);
 export const webFeedUrl = (idx: number): string => `https://feed-${idx}.example.com/rss`;
