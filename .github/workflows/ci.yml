@@ -478,8 +478,22 @@ jobs:
       - name: Make the PDF converter executable
         run: chmod +x native/pdf/lion-reader-pdf
 
+      # Next's webpack cache, which makes `next build` mostly incremental.
+      # Saved only from master (below): PR runs can read master's caches but
+      # not each other's, so per-PR saves would only push other caches out of
+      # the repo's quota.
+      # Keyed on the lockfile so dependency bumps start fresh instead of the
+      # cache growing forever across restores.
+      - name: Restore Next.js build cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: next-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      # Headless runs only use the headless shell, so skip the full Chrome.
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       # Build the production server so e2e exercises the deployed code path
       # (next build + node dist/server.js with the compression wrapper), not
@@ -490,6 +504,13 @@ jobs:
         env:
           DATABASE_URL: postgresql://lionreader:lionreader@localhost:5432/lionreader_test
           REDIS_URL: redis://localhost:6379
+
+      - name: Save Next.js build cache
+        if: github.ref == 'refs/heads/master'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
       - name: Run e2e tests
         run: pnpm test:e2e
