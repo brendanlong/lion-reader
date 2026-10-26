@@ -2,8 +2,8 @@
  * Concurrency tests for the unread counters (#1806): with the lock order in
  * src/server/CLAUDE.md, concurrent writes neither deadlock nor lose a counter
  * update. Each test
- * asserts only what every interleaving guarantees: all calls succeed and the
- * counters match their definition afterwards.
+ * asserts only what every interleaving guarantees: the calls the design says
+ * succeed do, and the counters match their definition afterwards.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
