@@ -1,9 +1,8 @@
 /**
  * The database benchmarks: the SQL a service function sends for one user
  * action, against the seeded dataset (`seed.ts`), recorded by running the
- * function (`recordStatements`). A write replays its statements in order, with
- * the ids and times the recording generated, inside a transaction that is
- * rolled back (`run.ts`), so every iteration starts from the same data.
+ * function (`recordStatements`). A write replays them inside a transaction
+ * that is rolled back (`run.ts`), so every iteration starts from the same data.
  */
 
 import type { ClientBase } from "pg";

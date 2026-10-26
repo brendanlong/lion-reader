@@ -10,12 +10,9 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
   its heaviest libraries. Its header says how the text is generated.
 - `benchmarks.ts` holds the benchmarks. Each records the statements its
   service function actually sends (`record.ts`), so it can't drift from the
-  app; add new ones that way. Recording runs the function once in a
-  transaction it rolls back, so a function a benchmark records must take `db`
-  rather than use the global one (recording fails if it doesn't). A write
-  replays its statements in order with the ids and times the recording
-  generated, so the seeded data must lead the function down the path the
-  benchmark names (the seed says what it adds for that). Keep names stable so
+  app; add new ones that way. A function a benchmark records must take `db`
+  rather than use the global one, and the seeded data must lead it down the
+  path the benchmark names (`record.ts` says why). Keep names stable so
   comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.

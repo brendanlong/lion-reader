@@ -817,8 +817,7 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
     [webFeedId(WEB.mergeTarget)]
   );
   await step("entries", ENTRIES);
-  // What a fetch computes for the popular feed's entries, so the one
-  // `write.fanout_one` replays finds those it relists unchanged.
+  // See `feedItem`.
   const popular = await client.query<Parameters<typeof feedItem>[0] & { id: string }>(
     `SELECT id, ${FEED_ITEM_COLUMNS} FROM entries WHERE owner_feed_id = $1`,
     [webFeedId(WEB.popular)]
