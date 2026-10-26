@@ -3,6 +3,7 @@ package com.lionreader.app.reader
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.MutableContextWrapper
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Handler
@@ -14,6 +15,7 @@ import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -37,7 +39,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -74,13 +75,13 @@ import org.json.JSONObject
  */
 @Composable
 fun ReaderWebView(
-    document: String,
+    shell: String,
+    content: String,
     position: ReadingPosition,
     modifier: Modifier = Modifier,
     narration: ReaderNarration = ReaderNarration(),
     paging: ReaderPaging = ReaderPaging(),
 ) {
-    val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
     val losses = remember { RendererLosses() }
     val turns = paging.turns
@@ -94,80 +95,33 @@ fun ReaderWebView(
         Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
         return
     }
-    var linkPress by remember(document) { mutableStateOf<LinkPress?>(null) }
+    var linkPress by remember(content) { mutableStateOf<LinkPress?>(null) }
     var scrolled by remember { mutableStateOf<ScrollIndicatorState?>(null) }
     Box(modifier.scrollbar { scrolled }) {
         key(losses.generation) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
-                    ReaderView(context)
-                        .also {
-                            shown[0] = it
-                            scrolled = it.scrollIndicator
-                        }
-                        .apply {
-                            onLinkLongPress = { linkPress = it }
-                            // For our scripts; the CSP keeps anything else from running.
-                            @SuppressLint("SetJavaScriptEnabled")
-                            settings.javaScriptEnabled = true
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            settings.domStorageEnabled = false
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            isVerticalScrollBarEnabled = false
-                            // Drawn into its own layer, so the pager moving it shifts a
-                            // finished picture: on some devices a WebView that's moved
-                            // mid-swipe draws a blank frame.
-                            setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                            if (
-                                WebViewFeature.isFeatureSupported(
-                                    WebViewFeature.WEB_MESSAGE_LISTENER
-                                )
-                            ) {
-                                WebViewCompat.addWebMessageListener(
-                                    this,
-                                    "lionReader",
-                                    setOf(ASSET_ORIGIN),
-                                ) { _, message, _, isMainFrame, _ ->
-                                    if (isMainFrame) onPageMessage(message.data ?: "", current)
-                                }
-                            }
-                            webViewClient =
-                                ReaderWebViewClient(
-                                    WebViewAssetLoader.Builder()
-                                        .addPathHandler(
-                                            "/assets/",
-                                            WebViewAssetLoader.AssetsPathHandler(context),
-                                        )
-                                        .build(),
-                                    onRendererLost = losses::lost,
-                                )
-                        }
+                    android.os.Trace.beginSection("SPIKE ReaderPool.take")
+                    android.os.Trace.endSection()
+                    ReaderPool.take(context, content).also {
+                        shown[0] = it
+                        scrolled = it.scrollIndicator
+                        it.onLinkLongPress = { press -> linkPress = press }
+                        it.onRendererLost = losses::lost
+                    }
                 },
                 update = { view ->
-                    // It mustn't be used any more; a new one is on its way.
                     if (view.rendererLost) return@AndroidView
+                    view.narration = narration
                     view.position = position
-                    if (view.tag != document) {
-                        view.tag = document
-                        view.sideScrollers = emptyList()
-                        view.pageReady = false
-                        view.restoring = true
-                        view.loadDataWithBaseURL(
-                            "$ASSET_ORIGIN/",
-                            document,
-                            "text/html",
-                            "utf-8",
-                            null,
-                        )
-                    }
+                    view.show(shell, content)
                     view.smoothScroll = paging.smoothScroll
                     view.pageScrolling = paging.swipes
                     view.highlight(narration.paragraph, narration.autoScroll)
                     view.onListenFrom = narration.onListenFrom
                 },
-                onRelease = { it.destroy() },
+                onRelease = { ReaderPool.give(it) },
             )
         }
         linkPress?.let { LinkMenu(it) { linkPress = null } }
@@ -175,25 +129,80 @@ fun ReaderWebView(
 }
 
 /**
- * Starts the WebView's engine (once per process) when the app next goes idle, so the first article
- * doesn't wait for it. For a screen to call once its own content is showing: it blocks the main
- * thread meanwhile.
+ * SPIKE: reader WebViews that outlive the article screen, each with a [readerShell] loaded, so
+ * opening an article swaps its content into a page whose styles, fonts and scripts are ready.
  */
-@Composable
-fun WarmUpWebView() {
-    val context = LocalContext.current.applicationContext
-    LaunchedEffect(Unit) {
-        if (webViewWarm) return@LaunchedEffect
-        webViewWarm = true
-        Looper.myQueue().addIdleHandler {
-            // A missing or updating WebView package should cost articles, not the whole app.
-            runCatching { WebView(context).destroy() }
-            false
+private object ReaderPool {
+    private const val SIZE = 3
+    private val spare = ArrayDeque<ReaderView>()
+
+    /** The spare whose content is [content], or the first. */
+    fun take(context: Context, content: String?): ReaderView {
+        val view =
+            spare.firstOrNull { it.content == content }?.also { spare.remove(it) }
+                ?: spare.removeFirstOrNull()
+                ?: ReaderView(MutableContextWrapper(context))
+        (view.context as MutableContextWrapper).baseContext = context
+        return view
+    }
+
+    fun give(view: ReaderView) {
+        (view.parent as? ViewGroup)?.removeView(view)
+        if (view.rendererLost || spare.size >= SIZE) {
+            view.destroy()
+            return
+        }
+        (view.context as MutableContextWrapper).baseContext = view.context.applicationContext
+        view.onLinkLongPress = null
+        view.onRendererLost = {}
+        view.onListenFrom = null
+        view.narration = ReaderNarration()
+        spare.addLast(view)
+    }
+
+    /** Swaps [content] into the spare a page will take next, ahead of it opening. */
+    fun prepare(content: String) {
+        val view = spare.firstOrNull { it.content == content } ?: spare.lastOrNull() ?: return
+        android.os.Trace.beginSection("SPIKE prepare")
+        view.show(view.shell ?: return, content)
+        android.os.Trace.endSection()
+    }
+
+    fun warm(context: Context, shell: String) {
+        spare.removeAll {
+            it.shell != shell &&
+                run {
+                    it.destroy()
+                    true
+                }
+        }
+        while (spare.size < SIZE) {
+            spare.addLast(
+                ReaderView(MutableContextWrapper(context.applicationContext)).apply {
+                    show(shell, "")
+                }
+            )
         }
     }
 }
 
-private var webViewWarm = false
+/** SPIKE: see [ReaderPool.prepare]. */
+fun prepareReader(content: String) = ReaderPool.prepare(content)
+
+/**
+ * SPIKE: fills the pool once the list shows, with the shell the next article will use, so the first
+ * open finds its fonts, styles and scripts loaded.
+ */
+@Composable
+fun WarmReaders(shell: String) {
+    val context = LocalContext.current
+    LaunchedEffect(shell) {
+        Looper.myQueue().addIdleHandler {
+            runCatching { ReaderPool.warm(context, shell) }
+            false
+        }
+    }
+}
 
 /**
  * How far down the article the reader is ([fraction] of its height), kept outside the WebView,
@@ -325,6 +334,79 @@ data class ReaderPaging(
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
     var sideScrollers: List<SideScroller> = emptyList()
+    var narration = ReaderNarration()
+    var onRendererLost: (crashed: Boolean) -> Unit = {}
+
+    /** The [readerShell] loaded, and the content shown in it. */
+    var shell: String? = null
+        private set
+
+    var content: String? = null
+        private set
+
+    private var shellLoaded = false
+
+    /**
+     * Shows [content] in [shell]: swapped into the page if that's the shell it has loaded, which is
+     * what makes opening an article fast; loaded whole otherwise.
+     */
+    fun show(shell: String, content: String) {
+        if (shell == this.shell && content == this.content) return
+        sideScrollers = emptyList()
+        pageReady = false
+        restoring = true
+        if (shell == this.shell && shellLoaded) {
+            this.content = content
+            evaluateJavascript(
+                "(function () {" +
+                    " document.body.innerHTML = ${JSONObject.quote(content)};" +
+                    " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight);" +
+                    " performance.mark('lr-swapped'); })()"
+            ) {
+                restoring = false
+            }
+            return
+        }
+        this.shell = shell
+        this.content = content
+        shellLoaded = false
+        loadDataWithBaseURL(
+            "$ASSET_ORIGIN/",
+            "$shell$content</body></html>",
+            "text/html",
+            "utf-8",
+            null,
+        )
+    }
+
+    init {
+        // For our scripts; the CSP keeps anything else from running.
+        @SuppressLint("SetJavaScriptEnabled")
+        settings.javaScriptEnabled = true
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        settings.domStorageEnabled = false
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        isVerticalScrollBarEnabled = false
+        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(this, "lionReader", setOf(ASSET_ORIGIN)) {
+                _,
+                message,
+                _,
+                isMainFrame,
+                _ ->
+                if (isMainFrame) onPageMessage(message.data ?: "", narration)
+            }
+        }
+        webViewClient =
+            ReaderWebViewClient(
+                WebViewAssetLoader.Builder()
+                    .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+                    .build(),
+                onRendererLost = { onRendererLost(it) },
+            )
+    }
 
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
@@ -374,6 +456,7 @@ private class ReaderView(context: Context) : WebView(context) {
      * finishing too.
      */
     fun onLoaded() {
+        shellLoaded = true
         if (!restoring || rendererLost) return
         evaluateJavascript(
             "(function () {" +

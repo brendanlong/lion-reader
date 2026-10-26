@@ -84,11 +84,15 @@ import com.lionreader.shared.narration.NarrationState
 import com.lionreader.shared.reader.AppearanceTokens
 import com.lionreader.shared.reader.ReaderColors
 import com.lionreader.shared.reader.ReaderHeader
-import com.lionreader.shared.reader.readerDocument
+import com.lionreader.shared.reader.readerContent
+import com.lionreader.shared.reader.readerShell
+import com.lionreader.shared.settings.AppSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -431,7 +435,17 @@ private fun EntryPage(
 ) {
     val context = LocalContext.current
     val article by
-        remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
+        remember(entryId) {
+                account.reader.article(entryId).onEach {
+                    android.os.Trace.beginSection("SPIKE article emitted $entryId")
+                    android.os.Trace.endSection()
+                }
+            }
+            .collectAsStateWithLifecycle(remember(entryId) { ArticlePrefetch.take(entryId) })
+    android.os.Trace.beginSection(
+        "SPIKE EntryPage ${if (article == null) "empty" else "loaded"} $entryId"
+    )
+    android.os.Trace.endSection()
     val entry = rememberShownArticle(entryId, (article as? ArticleState.Shown)?.entry)
     // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
     val position = rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() }
@@ -453,50 +467,19 @@ private fun EntryPage(
         return
     }
     val current = entry ?: return
-    val byline =
-        listOfNotNull(
-                current.source,
-                // Like the web, the author is left out when it's the feed's name.
-                current.author?.takeUnless {
-                    it.trim().equals(current.source?.trim(), ignoreCase = true)
-                },
-                DateUtils.formatDateTime(
-                    context,
-                    current.sortAtMillis,
-                    DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
-                ),
-            )
-            .joinToString(" · ")
+    val byline = byline(context, current)
     val title = current.title ?: "Untitled"
     val content = current.content
     if (content != null) {
-        val colors = MaterialTheme.colorScheme
-        val readerColors =
-            ReaderColors(
-                text = colors.onSurface.css(),
-                muted = colors.onSurfaceVariant.css(),
-                link = colors.primary.css(),
-                background = colors.surface.css(),
-                border = colors.outlineVariant.css(),
-                codeBackground = colors.surfaceContainer.css(),
-            )
         val header = ReaderHeader(title, byline, current.url)
         val summary = current.summary?.takeIf { showSummary }
+        val shell = rememberReaderShell(settings, tokens)
         // Not rebuilt on every recomposition (each narration step is one).
-        val document =
-            remember(header, summary, content, settings, tokens, readerColors) {
-                readerDocument(
-                    header,
-                    summary,
-                    content,
-                    settings,
-                    tokens,
-                    readerColors,
-                    ASSET_ORIGIN,
-                )
-            }
+        val articleContent =
+            remember(header, summary, content) { readerContent(header, summary, content) }
         ReaderWebView(
-            document,
+            shell,
+            articleContent,
             position,
             Modifier.fillMaxSize(),
             narration,
@@ -627,6 +610,77 @@ internal fun rememberBodyDownload(
             }
     }
     return BodyDownload(failed) { attempt++ }
+}
+
+/**
+ * SPIKE: the article a finger is down on, read while the tap completes, so its page's first
+ * composition already has it.
+ */
+object ArticlePrefetch {
+    var reader: Reader? = null
+    var scope: kotlinx.coroutines.CoroutineScope? = null
+    var context: android.content.Context? = null
+    @Volatile private var result: Pair<String, ArticleState>? = null
+    private var pending: String? = null
+
+    fun press(id: String) {
+        if (pending == id) return
+        pending = id
+        val reader = reader ?: return
+        scope?.launch(Dispatchers.IO) {
+            android.os.Trace.beginSection("SPIKE prefetch $id")
+            val state = reader.article(id).first()
+            result = id to state
+            android.os.Trace.endSection()
+            val entry = (state as? ArticleState.Shown)?.entry ?: return@launch
+            val page = pageContent(context ?: return@launch, entry) ?: return@launch
+            withContext(Dispatchers.Main) { com.lionreader.app.reader.prepareReader(page) }
+        }
+    }
+
+    fun take(id: String): ArticleState? = result?.takeIf { it.first == id }?.second
+}
+
+/** SPIKE: the article's byline, as its page shows it. */
+fun byline(context: android.content.Context, entry: EntryDetail): String =
+    listOfNotNull(
+            entry.source,
+            // Like the web, the author is left out when it's the feed's name.
+            entry.author?.takeUnless { it.trim().equals(entry.source?.trim(), ignoreCase = true) },
+            DateUtils.formatDateTime(
+                context,
+                entry.sortAtMillis,
+                DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
+            ),
+        )
+        .joinToString(" · ")
+
+/** SPIKE: what the page shows for [entry], before its summary is hidden. */
+fun pageContent(context: android.content.Context, entry: EntryDetail): String? {
+    val content = entry.content ?: return null
+    return readerContent(
+        ReaderHeader(entry.title ?: "Untitled", byline(context, entry), entry.url),
+        entry.summary,
+        content,
+    )
+}
+
+/** SPIKE: the reader page's shell for the current settings and theme. */
+@Composable
+fun rememberReaderShell(settings: AppSettings, tokens: AppearanceTokens): String {
+    val colors = MaterialTheme.colorScheme
+    val readerColors =
+        ReaderColors(
+            text = colors.onSurface.css(),
+            muted = colors.onSurfaceVariant.css(),
+            link = colors.primary.css(),
+            background = colors.surface.css(),
+            border = colors.outlineVariant.css(),
+            codeBackground = colors.surfaceContainer.css(),
+        )
+    return remember(settings, tokens, readerColors) {
+        readerShell(settings, tokens, readerColors, ASSET_ORIGIN)
+    }
 }
 
 private fun Color.css(): String = "#%06X".format(toArgb() and 0xFFFFFF)

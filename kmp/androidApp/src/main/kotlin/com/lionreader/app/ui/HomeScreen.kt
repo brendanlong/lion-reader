@@ -86,7 +86,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.R
-import com.lionreader.app.reader.WarmUpWebView
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.NavSubscription
@@ -126,7 +125,6 @@ fun HomeScreen(
     val search by model.search.collectAsStateWithLifecycle()
     val searchResults by model.searchResults.collectAsStateWithLifecycle()
     val shown by model.shown.collectAsStateWithLifecycle()
-    if (timeline != null) WarmUpWebView()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -803,7 +801,17 @@ private fun EntryRow(
     Row(
         modifier =
             Modifier.fillMaxWidth()
-                .clickable(onClickLabel = "Open", onClick = onOpen)
+                .pointerInput(item.id) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        ArticlePrefetch.press(item.id)
+                    }
+                }
+                .clickable(onClickLabel = "Open") {
+                    android.os.Trace.beginSection("SPIKE row click")
+                    android.os.Trace.endSection()
+                    onOpen()
+                }
                 .background(
                     if (selected) MaterialTheme.colorScheme.secondaryContainer
                     else MaterialTheme.colorScheme.surface

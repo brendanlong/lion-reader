@@ -49,7 +49,10 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.lionreader.app.reader.WarmReaders
+import com.lionreader.app.reader.appearanceTokens
 import com.lionreader.app.ui.AppMotion
+import com.lionreader.app.ui.ArticlePrefetch
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.LionReaderTheme
@@ -57,6 +60,7 @@ import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
 import com.lionreader.app.ui.isDark
+import com.lionreader.app.ui.rememberReaderShell
 import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.account.AccountStatus
 import com.lionreader.shared.home.HomeViewModel
@@ -214,6 +218,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun AccountApp(account: AccountSession) {
         val backStack = rememberNavBackStack(HomeKey)
+        ArticlePrefetch.reader = account.reader
+        ArticlePrefetch.scope = graph.appScope
+        ArticlePrefetch.context = applicationContext
         val sessions = viewModel<SessionViewModels>()
         val owner = remember(account) { sessions.ownerFor(account) }
         // Leaving composition also happens on rotation, when the session goes on.
@@ -235,6 +242,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
+        val readerTokens = remember { appearanceTokens(this) }
+        WarmReaders(rememberReaderShell(settings, readerTokens))
         val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).
         // Back closes the article beside the list, as it does full screen.

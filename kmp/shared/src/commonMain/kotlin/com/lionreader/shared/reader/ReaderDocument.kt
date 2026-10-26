@@ -90,6 +90,17 @@ fun readerDocument(
     tokens: AppearanceTokens,
     colors: ReaderColors,
     assetOrigin: String,
+): String =
+    readerShell(settings, tokens, colors, assetOrigin) +
+        readerContent(header, summary, body) +
+        "</body></html>"
+
+/** SPIKE: everything up to the open body, shared by every article with these settings. */
+fun readerShell(
+    settings: AppSettings,
+    tokens: AppearanceTokens,
+    colors: ReaderColors,
+    assetOrigin: String,
 ): String {
     val font = settings.font
     val size = tokens.textSize(settings) * tokens.sizeAdjust(font)
@@ -150,9 +161,12 @@ fun readerDocument(
         </head>
         <body class="reader-prose">
         """
-        .trimIndent() +
-        // After trimIndent, so feed text can't change the template's indentation.
-        "<header class=\"lr-header\"><h1>" +
+        .trimIndent()
+}
+
+/** SPIKE: the body's contents for one article. */
+fun readerContent(header: ReaderHeader, summary: String?, body: String): String =
+    "<header class=\"lr-header\"><h1>" +
         (webUrl(header.url)?.let { "<a href=\"${escapeHtml(it)}\">${escapeHtml(header.title)}</a>" }
             ?: escapeHtml(header.title)) +
         "</h1>" +
@@ -160,9 +174,7 @@ fun readerDocument(
         (summary?.let {
             "<aside class=\"lr-summary\"><p class=\"lr-summary-label\">AI Summary</p>$it</aside>"
         } ?: "") +
-        body +
-        "</body></html>"
-}
+        body
 
 /**
  * [href] if it's a web page outside the article: not the reader's own [assetOrigin], which a
