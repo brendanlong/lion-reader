@@ -1,15 +1,16 @@
 /**
  * Next.js Proxy (middleware)
  *
- * Two jobs:
+ * Three jobs:
  *
- * 1. Session-aware redirects for `/` and the static auth pages
+ * 1. Rejecting server function calls (`isPossibleServerFunctionCall`).
+ * 2. Session-aware redirects for `/` and the static auth pages
  *    (`maybeSessionRedirect`, issue #1359): anonymous visitors to `/` 307
  *    straight to the demo with no Next render; visitors with a *validated*
  *    session are bounced from `/`, `/login`, `/register` into the app. A UX
  *    redirect only — see the function comment for why this is not the #984
  *    auth gate.
- * 2. The per-request Content-Security-Policy nonce (issue #1275): a locked-down
+ * 3. The per-request Content-Security-Policy nonce (issue #1275): a locked-down
  *    `script-src` needs a fresh nonce on every response, which the static
  *    `headers()` config in `next.config.ts` can't produce. This is Next's
  *    documented CSP pattern: generate the nonce here and put the policy on the
@@ -36,6 +37,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_LANDING_PATH } from "@/lib/routes";
+import { SENTRY_TUNNEL_ROUTE } from "@/lib/sentry/tunnel-route";
 import { getSessionCookie } from "@/server/auth/session-cookie";
 import {
   buildContentSecurityPolicy,
@@ -62,6 +64,27 @@ function isPublicStaticPath(pathname: string): boolean {
     pathname === "/register" ||
     pathname === "/terms" ||
     pathname === "/privacy"
+  );
+}
+
+/**
+ * We define no server functions, so a POST that Next.js would hand to its
+ * server-function decoder (the CVE-2025-55182 RCE entry point) is only ever a
+ * probe, and one that reaches the not-found render throws an InvariantError
+ * into Sentry. Next treats every POST to a page as a possible call (a
+ * header-less form POST reaches `decodeAction` too, not only requests carrying
+ * `Next-Action`), so POSTs pass only on the prefixes holding our POST route
+ * handlers, which never decode server functions, and the Sentry tunnel.
+ */
+function isPossibleServerFunctionCall(request: NextRequest): boolean {
+  if (request.method !== "POST") {
+    return false;
+  }
+  const { pathname } = request.nextUrl;
+  return !(
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/oauth/") ||
+    pathname === SENTRY_TUNNEL_ROUTE
   );
 }
 
@@ -132,6 +155,10 @@ async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse 
 }
 
 export async function proxy(request: NextRequest) {
+  if (isPossibleServerFunctionCall(request)) {
+    return new NextResponse(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+  }
+
   // The service worker script deliberately gets NO CSP. A service worker's
   // fetches are governed by the CSP served on the worker script itself, and
   // the runtime-caching config in next.config.ts fetches cross-origin entry

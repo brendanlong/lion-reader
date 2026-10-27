@@ -7,16 +7,23 @@
  * beyond the session redirects.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "../../src/proxy";
+import { SENTRY_TUNNEL_ROUTE } from "../../src/lib/sentry/tunnel-route";
 
-function makeRequest(path: string, method = "GET"): NextRequest {
+function makeRequest(
+  path: string,
+  method = "GET",
+  headers: Record<string, string> = {}
+): NextRequest {
   // Real requests always carry a Host header; NextRequest doesn't derive one from
   // the URL, so set it explicitly to match the origin.
   return new NextRequest(new URL(`https://reader.example.com${path}`), {
     method,
-    headers: { host: "reader.example.com" },
+    headers: { host: "reader.example.com", ...headers },
   });
 }
 
@@ -66,7 +73,7 @@ describe("proxy CSP tiering (issue #1359)", () => {
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   });
 
-  it.each(["GET", "POST", "OPTIONS"])(
+  it.each(["GET", "OPTIONS"])(
     "%s /register is never rewritten (DCR lives only at /oauth/register) and gets the relaxed static CSP",
     async (method) => {
       const res = await proxy(makeRequest("/register", method));
@@ -141,4 +148,62 @@ describe("proxy session redirects (issue #1359)", () => {
   // The cookie-present validation paths (valid session → /all or
   // /complete-signup; invalid → fall through) need a real database + Redis, so
   // they're covered by tests/e2e/auth-ssr.spec.ts rather than mocked here.
+});
+
+/** URL paths of every App Router route handler exporting POST, with dynamic segments filled in. */
+function postRouteHandlerPaths(): string[] {
+  const appDir = path.join(__dirname, "../../src/app");
+  return readdirSync(appDir, { recursive: true, encoding: "utf8" })
+    .filter((file) => path.basename(file) === "route.ts")
+    .filter((file) =>
+      /export\s+(async\s+)?(function|const)\s+POST\b|export\s*\{[^}]*\bPOST\b/.test(
+        readFileSync(path.join(appDir, file), "utf8")
+      )
+    )
+    .map(
+      (file) =>
+        "/" +
+        path
+          .dirname(file)
+          .split(path.sep)
+          .filter((segment) => !/^\(.*\)$/.test(segment))
+          .map((segment) => (segment.startsWith("[") ? "x" : segment))
+          .join("/")
+    );
+}
+
+describe("proxy rejects server function calls", () => {
+  it.each([
+    ["a fetch-style call", "/app", { "next-action": "7f00", "content-type": "text/plain" }],
+    [
+      "a header-less multipart form POST",
+      "/all",
+      { "content-type": "multipart/form-data; boundary=x" },
+    ],
+    [
+      "a header-less urlencoded form POST",
+      "/settings",
+      { "content-type": "application/x-www-form-urlencoded" },
+    ],
+    ["a POST to a static page", "/register", {}],
+    ["a POST to the root", "/", { "next-action": "7f00" }],
+  ])("405s %s", async (_label, pathname, headers) => {
+    const res = await proxy(makeRequest(pathname, "POST", headers));
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET, HEAD");
+  });
+
+  it("finds the POST route handlers it checks", () => {
+    expect(postRouteHandlerPaths()).toContain("/api/share");
+  });
+
+  it.each([...postRouteHandlerPaths(), SENTRY_TUNNEL_ROUTE])(
+    "passes POST %s through",
+    async (pathname) => {
+      const res = await proxy(
+        makeRequest(pathname, "POST", { "content-type": "multipart/form-data; boundary=x" })
+      );
+      expect(res.status).not.toBe(405);
+    }
+  );
 });

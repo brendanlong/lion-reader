@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
 import { withSentryConfig } from "@sentry/nextjs/config";
+import { SENTRY_TUNNEL_ROUTE } from "./src/lib/sentry/tunnel-route";
 
 // PWA configuration - wraps the Next.js config to add the service worker.
 //
@@ -288,7 +289,7 @@ const sentryWebpackPluginOptions = {
   widenClientFileUpload: true,
 
   // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers
-  tunnelRoute: "/monitoring",
+  tunnelRoute: SENTRY_TUNNEL_ROUTE,
 
   // Hides source maps from generated client bundles
   hideSourceMaps: true,
