@@ -249,7 +249,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
 **Code:** `src/proxy.ts`
 
 - **We use no React server functions (`"use server"`), and the proxy 405s every
-  POST outside our route-handler prefixes**, so Next's server-function decoder
-  (the CVE-2025-55182 RCE entry point) is unreachable. Adding a server function
-  means removing that check; a POST route handler must live under `/api/` or
-  `/oauth/` (the proxy tests enforce it).
+  POST that Next could treat as a server-function call** (outside our
+  route-handler prefixes, or carrying `Next-Action`), so Next's server-function
+  decoder (the CVE-2025-55182 RCE entry point) stays out of reach even if a
+  dependency ships a server function. Adding one of our own means removing that
+  check; a POST route handler must live under `/api/` or `/oauth/` (the proxy
+  tests enforce it).

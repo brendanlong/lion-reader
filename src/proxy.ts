@@ -68,17 +68,22 @@ function isPublicStaticPath(pathname: string): boolean {
 }
 
 /**
- * We define no server functions, so a POST that Next.js would hand to its
- * server-function decoder (the CVE-2025-55182 RCE entry point) is only ever a
- * probe, and one that reaches the not-found render throws an InvariantError
- * into Sentry. Next treats every POST to a page as a possible call (a
- * header-less form POST reaches `decodeAction` too, not only requests carrying
- * `Next-Action`), so POSTs pass only on the prefixes holding our POST route
- * handlers, which never decode server functions, and the Sentry tunnel.
+ * We define no server functions, so a POST that Next.js would treat as a
+ * server-function call is only ever a probe. Next rejects those itself while
+ * the app has none, but its plain-text reply to an RSC-flavored probe throws an
+ * InvariantError into Sentry, and the decoder behind it was the CVE-2025-55182
+ * RCE entry point should a dependency ever ship a server function. Next
+ * considers every POST to a page a possible call, header or not, so POSTs pass
+ * only on the prefixes holding our POST route handlers (and the Sentry tunnel),
+ * and never with `Next-Action`: those prefixes contain pages and not-found
+ * renders too, and no route handler reads it.
  */
 function isPossibleServerFunctionCall(request: NextRequest): boolean {
   if (request.method !== "POST") {
     return false;
+  }
+  if (request.headers.has("next-action")) {
+    return true;
   }
   const { pathname } = request.nextUrl;
   return !(

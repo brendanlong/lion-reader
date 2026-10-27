@@ -152,9 +152,9 @@ describe("proxy session redirects (issue #1359)", () => {
 
 /** URL paths of every App Router route handler exporting POST, with dynamic segments filled in. */
 function postRouteHandlerPaths(): string[] {
-  const appDir = path.join(__dirname, "../../src/app");
+  const appDir = path.join(import.meta.dirname, "../../src/app");
   return readdirSync(appDir, { recursive: true, encoding: "utf8" })
-    .filter((file) => path.basename(file) === "route.ts")
+    .filter((file) => /^route\.(ts|tsx|js)$/.test(path.basename(file)))
     .filter((file) =>
       /export\s+(async\s+)?(function|const)\s+POST\b|export\s*\{[^}]*\bPOST\b/.test(
         readFileSync(path.join(appDir, file), "utf8")
@@ -181,10 +181,11 @@ describe("proxy rejects server function calls", () => {
       { "content-type": "multipart/form-data; boundary=x" },
     ],
     [
-      "a header-less urlencoded form POST",
-      "/settings",
-      { "content-type": "application/x-www-form-urlencoded" },
+      "a fetch-style call to a page under an exempt prefix",
+      "/oauth/consent",
+      { "next-action": "7f00" },
     ],
+    ["a fetch-style call to an unknown API path", "/api/nonexistent", { "next-action": "7f00" }],
     ["a POST to a static page", "/register", {}],
     ["a POST to the root", "/", { "next-action": "7f00" }],
   ])("405s %s", async (_label, pathname, headers) => {
