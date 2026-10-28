@@ -331,7 +331,9 @@ internal class SyncWriter(private val driver: SqlDriver) {
      * Stores downloaded bodies, and an empty one for each [missing] id (asked for but not returned:
      * no longer visible) so it isn't requested again, each at the [versions] its entry had when the
      * download started ([putBody] says which are kept). Never touches `entry`, which is why it's
-     * safe outside the sync lock.
+     * safe outside the sync lock. A transaction per body, as nothing ties them together: storing
+     * the body of the article the user is waiting on ([SyncEngine.ensureContent]) then waits behind
+     * one body's write at most, not a batch's.
      */
     fun storeBodies(
         fetched: List<FullEntry>,
@@ -340,7 +342,14 @@ internal class SyncWriter(private val driver: SqlDriver) {
         now: Long,
     ) {
         val texts = searchTexts(fetched)
-        db.transaction { storeBodiesInTransaction(fetched, texts, missing, versions, now) }
+        for (entry in fetched) {
+            db.transaction {
+                storeBodiesInTransaction(listOf(entry), texts, emptyList(), versions, now)
+            }
+        }
+        if (missing.isNotEmpty()) {
+            db.transaction { storeBodiesInTransaction(emptyList(), texts, missing, versions, now) }
+        }
     }
 
     /** Each body's [searchText], worked out before the write transaction to keep it short. */
@@ -447,7 +456,7 @@ internal class SyncWriter(private val driver: SqlDriver) {
      * while the ones before it take less than [budget], so the one reaching it stays too; starred,
      * saved and collections' articles' bodies always do. [missingBodies] downloads by the same
      * rule, so what it downloads stays, and an evicted body isn't downloaded again until it would.
-     * Ranked before the write transaction, to keep it short.
+     * Ranked before writing, and a transaction per body (see [storeBodies]).
      */
     fun trimBodies(budget: Long, now: Long) {
         var above = 0L
@@ -455,8 +464,7 @@ internal class SyncWriter(private val driver: SqlDriver) {
             rankedBodies(now - RECENTLY_OPENED_MILLIS).filter { body ->
                 (above >= budget && !body.rank.kept).also { above += body.size }
             }
-        if (evicted.isEmpty()) return
-        db.transaction { evicted.forEach { db.bodyQueries.deleteForEntry(it.rank.entryId) } }
+        evicted.forEach { db.transaction { db.bodyQueries.deleteForEntry(it.rank.entryId) } }
     }
 
     private fun rankedBodies(openedSince: Long): List<RankedBody> =
