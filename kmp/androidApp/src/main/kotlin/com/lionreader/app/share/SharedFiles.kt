@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.lionreader.shared.api.ServerLimits
+import com.lionreader.shared.links.isEbookFilename
 import com.lionreader.shared.links.uploadFilename
 import java.io.File
 import java.io.IOException
@@ -81,6 +82,9 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
                 "Lion Reader can save PDFs, Word documents, and HTML, Markdown, and text files."
             )
 
+    val maxBytes =
+        if (isEbookFilename(filename)) ServerLimits.EBOOK_UPLOAD_BYTES
+        else ServerLimits.UPLOAD_BYTES
     val copy = sharedFileCopy(context, uri)
     deleteAbandoned(context)
     // Written beside the copy and renamed over it, so an upload reading an earlier copy of the
@@ -97,7 +101,7 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
                     val read = source.read(buffer)
                     if (read < 0) break
                     total += read
-                    if (total > ServerLimits.UPLOAD_BYTES) {
+                    if (total > maxBytes) {
                         tooLarge = true
                         break
                     }

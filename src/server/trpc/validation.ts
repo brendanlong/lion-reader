@@ -26,7 +26,6 @@ import { MAX_ENTRIES_PAGE_SIZE } from "@/server/services/entries";
 import { MAX_ENTRY_SCORE_BATCH } from "@/server/services/entry-scores";
 import { MAX_SUBSCRIPTIONS_PAGE_SIZE } from "@/server/services/subscriptions";
 import { TAG_NAME_MAX_LENGTH } from "@/server/services/tags";
-import { usageLimitsConfig } from "@/server/config/env";
 
 // ============================================================================
 // ID Schemas
@@ -185,18 +184,11 @@ export const savedArticleUrlSchema = z.url("Invalid URL");
 export const saveCollectionIdsSchema = z.array(uuidSchema).max(MAX_SAVE_COLLECTIONS).optional();
 
 /**
- * An uploaded file's bytes, base64-encoded. Base64 inflates by ~4/3; capping
- * the encoded string rejects an oversized upload before we spend memory/CPU
- * decoding it. The service enforces the decoded byte length exactly (base64
- * length is only an upper bound on decoded size). Slack covers padding/newlines.
+ * An uploaded file's bytes, base64-encoded. The request-body limit
+ * (`serveTrpcHttp`) bounds it before it's parsed, and the service enforces each
+ * kind of upload's own limit on the decoded bytes.
  */
-export const uploadContentSchema = z
-  .string()
-  .min(1, "File content is required")
-  .max(
-    Math.ceil((usageLimitsConfig.maxSavedArticleSizeBytes * 4) / 3) + 1024,
-    "File content exceeds the maximum saved article size"
-  );
+export const uploadContentSchema = z.string().min(1, "File content is required");
 
 /**
  * Makes an upload idempotent: retrying with the same key returns the article

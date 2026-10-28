@@ -8,7 +8,7 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "@/server/trpc/root";
 import { createContext } from "@/server/trpc/context";
-import { serveTrpcHttp } from "@/server/trpc/http";
+import { serveTrpcHttp, withFailingBody } from "@/server/trpc/http";
 
 /**
  * Normalizes the tRPC path for metrics.
@@ -28,12 +28,18 @@ function normalizeTrpcPath(url: URL): string {
   return `/api/trpc/${firstProcedure}`;
 }
 
+const serve = (req: Request, onError?: Parameters<typeof fetchRequestHandler>[0]["onError"]) =>
+  fetchRequestHandler({ endpoint: "/api/trpc", req, router: appRouter, createContext, onError });
+
 const handler = (req: Request): Promise<Response> =>
   serveTrpcHttp(
     req,
-    { label: "tRPC", metricsPath: normalizeTrpcPath(new URL(req.url)) },
-    (onError) =>
-      fetchRequestHandler({ endpoint: "/api/trpc", req, router: appRouter, createContext, onError })
+    {
+      label: "tRPC",
+      metricsPath: normalizeTrpcPath(new URL(req.url)),
+      rejectOversized: (error) => serve(withFailingBody(req, error)),
+    },
+    (onError) => serve(req, onError)
   );
 
 export { handler as GET, handler as POST };

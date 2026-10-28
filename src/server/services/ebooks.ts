@@ -8,6 +8,8 @@ import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { COLLECTION_NAME_MAX_LENGTH } from "@/lib/collections";
 import { logger } from "@/lib/logger";
+import { maxEbookUploadBytes } from "@/lib/upload-limits";
+import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
 import { openEpub, type Epub, type EpubChapter, type ImageStore } from "@/server/file/epub";
 import { titleFromFilename } from "@/server/file/process-upload";
@@ -113,7 +115,11 @@ export async function importEbook(
 ): Promise<ImportEbookResult> {
   if (!isStorageAvailable()) throw errors.ebooksNotConfigured();
   const file = Buffer.from(params.content, "base64");
-  assertUploadSize("Uploaded ebook", file.length);
+  assertUploadSize(
+    "Uploaded ebook",
+    file.length,
+    maxEbookUploadBytes(usageLimitsConfig.maxSavedArticleSizeBytes)
+  );
   const book = await openEbook(file);
   const name = (book.title || titleFromFilename(params.filename) || "Untitled Ebook").slice(
     0,

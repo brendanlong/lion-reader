@@ -3,6 +3,7 @@
  * chapter, read in the book's order.
  */
 
+import { randomBytes } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -11,6 +12,7 @@ import { importEbook } from "../../src/server/services/ebooks";
 import { createCollection } from "../../src/server/services/collections";
 import { listEntries } from "../../src/server/services/entries";
 import { usageLimitsConfig } from "../../src/server/config/env";
+import { maxEbookUploadBytes } from "../../src/lib/upload-limits";
 import { getAppErrorCode } from "../../src/server/errors";
 import { buildEpub, chapterXhtml } from "../utils/epub";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
@@ -36,7 +38,7 @@ afterAll(async () => {
   }
 });
 
-const BOOK = buildEpub({
+const BOOK_SPEC = {
   title: "A Tale",
   creators: ["Ann Author"],
   spine: [
@@ -49,7 +51,8 @@ const BOOK = buildEpub({
     { href: "two.xhtml", label: "The Worst" },
     { href: "three.xhtml", label: "Before Us" },
   ],
-});
+};
+const BOOK = buildEpub(BOOK_SPEC);
 
 function upload(userId: string, file: Buffer = BOOK) {
   return importEbook(db, userId, { content: file.toString("base64"), filename: "tale.epub" });
@@ -93,6 +96,20 @@ describe("importEbook", () => {
     expect(items.every((item) => item.siteName === "A Tale")).toBe(true);
     expect(result.counts.subscriptions.find((s) => s.id === result.subscription.id)?.unread).toBe(
       3
+    );
+  });
+
+  it("accepts an ebook larger than an article, up to the ebook limit", async () => {
+    const userId = await createUser();
+    const maxBytes = maxEbookUploadBytes(usageLimitsConfig.maxSavedArticleSizeBytes);
+    // An unused file the archive stores without compressing it much.
+    const padding = randomBytes(usageLimitsConfig.maxSavedArticleSizeBytes + 1);
+    const book = buildEpub({ ...BOOK_SPEC, files: { "OEBPS/padding.bin": padding } });
+    expect(book.length).toBeLessThan(maxBytes);
+
+    expect((await upload(userId, book)).entryIds).toHaveLength(3);
+    await expect(upload(userId, Buffer.alloc(maxBytes + 1))).rejects.toSatisfy(
+      (error) => getAppErrorCode(error) === "CONTENT_TOO_LARGE"
     );
   });
 

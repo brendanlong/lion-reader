@@ -14,7 +14,10 @@ import {
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
 } from "../src/lib/narration/constants";
 import { EBOOK_UPLOAD_EXTENSIONS, SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
-import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES } from "../src/server/config/env";
+import {
+  DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES,
+  maxEbookUploadBytes,
+} from "../src/lib/upload-limits";
 import { MAX_ENTRIES_PAGE_SIZE } from "../src/server/services/entries";
 import { MAX_ENTRY_STATE_BATCH } from "../src/server/services/entry-state";
 import { MAX_SYNC_PAGE_ENTRIES } from "../src/server/services/sync";
@@ -56,6 +59,9 @@ object ServerLimits {
      * so when a file is over it.
      */
     const val UPLOAD_BYTES = ${int(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES)}
+
+    /** Bytes of an ebook \`/collections/import-ebook\` accepts, by default, as for [UPLOAD_BYTES]. */
+    const val EBOOK_UPLOAD_BYTES = ${int(maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES))}
 }
 
 /** File extensions \`/saved/upload\` converts; it picks the converter by the filename's. */
