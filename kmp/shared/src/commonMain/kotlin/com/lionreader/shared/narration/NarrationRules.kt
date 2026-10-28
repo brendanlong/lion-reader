@@ -12,8 +12,8 @@ enum class PlaybackState {
     ENDED,
 }
 
-/** What the narrator goes by of the player: its state, how many chunks it has, and which plays. */
-data class PlayerSnapshot(val playbackState: PlaybackState, val itemCount: Int, val chunk: Int?)
+/** What the narrator goes by of the player: its state and how many chunks it has. */
+data class PlayerSnapshot(val playbackState: PlaybackState, val itemCount: Int)
 
 /**
  * The paragraphs with something to say: the [chunks]', or before the audio is prepared, the
@@ -35,23 +35,17 @@ fun paragraphAfter(spoken: List<Int>, from: Int?, delta: Int): Int? {
 
 /**
  * Whether narration has no audio to play yet. Before its audio is prepared ([player] null): while
- * it's to play, unless the article has nothing to say ([silent]). After: nothing queued, still
- * buffering, idle after an error until the feed brings the next chunk, or caught up with the
- * synthesis before the feed has added all it will ([fed]).
+ * it's to play, unless the article has nothing to say ([silent]). After: nothing queued, buffering
+ * (a chunk still being synthesized is queued, and the player buffers on it), or idle after an error
+ * until the feed brings the next chunk.
  */
-fun isWaiting(
-    playing: Boolean,
-    silent: Boolean,
-    player: PlayerSnapshot?,
-    fed: Boolean,
-): Boolean =
+fun isWaiting(playing: Boolean, silent: Boolean, player: PlayerSnapshot?): Boolean =
     if (player == null) {
         playing && !silent
     } else {
         player.itemCount == 0 ||
             player.playbackState == PlaybackState.BUFFERING ||
-            player.playbackState == PlaybackState.IDLE ||
-            (player.playbackState == PlaybackState.ENDED && !fed)
+            player.playbackState == PlaybackState.IDLE
     }
 
 /**
@@ -63,10 +57,9 @@ fun derive(
     spoken: List<Int>?,
     silent: Boolean,
     player: PlayerSnapshot?,
-    fed: Boolean,
 ): NarrationState =
     state.copy(
-        waiting = isWaiting(state.playing, silent, player, fed),
+        waiting = isWaiting(state.playing, silent, player),
         canSkipBack = spoken != null && paragraphAfter(spoken, state.paragraph, -1) != null,
         canSkipForward = spoken != null && paragraphAfter(spoken, state.paragraph, 1) != null,
     )
@@ -75,23 +68,26 @@ fun derive(
  * Whether [chunk] is close enough to the [playing] one to synthesize now: up to the next one, and
  * on within [lookaheadChars] of it at 1x, more at a faster [speed] so the lookahead stays as long
  * in listening time ([offsets]: the characters before each chunk). Always, when nothing is queued
- * past what's playing ([lastAdded]: the last chunk queued): skipped chunks can leave a gap wider
- * than the lookahead, and the player would sit at the end of the queue waiting.
+ * past what's playing ([lastQueued]: the last chunk queued): skipped chunks can leave a gap wider
+ * than the lookahead, and the player would run out.
  */
 fun shouldSynthesize(
     chunk: Int,
     playing: Int,
-    lastAdded: Int?,
+    lastQueued: Int?,
     offsets: IntArray,
     lookaheadChars: Int,
     speed: Float,
 ): Boolean {
     val next = playing + 1
     return chunk <= next ||
-        (lastAdded ?: -1) <= playing ||
+        (lastQueued ?: -1) <= playing ||
         offsets[chunk] - offsets[next] <= lookaheadChars * speed
 }
 
-/** Whether the last chunk there'll ever be ([lastAdded], once [fed]) has played. */
-fun finished(player: PlayerSnapshot, fed: Boolean, lastAdded: Int?): Boolean =
-    fed && player.playbackState == PlaybackState.ENDED && player.chunk == lastAdded
+/**
+ * Whether the last chunk there'll ever be has played: the player ended once the feed has queued all
+ * it will ([fed]). Chunks are queued before they're synthesized, so the player can't end earlier.
+ */
+fun finished(player: PlayerSnapshot, fed: Boolean): Boolean =
+    fed && player.playbackState == PlaybackState.ENDED

@@ -61,13 +61,10 @@ class NarrationService : MediaSessionService() {
 }
 
 /**
- * What the media controls drive: the narrator's player, except that
- * - next and previous (notification, lock screen, headset) move by paragraph, as in the app, not by
- *   the player's items, which are chunks; and they're offered only where there's a paragraph to go
- *   to, so they grey out on the first and last;
- * - "play" on a player that ended (it seeks to the start first: Util.handlePlayButtonAction)
- *   doesn't start the last chunk over when narration is only waiting for the next to be
- *   synthesized.
+ * What the media controls drive: the narrator's player, except that next and previous
+ * (notification, lock screen, headset) move by paragraph, as in the app, not by the player's items,
+ * which are chunks; and they're offered only where there's a paragraph to go to, so they grey out
+ * on the first and last.
  *
  * Main thread only, like the player.
  */
@@ -77,11 +74,6 @@ internal class SessionPlayer(private val narrator: Narrator) : ForwardingPlayer(
     private val listeners = mutableListOf<Player.Listener>()
     private var announced: Player.Commands? = null
     private val main = Handler(Looper.getMainLooper())
-
-    override fun seekToDefaultPosition() {
-        if (playbackState == Player.STATE_ENDED && narrator.awaitingSynthesis()) return
-        super.seekToDefaultPosition()
-    }
 
     override fun seekToNext() = narrator.skipParagraphs(1)
 
