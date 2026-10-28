@@ -13,5 +13,6 @@ publish = false
 # doesn't need. legacy-crypto (RC4) stays: plenty of PDFs are "encrypted" with
 # an empty user password just to set permissions, and many of those use RC4.
 pdf_oxide = { version = "0.3.78", default-features = false, features = ["legacy-crypto"] }
+base64 = "0.23"
 libc = "0.2"
 serde_json = "1"

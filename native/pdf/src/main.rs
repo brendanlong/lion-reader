@@ -8,15 +8,19 @@
 //! caps its own heap and CPU time before reading any input, and the parent
 //! kills it at a wall-clock deadline. Hitting a cap kills only this process.
 //!
-//! Usage: lion-reader-pdf <max-memory-bytes> <max-cpu-seconds> <max-pages> <max-output-bytes>
+//! Usage: lion-reader-pdf <max-memory-bytes> <max-cpu-seconds> <max-pages> <max-output-bytes> <max-image-bytes>
 //!
-//! Output is `{"markdown", "title", "author", "summary"}` on success or
-//! `{"error": <code>}` for a document we can't convert; any other exit means
-//! the process died (a resource cap, or a pdf_oxide panic).
+//! Output is `{"markdown", "images", "title", "author", "summary"}` on success
+//! or `{"error": <code>}` for a document we can't convert; any other exit means
+//! the process died (a resource cap, or a pdf_oxide panic). `images` is a list
+//! of `{"contentType", "data"}` with the data in base64, and the Markdown shows
+//! image `i` as `![](pdf-image:i)`.
 
 use std::io::{Read, Write};
 use std::process::ExitCode;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use lion_reader_pdf::{convert, Limits};
 use serde_json::json;
 
@@ -26,8 +30,10 @@ fn main() -> ExitCode {
         .map(|arg| arg.parse::<u64>())
         .collect::<Result<_, _>>()
         .unwrap_or_default();
-    let [max_memory_bytes, max_cpu_seconds, max_pages, max_output_bytes] = args[..] else {
-        eprintln!("usage: lion-reader-pdf <max-memory-bytes> <max-cpu-seconds> <max-pages> <max-output-bytes>");
+    let [max_memory_bytes, max_cpu_seconds, max_pages, max_output_bytes, max_image_bytes] =
+        args[..]
+    else {
+        eprintln!("usage: lion-reader-pdf <max-memory-bytes> <max-cpu-seconds> <max-pages> <max-output-bytes> <max-image-bytes>");
         return ExitCode::from(64);
     };
 
@@ -43,6 +49,11 @@ fn main() -> ExitCode {
         return ExitCode::from(71);
     }
 
+    // jpeg-decoder decodes on rayon's global pool, which otherwise starts a
+    // thread per CPU: their stacks count against the heap cap (failing to start
+    // panics), and the conversion slot budgets one core per conversion.
+    std::env::set_var("RAYON_NUM_THREADS", "1");
+
     let mut bytes = Vec::new();
     if let Err(error) = std::io::stdin().read_to_end(&mut bytes) {
         eprintln!("reading stdin failed: {error}");
@@ -52,10 +63,17 @@ fn main() -> ExitCode {
     let limits = Limits {
         max_pages: max_pages as usize,
         max_output_bytes: max_output_bytes as usize,
+        max_image_bytes: max_image_bytes as usize,
+        max_memory_bytes,
     };
     let output = match convert(bytes, &limits) {
         Ok(converted) => json!({
             "markdown": converted.markdown,
+            // Each image's bytes are freed once encoded.
+            "images": converted.images.into_iter().map(|image| json!({
+                "contentType": image.content_type,
+                "data": BASE64.encode(&image.data),
+            })).collect::<Vec<_>>(),
             "title": converted.title,
             "author": converted.author,
             "summary": converted.summary,

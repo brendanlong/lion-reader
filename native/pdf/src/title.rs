@@ -32,6 +32,19 @@ pub struct SpanBox {
     pub height: f32,
 }
 
+impl From<pdf_oxide::layout::TextSpan> for SpanBox {
+    fn from(span: pdf_oxide::layout::TextSpan) -> Self {
+        SpanBox {
+            text: span.text,
+            size: span.font_size,
+            x: span.bbox.x,
+            width: span.bbox.width,
+            y: span.bbox.y,
+            height: span.bbox.height,
+        }
+    }
+}
+
 /// Document-info titles that name a file rather than the document.
 pub fn is_junk_info_title(title: &str) -> bool {
     let lower = title.to_lowercase();

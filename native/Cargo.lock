@@ -1241,6 +1241,7 @@ dependencies = [
 name = "lion-reader-pdf"
 version = "1.0.0"
 dependencies = [
+ "base64",
  "libc",
  "pdf_oxide",
  "serde_json",
