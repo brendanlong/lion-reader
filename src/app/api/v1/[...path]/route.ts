@@ -79,7 +79,7 @@ const handler = (req: Request): Promise<Response> => {
           { status: getHTTPStatusCodeFromError(error) }
         ),
     },
-    (onError) =>
+    (req, onError) =>
       createOpenApiFetchHandler({
         endpoint: "/api/v1",
         req,

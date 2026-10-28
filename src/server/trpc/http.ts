@@ -4,7 +4,7 @@
  */
 
 import type { TRPCError } from "@trpc/server";
-import { MAX_REQUEST_BODY_BYTES, MAX_UPLOAD_FILE_BYTES } from "@/lib/upload-limits";
+import { isUploadPath, MAX_UPLOAD_BODY_BYTES, MAX_UPLOAD_FILE_BYTES } from "@/lib/upload-limits";
 import { errors } from "@/server/errors";
 import { startHttpTimer } from "@/server/metrics/metrics";
 
@@ -19,16 +19,42 @@ function rateLimitHeaders(error: TRPCError): Record<string, string> {
 }
 
 /**
- * The error for a request declaring a body larger than the app server reads.
- * Its adapter mustn't see it: Next's proxy has passed on only the first part
- * of the body, which would fail to parse as something else.
+ * `req` with `body` in place of its own. Built from its parts: Next's
+ * `NextRequest` isn't a `Request` undici can copy.
  */
-function oversizedBodyError(req: Request): TRPCError | null {
-  if (req.method === "GET" || req.method === "HEAD") return null;
-  const declared = Number(req.headers.get("content-length"));
-  return declared > MAX_REQUEST_BODY_BYTES
-    ? errors.contentTooLarge("The upload", MAX_UPLOAD_FILE_BYTES)
-    : null;
+function withBody(req: Request, body: ReadableStream<Uint8Array>): Request {
+  return new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    signal: req.signal,
+    body,
+    duplex: "half",
+  } as RequestInit);
+}
+
+function uploadTooLarge(): TRPCError {
+  return errors.contentTooLarge("The upload", MAX_UPLOAD_FILE_BYTES);
+}
+
+/**
+ * `req` with a body that fails past {@link MAX_UPLOAD_BODY_BYTES}, for an
+ * upload sent without a length. Uploads bypass the proxy (`isUploadPath`), so
+ * nothing else bounds what they send; every other request's body is bounded
+ * there.
+ */
+function withUploadLimit(req: Request): Request {
+  if (req.body === null) return req;
+  let bytes = 0;
+  const body = req.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        bytes += chunk.byteLength;
+        if (bytes > MAX_UPLOAD_BODY_BYTES) controller.error(uploadTooLarge());
+        else controller.enqueue(chunk);
+      },
+    })
+  );
+  return withBody(req, body);
 }
 
 /**
@@ -37,13 +63,14 @@ function oversizedBodyError(req: Request): TRPCError | null {
  */
 export function withFailingBody(req: Request, error: TRPCError): Request {
   const body = new ReadableStream({ start: (controller) => controller.error(error) });
-  return new Request(req, { body, duplex: "half" } as RequestInit);
+  return withBody(req, body);
 }
 
 /**
- * Runs `handle` (the adapter call, given the `onError` to pass it), or for a
- * request too large to read `rejectOversized`, which answers with the error in
- * the adapter's format. Records
+ * Runs `handle` (the adapter call, given the request, an upload's with its
+ * body limited, and the `onError` to pass it), or for an upload declaring a
+ * body past its limit `rejectOversized`, which answers with the error in the
+ * adapter's format without reading the body. Records
  * its HTTP metrics under `metricsPath`, and returns its response with a
  * rejected request's rate-limit headers and `extraHeaders` added.
  *
@@ -60,7 +87,7 @@ export async function serveTrpcHttp(
     extraHeaders?: Record<string, string>;
     rejectOversized: (error: TRPCError, onError: TrpcErrorHandler) => Response | Promise<Response>;
   },
-  handle: (onError: TrpcErrorHandler) => Promise<Response>
+  handle: (req: Request, onError: TrpcErrorHandler) => Promise<Response>
 ): Promise<Response> {
   const endTimer = startHttpTimer(req.method, options.metricsPath);
   let errorHeaders: Record<string, string> = {};
@@ -71,10 +98,12 @@ export async function serveTrpcHttp(
     }
     if (error.code === "TOO_MANY_REQUESTS") errorHeaders = rateLimitHeaders(error);
   };
-  const oversized = oversizedBodyError(req);
-  const response = oversized
-    ? await options.rejectOversized(oversized, onError)
-    : await handle(onError);
+  const isUpload = req.body !== null && isUploadPath(new URL(req.url).pathname);
+  const response = !isUpload
+    ? await handle(req, onError)
+    : Number(req.headers.get("content-length")) > MAX_UPLOAD_BODY_BYTES
+      ? await options.rejectOversized(uploadTooLarge(), onError)
+      : await handle(withUploadLimit(req), onError);
 
   endTimer(response.status);
 

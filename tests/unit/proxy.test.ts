@@ -11,7 +11,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
-import { proxy } from "../../src/proxy";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { config, proxy } from "../../src/proxy";
+import { isUploadPath, PROXY_BODY_LIMIT_BYTES } from "../../src/lib/upload-limits";
 import { SENTRY_TUNNEL_ROUTE } from "../../src/lib/sentry/tunnel-route";
 
 function makeRequest(
@@ -207,4 +209,44 @@ describe("proxy rejects server function calls", () => {
       expect(res.status).not.toBe(405);
     }
   );
+});
+
+describe("proxy body limit", () => {
+  it.each([
+    { declared: PROXY_BODY_LIMIT_BYTES, status: 200 },
+    { declared: PROXY_BODY_LIMIT_BYTES + 1, status: 413 },
+  ])("answers a request declaring $declared bytes with $status", async ({ declared, status }) => {
+    const response = await proxy(
+      makeRequest("/api/trpc/entries.markRead", "POST", { "content-length": String(declared) })
+    );
+    expect(response.status).toBe(status);
+  });
+});
+
+describe("proxy matcher", () => {
+  const matches = (pathname: string) =>
+    unstable_doesMiddlewareMatch({ config, url: `https://reader.example.com${pathname}` });
+
+  it("skips exactly the upload endpoints, so Next doesn't buffer their bodies", () => {
+    const uploads = [
+      "/api/trpc/collections.importEbook",
+      "/api/trpc/saved.uploadFile",
+      "/api/v1/collections/import-ebook",
+      "/api/v1/saved/upload",
+    ];
+    for (const pathname of uploads) {
+      expect(isUploadPath(pathname)).toBe(true);
+      expect(matches(pathname)).toBe(false);
+    }
+    for (const pathname of [
+      "/api/trpc/collections.importEbook,entries.list",
+      "/api/trpc/saved.uploadFileX",
+      "/api/v1/saved/upload/x",
+      "/api/v1/narration/speech",
+      "/all",
+    ]) {
+      expect(isUploadPath(pathname)).toBe(false);
+      expect(matches(pathname)).toBe(true);
+    }
+  });
 });

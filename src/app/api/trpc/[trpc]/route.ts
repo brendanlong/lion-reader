@@ -39,7 +39,7 @@ const handler = (req: Request): Promise<Response> =>
       metricsPath: normalizeTrpcPath(new URL(req.url)),
       rejectOversized: (error, onError) => serve(withFailingBody(req, error), onError),
     },
-    (onError) => serve(req, onError)
+    serve
   );
 
 export { handler as GET, handler as POST };

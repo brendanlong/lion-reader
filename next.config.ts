@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
 import { withSentryConfig } from "@sentry/nextjs/config";
 import { SENTRY_TUNNEL_ROUTE } from "./src/lib/sentry/tunnel-route";
-import { MAX_REQUEST_BODY_BYTES } from "./src/lib/upload-limits";
+import { PROXY_BODY_LIMIT_BYTES } from "./src/lib/upload-limits";
 
 // PWA configuration - wraps the Next.js config to add the service worker.
 //
@@ -104,8 +104,7 @@ const nextConfig: NextConfig = {
   // that file convention.
   experimental: {
     globalNotFound: true,
-    // Past this, the proxy passes on a truncated body (see MAX_REQUEST_BODY_BYTES).
-    proxyClientMaxBodySize: MAX_REQUEST_BODY_BYTES,
+    proxyClientMaxBodySize: PROXY_BODY_LIMIT_BYTES,
   },
   // Serve the hashed /_next/static assets from a CDN. Set via ASSET_PREFIX
   // (configured in fly.toml; unset elsewhere, so dev/CI stay origin-served). The
