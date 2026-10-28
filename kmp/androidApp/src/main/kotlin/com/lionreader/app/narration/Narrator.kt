@@ -143,6 +143,9 @@ class Narrator(
                 /* handleAudioFocus= */ true,
             )
             .setHandleAudioBecomingNoisy(true)
+            // It buffers on a chunk until it's synthesized, for as long as that takes: the
+            // narrator gives up on an engine itself (see [interrupted]).
+            .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
             .build()
             .also { it.addListener(listener) }
 
@@ -255,6 +258,8 @@ class Narrator(
         player.replaceMediaItem(0, item(article.title, article.source, chunk = null))
         if (article.paragraphs.none(::isSpeakable)) {
             current = Current.Silent
+            // Nothing to wait for (or hold audio focus over) until narration follows on.
+            player.stop()
             publish(state.copy(title = article.title))
             return
         }
@@ -417,12 +422,15 @@ class Narrator(
         val inFlight = ArrayDeque<Pair<Int, Deferred<Uri?>>>()
         var next = from
         var said = false
-        /** Starts synthesizing what's wanted, each queued (pending) as it starts. */
-        fun queue() {
+        /**
+         * Starts synthesizing what's wanted, each queued (pending) as it starts; with [skipping],
+         * at least the next chunk, to take the place of the last queued.
+         */
+        fun queue(skipping: Boolean = false) {
             while (
                 next < chunks.size &&
                     inFlight.size < engine.parallelism &&
-                    wanted(next, prepared, feed)
+                    (wanted(next, prepared, feed) || (skipping && inFlight.isEmpty()))
             ) {
                 val index = next++
                 // Already there if the playlist was started with it.
@@ -441,8 +449,9 @@ class Narrator(
             }
             val (index, result) = inFlight.removeFirst()
             val audio = result.await()
-            // Before a skipped chunk goes, so a player on it moves on to the next, not the end.
-            queue()
+            // Before a skipped chunk goes, so a player on it moves on to the next, not the end
+            // (even if it reached it before [playingChunk] says so).
+            queue(skipping = audio == null)
             val at = itemOf(index) ?: continue
             if (audio == null) {
                 player.removeMediaItem(at)

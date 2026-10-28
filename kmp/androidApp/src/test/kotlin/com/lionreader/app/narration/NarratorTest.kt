@@ -39,6 +39,8 @@ class NarratorTest {
     private val streamed = mutableListOf<Pair<StreamedAudio, File>>()
     /** Texts whose synthesis fails, so the chunk is skipped. */
     private val unsayable = mutableSetOf<String>()
+    /** Synthesizes a moment of audio rather than half a minute, so narration can play through. */
+    private var brief = false
     /** Getting the engine, and synthesis, wait on these while they're set. */
     private var engineReady: CompletableDeferred<Unit>? = null
     private var synthesisDone: CompletableDeferred<Unit>? = null
@@ -51,12 +53,12 @@ class NarratorTest {
 
             override suspend fun synthesize(text: String, dir: File, name: String): Uri {
                 synthesisDone?.await()
-                if (text in unsayable) throw IOException("Can't say that")
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
+                if (text in unsayable) throw IOException("Can't say that")
                 if (streamHalf.remove(text) || text in alwaysBreaks) {
                     val file = File(dir, "$name.part").apply { writeBytes(SILENCE.copyOf(HALF)) }
                     val audio = StreamedAudio(file).also { it.appended(HALF) }
@@ -64,7 +66,8 @@ class NarratorTest {
                     if (text in alwaysBreaks) breakOff(audio to file)
                     return audio.uri
                 }
-                return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(SILENCE) })
+                val audio = if (brief) silence(seconds = 0.2) else SILENCE
+                return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(audio) })
             }
         }
 
@@ -168,6 +171,18 @@ class NarratorTest {
         assertEquals(Player.STATE_READY, narrator.player.playbackState)
         assertEquals(1, state?.paragraph)
         assertTrue(state!!.playing)
+    }
+
+    @Test
+    fun narrationStopsOnceItHasPlayedTheLastChunk() {
+        brief = true
+        unsayable += "Three."
+        narrator.narrate(article("a", "One.", "Two.", "Three."))
+        idleUntil { state == null }
+
+        assertNull(state)
+        assertEquals(listOf("One.", "Two.", "Three."), synthesized)
+        assertEquals(0, narrator.player.mediaItemCount)
     }
 
     @Test
@@ -504,10 +519,12 @@ class NarratorTest {
  * Half a minute of silence, as a real WAV: an empty file makes the player report an error (on its
  * own thread, so at any point in a test), which ends the narration.
  */
-private val SILENCE: ByteArray by lazy {
+private val SILENCE: ByteArray by lazy { silence(seconds = 30.0) }
+
+private fun silence(seconds: Double): ByteArray {
     val rate = 8_000
-    val samples = rate * 30
-    java.nio.ByteBuffer.allocate(44 + samples)
+    val samples = (rate * seconds).toInt()
+    return java.nio.ByteBuffer.allocate(44 + samples)
         .order(java.nio.ByteOrder.LITTLE_ENDIAN)
         .apply {
             put("RIFF".toByteArray()).putInt(36 + samples).put("WAVE".toByteArray())
