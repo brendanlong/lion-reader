@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Lion Reader is free and open source. Read the code, run your own copy, or help build it on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
+  score: 190,
   starred: false,
   summaryHtml: `<p>Lion Reader is open source under the MIT license, so you can use the free hosted version or run your own copy on hardware you control, without depending on one company to keep it running. Your subscriptions and your saved library both export to standard files other apps can import, and self-hosting is inexpensive.</p>`,
   summaryModelId: "claude-sonnet-5",

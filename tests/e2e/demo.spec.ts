@@ -25,7 +25,7 @@ import { DEMO_ENTRIES, getDemoEntry, getDemoSubscription } from "../../src/lib/d
 const TOTAL_ENTRIES = DEMO_ENTRIES.length;
 const welcome = getDemoEntry("welcome")!;
 const welcomeTitle = welcome.title!;
-const performanceTitle = getDemoEntry("performance")!.title!;
+const feedsTitle = getDemoEntry("rss-atom")!.title!;
 
 /**
  * Collects every console error and page error (hydration mismatches, React
@@ -64,14 +64,14 @@ test("the prerendered article page carries the article and the list", async ({ r
   // The (hidden) list under the article is prerendered too, with crawlable
   // links — including the open (now read) entry itself, like the app's list.
   expect(html).toContain('href="/demo/all?entry=welcome"');
-  expect(html).toContain('href="/demo/all?entry=performance"');
+  expect(html).toContain('href="/demo/all?entry=rss-atom"');
   // The open article was seeded read: no post-hydration flip of the toggle.
   expect(html).toContain("Mark as unread");
 });
 
 test("the prerendered list page carries the entries", async ({ request }) => {
   const html = await (await request.get("/demo/tag/features")).text();
-  expect(html).toContain('href="/demo/tag/features?entry=performance"');
+  expect(html).toContain('href="/demo/tag/features?entry=rss-atom"');
   expect(html).toContain("Features");
   // A list page prerenders the list, not a reader.
   expect(html).not.toContain("Back to list");
@@ -79,7 +79,7 @@ test("the prerendered list page carries the entries", async ({ request }) => {
 
 for (const url of [
   "/demo/all?entry=welcome",
-  "/demo/tag/features?entry=performance",
+  "/demo/tag/features?entry=rss-atom",
   "/demo/starred",
 ]) {
   test(`${url} hydrates cleanly and runs entirely in-process`, async ({ page }) => {
@@ -104,9 +104,9 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await expect(allItems).toContainText(`(${TOTAL_ENTRIES})`);
 
   // Open an article from the list; it auto-marks read and the count drops.
-  await page.getByRole("button", { name: `article: ${performanceTitle}` }).click();
-  await expect(page).toHaveURL(/\/demo\/all\?entry=performance$/);
-  await expect(page.getByRole("heading", { name: performanceTitle, level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: `article: ${feedsTitle}` }).click();
+  await expect(page).toHaveURL(/\/demo\/all\?entry=rss-atom$/);
+  await expect(page.getByRole("heading", { name: feedsTitle, level: 1 })).toBeVisible();
   await expect(allItems).toContainText(`(${TOTAL_ENTRIES - 1})`);
 
   // Star it from the reader; the sidebar Starred count follows.
@@ -123,7 +123,7 @@ test("reading, starring and navigating work through the real reader", async ({ p
   // navigation).
   await page.getByRole("button", { name: "Back to list" }).click();
   await expect(page).toHaveURL(/\/demo\/all$/);
-  await expect(page.getByRole("button", { name: `article: ${performanceTitle}` })).toBeVisible();
+  await expect(page.getByRole("button", { name: `article: ${feedsTitle}` })).toBeVisible();
 
   // Sidebar navigation keeps the /demo prefix and swaps the list.
   await page.getByRole("link", { name: /^Starred/ }).click();
@@ -131,13 +131,13 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await expect(page.getByRole("heading", { name: "Starred" })).toBeVisible();
   await expect(page.getByRole("button", { name: `article: ${welcomeTitle}` })).toBeVisible();
 
-  // Search runs against the store, over body text: a term only the performance
+  // Search runs against the store, over body text: a term only the feeds
   // article contains.
   await page.getByRole("button", { name: "Search entries" }).click();
-  await page.getByRole("searchbox").fill("100ms");
+  await page.getByRole("searchbox").fill("notifications");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/q=100ms/);
-  await expect(page.getByRole("button", { name: `article: ${performanceTitle}` })).toBeVisible();
+  await expect(page).toHaveURL(/q=notifications/);
+  await expect(page.getByRole("button", { name: `article: ${feedsTitle}` })).toBeVisible();
   await expect(page.getByRole("button", { name: `article: ${welcomeTitle}` })).toHaveCount(0);
 
   expect(apiRequests).toEqual([]);

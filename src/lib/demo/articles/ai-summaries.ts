@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Get a short summary of any article in a few seconds, so you can decide what's worth reading in full.",
   publishedAt: new Date("2026-01-16T12:00:00Z"),
+  score: 210,
   starred: true,
   summaryHtml: `<p>Pressing <strong>Summarize</strong> on any article shows a short overview of its main points above it within seconds, so you can decide whether to read on. Settings lets you adjust length, style, and AI model; summaries run only when requested, sending just that article to the provider.</p>`,
   summaryModelId: "claude-sonnet-5",

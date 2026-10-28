@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Links from YouTube, arXiv, GitHub, Google Docs, and other sites come through complete and readable, whether you subscribe or save them.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
+  score: 110,
   starred: true,
   summaryHtml: `<p>Lion Reader recognizes many popular sites and pulls in their content complete and readable instead of a sign-in page, a blank page, or a stripped-down feed &mdash; a playable YouTube video, a formatted Google Doc, a full Notion page, or an arXiv paper&rsquo;s readable HTML instead of a PDF.</p>`,
   summaryModelId: "claude-sonnet-5",

@@ -5,6 +5,8 @@ import rssAtom from "./rss-atom";
 import emailNewsletters from "./email-newsletters";
 import saveForLater from "./save-for-later";
 import fileUpload from "./file-upload";
+import pdfs from "./pdfs";
+import books from "./books";
 
 // Reading Experience
 import fullContent from "./full-content";
@@ -18,6 +20,7 @@ import performance from "./performance";
 import search from "./search";
 import tags from "./tags";
 import opml from "./opml";
+import collections from "./collections";
 
 // Integrations & Sync
 import googleReaderApi from "./google-reader-api";
@@ -39,6 +42,8 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   emailNewsletters,
   saveForLater,
   fileUpload,
+  pdfs,
+  books,
   // Reading Experience
   fullContent,
   appearance,
@@ -50,6 +55,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   search,
   tags,
   opml,
+  collections,
   // Integrations & Sync
   googleReaderApi,
   mcpServer,

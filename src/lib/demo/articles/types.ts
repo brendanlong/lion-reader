@@ -16,6 +16,8 @@ export interface DemoArticle {
   author: string | null;
   summary: string;
   publishedAt: Date;
+  /** Rank in the demo's default (score) order; see ./CLAUDE.md. */
+  score: number;
   starred: boolean;
   contentHtml: string;
   /** Pre-generated AI summary HTML (from Claude Sonnet) for the demo summary card */

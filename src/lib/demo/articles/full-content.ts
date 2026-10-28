@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "When a feed only sends a teaser, Lion Reader can fetch the whole article so you can keep reading without leaving the app.",
   publishedAt: new Date("2026-01-15T12:00:00Z"),
+  score: 140,
   starred: false,
   summaryHtml: `<p>When a feed sends only a teaser, pressing <strong>Full Content</strong> fetches the complete article, cleaned of ads and navigation but keeping images and formatting; the choice sticks so future posts from that subscription arrive complete. Paywalled articles still show only their public part, and summaries or listening cover it fully.</p>`,
   summaryModelId: "claude-sonnet-5",

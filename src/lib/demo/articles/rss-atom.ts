@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Paste a link to a blog, news site, YouTube channel, or other publication and Lion Reader finds a way to follow it. New posts arrive automatically, often within seconds of publishing.",
   publishedAt: new Date("2025-12-26T12:00:00Z"),
+  score: 250,
   starred: false,
   summaryHtml: `<p>Paste a link to a blog or news site and Lion Reader finds a way to follow it, showing recent posts before you subscribe. Most sites are checked hourly, and many push new posts within seconds. Feeds that move are followed, and ones that keep failing are flagged in Settings.</p>`,
   summaryModelId: "claude-sonnet-5",

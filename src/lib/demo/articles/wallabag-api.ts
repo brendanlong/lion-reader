@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Use the free Wallabag app on Android or iOS to save links to Lion Reader from any app's share menu.",
   publishedAt: new Date("2026-02-22T20:33:00Z"),
+  score: 30,
   starred: false,
   summaryHtml: `<p>Lion Reader works with the free Wallabag app for Android and iOS: share a link to it and the article is saved to Lion Reader, without needing a Wallabag account. This is the easiest way to save on iPhone and iPad, where you can also read saved articles offline.</p>`,
   summaryModelId: "claude-sonnet-5",

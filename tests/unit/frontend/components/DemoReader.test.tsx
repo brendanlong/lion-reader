@@ -164,7 +164,9 @@ describe("demo reader tree", () => {
     renderDemo();
 
     const openPicker = async () => {
-      fireEvent.click(await screen.findByRole("button", { name: /Collection/ }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^(Add to Collection|Collections \()/ })
+      );
       const dialog = await screen.findByRole("dialog");
       return {
         dialog,

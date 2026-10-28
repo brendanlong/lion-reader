@@ -14,12 +14,12 @@
  * is given, so mutating a returned object would change the cache behind its back.
  */
 
-import { sortFieldOf } from "@/lib/entry-sort";
+import { ENTRY_SORT_DIRECTIONS, sortFieldOf } from "@/lib/entry-sort";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
-import { entryMatchesList } from "@/lib/local-db/entry-lists";
+import { compareListEntries, entryMatchesList } from "@/lib/local-db/entry-lists";
 import type { TagLists } from "@/lib/events/schemas";
 import {
   DEMO_ENTRIES,
@@ -134,11 +134,17 @@ function toDate(value: unknown, fallback: Date): Date {
   return value instanceof Date ? value : fallback;
 }
 
-function encodeCursor(position: { key: number; id: string }): string {
+/** A list item's place for paging: its read time (Recently Read's key) and id. */
+interface Place {
+  key: number;
+  id: string;
+}
+
+function encodeCursor(position: Place): string {
   return `${position.key}:${position.id}`;
 }
 
-function decodeCursor(cursor: string | undefined): { key: number; id: string } | null {
+function decodeCursor(cursor: string | undefined): Place | null {
   if (!cursor) return null;
   const separator = cursor.indexOf(":");
   const key = Number(cursor.slice(0, separator));
@@ -334,7 +340,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       read: state.read,
       starred: state.starred,
       readChangedAt: state.readChangedAt,
-      score: null,
+      score: entry.score,
       updatedAt: state.updatedAt,
       // Demo entries never change, only their state does.
       entryUpdatedAt: entry.publishedAt ?? entry.fetchedAt,
@@ -431,6 +437,20 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
     };
   }
 
+  /** What a list orders an entry by; a cursor's entry may have left the list since. */
+  function sortFields(id: string) {
+    const state = entries.get(id);
+    if (!state) throw procedureError("BAD_REQUEST", "Invalid cursor");
+    const { entry } = state;
+    return {
+      id,
+      publishedAt: entry.publishedAt,
+      fetchedAt: entry.fetchedAt,
+      score: entry.score,
+      positions: {},
+    };
+  }
+
   function requireEntry(id: string): EntryState {
     const state = entries.get(id);
     if (!state || !isVisible(state)) throw procedureError("NOT_FOUND", "Entry not found");
@@ -475,7 +495,9 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
 
   const procedures: DemoProcedures = {
     "entries.list": (input) => {
-      const sortBy = input.sortBy ?? "published";
+      // Every demo article has a score (its rank in the tour), so lists open
+      // sorted by it, as a real list does once the user picks that sort.
+      const sortBy = input.sortBy ?? (input.sortOrder ? sortFieldOf(input.sortOrder) : "score");
       const filter: EntryFilter = {
         subscriptionId: input.subscriptionId,
         tagId: input.tagId,
@@ -486,16 +508,25 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         starredOnly: bool(input.starredOnly),
         query: input.query,
       };
-      const sortKey = (state: EntryState): number =>
+      const sortOrder = input.sortOrder ?? ENTRY_SORT_DIRECTIONS[sortBy][0];
+      // Recently Read orders by a field entries don't carry, so the client
+      // keeps the server's order; every other list is ordered as the client
+      // orders it. A cursor names its entry's place, which for a read time
+      // must travel with it (marking it read again moves the entry).
+      const listOrder = compareListEntries({
+        subscriptionId: input.subscriptionId,
+        sortBy,
+        sortOrder,
+      });
+      const readOrder = sortOrder === "oldest" ? 1 : -1;
+      const compare = (a: Place, b: Place) =>
         sortBy === "readChanged"
-          ? (state.readChangedAt?.getTime() ?? 0)
-          : (state.entry.publishedAt ?? state.entry.fetchedAt).getTime();
-      // Demo articles have no scores or positions, so those sorts list them
-      // newest first, as the service lists articles without one.
-      const direction = input.sortOrder === "oldest" ? 1 : -1;
-      const compare = (a: { key: number; id: string }, b: { key: number; id: string }) =>
-        direction * (a.key - b.key) || a.id.localeCompare(b.id);
-      const position = (state: EntryState) => ({ key: sortKey(state), id: state.entry.id });
+          ? readOrder * (a.key - b.key) || a.id.localeCompare(b.id)
+          : listOrder(sortFields(a.id), sortFields(b.id));
+      const position = (state: EntryState): Place => ({
+        key: state.readChangedAt?.getTime() ?? 0,
+        id: state.entry.id,
+      });
 
       const sorted = select(filter)
         // The recently-read view lists only entries whose read state has changed.
@@ -516,12 +547,10 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         items: page.map(toListItem),
         nextCursor: hasMore && last ? encodeCursor(position(last)) : undefined,
         ...(!input.cursor &&
-          sortBy !== "readChanged" && { sortable: { score: false, position: false } }),
-        ...(!input.cursor && {
-          sort: input.sortOrder
-            ? { sortBy: input.sortBy ?? sortFieldOf(input.sortOrder), sortOrder: input.sortOrder }
-            : { sortBy, sortOrder: "newest" as const },
-        }),
+          sortBy !== "readChanged" && {
+            sortable: { score: sorted.length > 0, position: false },
+          }),
+        ...(!input.cursor && { sort: { sortBy, sortOrder } }),
       };
     },
 
@@ -565,7 +594,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
           type: state.entry.type,
           updatedAt: state.updatedAt,
           readChangedAt: state.readChangedAt,
-          score: null,
+          score: state.entry.score,
           positions: {},
         });
       }
