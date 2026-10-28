@@ -76,10 +76,10 @@ import org.json.JSONObject
  * It shows [content] ([readerContent]) in a page with [shell] ([readerShell]), swapping each new
  * article into the page it has rather than loading another, which is what makes an article appear
  * at once; a new shell (another font, theme or text size) loads a new page. A new [visit] shows it
- * afresh even when it's unchanged (from [position], not where the last visit left it). [onDrawn] is
- * called once the page's next frame draws [content] (and on recomposing while it does, so a new
- * [onDrawn] hears too), so a screen can wait for the article rather than show the last one.
- * [hidden]: it's behind something else, so it's kept from accessibility services and focus.
+ * afresh even when it's unchanged (unzoomed, from [position], not where the last visit left it).
+ * [onDrawn] is called once the page's next frame draws [content] (and on recomposing while it does,
+ * so a new [onDrawn] hears too), so a screen can wait for the article rather than show the last
+ * one. [hidden]: it's behind something else, so it's kept from accessibility services and focus.
  */
 @Composable
 fun ReaderWebView(
@@ -346,6 +346,7 @@ private class ReaderView(context: Context) : WebView(context) {
         // Nothing is shown afresh: a new visit to an empty page is the same empty page.
         val sameVisit = visit == this.visit || content.isEmpty()
         if (shell == this.shell && content == this.content && sameVisit) return
+        if (visit != this.visit && zoomed) zoomBy(resources.displayMetrics.density / pageScale)
         this.content = content
         this.visit = visit
         drawn = null
@@ -353,8 +354,7 @@ private class ReaderView(context: Context) : WebView(context) {
         drawRequests++
         pageReady = false
         restoring = true
-        // A new visit starts unzoomed, which only a new load does.
-        if (shell == this.shell && shellLoaded && (sameVisit || !zoomed)) {
+        if (shell == this.shell && shellLoaded) {
             // Its scripts (narration.js) and the reader's place go with it, so the page is as a
             // load of it would leave it.
             evaluateJavascript(
@@ -412,11 +412,6 @@ private class ReaderView(context: Context) : WebView(context) {
             },
         )
     }
-
-    /** Physical pixels per CSS pixel: the screen's density times the pinch zoom. */
-    var pageScale = resources.displayMetrics.density
-    private val zoomed
-        get() = pageScale > resources.displayMetrics.density * 1.01f
 
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
@@ -585,11 +580,22 @@ private class ReaderView(context: Context) : WebView(context) {
     private var downX = 0f
     private var downY = 0f
     private var touched: SideScroller? = null
+
+    /** Physical pixels per CSS pixel: the screen's density times the pinch zoom. */
+    var pageScale = resources.displayMetrics.density
+    // Not exactly the density at 1x: the reported scale is rounded.
+    private val zoomed
+        get() = pageScale > resources.displayMetrics.density * 1.01f
+
     private var deciding = false
     /** This gesture is a scroll kept from the pager (not a sideways one). */
     private var scrolling = false
     /** This gesture is a page turn: the WebView's own handling of it was cancelled. */
     private var turning = false
+    /**
+     * A second finger landed on a page turn: it's a pinch the WebView no longer has, not a turn.
+     */
+    private var pinchedTurn = false
     private val longPress = ViewConfiguration.getLongPressTimeout()
 
     @SuppressLint("ClickableViewAccessibility")
@@ -606,9 +612,11 @@ private class ReaderView(context: Context) : WebView(context) {
                 deciding = true
                 scrolling = false
                 turning = false
+                pinchedTurn = false
             }
             // Two fingers aren't a page turn.
-            MotionEvent.ACTION_POINTER_DOWN -> if (deciding) keep()
+            MotionEvent.ACTION_POINTER_DOWN ->
+                if (deciding) keep() else if (turning) pinchedTurn = true
             MotionEvent.ACTION_MOVE -> {
                 if (deciding) {
                     val index = event.findPointerIndex(pointerId)
@@ -635,7 +643,7 @@ private class ReaderView(context: Context) : WebView(context) {
                     // A finger moving up moves down the page.
                     val index = event.findPointerIndex(pointerId)
                     val y = if (index >= 0) event.getY(index) else event.y
-                    turnPage(if (y < downY) 1 else -1)
+                    if (!pinchedTurn) turnPage(if (y < downY) 1 else -1)
                     return true
                 }
             }
@@ -672,7 +680,7 @@ private class ReaderView(context: Context) : WebView(context) {
                 // A finger moving left scrolls the block's content right.
                 else ->
                     (if (dx < 0) block?.canScrollRight else block?.canScrollLeft) == true ||
-                        canScrollHorizontally(if (dx < 0) 1 else -1)
+                        (zoomed && canScrollHorizontally(if (dx < 0) 1 else -1))
             }
         if (wanted) keep()
     }
