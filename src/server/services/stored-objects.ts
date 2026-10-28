@@ -4,8 +4,8 @@
  *
  * A user's entry keeps its objects under {@link entryObjectsPrefix}, inside its
  * owner's {@link userObjectsPrefix}, so deleting either is deleting a prefix.
- * A feed's entry, which belongs to no user and is never deleted, keeps them
- * under {@link feedEntryObjectsPrefix}. That
+ * A feed's entry, which belongs to no user, keeps them under
+ * {@link feedEntryObjectsPrefix}; nothing deletes those yet (#2187). That
  * deletion is a `delete_stored_objects` job enqueued in the transaction that
  * deletes the owner, so it can't be lost to a crash and is retried until
  * storage confirms it. Objects stored for an entry whose save then fails
