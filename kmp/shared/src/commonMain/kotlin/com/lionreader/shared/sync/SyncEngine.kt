@@ -1,5 +1,6 @@
 package com.lionreader.shared.sync
 
+import app.cash.sqldelight.db.SqlDriver
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.COLLECTION_TYPE
@@ -36,12 +37,12 @@ private const val RECENTLY_READ_REFRESH = 20
  */
 class SyncEngine(
     private val api: LionReaderApi,
-    db: LionReaderDatabase,
+    driver: SqlDriver,
     private val now: () -> Long,
     private val policy: () -> RetentionPolicy,
 ) {
-    private val writer = SyncWriter(db)
-    private val outboxQueries = db.outboxQueries
+    private val writer = SyncWriter(driver)
+    private val outboxQueries = LionReaderDatabase(driver).outboxQueries
 
     /** Serializes everything that reads or writes cursors, state, or the outbox. */
     private val mutex = Mutex()

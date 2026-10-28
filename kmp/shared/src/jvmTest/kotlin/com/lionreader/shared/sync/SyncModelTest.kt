@@ -65,7 +65,7 @@ class SyncModelTest {
         val api =
             server.api(currentCoroutineContext()[ContinuationInterceptor] as CoroutineDispatcher)
         val policy = RetentionPolicy(windowDays = 3650, maxReadEntries = 100_000)
-        fun newEngine() = SyncEngine(api, db, { clock }, { policy })
+        fun newEngine() = SyncEngine(api, driver, { clock }, { policy })
         fun newReader() = Reader(db, { clock }, Dispatchers.Unconfined) {}
         var engine = newEngine()
         var reader = newReader()

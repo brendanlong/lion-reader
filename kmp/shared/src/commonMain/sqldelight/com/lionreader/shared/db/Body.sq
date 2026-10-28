@@ -9,18 +9,14 @@ CREATE TABLE entry_body (
   content TEXT NOT NULL,
   size INTEGER NOT NULL,
   downloaded_at INTEGER NOT NULL,
-  -- The body as plain text, only until a trigger moves it into the search
-  -- index (SearchIndex.kt), which empties it.
-  search_text TEXT NOT NULL,
-  -- The entry's body_version it was downloaded at. Last, as the migration adds
-  -- it (4.sqm).
+  -- The entry's body_version it was downloaded at.
   body_version INTEGER NOT NULL DEFAULT 0
 );
 
 -- Which bodies may be stored is SyncWriter.putBody's to decide.
 put:
-INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at, search_text, body_version)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at, body_version)
+VALUES (?, ?, ?, ?, ?);
 
 -- The body_version it was downloaded at, and its size.
 stored:

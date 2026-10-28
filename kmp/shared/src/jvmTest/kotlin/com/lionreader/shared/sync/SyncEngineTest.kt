@@ -41,7 +41,7 @@ class SyncEngineTest {
     private val server = FakeServer()
     private var clock = NOW
     private var policy = RetentionPolicy()
-    private val engine = SyncEngine(server.api(), db, { clock }, { policy })
+    private val engine = SyncEngine(server.api(), driver, { clock }, { policy })
     private val reader = Reader(db, { clock }, Dispatchers.Unconfined) {}
 
     @AfterTest fun close() = driver.close()

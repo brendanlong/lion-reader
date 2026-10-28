@@ -73,13 +73,13 @@ class ArticleStateTest {
         val page =
             launch(Dispatchers.Unconfined) { reader.entry("a").collect { shown += it?.content } }
 
-        db.bodyQueries.put("a", "<p>Body</p>", 11L, 0L, "Body", 1L)
+        db.bodyQueries.put("a", "<p>Body</p>", 11L, 0L, 1L)
         assertEquals("<p>Body</p>", shown.last())
         val reads = driver.bodyReads
         assertTrue(reads > 0)
         reader.setRead(listOf("a"), true)
         reader.setStarred("a", true)
-        db.bodyQueries.put("a", "<p>Edited</p>", 13L, 0L, "Edited", 2L)
+        db.bodyQueries.put("a", "<p>Edited</p>", 13L, 0L, 2L)
 
         assertEquals(reads, driver.bodyReads)
         assertEquals("<p>Body</p>", shown.last())

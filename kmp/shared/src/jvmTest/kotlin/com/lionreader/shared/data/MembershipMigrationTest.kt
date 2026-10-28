@@ -89,7 +89,7 @@ class MembershipMigrationTest {
         )
 
         // Saved and collections' articles are kept, bodies included.
-        val writer = SyncWriter(db)
+        val writer = SyncWriter(driver)
         writer.evict(RetentionPolicy(windowDays = 3), NOW)
         assertEquals(setOf("a", "c", "d", "s1", "s2"), list(ListScope.All).toSet())
         assertEquals(setOf("a", "c", "d", "s1", "s2"), writer.missingBodies(100).keys)

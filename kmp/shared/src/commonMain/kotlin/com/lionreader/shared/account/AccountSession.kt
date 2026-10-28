@@ -72,7 +72,7 @@ internal constructor(
     val reader = Reader(database, now, io, onLocalChange)
 
     /** Doesn't switch threads, so call it on [io] (as [runBackgroundSync] does). */
-    val sync = SyncEngine(connection.api, database, now, retention)
+    val sync = SyncEngine(connection.api, this.driver, now, retention)
 
     /** The lists, not the article bodies: what pulling to refresh waits for. */
     suspend fun syncLists() = withContext(io) { sync.sync(downloadContent = false) }

@@ -1,5 +1,6 @@
 package com.lionreader.shared.sync
 
+import app.cash.sqldelight.db.SqlDriver
 import com.lionreader.shared.api.BulkStateResponse
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.FullEntry
@@ -8,6 +9,7 @@ import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
 import com.lionreader.shared.data.LocalStore
+import com.lionreader.shared.data.indexBody
 import com.lionreader.shared.data.parseMillis
 import com.lionreader.shared.data.searchText
 import com.lionreader.shared.db.LionReaderDatabase
@@ -41,7 +43,8 @@ internal class PulledPage(
  * version-guarded, and deleted here with their entry); the outbox by `Reader` (and cleared here
  * once sent).
  */
-internal class SyncWriter(private val db: LionReaderDatabase) {
+internal class SyncWriter(private val driver: SqlDriver) {
+    private val db = LionReaderDatabase(driver)
     private val store = LocalStore(db)
 
     val cursors: SyncCursors?
@@ -388,7 +391,10 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         if (db.bodyQueries.matches(entryId, content).executeAsOne() == 0L) {
             db.summaryQueries.deleteOutdated(entryId, version)
         }
-        db.bodyQueries.put(entryId, content, size, now, searchText, version)
+        // INSERT OR REPLACE doesn't fire entry_body's delete trigger, so the text replaces the
+        // old body's.
+        db.bodyQueries.put(entryId, content, size, now, version)
+        driver.indexBody(entryId, searchText)
         return size - (stored?.size ?: 0)
     }
 

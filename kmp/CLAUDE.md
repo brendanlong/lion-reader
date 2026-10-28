@@ -129,8 +129,8 @@ over (or `adb shell am start -a com.lionreader.app.DEBUG_SIGN_IN_CALLBACK -d
 - A schema change ships as a SQLDelight migration (`N.sqm`, from version N)
   plus the new version's schema (`N+1.db` in `sqldelight/databases/`, from
   `generateCommonMainLionReaderDatabaseSchema`); `check` fails unless migrating
-  every `.db` matches a fresh database. A migration touching `entry` owes the
-  search index what `AppSchema`'s KDoc says.
+  every `.db` matches a fresh database. A migration touching `entry` or
+  `entry_body` owes the search index what `AppSchema`'s KDoc says.
 - Everything but the platform's UI and services goes in `:shared`'s
   `commonMain` (accounts, settings, view models, narration's rules, the reader
   document), so iOS gets the same behavior. What it needs from the platform
