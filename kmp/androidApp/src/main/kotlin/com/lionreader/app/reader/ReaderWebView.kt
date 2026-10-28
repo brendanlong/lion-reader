@@ -131,6 +131,9 @@ fun ReaderWebView(
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
                             settings.domStorageEnabled = false
+                            // Pinch to zoom, without the on-screen +/- buttons.
+                            settings.builtInZoomControls = true
+                            settings.displayZoomControls = false
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             isVerticalScrollBarEnabled = false
                             // Drawn into its own layer, so the pager moving it shifts a
@@ -307,10 +310,12 @@ data class ReaderPaging(
  * down turns the page. Anything steeper stays the WebView's for the whole gesture, so a scroll that
  * drifts sideways never turns into a page turn halfway through. A sideways drag that starts on a
  * wide table or code block (reported by scroll-detect.js) also stays the WebView's while the block
- * can still scroll that way. It has to be decided here, synchronously, before the pager's touch
- * slop is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
- * In page mode a scroll it keeps becomes a page turn instead ([turnPage]), unless it began as a
- * long press: dragging after one extends a text selection.
+ * can still scroll that way, as does one on a pinch-zoomed page that can still pan that way: only a
+ * swipe that starts with the page against its edge turns the article. It has to be decided here,
+ * synchronously, before the pager's touch slop is crossed; Compose honors
+ * [requestDisallowInterceptTouchEvent] for the rest of the gesture. In page mode a scroll it keeps
+ * becomes a page turn instead ([turnPage]), unless it began as a long press: dragging after one
+ * extends a text selection.
  */
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
@@ -348,7 +353,8 @@ private class ReaderView(context: Context) : WebView(context) {
         drawRequests++
         pageReady = false
         restoring = true
-        if (shell == this.shell && shellLoaded) {
+        // A new visit starts unzoomed, which only a new load does.
+        if (shell == this.shell && shellLoaded && (sameVisit || !zoomed)) {
             // Its scripts (narration.js) and the reader's place go with it, so the page is as a
             // load of it would leave it.
             evaluateJavascript(
@@ -406,6 +412,11 @@ private class ReaderView(context: Context) : WebView(context) {
             },
         )
     }
+
+    /** Physical pixels per CSS pixel: the screen's density times the pinch zoom. */
+    var pageScale = resources.displayMetrics.density
+    private val zoomed
+        get() = pageScale > resources.displayMetrics.density * 1.01f
 
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
@@ -589,9 +600,8 @@ private class ReaderView(context: Context) : WebView(context) {
                 pointerId = event.getPointerId(0)
                 downX = event.x
                 downY = event.y
-                val density = resources.displayMetrics.density
-                val pageX = (event.x + scrollX) / density
-                val pageY = (event.y + scrollY) / density
+                val pageX = (event.x + scrollX) / pageScale
+                val pageY = (event.y + scrollY) / pageScale
                 touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
                 deciding = true
                 scrolling = false
@@ -660,8 +670,9 @@ private class ReaderView(context: Context) : WebView(context) {
             when {
                 abs(dx) < dy * SWIPE_RATIO -> true.also { scrolling = true }
                 // A finger moving left scrolls the block's content right.
-                block != null -> if (dx < 0) block.canScrollRight else block.canScrollLeft
-                else -> false
+                else ->
+                    (if (dx < 0) block?.canScrollRight else block?.canScrollLeft) == true ||
+                        canScrollHorizontally(if (dx < 0) 1 else -1)
             }
         if (wanted) keep()
     }
@@ -721,6 +732,10 @@ private class ReaderWebViewClient(
 
     override fun onPageFinished(view: WebView, url: String?) {
         (view as? ReaderView)?.onLoaded(url)
+    }
+
+    override fun onScaleChanged(view: WebView, oldScale: Float, newScale: Float) {
+        (view as? ReaderView)?.pageScale = newScale
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
