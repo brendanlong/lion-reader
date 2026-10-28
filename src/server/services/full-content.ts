@@ -16,7 +16,7 @@ import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { archiveFullContentOriginal } from "./full-content-archive";
-import { entryObjectsPrefix, feedEntryObjectsPrefix } from "./stored-objects";
+import { entryObjectsPrefix } from "./stored-objects";
 import { type FullEntry, getFullEntry } from "./entry-reads";
 import { articleContentFromAcquired, processArticleContent } from "./article-content";
 
@@ -42,7 +42,8 @@ export interface FetchFullContentResult {
  * both the original HTML and the cleaned content.
  *
  * @param url - The article URL to fetch
- * @param options.objectsPrefix - The entry's, for its inlined images (`stored-objects.ts`)
+ * @param options.objectsPrefix - The entry's, for its inlined images
+ *   (`stored-objects.ts`), or null for a feed's entry, whose images stay inline
  * @param options.offloadClean - Run the content-cleaning pass (Readability, or
  *   Markdown rendering when the URL served Markdown) on the libuv thread pool
  *   instead of inline on the calling thread. On by default; the background feed
@@ -57,7 +58,7 @@ export interface FetchFullContentResult {
  */
 export async function fetchFullContent(
   url: string,
-  options: { objectsPrefix: string; offloadClean?: boolean }
+  options: { objectsPrefix: string | null; offloadClean?: boolean }
 ): Promise<FetchFullContentResult> {
   const { objectsPrefix, offloadClean = true } = options;
 
@@ -258,7 +259,7 @@ export async function fetchFullContentForNewEntries(
     attempted++;
     try {
       const result = await fetchFullContent(entry.url, {
-        objectsPrefix: feedEntryObjectsPrefix(feedId, entry.id),
+        objectsPrefix: null,
         offloadClean: false,
       });
       // Persists the raw full-content columns or the fetch error onto the shared
@@ -291,25 +292,6 @@ export async function fetchFullContentForNewEntries(
   }
 
   return { fetched, failed };
-}
-
-/**
- * The objects prefix of an entry visible to `userId`: its feed's for a feed
- * entry, shared by every subscriber, else the user's own (a saved article or
- * newsletter belongs to the one user who can see it).
- */
-async function entryObjectsPrefixForUser(
-  db: typeof dbType,
-  userId: string,
-  entryId: string
-): Promise<string> {
-  const [row] = await db
-    .select({ ownerFeedId: entries.ownerFeedId })
-    .from(entries)
-    .where(eq(entries.id, entryId));
-  return row?.ownerFeedId
-    ? feedEntryObjectsPrefix(row.ownerFeedId, entryId)
-    : entryObjectsPrefix(userId, entryId);
 }
 
 export interface FetchAndStoreFullContentResult {
@@ -356,7 +338,8 @@ export async function fetchAndStoreFullContent(
   });
 
   const result = await fetchFullContent(entry.url, {
-    objectsPrefix: await entryObjectsPrefixForUser(db, userId, entry.id),
+    // A saved article or newsletter belongs to the one user who can see it.
+    objectsPrefix: entry.type === "web" ? null : entryObjectsPrefix(userId, entry.id),
   });
   const now = new Date();
   // Persist the raw full-content columns onto the shared entry row (see note

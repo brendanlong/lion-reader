@@ -1,7 +1,8 @@
 /**
- * Inlined images moved to storage (#2109): every path that writes an entry's
- * content stores its `data:` URI images under the entry's objects prefix and
- * links them from both stored copies, or fails the write.
+ * Inlined images moved to storage (#2109): every path that writes a user's
+ * entry's content stores its `data:` URI images under the entry's objects
+ * prefix and links them from both stored copies, or fails the write. Feed
+ * entries keep theirs inline.
  */
 
 import { createHash } from "node:crypto";
@@ -12,19 +13,12 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds, users } from "../../src/server/db/schema";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
-import {
-  createEntry,
-  generateContentHash,
-  processEntries,
-} from "../../src/server/feed/entry-processor";
+import { createEntry, generateContentHash } from "../../src/server/feed/entry-processor";
 import type { ParsedEntry } from "../../src/server/feed/types";
 import { getAppErrorCode } from "../../src/server/errors";
 import { fetchAndStoreFullContent } from "../../src/server/services/full-content";
 import { saveArticle, uploadArticle } from "../../src/server/services/saved";
-import {
-  entryObjectsPrefix,
-  feedEntryObjectsPrefix,
-} from "../../src/server/services/stored-objects";
+import { entryObjectsPrefix } from "../../src/server/services/stored-objects";
 import { getPublicObjectUrl } from "../../src/server/storage/s3";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
@@ -154,7 +148,7 @@ describe("inlined images", () => {
     expect(cleaned).not.toContain("data:image");
   });
 
-  it("stores a feed entry's images under its feed", async () => {
+  it("keeps a feed entry's images inline until feeds have storage limits (#2188)", async () => {
     const feedId = await feed();
     const parsed: ParsedEntry = {
       guid: `guid-${generateUuidv7()}`,
@@ -162,11 +156,12 @@ describe("inlined images", () => {
       link: "https://example.com/post",
       content: `<p>Text</p><img src="${DATA_URI}">`,
     };
+    const storedBefore = s3.objects.size;
 
     const entry = await createEntry(db, feedId, parsed, generateContentHash(parsed), new Date());
 
-    const url = expectStoredImage(feedEntryObjectsPrefix(feedId, entry!.id));
-    expect(entry!.contentOriginal).toBe(`<p>Text</p><img src="${url}">`);
+    expect(entry!.contentOriginal).toContain(`src="${DATA_URI}"`);
+    expect(s3.objects.size).toBe(storedBefore);
   });
 
   it("stores a newsletter's images under its recipient", async () => {
@@ -187,15 +182,10 @@ describe("inlined images", () => {
     expect((await storedContent(result.entryId!)).original).toContain(`src="${url}"`);
   });
 
-  it.each([
-    ["a feed entry's under its feed", "web"],
-    ["a saved article's under its user", "saved"],
-  ] as const)("stores fetched full content's images: %s", async (_label, type) => {
+  it("stores a saved article's fetched full content's images under its user", async () => {
     const userId = await user();
-    const owner = type === "web" ? await feed() : userId;
-    if (type === "web") await createTestSubscription(userId, owner);
-    const entryId = await createTestEntry(owner, {
-      type,
+    const entryId = await createTestEntry(userId, {
+      type: "saved",
       url: `${baseUrl}/pictures`,
       userIds: [userId],
     });
@@ -203,33 +193,25 @@ describe("inlined images", () => {
     const result = await fetchAndStoreFullContent(db, userId, entryId);
 
     expect(result.success).toBe(true);
-    const prefix =
-      type === "web" ? feedEntryObjectsPrefix(owner, entryId) : entryObjectsPrefix(userId, entryId);
-    const url = expectStoredImage(prefix);
+    const url = expectStoredImage(entryObjectsPrefix(userId, entryId));
     expect((await storedContent(entryId)).fullCleaned).toContain(url);
   });
 
-  it("fails a feed's processing when storage refuses an image, after saving the rest", async () => {
+  it("keeps a feed entry's fetched full content's images inline", async () => {
+    const userId = await user();
     const feedId = await feed();
-    const withImage: ParsedEntry = {
-      guid: `guid-${generateUuidv7()}`,
-      content: `<img src="${DATA_URI}">`,
-    };
-    const plain: ParsedEntry = { guid: `guid-${generateUuidv7()}`, content: "<p>Text</p>" };
+    await createTestSubscription(userId, feedId);
+    const entryId = await createTestEntry(feedId, {
+      url: `${baseUrl}/pictures`,
+      userIds: [userId],
+    });
+    const storedBefore = s3.objects.size;
 
-    s3.failPutsWith = 503;
-    try {
-      await expect(processEntries(db, feedId, { items: [withImage, plain] })).rejects.toSatisfy(
-        (error) => getAppErrorCode(error) === "STORAGE_FAILED"
-      );
-    } finally {
-      s3.failPutsWith = null;
-    }
-    const saved = await db
-      .select({ guid: entries.guid })
-      .from(entries)
-      .where(eq(entries.ownerFeedId, feedId));
-    expect(saved).toEqual([{ guid: plain.guid }]);
+    const result = await fetchAndStoreFullContent(db, userId, entryId);
+
+    expect(result.success).toBe(true);
+    expect((await storedContent(entryId)).fullCleaned).toContain(DATA_URI);
+    expect(s3.objects.size).toBe(storedBefore);
   });
 
   it("fails an upload storage refuses, saving nothing", async () => {

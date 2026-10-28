@@ -4,9 +4,8 @@
  *
  * A user's entry keeps its objects under {@link entryObjectsPrefix}, inside its
  * owner's {@link userObjectsPrefix}, so deleting either is deleting a prefix.
- * A feed's entry, which belongs to no user, keeps them under
- * {@link feedEntryObjectsPrefix}; nothing deletes those yet (#2187). That
- * deletion is a `delete_stored_objects` job enqueued in the transaction that
+ * A feed's entry has none: anyone can publish a feed, so its images stay
+ * inline until per-feed limits exist (#2188). That deletion is a `delete_stored_objects` job enqueued in the transaction that
  * deletes the owner, so it can't be lost to a crash and is retried until
  * storage confirms it. Objects stored for an entry whose save then fails
  * stay until its owner's account is deleted; nobody has their URLs.
@@ -28,10 +27,6 @@ export function userObjectsPrefix(userId: string): string {
 
 export function entryObjectsPrefix(userId: string, entryId: string): string {
   return `${userObjectsPrefix(userId)}${entryId}/`;
-}
-
-export function feedEntryObjectsPrefix(feedId: string, entryId: string): string {
-  return `feeds/${feedId}/${entryId}/`;
 }
 
 /**

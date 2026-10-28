@@ -519,14 +519,14 @@ export default function PrivacyPolicyPage() {
           <LegalSubsection id="object-storage" title="Object Storage (Fly.io Tigris)">
             <LegalParagraph tight>
               Images embedded in some articles (for example, images from imported Google Docs, the
-              images in ebooks you upload, and images included in an article, upload or newsletter
-              itself rather than linked from elsewhere) are stored on Fly.io&apos;s Tigris object
-              storage. These stored images are served from Tigris when you view the article, at
-              addresses that are hard to guess but need no sign-in, so anyone you give an
-              image&apos;s address can view it. Apart from Google Docs images, images stored for an
-              article you saved or uploaded are deleted from Tigris when you delete that article,
-              and images stored for your articles and newsletters are deleted when you delete your
-              account.
+              images in ebooks you upload, and images included in an article you save or upload, or
+              in a newsletter you receive, rather than linked from elsewhere) are stored on
+              Fly.io&apos;s Tigris object storage. These stored images are served from Tigris when
+              you view the article, at addresses that are hard to guess but need no sign-in, so
+              anyone you give an image&apos;s address can view it. Apart from Google Docs images,
+              images stored for an article you saved or uploaded are deleted from Tigris when you
+              delete that article, and images stored for your articles and newsletters are deleted
+              when you delete your account.
             </LegalParagraph>
             <LegalParagraph tight>
               When Lion Reader fetches an article&apos;s full text from its website (for example for

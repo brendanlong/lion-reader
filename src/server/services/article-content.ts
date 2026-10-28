@@ -146,7 +146,8 @@ export interface ProcessedArticleContent {
  * Run Readability unless the content is already clean (pre-cleaned, or a
  * plugin's with `skipReadability`). Before that, one pass absolutizes relative
  * URLs against `baseUrl` (null leaves them as written) and moves inlined images
- * to storage under the entry's `objectsPrefix`, and both stored copies come
+ * to storage under the entry's `objectsPrefix` (null keeps them inline: a feed
+ * entry's, `stored-objects.ts` says why), and both stored copies come
  * from its output. Readability absolutizes its own output;
  * nothing downstream (the Markdown renderer, the sanitizer) does, so a
  * relative URL left here would resolve against Lion Reader's origin.
@@ -163,13 +164,14 @@ export interface ProcessedArticleContent {
 export async function processArticleContent(
   bundle: ArticleContentBundle,
   baseUrl: string | null,
-  options: { offload: boolean; objectsPrefix: string; minCleanedLength?: number }
+  options: { offload: boolean; objectsPrefix: string | null; minCleanedLength?: number }
 ): Promise<ProcessedArticleContent> {
   const { html, pluginContent, preCleanedContent } = bundle;
   const rewrite = options.offload ? rewriteContentUrlsAsync : rewriteContentUrls;
-  const imageUrlPrefix = inlineImageUrlPrefix(options.objectsPrefix) ?? undefined;
+  const { objectsPrefix } = options;
+  const imageUrlPrefix = (objectsPrefix && inlineImageUrlPrefix(objectsPrefix)) || undefined;
   const { html: contentOriginal, images } = await rewrite(html, baseUrl, { imageUrlPrefix });
-  await storeExtractedImages(options.objectsPrefix, images);
+  if (objectsPrefix) await storeExtractedImages(objectsPrefix, images);
 
   if (preCleanedContent || pluginContent?.skipReadability) {
     return { contentOriginal, contentCleaned: contentOriginal, readability: null };
@@ -183,7 +185,7 @@ export async function processArticleContent(
   const readability = options.offload
     ? await cleanContentAsync(contentOriginal, cleanOptions)
     : cleanContent(contentOriginal, cleanOptions);
-  await storeExtractedImages(options.objectsPrefix, readability?.images ?? []);
+  if (objectsPrefix) await storeExtractedImages(objectsPrefix, readability?.images ?? []);
 
   return {
     contentOriginal,

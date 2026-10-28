@@ -24,10 +24,7 @@ import {
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
 import { logger } from "@/lib/logger";
-import { getAppErrorCode } from "@/server/errors";
 import { retryDeadlocks } from "../db/errors";
-import { feedEntryObjectsPrefix } from "@/server/services/stored-objects";
-import { inlineImageUrlPrefix, storeExtractedImages } from "@/server/services/inline-images";
 
 /**
  * Result of processing a single entry.
@@ -304,28 +301,14 @@ export function deriveGuid(entry: ParsedEntry): string {
 }
 
 /**
- * The content columns derived from a parsed entry, shared by insert and update,
- * after storing the entry's inlined images. Stores only the raw columns; the
- * read path sanitizes per read (issue #1282).
+ * The content columns derived from a parsed entry, shared by insert and update.
+ * Stores only the raw columns; the read path sanitizes per read (issue #1282).
  *
  * @param feedUrl - The URL of the feed (for feed-specific cleaning)
- * @throws STORAGE_FAILED when storage refuses an image
  */
-async function entryContentColumns(
-  feedId: string,
-  entryId: string,
-  parsedEntry: ParsedEntry,
-  contentHash: string,
-  feedUrl?: string
-) {
+function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feedUrl?: string) {
   const entryUrl = deriveEntryUrl(parsedEntry);
-  const objectsPrefix = feedEntryObjectsPrefix(feedId, entryId);
-  const cleaningResult = cleanEntryContent(parsedEntry, {
-    entryUrl,
-    feedUrl,
-    imageUrlPrefix: inlineImageUrlPrefix(objectsPrefix) ?? undefined,
-  });
-  await storeExtractedImages(objectsPrefix, cleaningResult.images);
+  const cleaningResult = cleanEntryContent(parsedEntry, { entryUrl, feedUrl });
   return {
     url: entryUrl ?? null,
     title: parsedEntry.title ?? null,
@@ -360,14 +343,13 @@ export async function createEntry(
 ): Promise<Entry | null> {
   const guid = deriveGuid(parsedEntry);
   const publishedAt = clampPublishedAt(parsedEntry.pubDate, fetchedAt);
-  const id = generateUuidv7();
 
   const newEntry: NewEntry = {
-    id,
+    id: generateUuidv7(),
     ownerFeedId: feedId,
     type: "web",
     guid,
-    ...(await entryContentColumns(feedId, id, parsedEntry, contentHash, feedUrl)),
+    ...entryContentColumns(parsedEntry, contentHash, feedUrl),
     publishedAt,
     fetchedAt,
     // Tracks visibility on subscription (see processEntries)
@@ -383,7 +365,6 @@ export async function createEntry(
 /**
  * Updates an existing entry's content in the database.
  *
- * @param feedId - The (web) feed's UUID
  * @param entryId - The entry's UUID
  * @param parsedEntry - The parsed entry from the feed
  * @param contentHash - New content hash
@@ -392,16 +373,14 @@ export async function createEntry(
  */
 export async function updateEntryContent(
   db: typeof dbType,
-  feedId: string,
   entryId: string,
   parsedEntry: ParsedEntry,
   contentHash: string,
   feedUrl?: string
 ): Promise<Entry> {
-  const columns = await entryContentColumns(feedId, entryId, parsedEntry, contentHash, feedUrl);
   const [entry] = await db
     .update(entries)
-    .set({ ...columns, updatedAt: new Date() })
+    .set({ ...entryContentColumns(parsedEntry, contentHash, feedUrl), updatedAt: new Date() })
     .where(eq(entries.id, entryId))
     .returning();
 
@@ -532,14 +511,7 @@ async function processEntryWithCache(
   // Entry exists - check if content changed
   if (existing.contentHash !== contentHash) {
     // Content changed - update it
-    const entry = await updateEntryContent(
-      db,
-      feedId,
-      existing.id,
-      parsedEntry,
-      contentHash,
-      feedUrl
-    );
+    const entry = await updateEntryContent(db, existing.id, parsedEntry, contentHash, feedUrl);
 
     // Update cache with new hash
     existingEntriesMap.set(guidKey, { ...existing, contentHash });
@@ -808,9 +780,6 @@ async function announceLinkedEntries(
  * @param feed - The parsed feed containing entries
  * @param options - Processing options
  * @returns Processing result with counts and entry details
- * @throws STORAGE_FAILED after processing the rest, when storage refused an
- *   entry's image: that entry wasn't saved, so the fetch must fail and be
- *   retried rather than record the feed as processed
  *
  * @example
  * const result = await processEntries(db, feedId, parsedFeed);
@@ -867,7 +836,6 @@ export async function processEntries(
   );
 
   const results: ProcessedEntry[] = [];
-  let storageError: unknown = null;
   let newCount = 0;
   let updatedCount = 0;
   let unchangedCount = 0;
@@ -898,7 +866,6 @@ export async function processEntries(
         unchangedCount++;
       }
     } catch (error) {
-      if (getAppErrorCode(error) === "STORAGE_FAILED") storageError = error;
       // Log error but continue processing other entries
       // Entry without valid GUID will be skipped
       logger.error("Failed to process entry", {
@@ -1028,8 +995,6 @@ export async function processEntries(
       error: error instanceof Error ? error.message : String(error),
     });
   }
-
-  if (storageError) throw storageError;
 
   return {
     newCount,

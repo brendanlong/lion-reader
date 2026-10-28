@@ -6,8 +6,7 @@
  */
 
 import type { ParsedEntry } from "./types";
-import type { ExtractedImage } from "@lion-reader/sanitizer";
-import { rewriteContentUrls } from "./content-cleaner";
+import { absolutizeUrls } from "./content-cleaner";
 import { getFeedHooks } from "@/server/plugins";
 import { stripHtml } from "../html/strip-html";
 import { generateSummary } from "../html/summary";
@@ -40,8 +39,6 @@ export interface EntryContentResult {
   contentCleaned: string | null;
   /** The summary generated from original content */
   summary: string;
-  /** Inlined images moved out of the content, for the caller to store */
-  images: ExtractedImage[];
 }
 
 /**
@@ -52,13 +49,10 @@ export interface CleanEntryContentOptions {
   entryUrl?: string;
   /** The URL of the feed (used to detect feed-specific cleaners) */
   feedUrl?: string;
-  /** Where inlined images move to (`inlineImageUrlPrefix`); without it they stay inline */
-  imageUrlPrefix?: string;
 }
 
 /**
- * Processes entry content: absolutizes URLs and moves inlined images out (one
- * pass), applies feed-specific cleaning, and generates a summary.
+ * Processes entry content: absolutizes URLs, applies feed-specific cleaning, and generates a summary.
  *
  * Note: We don't run Readability on feed entries because RSS/Atom/JSON feeds
  * already provide clean content. Readability is only used for saved articles
@@ -75,15 +69,13 @@ export function cleanEntryContent(
   parsedEntry: ParsedEntry,
   options: CleanEntryContentOptions = {}
 ): EntryContentResult {
-  const { entryUrl, feedUrl, imageUrlPrefix } = options;
+  const { entryUrl, feedUrl } = options;
   const feedHooks = getFeedHooks(feedUrl);
   const originalContent = parsedEntry.content ?? parsedEntry.summary ?? null;
 
-  const rewritten = originalContent
-    ? rewriteContentUrls(originalContent, entryUrl ?? null, { imageUrlPrefix })
-    : null;
-  const absolutizedOriginal = rewritten?.html ?? null;
-  const images = rewritten?.images ?? [];
+  // Absolutize relative URLs in original content if we have a base URL
+  const absolutizedOriginal =
+    originalContent && entryUrl ? absolutizeUrls(originalContent, entryUrl) : originalContent;
 
   // Content synthesis via the matching plugin (if any): builds the entry body
   // from parsed-entry metadata for sources whose feeds carry no usable HTML
@@ -97,7 +89,6 @@ export function cleanEntryContent(
       contentOriginal: null,
       contentCleaned: null,
       summary: "",
-      images,
     };
   }
 
@@ -129,6 +120,5 @@ export function cleanEntryContent(
     contentOriginal: absolutizedOriginal,
     contentCleaned,
     summary,
-    images,
   };
 }
