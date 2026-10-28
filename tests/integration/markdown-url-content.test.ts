@@ -42,6 +42,7 @@ let server: Server;
 let baseUrl: string;
 
 const createdUserIds: string[] = [];
+const OBJECTS_PREFIX = "uploads/test/";
 
 async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "md-url" });
@@ -73,7 +74,9 @@ afterAll(async () => {
 
 describe("fetchFullContent on a Markdown URL", () => {
   it("absolutizes relative URLs in the content that gets displayed", async () => {
-    const result = await fetchFullContent(`${baseUrl}/docs/post.md`);
+    const result = await fetchFullContent(`${baseUrl}/docs/post.md`, {
+      objectsPrefix: OBJECTS_PREFIX,
+    });
 
     expect(result.success).toBe(true);
     // `selectDisplayedContent` prefers the cleaned variant, so that is the one
@@ -86,7 +89,9 @@ describe("fetchFullContent on a Markdown URL", () => {
   });
 
   it("stores the same absolutized content as the original variant", async () => {
-    const result = await fetchFullContent(`${baseUrl}/docs/post.md`);
+    const result = await fetchFullContent(`${baseUrl}/docs/post.md`, {
+      objectsPrefix: OBJECTS_PREFIX,
+    });
 
     // Markdown has no "original" HTML distinct from the rendered output, so both
     // stored variants are the same absolutized string — "show original" must not
@@ -95,7 +100,10 @@ describe("fetchFullContent on a Markdown URL", () => {
   });
 
   it("runs identically with the background worker's inline cleaning", async () => {
-    const result = await fetchFullContent(`${baseUrl}/docs/post.md`, { offloadClean: false });
+    const result = await fetchFullContent(`${baseUrl}/docs/post.md`, {
+      objectsPrefix: OBJECTS_PREFIX,
+      offloadClean: false,
+    });
 
     expect(result.success).toBe(true);
     expect(result.contentCleaned).toContain(`${baseUrl}/docs/img/fig.png`);

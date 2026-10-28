@@ -342,6 +342,7 @@ describe("Entry Processor", () => {
       const newHash = generateContentHash(updatedParsedEntry);
       const updatedEntry = await updateEntryContent(
         db,
+        feed.id,
         createdEntry.id,
         updatedParsedEntry,
         newHash

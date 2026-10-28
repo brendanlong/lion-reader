@@ -189,13 +189,14 @@ export interface BuiltArticleFields {
  */
 export async function buildArticleFields(
   bundle: ArticleContentBundle,
-  hints: ArticleFieldHints = {},
+  hints: ArticleFieldHints,
   // Uploads are trusted user content, so they pass a lower minCleanedLength than
   // a web fetch (where a short extraction usually means a failed JS-heavy page).
+  // `objectsPrefix` is the entry's (`stored-objects.ts`), for its inlined images.
   {
     keepRelativeUrls = false,
-    ...cleanOptions
-  }: { minCleanedLength?: number; keepRelativeUrls?: boolean } = {}
+    ...processOptions
+  }: { objectsPrefix: string; minCleanedLength?: number; keepRelativeUrls?: boolean }
 ): Promise<BuiltArticleFields> {
   const { html, contentUrl, pluginContent, preCleanedContent } = bundle;
   // Uploads have no origin; a guaranteed-broken base keeps relative URLs from
@@ -209,7 +210,7 @@ export async function buildArticleFields(
     readability: cleaned,
   } = await processArticleContent(bundle, keepRelativeUrls ? null : baseUrl, {
     offload: true,
-    ...cleanOptions,
+    ...processOptions,
   });
 
   // Precedence: explicit caller value → plugin / Markdown frontmatter / docx

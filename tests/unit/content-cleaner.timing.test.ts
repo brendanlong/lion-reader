@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import {
   cleanContent,
   absolutizeUrls,
-  absolutizeUrlsAsync,
+  rewriteContentUrlsAsync,
   extractBaseHref,
 } from "@/server/feed/content-cleaner";
 
@@ -345,14 +345,20 @@ describe("absolutizeUrls", () => {
     const rejected = '<select><xmp><img src="a.png"></xmp></select>';
     expect(absolutizeUrls(rejected, baseUrl)).toBe(rejected);
     const large = rejected + "<p>filler</p>".repeat(2000);
-    await expect(absolutizeUrlsAsync(large, baseUrl)).resolves.toBe(large);
+    await expect(rewriteContentUrlsAsync(large, baseUrl)).resolves.toEqual({
+      html: large,
+      images: [],
+    });
   });
 
   it("gives the same result from the async form on large input", async () => {
     const html = '<p><img src="a.png"><a href="/b">x</a></p>'.repeat(1000);
     const expected = absolutizeUrls(html, baseUrl);
     expect(expected).toContain('src="https://example.com/articles/a.png"');
-    await expect(absolutizeUrlsAsync(html, baseUrl)).resolves.toBe(expected);
+    await expect(rewriteContentUrlsAsync(html, baseUrl)).resolves.toEqual({
+      html: expected,
+      images: [],
+    });
   });
 
   describe("integration with cleanContent", () => {

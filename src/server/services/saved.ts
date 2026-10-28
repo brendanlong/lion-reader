@@ -33,7 +33,7 @@ import {
 } from "./collections";
 import { recordEntryTombstones } from "./entry-tombstones";
 import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
-import { enqueueEntriesObjectsDeletion } from "./stored-objects";
+import { enqueueEntriesObjectsDeletion, entryObjectsPrefix } from "./stored-objects";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
 import { detectFileType, getSupportedTypesDescription } from "@/server/file/process-upload";
@@ -604,6 +604,7 @@ async function saveArticleContent(
   }
 
   const bundle = await acquireSavedArticleContent(userId, params);
+  const entryId = existingEntry?.entry.id ?? generateUuidv7();
 
   // Derive the stored fields from the acquired content. Shared with the upload
   // paths (buildArticleFields) so save and upload stay in lockstep.
@@ -617,11 +618,15 @@ async function saveArticleContent(
     imageUrl,
     contentHash,
     newTextContent,
-  } = await buildArticleFields(bundle, {
-    providedTitle: params.title ?? null,
-    providedAuthor: params.author ?? null,
-    providedExcerpt: params.excerpt ?? null,
-  });
+  } = await buildArticleFields(
+    bundle,
+    {
+      providedTitle: params.title ?? null,
+      providedAuthor: params.author ?? null,
+      providedExcerpt: params.excerpt ?? null,
+    },
+    { objectsPrefix: entryObjectsPrefix(userId, entryId) }
+  );
 
   // Handle refetch: update the existing entry if quality is acceptable
   if (existingEntry) {
@@ -740,6 +745,7 @@ async function saveArticleContent(
   }
 
   const saved = await insertSavedEntry(db, userId, {
+    id: entryId,
     guid: normalizedUrl,
     url: normalizedUrl,
     title: finalTitle,
@@ -1070,6 +1076,7 @@ export async function uploadFile(
     if (existing) return existing;
 
     const converted = await convertUpload(file, filename);
+    const entryId = generateUuidv7();
     const fields = await buildArticleFields(
       {
         html: converted.html,
@@ -1082,9 +1089,9 @@ export async function uploadFile(
         filename,
         siteName: UPLOAD_SITE_NAMES[fileType],
       },
-      { minCleanedLength: 10 }
+      { minCleanedLength: 10, objectsPrefix: entryObjectsPrefix(userId, entryId) }
     );
-    return insertUploadedArticle(db, userId, fields, guid);
+    return insertUploadedArticle(db, userId, fields, guid, entryId);
   });
 }
 
@@ -1111,6 +1118,7 @@ export async function uploadArticle(
     // Convert markdown to HTML (with frontmatter title/summary/author); Readability
     // is skipped downstream because preCleanedContent is set.
     const markdownResult = await processMarkdown(params.content);
+    const entryId = generateUuidv7();
     const fields = await buildArticleFields(
       {
         html: markdownResult.html,
@@ -1124,8 +1132,11 @@ export async function uploadArticle(
         providedExcerpt: params.excerpt ?? null,
         siteName: "Uploaded Article",
       },
-      { keepRelativeUrls: params.keepRelativeUrls }
+      {
+        keepRelativeUrls: params.keepRelativeUrls,
+        objectsPrefix: entryObjectsPrefix(userId, entryId),
+      }
     );
-    return (await insertUploadedArticle(db, userId, fields, guid)).article;
+    return (await insertUploadedArticle(db, userId, fields, guid, entryId)).article;
   });
 }

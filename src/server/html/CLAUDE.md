@@ -24,4 +24,4 @@ Every allow-list or transform change needs a security review, and the property t
 - **Iframe embeds** (`core/src/embeds.rs`) are the only copy of the provider rules (#1541); TS code that synthesizes an embed reads them through the exported `normalizeEmbed` (see `youtube-embed.ts`), and a unit test round-trips the synthesized embeds through the sanitizer.
 - A start tag whose attribute the pass rewrites (an `id`, a `#fragment` href) is re-serialized; everything else passes through byte-identical, so don't assert byte-identity on markup carrying one.
 
-Tests: `pnpm test:native` for the crate; TS pipeline tests in `tests/unit/` (`sanitize-entry-html`, `mathjax-chtml`, `sanitize-svg`, `embed-providers`). Benchmark: `scripts/bench-sanitize.mts`.
+Tests: `pnpm test:native` for the crate; TS pipeline tests in `tests/unit/` (`sanitize-entry-html`, `mathjax-chtml`, `sanitize-svg`, `embed-providers`). Benchmarks: `scripts/bench-sanitize.mts`, and `scripts/bench-absolutize.mts` for the write-time URL pass.

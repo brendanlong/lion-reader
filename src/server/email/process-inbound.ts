@@ -9,7 +9,7 @@ import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "../db";
 import { generateSummary } from "../html/summary";
-import { cleanContent } from "@/server/feed/content-cleaner";
+import { cleanContent, rewriteContentUrls } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import { parseListUnsubscribeUrl } from "./parse-utils";
 import {
@@ -27,6 +27,8 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { getSubscriptionsByIds, lockSubscriptionMembers } from "@/server/services/subscriptions";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
+import { entryObjectsPrefix } from "@/server/services/stored-objects";
+import { inlineImageUrlPrefix, storeExtractedImages } from "@/server/services/inline-images";
 
 // ============================================================================
 // Types
@@ -311,8 +313,17 @@ export async function processInboundEmail(
     return { success: false, error: "Duplicate email" };
   }
 
-  // 7. Create entry with email content
-  const contentOriginal = email.html || email.text || "";
+  // 7. Create entry with email content, its inlined images moved to storage
+  const entryId = generateUuidv7();
+  const objectsPrefix = entryObjectsPrefix(userId, entryId);
+  const rewritten = email.html
+    ? rewriteContentUrls(email.html, null, {
+        imageUrlPrefix: inlineImageUrlPrefix(objectsPrefix) ?? undefined,
+      })
+    : null;
+  await storeExtractedImages(objectsPrefix, rewritten?.images ?? []);
+  const html = rewritten?.html ?? null;
+  const contentOriginal = html || email.text || "";
   const contentHash = generateEmailContentHash(email.subject, contentOriginal);
 
   // Try to clean HTML content using Readability for better reading experience.
@@ -320,15 +331,15 @@ export async function processInboundEmail(
   // Use lower thresholds than web articles since emails are often shorter.
   // Set to null if cleaning fails - UI only shows toggle when both versions exist.
   let contentCleaned: string | null = null;
-  if (email.html) {
-    const cleaned = cleanContent(email.html, {
+  if (html) {
+    const cleaned = cleanContent(html, {
       minContentLength: 50,
       minCleanedLength: 20,
     });
     if (cleaned) {
       contentCleaned = cleaned.content;
       logger.debug("Email content cleaned with Readability", {
-        originalLength: email.html.length,
+        originalLength: html.length,
         cleanedLength: cleaned.content.length,
       });
     }
@@ -343,20 +354,18 @@ export async function processInboundEmail(
   // Many newsletters (Substack, Ghost, Buttondown, etc.) include a link to the
   // web version of the post in the email's title heading. This gives email entries
   // a "Read on {domain}" link in the UI and enables full content fetching.
-  const url = email.html ? extractEmailUrl(email.html) : null;
+  const url = html ? extractEmailUrl(html) : null;
 
   // Extract unsubscribe URL from email HTML.
   // Many newsletters include an "unsubscribe" link in their footer. We extract this
   // so users can navigate to the newsletter's unsubscribe page directly from the UI.
-  const unsubscribeUrl = email.html ? extractUnsubscribeUrl(email.html) : null;
+  const unsubscribeUrl = html ? extractUnsubscribeUrl(html) : null;
 
   // Parse List-Unsubscribe headers
   const listUnsubscribeMailto = parseListUnsubscribeUrl(email.headers.listUnsubscribe, "mailto");
   const listUnsubscribeHttps = parseListUnsubscribeUrl(email.headers.listUnsubscribe, "https");
   const listUnsubscribePost =
     email.headers.listUnsubscribePost?.toLowerCase().includes("one-click") ?? false;
-
-  const entryId = generateUuidv7();
 
   const newEntry: NewEntry = {
     id: entryId,

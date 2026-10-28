@@ -11,6 +11,8 @@ import {
 } from "../../src/server/services/article-content";
 
 const BASE_URL = "https://example.com/posts/article";
+/** No storage is configured, so nothing is stored under it. */
+const OBJECTS_PREFIX = "uploads/test/";
 const RELATIVE_BODY = '<p>Body <a href="other">link</a> <img src="img/fig.png"></p>';
 const ABSOLUTE_LINK = 'href="https://example.com/posts/other"';
 const ABSOLUTE_IMG = 'src="https://example.com/posts/img/fig.png"';
@@ -49,7 +51,10 @@ describe("processArticleContent", () => {
       bundle({ preCleanedContent: { title: null, summary: null, author: null } }),
     ],
   ])("stores %s, absolutized, as both copies", async (_label, input) => {
-    const result = await processArticleContent(input, BASE_URL, { offload: false });
+    const result = await processArticleContent(input, BASE_URL, {
+      offload: false,
+      objectsPrefix: OBJECTS_PREFIX,
+    });
 
     expect(result.contentOriginal).toContain(ABSOLUTE_LINK);
     expect(result.contentOriginal).toContain(ABSOLUTE_IMG);
@@ -58,7 +63,10 @@ describe("processArticleContent", () => {
   });
 
   it("leaves cleaned null when Readability fails on a generic page", async () => {
-    const result = await processArticleContent(bundle({}), BASE_URL, { offload: false });
+    const result = await processArticleContent(bundle({}), BASE_URL, {
+      offload: false,
+      objectsPrefix: OBJECTS_PREFIX,
+    });
 
     expect(result.contentCleaned).toBeNull();
     expect(result.contentOriginal).toContain(ABSOLUTE_IMG);
@@ -67,6 +75,7 @@ describe("processArticleContent", () => {
   it("stores Readability's extraction as cleaned and the absolutized page as original", async () => {
     const result = await processArticleContent(bundle({ html: ARTICLE_PAGE }), BASE_URL, {
       offload: true,
+      objectsPrefix: OBJECTS_PREFIX,
     });
 
     expect(result.readability?.content).toBe(result.contentCleaned);
@@ -74,5 +83,17 @@ describe("processArticleContent", () => {
     expect(result.contentCleaned).not.toContain("About");
     expect(result.contentOriginal).toContain('href="https://example.com/about"');
     expect(result.contentOriginal).toContain(ABSOLUTE_IMG);
+  });
+
+  it("keeps inlined images inline when storage isn't configured", async () => {
+    const png = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(300)]);
+    const img = `<img src="data:image/png;base64,${png.toString("base64")}">`;
+    const result = await processArticleContent(
+      bundle({ html: img, preCleanedContent: { title: null, summary: null, author: null } }),
+      BASE_URL,
+      { offload: false, objectsPrefix: OBJECTS_PREFIX }
+    );
+
+    expect(result.contentOriginal).toBe(img);
   });
 });

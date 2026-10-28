@@ -7,16 +7,17 @@
  */
 
 import {
-  absolutizeUrls,
-  absolutizeUrlsAsync,
   cleanContent,
   cleanContentAsync,
+  rewriteContentUrls,
+  rewriteContentUrlsAsync,
 } from "@/server/feed/content-cleaner";
 import type { CleanedContent } from "@/server/feed/content-cleaner";
 import { processMarkdown } from "@/server/markdown";
 import { convertPdfToArticle } from "@/server/file/pdf-to-markdown";
 import { titleFromFilename } from "@/server/file/process-upload";
 import type { AcquiredArticle } from "@/server/plugins";
+import { inlineImageUrlPrefix, storeExtractedImages } from "./inline-images";
 
 /**
  * A unit of acquired content, however it was obtained: fetched from a URL
@@ -143,27 +144,32 @@ export interface ProcessedArticleContent {
 
 /**
  * Run Readability unless the content is already clean (pre-cleaned, or a
- * plugin's with `skipReadability`), and absolutize relative URLs in both
- * stored copies against `baseUrl` (null leaves them as written). Readability absolutizes its own output;
+ * plugin's with `skipReadability`). Before that, one pass absolutizes relative
+ * URLs against `baseUrl` (null leaves them as written) and moves inlined images
+ * to storage under the entry's `objectsPrefix`, and both stored copies come
+ * from its output. Readability absolutizes its own output;
  * nothing downstream (the Markdown renderer, the sanitizer) does, so a
  * relative URL left here would resolve against Lion Reader's origin.
  *
  * A plugin's content is the article even when Readability can't improve on it,
  * so a failed extraction falls back to it.
  *
- * @param options.offload - Run URL absolutization and Readability on the libuv
+ * @param options.offload - Run the URL pass and Readability on the libuv
  *   thread pool (request paths); background jobs pass false.
  * @param options.minCleanedLength - Passed to Readability (uploads, being
  *   trusted user content, accept a shorter extraction than a web page).
+ * @throws when storage refuses an image
  */
 export async function processArticleContent(
   bundle: ArticleContentBundle,
   baseUrl: string | null,
-  options: { offload: boolean; minCleanedLength?: number }
+  options: { offload: boolean; objectsPrefix: string; minCleanedLength?: number }
 ): Promise<ProcessedArticleContent> {
   const { html, pluginContent, preCleanedContent } = bundle;
-  const absolutize = options.offload ? absolutizeUrlsAsync : absolutizeUrls;
-  const contentOriginal = baseUrl ? await absolutize(html, baseUrl) : html;
+  const rewrite = options.offload ? rewriteContentUrlsAsync : rewriteContentUrls;
+  const imageUrlPrefix = inlineImageUrlPrefix(options.objectsPrefix) ?? undefined;
+  const { html: contentOriginal, images } = await rewrite(html, baseUrl, { imageUrlPrefix });
+  await storeExtractedImages(options.objectsPrefix, images);
 
   if (preCleanedContent || pluginContent?.skipReadability) {
     return { contentOriginal, contentCleaned: contentOriginal, readability: null };
@@ -171,8 +177,8 @@ export async function processArticleContent(
 
   const cleanOptions = { url: baseUrl ?? undefined, minCleanedLength: options.minCleanedLength };
   const readability = options.offload
-    ? await cleanContentAsync(html, cleanOptions)
-    : cleanContent(html, cleanOptions);
+    ? await cleanContentAsync(contentOriginal, cleanOptions)
+    : cleanContent(contentOriginal, cleanOptions);
 
   return {
     contentOriginal,

@@ -650,6 +650,7 @@ ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC LIMIT 1`
         statements: await recordStatements("update", (app) =>
           updateEntryContent(
             app,
+            webFeedId(WEB.popular),
             entry.id,
             item,
             generateContentHash(item),

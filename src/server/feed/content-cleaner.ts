@@ -14,7 +14,7 @@ import {
   absolutizeUrls as nativeAbsolutizeUrls,
   absolutizeUrlsAsync as nativeAbsolutizeUrlsAsync,
 } from "@lion-reader/sanitizer";
-import type { AbsolutizeOptions } from "@lion-reader/sanitizer";
+import type { AbsolutizeOptions, AbsolutizeOutput } from "@lion-reader/sanitizer";
 import { logger } from "@/lib/logger";
 import { startReadabilityTimer } from "@/server/metrics/metrics";
 
@@ -28,6 +28,21 @@ export function absolutizeUrls(
   baseUrl: string,
   options: AbsolutizeOptions = {}
 ): string {
+  return rewriteContentUrls(html, baseUrl, options).html;
+}
+
+/**
+ * {@link absolutizeUrls}, except that a null `baseUrl` leaves relative URLs as
+ * written, and with `options.imageUrlPrefix` it also moves inlined images out
+ * of the HTML, returning them to store (`rewrite_urls` in
+ * `native/sanitizer/core/src/absolutize.rs`). If lol_html can't parse the
+ * input, returns it unchanged, with no images.
+ */
+export function rewriteContentUrls(
+  html: string,
+  baseUrl: string | null,
+  options: AbsolutizeOptions = {}
+): AbsolutizeOutput {
   try {
     return nativeAbsolutizeUrls(html, baseUrl, options);
   } catch (error) {
@@ -36,16 +51,16 @@ export function absolutizeUrls(
 }
 
 /**
- * Async form of {@link absolutizeUrls} for request paths: inputs over
+ * Async form of {@link rewriteContentUrls} for request paths: inputs over
  * {@link INLINE_MAX_CHARS} run on the libuv thread pool.
  */
-export async function absolutizeUrlsAsync(
+export async function rewriteContentUrlsAsync(
   html: string,
-  baseUrl: string,
+  baseUrl: string | null,
   options: AbsolutizeOptions = {}
-): Promise<string> {
+): Promise<AbsolutizeOutput> {
   if (html.length <= INLINE_MAX_CHARS) {
-    return absolutizeUrls(html, baseUrl, options);
+    return rewriteContentUrls(html, baseUrl, options);
   }
   try {
     return await nativeAbsolutizeUrlsAsync(html, baseUrl, options);
@@ -54,12 +69,12 @@ export async function absolutizeUrlsAsync(
   }
 }
 
-function absolutizeFailed(html: string, baseUrl: string, error: unknown): string {
+function absolutizeFailed(html: string, baseUrl: string | null, error: unknown): AbsolutizeOutput {
   logger.warn("Failed to absolutize URLs in content", {
     baseUrl,
     error: error instanceof Error ? error.message : String(error),
   });
-  return html;
+  return { html, images: [] };
 }
 
 /**

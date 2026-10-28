@@ -23,7 +23,7 @@ import {
   selectExistingUpload,
   type SavedArticle,
 } from "@/server/services/saved";
-import { storeEntryImage } from "@/server/services/stored-objects";
+import { entryObjectsPrefix, storeEntryImage } from "@/server/services/stored-objects";
 import { isStorageAvailable } from "@/server/storage/s3";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { buildArticleFields } from "@/server/services/saved-content";
@@ -79,7 +79,8 @@ async function saveChapter(
       // Already clean content, so Readability is skipped.
       preCleanedContent: { title: chapter.title, summary: null, author: meta.author },
     },
-    { providedTitle: meta.title, siteName: meta.siteName }
+    { providedTitle: meta.title, siteName: meta.siteName },
+    { objectsPrefix: entryObjectsPrefix(userId, entryId) }
   );
   return (await insertUploadedArticle(db, userId, fields, guid, entryId)).article;
 }
