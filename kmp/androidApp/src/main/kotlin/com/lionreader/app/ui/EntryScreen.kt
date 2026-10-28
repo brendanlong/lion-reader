@@ -429,10 +429,10 @@ private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String,
  * Narration, while on, is of the article on screen: when the pager moves to another, what's playing
  * stops at once and narration follows it, playing or paused as it was. Its text is supplied once
  * the page has it and has stayed for [settle] (so swiping past articles doesn't synthesize, and
- * with cloud voices pay for, each). It follows only while the app is on screen: a switch empties the
- * player, and media3 can't bring its foreground service back from the background. A follow already
- * made gets its text even if the app leaves the screen meanwhile: the service waiting for it stays
- * in the foreground.
+ * with cloud voices pay for, each). It follows only while the app is on screen: a switch empties
+ * the player, and media3 can't bring its foreground service back from the background. A follow
+ * already made gets its text even if the app leaves the screen meanwhile: the service waiting for
+ * it stays in the foreground.
  */
 @Composable
 internal fun NarrationFollowsPage(
