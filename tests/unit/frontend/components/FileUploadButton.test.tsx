@@ -296,6 +296,7 @@ describe("FileUploadButton ebook import (#1805)", () => {
     originalTitle: "A Tale",
   };
   const ebookHandlers: ProcedureHandlers = {
+    "subscriptions.list": () => ({ items: [], nextCursor: undefined }),
     "collections.importEbook": () => ({
       subscription: collection,
       created: true,
@@ -318,6 +319,8 @@ describe("FileUploadButton ebook import (#1805)", () => {
     const file = new File(["PK"], "tale.epub", { type: "application/epub+zip" });
     fireEvent.change(getFileInput(), { target: { files: [file] } });
     expect(await screen.findByText("tale.epub")).toBeInTheDocument();
+    // The book gets its own collection, so there's none to pick.
+    expect(screen.queryByLabelText("Add to collection")).not.toBeInTheDocument();
     const upload = screen.getByRole("button", { name: "Upload" });
     await waitFor(() => expect(upload).toBeEnabled());
     fireEvent.click(upload);

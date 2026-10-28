@@ -209,6 +209,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const collections = collectionsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const viewedCollection = collections.find((c) => c.id === viewedSubscriptionId);
   const collectionId = chosenCollectionId ?? viewedCollection?.id ?? "";
+  const selectedEbook = selectedFile !== null && isEbookFile(selectedFile.name, selectedFile.type);
 
   const handleUpload = async () => {
     if (!selectedFile) return;
@@ -220,7 +221,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       // Remove the data URL prefix (e.g., "data:application/...;base64,")
       const base64Content = result.split(",")[1];
 
-      if (isEbookFile(selectedFile.name, selectedFile.type)) {
+      if (selectedEbook) {
         importEbookMutation.mutate({ content: base64Content, filename: selectedFile.name });
       } else {
         uploadMutation.mutate({
@@ -309,22 +310,30 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             )}
           </div>
 
-          <label htmlFor="upload-collection" className="ui-text-sm text-body mt-4 mb-1.5 block">
-            Add to collection
-          </label>
-          <select
-            id="upload-collection"
-            value={collectionId}
-            onChange={(e) => setChosenCollectionId(e.target.value)}
-            className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2"
-          >
-            <option value="">None</option>
-            {collections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title || untitledSubscriptionLabel(c.type)}
-              </option>
-            ))}
-          </select>
+          {selectedEbook ? (
+            <p className="ui-text-sm text-muted mt-4">
+              An ebook gets a collection of its own, named for the book.
+            </p>
+          ) : (
+            <>
+              <label htmlFor="upload-collection" className="ui-text-sm text-body mt-4 mb-1.5 block">
+                Add to collection
+              </label>
+              <select
+                id="upload-collection"
+                value={collectionId}
+                onChange={(e) => setChosenCollectionId(e.target.value)}
+                className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2"
+              >
+                <option value="">None</option>
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title || untitledSubscriptionLabel(c.type)}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </DialogBody>
 
         <DialogFooter>
