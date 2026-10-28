@@ -19,6 +19,8 @@ use lol_html::{element, rewrite_str, HandlerResult, RewriteStrSettings};
 use sha2::{Digest, Sha256};
 use url::Url;
 
+use crate::urls::decode_attr;
+
 /// A base URL and, optionally, the directory URL that root-relative paths
 /// (`/a/b.png`) resolve against instead of the origin root. The root is for
 /// sources that serve a document tree under a path prefix and read a leading
@@ -166,7 +168,10 @@ fn extract_image(src: &str, url_prefix: &str, state: &mut State) -> Option<Strin
     if src.len() <= url_prefix.len() + MAX_IMAGE_NAME_LEN {
         return None;
     }
-    let trimmed = src.trim_matches(is_js_whitespace);
+    // The value is raw; a browser entity-decodes it once before reading the
+    // URL, so `&amp;` in a payload is one byte.
+    let decoded = decode_attr(src);
+    let trimmed = decoded.trim_matches(is_js_whitespace);
     if !trimmed.get(..5)?.eq_ignore_ascii_case("data:") {
         return None;
     }
@@ -743,6 +748,26 @@ mod tests {
                 image_src(first),
             )
         );
+    }
+
+    #[test]
+    fn decodes_entities_in_the_attribute_once() {
+        let data = png(b'&');
+        // Percent-encoded, with `&` written as `&amp;`.
+        let percent: String = data.iter().map(|b| format!("%{b:02X}")).collect();
+        let entity_percent = format!("data:image/png,{}", percent.replace("%26", "&amp;"));
+        // Base64 with `+` and `/` as character references.
+        let mut base64_data = png(0xfb);
+        base64_data.extend([0xff; 8]);
+        let entity_base64 = data_uri("image/png", &base64_data)
+            .replace('+', "&#43;")
+            .replace('/', "&#47;");
+        assert!(entity_base64.contains("&#"));
+        for (src, expected) in [(entity_percent, data), (entity_base64, base64_data)] {
+            let rewritten = extract(&format!(r#"<img src="{src}">"#), None);
+            assert_eq!(rewritten.images.len(), 1);
+            assert_eq!(rewritten.images[0].data, expected);
+        }
     }
 
     #[test]

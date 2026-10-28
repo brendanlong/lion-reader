@@ -316,11 +316,8 @@ export async function processInboundEmail(
   // 7. Create entry with email content, its inlined images moved to storage
   const entryId = generateUuidv7();
   const objectsPrefix = entryObjectsPrefix(userId, entryId);
-  const rewritten = email.html
-    ? rewriteContentUrls(email.html, null, {
-        imageUrlPrefix: inlineImageUrlPrefix(objectsPrefix) ?? undefined,
-      })
-    : null;
+  const imageUrlPrefix = inlineImageUrlPrefix(objectsPrefix) ?? undefined;
+  const rewritten = email.html ? rewriteContentUrls(email.html, null, { imageUrlPrefix }) : null;
   await storeExtractedImages(objectsPrefix, rewritten?.images ?? []);
   const html = rewritten?.html ?? null;
   const contentOriginal = html || email.text || "";
@@ -335,8 +332,10 @@ export async function processInboundEmail(
     const cleaned = cleanContent(html, {
       minContentLength: 50,
       minCleanedLength: 20,
+      imageUrlPrefix,
     });
     if (cleaned) {
+      await storeExtractedImages(objectsPrefix, cleaned.images);
       contentCleaned = cleaned.content;
       logger.debug("Email content cleaned with Readability", {
         originalLength: html.length,

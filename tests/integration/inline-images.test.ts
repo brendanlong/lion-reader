@@ -140,6 +140,20 @@ describe("inlined images", () => {
     }
   });
 
+  it("moves an image Readability surfaces from a <noscript> fallback", async () => {
+    const userId = await user();
+    const page = ARTICLE_PAGE.replace(
+      `<img src="${DATA_URI}" alt="figure">`,
+      `<img src="https://example.com/placeholder.jpg"><noscript><img src="${DATA_URI}"></noscript>`
+    );
+    const article = await saveArticle(db, userId, { url: `${baseUrl}/noscript`, html: page });
+
+    const url = expectStoredImage(entryObjectsPrefix(userId, article.id));
+    const { cleaned } = await storedContent(article.id);
+    expect(cleaned).toContain(url);
+    expect(cleaned).not.toContain("data:image");
+  });
+
   it("stores a feed entry's images under its feed", async () => {
     const feedId = await feed();
     const parsed: ParsedEntry = {

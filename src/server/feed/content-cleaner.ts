@@ -14,7 +14,7 @@ import {
   absolutizeUrls as nativeAbsolutizeUrls,
   absolutizeUrlsAsync as nativeAbsolutizeUrlsAsync,
 } from "@lion-reader/sanitizer";
-import type { AbsolutizeOptions, AbsolutizeOutput } from "@lion-reader/sanitizer";
+import type { AbsolutizeOptions, AbsolutizeOutput, ExtractedImage } from "@lion-reader/sanitizer";
 import { logger } from "@/lib/logger";
 import { startReadabilityTimer } from "@/server/metrics/metrics";
 
@@ -126,6 +126,12 @@ export interface CleanedContent {
   title: string | null;
   /** Author byline extracted by Readability */
   byline: string | null;
+  /**
+   * Inlined images moved out of the content (`imageUrlPrefix`), for the
+   * caller to store: Readability can surface images the input pass couldn't
+   * see, such as a `<noscript>` fallback's
+   */
+  images: ExtractedImage[];
 }
 
 /**
@@ -143,6 +149,8 @@ export interface CleanContentOptions {
    * Default: 50 characters
    */
   minCleanedLength?: number;
+  /** Where inlined images in the cleaned content move to (`inlineImageUrlPrefix`) */
+  imageUrlPrefix?: string;
 }
 
 /**
@@ -267,7 +275,7 @@ function finishCleaned(
   html: string,
   options: CleanContentOptions
 ): CleanedContent | null {
-  const { url, minCleanedLength = 50 } = options;
+  const { url, minCleanedLength = 50, imageUrlPrefix } = options;
 
   if (!article) {
     logger.debug("Readability failed to parse content", { url });
@@ -293,8 +301,11 @@ function finishCleaned(
 
   // Absolutize relative URLs in the cleaned content if we have a base URL.
   // Extract <base href> from the raw HTML since Readability strips it.
-  const effectiveUrl = url ? extractBaseHref(html, url) : undefined;
-  const content = effectiveUrl ? absolutizeUrls(article.content, effectiveUrl) : article.content;
+  const effectiveUrl = url ? extractBaseHref(html, url) : null;
+  const { html: content, images } =
+    effectiveUrl || imageUrlPrefix
+      ? rewriteContentUrls(article.content, effectiveUrl, { imageUrlPrefix })
+      : { html: article.content, images: [] };
 
   return {
     content,
@@ -302,5 +313,6 @@ function finishCleaned(
     excerpt: article.excerpt ?? "",
     title: article.title ?? null,
     byline: article.byline ?? null,
+    images,
   };
 }

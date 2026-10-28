@@ -175,10 +175,15 @@ export async function processArticleContent(
     return { contentOriginal, contentCleaned: contentOriginal, readability: null };
   }
 
-  const cleanOptions = { url: baseUrl ?? undefined, minCleanedLength: options.minCleanedLength };
+  const cleanOptions = {
+    url: baseUrl ?? undefined,
+    minCleanedLength: options.minCleanedLength,
+    imageUrlPrefix,
+  };
   const readability = options.offload
     ? await cleanContentAsync(contentOriginal, cleanOptions)
     : cleanContent(contentOriginal, cleanOptions);
+  await storeExtractedImages(options.objectsPrefix, readability?.images ?? []);
 
   return {
     contentOriginal,
