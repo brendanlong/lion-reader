@@ -5,8 +5,8 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  EPUB_MAX_DOCUMENT_FACTOR,
   EPUB_MAX_INFLATION_FACTOR,
+  EPUB_MAX_TEXT_FACTOR,
   openEpub,
   type ImageStore,
 } from "@/server/file/epub";
@@ -335,27 +335,30 @@ describe("openEpub", () => {
     const paddedDocument = (bytes: number) =>
       chapterXhtml(`<p>Short.</p><!--${"a".repeat(bytes)}-->`);
 
-    it("rejects a spine document that inflates past its own budget", async () => {
+    it("rejects a book whose documents together pass its text budget", async () => {
+      const perDocument = Math.ceil((limit * EPUB_MAX_TEXT_FACTOR) / 2);
       const error = await openError(
         buildEpub({
-          spine: [{ path: "a.xhtml", xhtml: paddedDocument(limit * EPUB_MAX_DOCUMENT_FACTOR) }],
+          spine: [
+            { path: "a.xhtml", xhtml: paddedDocument(perDocument) },
+            { path: "b.xhtml", xhtml: paddedDocument(perDocument) },
+          ],
         })
       );
       expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+      expect((error as Error).message).toMatch(/text/);
     });
 
-    it("rejects a book whose documents together inflate past its budget", async () => {
-      const perDocument = limit * EPUB_MAX_DOCUMENT_FACTOR - 1024;
-      const count = Math.floor((limit * EPUB_MAX_INFLATION_FACTOR) / perDocument) + 1;
+    it("rejects a book whose archive inflates past its budget", async () => {
       const error = await openError(
         buildEpub({
-          spine: Array.from({ length: count }, (_, i) => ({
-            path: `${i}.xhtml`,
-            xhtml: paddedDocument(perDocument),
-          })),
+          spine: [{ path: "a.xhtml", xhtml: chapterXhtml('<p>Text</p><img src="pic.png"/>') }],
+          files: { "OEBPS/pic.png": Buffer.alloc(limit * EPUB_MAX_INFLATION_FACTOR + 1) },
+          manifest: { "pic.png": "image/png" },
         })
       );
       expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+      expect((error as Error).message).toMatch(/Decompressed ebook/);
     });
 
     it("rejects a chapter too large to save as soon as it's read", async () => {

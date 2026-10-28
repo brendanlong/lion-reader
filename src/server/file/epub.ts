@@ -11,9 +11,10 @@
  *
  * Chapters are read one at a time ({@link Epub.chapters}), so a whole book's
  * HTML is never in memory at once: at most one spine document and the chapters
- * it holds, each bounded by the saved-article size limit. Every byte inflated
- * from the archive also counts against one budget for the book, which bounds
- * the parsing a ZIP bomb can cost.
+ * it holds, each bounded by the saved-article size limit. The spine documents
+ * together have a budget, which bounds the text one book saves, and every byte
+ * inflated from the archive counts against another, which bounds the parsing
+ * a ZIP bomb can cost.
  */
 
 import { posix } from "node:path";
@@ -35,13 +36,14 @@ import { documentConversionSlot, QueueTimeoutError } from "@/server/file/convers
 export const EPUB_MAX_INFLATION_FACTOR = 10;
 
 /**
- * One spine document, inflated, as a multiple of the saved-article size limit:
- * room for a book that's all one file, as `.docx` text gets, but no more,
- * since the document is in memory whole.
+ * The book's spine documents together, inflated, as a multiple of the
+ * saved-article size limit: room for a book that's all one file, as `.docx`
+ * text gets, but no more, since a document is in memory whole and its text is
+ * saved to the database.
  *
  * @testonly
  */
-export const EPUB_MAX_DOCUMENT_FACTOR = 2;
+export const EPUB_MAX_TEXT_FACTOR = 2;
 
 /**
  * How long a spine document may wait for the document conversion slot, as a
@@ -133,6 +135,16 @@ interface Package {
   ncxId: string | null;
 }
 
+/**
+ * A read's own limit: `bytes` of what's left of a budget of `maxBytes`, named
+ * `resource` in the error.
+ */
+interface ReadLimit {
+  bytes: number;
+  maxBytes: number;
+  resource: string;
+}
+
 /** Reads archive entries, failing once their inflated total passes the budget. */
 class BudgetedZip {
   private inflated = 0;
@@ -145,8 +157,8 @@ class BudgetedZip {
     return entry !== null && !entry.dir;
   }
 
-  async readText(path: string, maxBytes?: number): Promise<string | null> {
-    const bytes = await this.read(path, maxBytes);
+  async readText(path: string): Promise<string | null> {
+    const bytes = await this.read(path);
     return bytes === null ? null : bytes.toString("utf8");
   }
 
@@ -154,7 +166,7 @@ class BudgetedZip {
    * Counts the bytes actually inflated rather than trusting the sizes the ZIP
    * declares, which the file's author controls.
    */
-  read(path: string, maxBytes = this.budget): Promise<Buffer | null> {
+  read(path: string, limit?: ReadLimit): Promise<Buffer | null> {
     const entry = this.zip.file(path);
     if (!entry || entry.dir) return Promise.resolve(null);
     return new Promise((resolve, reject) => {
@@ -164,12 +176,13 @@ class BudgetedZip {
       stream.on("data", (chunk: Buffer) => {
         this.inflated += chunk.length;
         bytes += chunk.length;
-        if (this.inflated > this.budget || bytes > maxBytes) {
+        const overLimit = limit !== undefined && bytes > limit.bytes;
+        if (overLimit || this.inflated > this.budget) {
           stream.pause();
           reject(
-            this.inflated > this.budget
-              ? errors.contentTooLarge("Decompressed ebook", this.budget)
-              : errors.contentTooLarge(`Decompressed ${path}`, maxBytes)
+            overLimit
+              ? errors.contentTooLarge(limit.resource, limit.maxBytes)
+              : errors.contentTooLarge("Decompressed ebook", this.budget)
           );
           return;
         }
@@ -874,7 +887,7 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
     zip,
     new Map([...pkg.manifest.values()].map((item) => [item.path, item.mediaType]))
   );
-  const maxDocumentBytes = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_DOCUMENT_FACTOR;
+  const maxTextBytes = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_TEXT_FACTOR;
 
   function toChapter(pending: PendingChapter): EpubChapter {
     return {
@@ -888,14 +901,21 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
     author: pkg.creators.length > 0 ? pkg.creators.join(", ") : null,
     async *chapters() {
       const builder = new ChapterBuilder(images);
+      let textBytes = 0;
       for (const path of spine) {
         // A finished chapter is handed over before the next document is read,
         // so it survives that document failing.
         builder.startDocument(starts.get(path));
         for (const pending of builder.takeFinished()) yield toChapter(pending);
         await withConversionSlot(async () => {
-          const xhtml = await zip.readText(path, maxDocumentBytes);
-          if (xhtml) await builder.addDocument(path, xhtml, starts.get(path));
+          const xhtml = await zip.read(path, {
+            bytes: maxTextBytes - textBytes,
+            maxBytes: maxTextBytes,
+            resource: "The ebook's text",
+          });
+          if (!xhtml?.length) return;
+          textBytes += xhtml.length;
+          await builder.addDocument(path, xhtml.toString("utf8"), starts.get(path));
         });
         for (const pending of builder.takeFinished()) yield toChapter(pending);
       }
