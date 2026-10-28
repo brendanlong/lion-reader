@@ -11,6 +11,7 @@ import com.lionreader.shared.settings.AppSettings
 import java.io.File
 import java.io.IOException
 import java.time.Duration
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -36,6 +37,13 @@ class NarratorTest {
     /** Texts whose every synthesis streams half and then breaks off. */
     private val alwaysBreaks = mutableSetOf<String>()
     private val streamed = mutableListOf<Pair<StreamedAudio, File>>()
+    /** Texts whose synthesis fails, so the chunk is skipped. */
+    private val unsayable = mutableSetOf<String>()
+    /** Synthesizes a moment of audio rather than half a minute, so narration can play through. */
+    private var brief = false
+    /** Getting the engine, and synthesis, wait on these while they're set. */
+    private var engineReady: CompletableDeferred<Unit>? = null
+    private var synthesisDone: CompletableDeferred<Unit>? = null
 
     private val engine =
         object : SpeechEngine {
@@ -44,12 +52,13 @@ class NarratorTest {
             override val parallelism = 1
 
             override suspend fun synthesize(text: String, dir: File, name: String): Uri {
-
+                synthesisDone?.await()
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
+                if (text in unsayable) throw IOException("Can't say that")
                 if (streamHalf.remove(text) || text in alwaysBreaks) {
                     val file = File(dir, "$name.part").apply { writeBytes(SILENCE.copyOf(HALF)) }
                     val audio = StreamedAudio(file).also { it.appended(HALF) }
@@ -57,7 +66,8 @@ class NarratorTest {
                     if (text in alwaysBreaks) breakOff(audio to file)
                     return audio.uri
                 }
-                return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(SILENCE) })
+                val audio = if (brief) silence(seconds = 0.2) else SILENCE
+                return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(audio) })
             }
         }
 
@@ -68,6 +78,7 @@ class NarratorTest {
             ApplicationProvider.getApplicationContext(),
             settings,
             {
+                engineReady?.await()
                 if (engineUnreachable) throw SpeechInterrupted("Couldn't reach Lion Reader.")
                 engine
             },
@@ -99,6 +110,80 @@ class NarratorTest {
         get() = narrator.state.value
 
     @After fun stop() = narrator.stop()
+
+    /**
+     * Media3 keeps the service in the foreground, which the system won't let it enter from the
+     * background, only while the player is to play and has something to buffer on.
+     */
+    private fun assertPlayerWaits() {
+        assertTrue(narrator.player.mediaItemCount > 0)
+        assertTrue(narrator.player.playWhenReady)
+        assertEquals(Player.STATE_BUFFERING, narrator.player.playbackState)
+    }
+
+    @Test
+    fun thePlayerWaitsOnSomethingFromTheStartThroughEachSynthesis() {
+        engineReady = CompletableDeferred()
+        synthesisDone = CompletableDeferred()
+        narrator.narrate(article("a", "One."))
+        idle()
+        assertPlayerWaits()
+        assertTrue(state!!.waiting)
+
+        engineReady!!.complete(Unit)
+        idle()
+        assertPlayerWaits()
+        assertEquals("0", narrator.player.currentMediaItem?.mediaId)
+
+        synthesisDone!!.complete(Unit)
+        idleUntil { narrator.player.playbackState == Player.STATE_READY }
+        assertEquals(Player.STATE_READY, narrator.player.playbackState)
+        assertFalse(state!!.waiting)
+    }
+
+    @Test
+    fun thePlayerWaitsOnSomethingWhileFollowingToAnotherArticle() {
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.follow("b", "Title b")
+        idle()
+        assertPlayerWaits()
+
+        synthesisDone = CompletableDeferred()
+        narrator.supply(article("b", "Two."))
+        idle()
+        assertPlayerWaits()
+        assertEquals("Title b", narrator.player.currentMediaItem?.mediaMetadata?.title)
+    }
+
+    @Test
+    fun aChunkThatCantBeSaidIsSkippedWithoutThePlayerEnding() {
+        unsayable += "One."
+        narrator.narrate(article("a", "One.", "Two."))
+        idleUntil { narrator.player.playbackState == Player.STATE_READY }
+
+        assertEquals(
+            listOf("1"),
+            List(narrator.player.mediaItemCount) {
+                narrator.player.getMediaItemAt(it).mediaId
+            },
+        )
+        assertEquals(Player.STATE_READY, narrator.player.playbackState)
+        assertEquals(1, state?.paragraph)
+        assertTrue(state!!.playing)
+    }
+
+    @Test
+    fun narrationStopsOnceItHasPlayedTheLastChunk() {
+        brief = true
+        unsayable += "Three."
+        narrator.narrate(article("a", "One.", "Two.", "Three."))
+        idleUntil { state == null }
+
+        assertNull(state)
+        assertEquals(listOf("One.", "Two.", "Three."), synthesized)
+        assertEquals(0, narrator.player.mediaItemCount)
+    }
 
     @Test
     fun followingMovesNarrationAndKeepsItPlaying() {
@@ -171,6 +256,8 @@ class NarratorTest {
 
         assertEquals("b", state?.entryId)
         assertFalse(state!!.waiting)
+        // Nothing for the media controls to play (and wait on forever).
+        assertEquals(0, narrator.player.mediaItemCount)
         narrator.togglePlaying()
         narrator.togglePlaying()
         assertFalse(state!!.waiting)
@@ -434,10 +521,12 @@ class NarratorTest {
  * Half a minute of silence, as a real WAV: an empty file makes the player report an error (on its
  * own thread, so at any point in a test), which ends the narration.
  */
-private val SILENCE: ByteArray by lazy {
+private val SILENCE: ByteArray by lazy { silence(seconds = 30.0) }
+
+private fun silence(seconds: Double): ByteArray {
     val rate = 8_000
-    val samples = rate * 30
-    java.nio.ByteBuffer.allocate(44 + samples)
+    val samples = (rate * seconds).toInt()
+    return java.nio.ByteBuffer.allocate(44 + samples)
         .order(java.nio.ByteOrder.LITTLE_ENDIAN)
         .apply {
             put("RIFF".toByteArray()).putInt(36 + samples).put("WAVE".toByteArray())

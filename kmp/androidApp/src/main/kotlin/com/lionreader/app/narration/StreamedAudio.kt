@@ -2,6 +2,7 @@ package com.lionreader.app.narration
 
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
@@ -114,7 +115,7 @@ class SpeechStreamBroken(cause: Exception) : IOException("The cloud voice stoppe
 
 /**
  * What the narration player reads: [StreamedAudio] by its uri (still arriving, or the file it ended
- * up in), anything else as a file.
+ * up in), [PENDING] as audio that isn't there yet, anything else as a file.
  */
 @OptIn(UnstableApi::class)
 class NarrationDataSource : BaseDataSource(/* isNetwork= */ false) {
@@ -127,6 +128,7 @@ class NarrationDataSource : BaseDataSource(/* isNetwork= */ false) {
 
     override fun open(dataSpec: DataSpec): Long {
         uri = dataSpec.uri
+        if (dataSpec.uri == PENDING) awaitReplacement()
         if (dataSpec.uri.scheme != StreamedAudio.SCHEME) {
             reading = files
             return files.open(dataSpec)
@@ -172,8 +174,30 @@ class NarrationDataSource : BaseDataSource(/* isNetwork= */ false) {
         }
     }
 
+    /**
+     * Waits for the player to give up on the load (it interrupts the loading thread), as it does
+     * once the narrator replaces the item with its audio, or removes it.
+     */
+    private fun awaitReplacement(): Nothing {
+        try {
+            while (true) Thread.sleep(Long.MAX_VALUE)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw InterruptedIOException()
+        }
+    }
+
     class Factory : DataSource.Factory {
         override fun createDataSource(): DataSource = NarrationDataSource()
+    }
+
+    companion object {
+        /**
+         * Audio still to come: an item the player buffers on until the narrator replaces it. It
+         * keeps the player, and so the media session's foreground service, going while there's
+         * nothing to play yet.
+         */
+        val PENDING: Uri = "lionreader-pending:audio".toUri()
     }
 }
 
