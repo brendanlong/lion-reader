@@ -14,7 +14,7 @@
  * is given, so mutating a returned object would change the cache behind its back.
  */
 
-import { sortFieldOf } from "@/lib/entry-sort";
+import { ENTRY_SORT_DIRECTIONS, sortFieldOf } from "@/lib/entry-sort";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
@@ -334,7 +334,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       read: state.read,
       starred: state.starred,
       readChangedAt: state.readChangedAt,
-      score: null,
+      score: entry.score,
       updatedAt: state.updatedAt,
       // Demo entries never change, only their state does.
       entryUpdatedAt: entry.publishedAt ?? entry.fetchedAt,
@@ -475,7 +475,9 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
 
   const procedures: DemoProcedures = {
     "entries.list": (input) => {
-      const sortBy = input.sortBy ?? "published";
+      // Every demo article has a score (its rank in the tour), so lists open
+      // sorted by it, as a real list does once the user picks that sort.
+      const sortBy = input.sortBy ?? (input.sortOrder ? sortFieldOf(input.sortOrder) : "score");
       const filter: EntryFilter = {
         subscriptionId: input.subscriptionId,
         tagId: input.tagId,
@@ -489,10 +491,14 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       const sortKey = (state: EntryState): number =>
         sortBy === "readChanged"
           ? (state.readChangedAt?.getTime() ?? 0)
-          : (state.entry.publishedAt ?? state.entry.fetchedAt).getTime();
-      // Demo articles have no scores or positions, so those sorts list them
-      // newest first, as the service lists articles without one.
-      const direction = input.sortOrder === "oldest" ? 1 : -1;
+          : sortBy === "score"
+            ? state.entry.score
+            : (state.entry.publishedAt ?? state.entry.fetchedAt).getTime();
+      const sortOrder = input.sortOrder ?? ENTRY_SORT_DIRECTIONS[sortBy][0];
+      // Demo articles have no positions, so that sort lists them newest first
+      // in both directions, as the service lists articles without one.
+      const direction =
+        sortBy !== "position" && sortOrder === ENTRY_SORT_DIRECTIONS[sortBy][1] ? 1 : -1;
       const compare = (a: { key: number; id: string }, b: { key: number; id: string }) =>
         direction * (a.key - b.key) || a.id.localeCompare(b.id);
       const position = (state: EntryState) => ({ key: sortKey(state), id: state.entry.id });
@@ -516,12 +522,8 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         items: page.map(toListItem),
         nextCursor: hasMore && last ? encodeCursor(position(last)) : undefined,
         ...(!input.cursor &&
-          sortBy !== "readChanged" && { sortable: { score: false, position: false } }),
-        ...(!input.cursor && {
-          sort: input.sortOrder
-            ? { sortBy: input.sortBy ?? sortFieldOf(input.sortOrder), sortOrder: input.sortOrder }
-            : { sortBy, sortOrder: "newest" as const },
-        }),
+          sortBy !== "readChanged" && { sortable: { score: true, position: false } }),
+        ...(!input.cursor && { sort: { sortBy, sortOrder } }),
       };
     },
 
@@ -565,7 +567,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
           type: state.entry.type,
           updatedAt: state.updatedAt,
           readChangedAt: state.readChangedAt,
-          score: null,
+          score: state.entry.score,
           positions: {},
         });
       }

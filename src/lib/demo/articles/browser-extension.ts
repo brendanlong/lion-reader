@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Save the page you're reading to Lion Reader with one click, a keyboard shortcut, or a right-click, in Firefox and Chrome.",
   publishedAt: new Date("2026-01-10T12:00:00Z"),
+  score: 50,
   starred: false,
   summaryHtml: `<p>The Lion Reader browser extension saves articles as you browse &mdash; click the toolbar button, use a keyboard shortcut, or right-click to save a link without opening it. Paywalled pages keep only their public part, and saved Google Docs keep their real content instead of a sign-in page.</p>`,
   summaryModelId: "claude-sonnet-5",

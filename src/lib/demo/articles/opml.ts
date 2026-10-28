@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Bring your subscriptions from another feed reader in one step, and take them with you whenever you like.",
   publishedAt: new Date("2025-12-28T14:00:00Z"),
+  score: 200,
   starred: false,
   summaryHtml: `<p>Import an OPML file exported from another feed reader, like Feedly or Inoreader, and Lion Reader adds its subscriptions while turning folders into <strong>tags</strong>. The import runs in the background and reports which feeds were added, duplicates, or failed. You can also export your subscription list, with tags and names.</p>`,
   summaryModelId: "claude-sonnet-5",

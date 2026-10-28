@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Already love a feed reader app on your phone or desktop? Connect it to Lion Reader and everything stays in sync.",
   publishedAt: new Date("2026-02-20T01:00:00Z"),
+  score: 150,
   starred: false,
   summaryHtml: `<p>Lion Reader syncs with apps that support the Google Reader standard &mdash; like NetNewsWire, Read You, and NewsFlash &mdash; keeping subscriptions, newsletters, tags, unread counts, and read or starred status in sync everywhere, including saved articles as their own subscription. Set it up by choosing <strong>FreshRSS</strong> as the service type.</p>`,
   summaryModelId: "claude-sonnet-5",

@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Pick your font, text size, and list layout, and choose a theme for daytime, late-night reading, or e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
+  score: 80,
   starred: false,
   summaryHtml: `<p>Lion Reader offers <strong>Light</strong>, <strong>Dark</strong>, and <strong>e-paper</strong> themes, with an Auto option that follows your device&rsquo;s setting and switches to e-paper on e-ink readers. Choose a serif or sans-serif font, adjust text size and alignment, and switch between Comfortable and Compact list views; settings save per device.</p>`,
   summaryModelId: "claude-sonnet-5",

@@ -71,18 +71,13 @@ jobs:
         #
         # NEXT_PUBLIC_BUILD_TIME is separate: it must be a build arg because
         # Next inlines NEXT_PUBLIC_* into the client bundle at build time; it's
-        # the build id (src/lib/build-id.ts). It's also passed as a runtime
-        # env var, using the SAME timestamp as
-        # BUILD_TIME, so the demo's "Welcome" published time matches between the
-        # client and server renders (see
-        # src/lib/demo/articles/welcome-published-at.ts).
+        # the build id (src/lib/build-id.ts).
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           SHORT_SHA="$(git rev-parse --short HEAD)"
           flyctl deploy --remote-only \
             --build-arg GIT_COMMIT_SHA="$SHORT_SHA" \
             --build-arg BUILD_TIME="$BUILD_TIME" \
-            --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME" \
-            --env NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME"
+            --build-arg NEXT_PUBLIC_BUILD_TIME="$BUILD_TIME"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

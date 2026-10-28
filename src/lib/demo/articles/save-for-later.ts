@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Save any page to read later, from wherever you find it. Lion Reader keeps a clean, readable copy that won't disappear.",
   publishedAt: new Date("2025-12-27T16:00:00Z"),
+  score: 230,
   starred: true,
   summaryHtml: `<p>Saving an article to Lion Reader keeps a clean, ad-free copy that stays readable even if the original disappears. Save it from the browser extension, a phone&rsquo;s share menu, a file, or the Discord bot, and tricky pages like <strong>YouTube</strong> videos or Google Docs come through as real content.</p>`,
   summaryModelId: "claude-sonnet-5",
@@ -22,7 +23,7 @@ const article: DemoArticle = {
     <ul>
       <li><strong>In your browser</strong> &mdash; one click with the <a href="/demo/all?entry=browser-extension">browser extension</a>, or a bookmarklet in any browser</li>
       <li><strong>On your phone</strong> &mdash; from the share menu: on Android, <a href="/demo/all?entry=pwa">install Lion Reader like an app</a>; on iPhone and iPad, use the free <a href="/demo/all?entry=wallabag-api">Wallabag app</a></li>
-      <li><strong>From a file</strong> &mdash; <a href="/demo/all?entry=file-upload">upload</a> a Word document, PDF, Markdown, or HTML file</li>
+      <li><strong>From a file</strong> &mdash; <a href="/demo/all?entry=file-upload">upload</a> a Word document, <a href="/demo/all?entry=pdfs">PDF</a>, Markdown, or HTML file, or a whole <a href="/demo/all?entry=books">ebook</a></li>
       <li><strong>In Discord</strong> &mdash; react to a link with the <a href="/demo/all?entry=discord-bot">Discord bot</a></li>
       <li><strong>By asking</strong> &mdash; tell your <a href="/demo/all?entry=mcp-server">AI assistant</a> to save it for you</li>
     </ul>
@@ -33,7 +34,7 @@ const article: DemoArticle = {
 
     <h3>Part of Your Library</h3>
 
-    <p>Saved articles get their own section in the sidebar, and you can star, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=text-to-speech">listen to</a>, or <a href="/demo/all?entry=ai-summaries">summarize</a> them like anything else. Mark one read when you&rsquo;re done and it leaves your unread list.</p>
+    <p>Saved articles get their own section in the sidebar, and you can star, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=text-to-speech">listen to</a>, or <a href="/demo/all?entry=ai-summaries">summarize</a> them like anything else. Mark one read when you&rsquo;re done and it leaves your unread list. To keep related reading together, group articles into <a href="/demo/all?entry=collections">collections</a> &mdash; each one sits in the sidebar like a feed.</p>
   `,
 };
 

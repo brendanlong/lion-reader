@@ -27,17 +27,29 @@ function listAll(procedures: ReturnType<typeof createDemoStore>["procedures"]) {
 
 describe("createDemoStore", () => {
   describe("entries.list", () => {
-    it("starts with every article unread, newest first, welcome pinned to the top", () => {
+    it("starts with every article unread, highest score first, welcome at the top", () => {
       const { procedures } = createDemoStore();
+      const first = procedures["entries.list"]({ limit: 10 });
+      expect(first.sort).toEqual({ sortBy: "score", sortOrder: "highest" });
+      expect(first.sortable).toEqual({ score: true, position: false });
       const items = listAll(procedures);
       expect(items).toHaveLength(TOTAL);
       expect(items[0].id).toBe("welcome");
       expect(items.every((item) => !item.read)).toBe(true);
       for (let i = 1; i < items.length; i++) {
-        expect(items[i - 1].publishedAt!.getTime()).toBeGreaterThanOrEqual(
-          items[i].publishedAt!.getTime()
-        );
+        expect(items[i - 1].score!).toBeGreaterThan(items[i].score!);
       }
+    });
+
+    it("sorts by date in either direction when asked", () => {
+      const { procedures } = createDemoStore();
+      const times = (sortOrder: "newest" | "oldest") =>
+        procedures["entries.list"]({ sortOrder, limit: 100 }).items.map((i) =>
+          i.publishedAt!.getTime()
+        );
+      const newest = times("newest");
+      expect(newest).toEqual([...newest].sort((a, b) => b - a));
+      expect(times("oldest")).toEqual([...newest].reverse());
     });
 
     it("paginates with an opaque cursor and reports the end of the list", () => {

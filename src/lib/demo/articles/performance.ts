@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "New articles appear in your lists without a refresh, moving around is instant, and typical pages load in under 100ms.",
   publishedAt: new Date("2026-03-01T12:00:00Z"),
+  score: 70,
   starred: false,
   summaryHtml: `<p>Lion Reader treats speed as a feature: new articles appear in your list automatically with no refresh, previously visited lists open instantly, and marking something read or starred takes effect the moment you tap, syncing across devices. It stays fast as your library grows, with page loads under 100 milliseconds.</p>`,
   summaryModelId: "claude-sonnet-5",

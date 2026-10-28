@@ -1,5 +1,4 @@
 import { type DemoArticle } from "./types";
-import { resolveWelcomePublishedAt } from "./welcome-published-at";
 
 const article: DemoArticle = {
   id: "welcome",
@@ -10,10 +9,9 @@ const article: DemoArticle = {
   author: null,
   summary:
     "One fast, private reader for the sites you follow, your newsletters, and articles you save for later. Free to use and open source.",
-  // Build/deploy-stamped so SSR and the post-hydration client render show the
-  // identical time (no "31 minutes ago" → "just now" jump). See
-  // resolveWelcomePublishedAt for the full rationale.
-  publishedAt: resolveWelcomePublishedAt(process.env.NEXT_PUBLIC_BUILD_TIME),
+  // Lion Reader's first commit.
+  publishedAt: new Date("2025-12-26T22:47:17Z"),
+  score: 260,
   starred: true,
   summaryHtml: `<p>Lion Reader brings the sites you follow, your email newsletters, and articles you save for later into one fast, private reader that&rsquo;s free, open source, and works with your existing RSS apps and AI assistants. It runs with no ads, no data selling, and no ad trackers.</p>`,
   summaryModelId: "claude-sonnet-5",
@@ -26,7 +24,7 @@ const article: DemoArticle = {
     <h3>What makes it different</h3>
 
     <ul>
-      <li><strong>Everything in one place</strong> &mdash; <a href="/demo/all?entry=rss-atom">Follow your favorite sites</a>, read <a href="/demo/all?entry=email-newsletters">email newsletters</a> without cluttering your inbox, and <a href="/demo/all?entry=save-for-later">save anything for later</a> from your browser, your phone, Discord, or a file. Links from places like YouTube, arXiv, and GitHub <a href="/demo/all?entry=plugins">come through complete and readable</a>.</li>
+      <li><strong>Everything in one place</strong> &mdash; <a href="/demo/all?entry=rss-atom">Follow your favorite sites</a>, read <a href="/demo/all?entry=email-newsletters">email newsletters</a> without cluttering your inbox, and <a href="/demo/all?entry=save-for-later">save anything for later</a> from your browser, your phone, Discord, or a file &mdash; even <a href="/demo/all?entry=pdfs">PDFs</a> and <a href="/demo/all?entry=books">whole books</a> &mdash; and group them into <a href="/demo/all?entry=collections">collections</a>. Links from places like YouTube, arXiv, and GitHub <a href="/demo/all?entry=plugins">come through complete and readable</a>.</li>
       <li><strong>Yours to own</strong> &mdash; Free to use and <a href="/demo/all?entry=open-source">open source</a>, so you can run your own copy. No ads, no data selling, and no ad trackers. <a href="/demo/all?entry=opml">Bring your subscriptions</a> from another reader, and keep reading in <a href="/demo/all?entry=google-reader-api">your favorite RSS app</a> if you like.</li>
       <li><strong>AI when you want it</strong> &mdash; <a href="/demo/all?entry=ai-summaries">Summarize</a> any article in seconds, <a href="/demo/all?entry=text-to-speech">listen</a> to anything in a natural voice, or <a href="/demo/all?entry=mcp-server">ask Claude or another AI assistant</a> to search, triage, and save articles for you. None of it runs unless you use it.</li>
       <li><a href="/demo/all?entry=performance"><strong>Obsessively fast</strong></a> &mdash; New articles show up in the list you&rsquo;re reading without a refresh, and moving around the app is instant.</li>

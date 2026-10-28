@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Save articles to Lion Reader directly from Discord by reacting to messages with the Lion Reader emoji, or by sending a link to the bot in a DM.",
   publishedAt: new Date("2026-01-18T01:20:31Z"),
+  score: 10,
   starred: false,
   summaryHtml: `<p>React to a link in Discord with the save emoji, or send it to the bot, and it&rsquo;s added to your saved articles. An admin installs the bot and emoji; members link their account via Discord sign-in or the <strong>/link</strong> command, and each person&rsquo;s saves stay their own.</p>`,
   summaryModelId: "claude-sonnet-5",

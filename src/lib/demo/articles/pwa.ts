@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Add Lion Reader to your home screen or desktop for an app-like experience, and save links and files from your phone's share menu.",
   publishedAt: new Date("2026-01-08T12:00:00Z"),
+  score: 170,
   starred: false,
   summaryHtml: `<p>Install Lion Reader on your phone, tablet, or computer straight from your browser, with no app store needed &mdash; it gets its own icon, opens without the browser&rsquo;s address bar, and updates automatically. On Android, it appears in your phone&rsquo;s share menu, so shared links or files are saved for later.</p>`,
   summaryModelId: "claude-sonnet-5",

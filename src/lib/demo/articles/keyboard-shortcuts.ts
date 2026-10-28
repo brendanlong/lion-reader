@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Fly through your reading without touching the mouse: move between articles and feeds, star, mark read, search, and control narration from the keyboard.",
   publishedAt: new Date("2025-12-27T14:00:00Z"),
+  score: 60,
   starred: false,
   summaryHtml: `<p>Lion Reader supports Gmail- and Google Reader-style keyboard shortcuts for moving through articles and feeds, marking them read (one at a time or all at once with <strong>Shift+A</strong>), starring, and searching, plus a <strong>g</strong> then letter combination to jump to sections like all articles, starred, or saved for later. Press <strong>?</strong> to see the full list; shortcuts stay disabled while you&rsquo;re typing.</p>`,
   summaryModelId: "claude-sonnet-5",

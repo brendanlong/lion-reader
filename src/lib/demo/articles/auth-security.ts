@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Your reading habits stay private: no ads, no data selling, and full control over where you're signed in and what can access your account.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
+  score: 160,
   starred: false,
   summaryHtml: `<p>Lion Reader keeps reading private &mdash; no ads, no data selling, no ad trackers &mdash; and sends an article to an AI provider only when you use a feature. You control sign-in, see every signed-in device, limit what connections can access, and read articles cleaned of anything that could run code.</p>`,
   summaryModelId: "claude-sonnet-5",

@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Get a private email address for newsletters, and read them in Lion Reader instead of in your inbox.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
+  score: 240,
   starred: false,
   summaryHtml: `<p>Lion Reader gives you a private email address so newsletters land in your reader instead of your inbox, with each sender becoming its own subscription that gets starring, tags, search, and summaries like any other article. Unsubscribing removes you from its mailing list where supported, and can block the sender too.</p>`,
   summaryModelId: "claude-sonnet-5",

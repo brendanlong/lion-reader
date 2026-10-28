@@ -31,6 +31,8 @@ export interface DemoSubscription {
 }
 
 export interface DemoEntry extends EntryListData {
+  /** The article's rank in the demo's default order (`DemoArticle.score`). */
+  score: number;
   /** Pre-sanitized HTML content for the detail view */
   contentHtml: string;
   /** Pre-generated AI summary HTML for the summary card */

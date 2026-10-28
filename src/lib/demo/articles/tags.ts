@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Group your subscriptions with color-coded tags, read one topic at a time, and rename anything to suit you.",
   publishedAt: new Date("2025-12-27T10:00:00Z"),
+  score: 100,
   starred: false,
   summaryHtml: `<p>Group the sites and newsletters you follow using colored <strong>tags</strong>, with a subscription able to belong to several at once; untagged subscriptions appear under &ldquo;Uncategorized.&rdquo; Each tag shows its own unread count in the sidebar, and importing from another reader turns folders into tags automatically. Subscriptions can be renamed anytime.</p>`,
   summaryModelId: "claude-sonnet-5",

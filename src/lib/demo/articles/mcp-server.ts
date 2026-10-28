@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Connect Claude or another AI assistant to your reader and ask it to find, triage, organize, and save articles for you.",
   publishedAt: new Date("2026-01-14T12:00:00Z"),
+  score: 180,
   starred: true,
   summaryHtml: `<p>Connect Lion Reader to Claude or another AI assistant and ask it, in plain language, to summarize posts, round up newsletters, or save a link &mdash; it gets the same results you&rsquo;d get doing it yourself. Setup is copy-and-paste in Settings, and you can revoke its access to your reader.</p>`,
   summaryModelId: "claude-sonnet-5",
@@ -21,10 +22,13 @@ const article: DemoArticle = {
       <li>&ldquo;What did the blogs in my News tag post this week? Summarize anything about climate policy.&rdquo;</li>
       <li>&ldquo;Give me a rundown of today&rsquo;s newsletters.&rdquo;</li>
       <li>&ldquo;Which of my unread articles are worth reading today?&rdquo;</li>
+      <li>&ldquo;Score my unread articles by how much I&rsquo;d want to read them.&rdquo;</li>
       <li>&ldquo;Save this link for me to read later.&rdquo;</li>
     </ul>
 
-    <p>Your assistant can read, search, star, and save articles, mark things read, look up your subscriptions, and create and edit your tags &mdash; with the same results you&rsquo;d get doing it yourself in the app.</p>
+    <p>Your assistant can read, search, star, and save articles, mark things read, look up your subscriptions, create and edit your tags, and build <a href="/demo/all?entry=collections">collections</a> &mdash; with the same results you&rsquo;d get doing it yourself in the app.</p>
+
+    <p>It can also do things the app leaves to it: give your articles scores, so sorting a list by score puts what it thinks you&rsquo;ll most want to read at the top, or put a collection in a sensible reading order.</p>
 
     <h3>Connecting</h3>
 

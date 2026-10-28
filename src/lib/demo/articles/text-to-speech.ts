@@ -10,6 +10,7 @@ const article: DemoArticle = {
   summary:
     "Press Listen and Lion Reader reads any article aloud in a natural voice, highlighting along as it goes, and can keep playing with your screen locked.",
   publishedAt: new Date("2025-12-27T18:00:00Z"),
+  score: 220,
   starred: true,
   summaryHtml: `<p>Pressing <strong>Listen</strong> on any article reads it aloud in a natural voice while highlighting each paragraph, with controls to jump between paragraphs and change speed. Choose from cloud, offline, or browser voices, and turn on AI text processing to expand abbreviations without changing the article&rsquo;s meaning.</p>`,
   summaryModelId: "claude-sonnet-5",
