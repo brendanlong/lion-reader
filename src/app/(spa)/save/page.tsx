@@ -5,19 +5,21 @@
  * - Bookmarklet: passes URL as query parameter
  * - PWA Share Target: service worker extracts URL and redirects here with ?url=...
  *
- * - Calls saved.save API
+ * - Calls saved.save, or for a shared file saved.uploadFile (an ebook:
+ *   collections.importEbook)
  * - Shows loading, success, or error state
  * - Auto-closes on success after a delay
  */
 
 "use client";
 
-import { Suspense, useEffect, useState, useRef, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useState, useRef, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icons";
+import { isEbookFile } from "@/lib/upload-file-types";
 
 export default function SavePage() {
   return (
@@ -29,6 +31,8 @@ export default function SavePage() {
 
 interface SharedFile {
   content: string;
+  /** The MIME type the sharing app gave it. */
+  type?: string;
   filename: string;
   title?: string;
   /** Generated once per shared file, so a retry can't save it twice. */
@@ -53,6 +57,7 @@ function takeSharedFile(onFile: (file: SharedFile) => void) {
       if (fileData) {
         onFile({
           content: fileData.content,
+          type: fileData.type,
           filename: fileData.filename,
           title: fileData.title,
           idempotencyKey: crypto.randomUUID(),
@@ -127,6 +132,14 @@ function SaveContent() {
     },
   });
 
+  const importEbookMutation = trpc.collections.importEbook.useMutation({
+    onSuccess: ({ subscription, entryIds }) => {
+      const chapters = `${entryIds.length} chapter${entryIds.length === 1 ? "" : "s"}`;
+      setArticleTitle(subscription.title ? `${subscription.title} (${chapters})` : chapters);
+    },
+  });
+  const [sharedEbook, setSharedEbook] = useState(false);
+
   const requestGoogleDocsAccessMutation = trpc.auth.requestGoogleDocsAccess.useMutation({
     onSuccess: (data) => {
       // Store the URL we're trying to save so we can retry after OAuth
@@ -143,7 +156,8 @@ function SaveContent() {
   });
 
   // Determine which mutation is active (URL save or file upload)
-  const activeMutation = shareType === "file" ? uploadFileMutation : saveMutation;
+  const activeMutation =
+    shareType !== "file" ? saveMutation : sharedEbook ? importEbookMutation : uploadFileMutation;
 
   // Check if returning from OAuth flow
   useEffect(() => {
@@ -156,6 +170,21 @@ function SaveContent() {
     }
   }, [urlToSave]);
 
+  const importEbook = importEbookMutation.mutate;
+  const uploadFile = uploadFileMutation.mutate;
+  const uploadSharedFile = useCallback(
+    (file: SharedFile) => {
+      if (isEbookFile(file.filename, file.type)) {
+        setSharedEbook(true);
+        importEbook({ content: file.content, filename: file.filename });
+      } else {
+        const { content, filename, title, idempotencyKey } = file;
+        uploadFile({ content, filename, title, idempotencyKey });
+      }
+    },
+    [importEbook, uploadFile]
+  );
+
   // Handle file upload from IndexedDB
   useEffect(() => {
     if (shareType === "file" && !saveInitiatedRef.current) {
@@ -163,10 +192,10 @@ function SaveContent() {
 
       takeSharedFile((file) => {
         sharedFileRef.current = file;
-        uploadFileMutation.mutate(file);
+        uploadSharedFile(file);
       });
     }
-  }, [shareType, uploadFileMutation]);
+  }, [shareType, uploadSharedFile]);
 
   // Start saving when URL is present (only once)
   useEffect(() => {
@@ -205,7 +234,7 @@ function SaveContent() {
       saveInitiatedRef.current = false;
       saveMutation.mutate({ url: urlToSave });
     } else if (shareType === "file" && sharedFileRef.current) {
-      uploadFileMutation.mutate(sharedFileRef.current);
+      uploadSharedFile(sharedFileRef.current);
     }
   };
 

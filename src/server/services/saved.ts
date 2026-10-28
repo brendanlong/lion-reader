@@ -33,6 +33,7 @@ import {
 } from "./collections";
 import { recordEntryTombstones } from "./entry-tombstones";
 import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
+import { enqueueEntriesObjectsDeletion } from "./stored-objects";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
 import { detectFileType, getSupportedTypesDescription } from "@/server/file/process-upload";
@@ -186,6 +187,8 @@ export interface InsertedSavedArticle {
 // ============================================================================
 
 interface InsertSavedEntryParams {
+  /** The entry's id, when the caller needed it before saving (to key its stored images). */
+  id?: string;
   guid: string;
   url: string | null;
   title: string | null;
@@ -222,7 +225,7 @@ async function insertSavedEntry(
   params: InsertSavedEntryParams
 ): Promise<InsertedSavedArticle | null> {
   const now = new Date();
-  const entryId = generateUuidv7();
+  const entryId = params.id ?? generateUuidv7();
 
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
   // Saved articles and uploads are owned by the user (#1846).
@@ -350,11 +353,12 @@ type UploadedArticleFields = Omit<BuiltArticleFields, "newTextContent">;
  * returns the article already saved, or else a fresh random one. This is the
  * shared tail for every upload path (file upload, Markdown, pre-cleaned HTML).
  */
-async function insertUploadedArticle(
+export async function insertUploadedArticle(
   db: typeof dbType,
   userId: string,
   fields: UploadedArticleFields,
-  guid: string = `uploaded:${generateUuidv7()}`
+  guid: string = `uploaded:${generateUuidv7()}`,
+  id?: string
 ): Promise<InsertedSavedArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
@@ -363,6 +367,7 @@ async function insertUploadedArticle(
 
   const saved = await insertSavedEntry(db, userId, {
     ...fields,
+    id,
     guid,
     url: null,
   });
@@ -481,7 +486,7 @@ const UPLOAD_MEMBERSHIPS = entryMemberships(UPLOAD_ROW);
  * The upload saved earlier under `guid`, shaped like a fresh upload's result,
  * list item included (with the collections it has been filed into since).
  */
-async function selectExistingUpload(
+export async function selectExistingUpload(
   db: typeof dbType,
   userId: string,
   guid: string
@@ -1000,6 +1005,11 @@ async function hardDeleteSavedArticles(
       tx,
       deleted.filter((row) => row.fullContentFetchedAt).map((row) => row.id)
     );
+    await enqueueEntriesObjectsDeletion(
+      tx,
+      userId,
+      deleted.map((row) => row.id)
+    );
   });
 }
 
@@ -1025,7 +1035,7 @@ function uploadGuid(idempotencyKey: string): string {
  * Enforces the saved article size limit on an upload's raw bytes, before any
  * conversion (mammoth, Readability, Markdown) can burn memory or CPU on it.
  */
-function assertUploadSize(resource: string, bytes: number): void {
+export function assertUploadSize(resource: string, bytes: number): void {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   if (bytes > maxSize) {
     throw errors.contentTooLarge(resource, maxSize);

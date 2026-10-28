@@ -82,6 +82,7 @@
                 <data android:mimeType="text/html" />
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="application/epub+zip" />
             </intent-filter>
         </activity>
         <!-- Only the app binds it: the notification, lock screen and headset

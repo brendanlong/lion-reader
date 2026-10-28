@@ -93,7 +93,7 @@ The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid sign
 
 - Node.js 26+ and pnpm
 - Rust (`cargo`) and a C++ compiler, for the native modules
-- Docker and Docker Compose, for local Postgres and Redis (or run `pnpm services`, which starts them without Docker, and use the `*:local` script variants)
+- Docker and Docker Compose, for local Postgres, Redis and object storage (or run `pnpm services`, which starts them without Docker, and use the `*:local` script variants)
 
 ### Setup
 
@@ -104,7 +104,8 @@ pnpm build:native
 # Copy environment variables
 cp .env.example .env
 
-# Start Postgres 18 and Redis 7
+# Start Postgres 18, Redis 7 and S3Mock (object storage, which ebook uploads
+# need: uncomment the local STORAGE_* settings in .env)
 docker compose up -d
 
 # Run database migrations

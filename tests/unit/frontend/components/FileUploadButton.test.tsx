@@ -20,6 +20,7 @@ import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-inp
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import type { NewEntryListItem } from "@/lib/events/schemas";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
+import { getLocalDb } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import {
@@ -283,5 +284,54 @@ describe("FileUploadButton upload response", () => {
       );
     });
     expect(savedList).toHaveTextContent(/^entry-1$/);
+  });
+});
+
+describe("FileUploadButton ebook import (#1805)", () => {
+  const COLLECTION_ID = "collection-1";
+  const collection = {
+    ...savedSubscriptionRow(COLLECTION_ID),
+    type: "collection" as const,
+    title: "A Tale",
+    originalTitle: "A Tale",
+  };
+  const ebookHandlers: ProcedureHandlers = {
+    "subscriptions.list": () => ({ items: [], nextCursor: undefined }),
+    "collections.importEbook": () => ({
+      subscription: collection,
+      created: true,
+      entryIds: ["chapter-1", "chapter-2"],
+      counts: createCounts({
+        all: { unread: 2 },
+        saved: { unread: 2 },
+        subscriptions: [{ id: COLLECTION_ID, unread: 2 }],
+      }),
+    }),
+  };
+
+  it("imports an .epub as a collection, lists it with its count, and opens it", async () => {
+    const { queryClient, callsFor } = renderWithTrpc(<FileUploadButton />, {
+      handlers: ebookHandlers,
+    });
+    openDialog();
+    expect(getFileInput().accept.split(",")).toContain(".epub");
+
+    const file = new File(["PK"], "tale.epub", { type: "application/epub+zip" });
+    fireEvent.change(getFileInput(), { target: { files: [file] } });
+    expect(await screen.findByText("tale.epub")).toBeInTheDocument();
+    // The book gets its own collection, so there's none to pick.
+    expect(screen.queryByLabelText("Add to collection")).not.toBeInTheDocument();
+    const upload = screen.getByRole("button", { name: "Upload" });
+    await waitFor(() => expect(upload).toBeEnabled());
+    fireEvent.click(upload);
+
+    await waitFor(() => expect(window.location.pathname).toBe(`/subscription/${COLLECTION_ID}`));
+    expect(callsFor("collections.importEbook")[0].input).toMatchObject({ filename: "tale.epub" });
+    expect(callsFor("saved.uploadFile")).toHaveLength(0);
+    expect(getLocalDb(queryClient).subscriptions.rows.getSynced(COLLECTION_ID)).toMatchObject({
+      title: "A Tale",
+      unreadCount: 2,
+    });
+    expect(storedCount(queryClient, { saved: true })).toEqual({ unread: 2 });
   });
 });

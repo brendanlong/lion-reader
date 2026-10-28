@@ -234,17 +234,18 @@ export function setServerEntryState(
 
 /**
  * Adds a collection to (or removes it from) a stored entry's
- * `subscriptionIds`, with the tag lists the membership change left it in. The
- * change's response carries no `updatedAt`, so this moves no watermark: a page
- * fetched before the change that lands after it can revert them, which only
- * matters until the next write that carries them (any unread flip does).
+ * `subscriptionIds`, with the tag lists the membership change left it in and,
+ * when the change carries one, its position there. The change's response
+ * carries no `updatedAt`, so this moves no watermark: a page fetched before
+ * the change that lands after it can revert them, which only matters until
+ * the next write that carries them (any unread flip does).
  */
 export function setStoredEntryCollection(
   store: EntryStore,
   id: string,
-  change: { collectionId: string; added: boolean; tagLists: TagLists }
+  change: { collectionId: string; added: boolean; tagLists: TagLists; position?: number }
 ): void {
-  const { collectionId, added, tagLists } = change;
+  const { collectionId, added, tagLists, position } = change;
   const stored = store.getSynced(id);
   if (!stored) return;
   if (stored.subscriptionIds.includes(collectionId) === added) {
@@ -254,14 +255,11 @@ export function setStoredEntryCollection(
   const subscriptionIds = added
     ? [...stored.subscriptionIds, collectionId]
     : stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
-  store.upsert([
-    {
-      ...stored,
-      subscriptionIds,
-      tagLists,
-      positions: withoutKey(stored.positions, collectionId),
-    },
-  ]);
+  const positions =
+    added && position !== undefined
+      ? { ...stored.positions, [collectionId]: position }
+      : withoutKey(stored.positions, collectionId);
+  store.upsert([{ ...stored, subscriptionIds, tagLists, positions }]);
 }
 
 /**

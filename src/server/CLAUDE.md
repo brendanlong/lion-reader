@@ -55,7 +55,11 @@ Every badge reads one trigger-maintained counter (spam excluded; the list is in 
 
 ## Deletions in Delta Sync
 
-Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`). It must also queue the deletion of the entry's archived full-content pages in that transaction (`enqueueFullContentArchiveDeletion`, `services/full-content-archive.ts`): nothing sweeps the archive bucket, so a page left there is never deleted.
+Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`). It must also queue, in that transaction, the deletion of the entry's objects in storage: its archived full-content pages (`enqueueFullContentArchiveDeletion`, `services/full-content-archive.ts`) and, for a saved article, the images stored under its prefix (`enqueueEntriesObjectsDeletion`, `services/stored-objects.ts`; deleting a user deletes their whole prefix). Nothing sweeps either bucket, so an object left there is never deleted, and the public bucket keeps it readable.
+
+## Stored Objects
+
+An uploaded ebook's images go to the public bucket or the save fails: no inline fallback (an SVG is the exception, always inline, since from the bucket's origin it would run scripts). Dev and tests use an S3-compatible server (`scripts/fake-s3.ts`, which `pnpm services` runs and tests start with `useFakeS3`, or docker-compose's S3Mock), never another backend.
 
 ## Ordering & Pagination
 

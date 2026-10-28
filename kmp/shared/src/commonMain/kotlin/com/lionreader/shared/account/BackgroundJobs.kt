@@ -2,6 +2,7 @@ package com.lionreader.shared.account
 
 import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.apiFailure
+import com.lionreader.shared.links.isEbookFilename
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -56,17 +57,25 @@ suspend fun ServerConnection.saveLink(url: String): SaveOutcome =
     save("Lion Reader couldn't save this link.") { api.saveArticle(url).title }
 
 /**
- * Saves a shared file (`uploadFile`) the way [saveLink] saves a link. [idempotencyKey] stands in
- * for the URL that makes saving a link idempotent: the same share uploaded again (a retry after a
- * lost response) returns the article already saved.
+ * Saves a shared file (`uploadFile`) the way [saveLink] saves a link, or imports an ebook as a
+ * collection (`importEbook`), whose title is the collection's. [idempotencyKey] stands in for the
+ * URL that makes saving a link idempotent: the same share uploaded again (a retry after a lost
+ * response) returns the article already saved. An ebook needs none: importing the same file again
+ * saves only the chapters still missing.
  */
 suspend fun ServerConnection.saveFile(
     filename: String,
     bytes: ByteArray,
     idempotencyKey: String,
 ): SaveOutcome =
-    save("Lion Reader couldn't save this file.") {
-        api.uploadFile(filename, bytes, idempotencyKey).title
+    if (isEbookFilename(filename)) {
+        save("Lion Reader couldn't import this ebook.") {
+            api.importEbook(filename, bytes).subscription.title
+        }
+    } else {
+        save("Lion Reader couldn't save this file.") {
+            api.uploadFile(filename, bytes, idempotencyKey).title
+        }
     }
 
 private suspend fun ServerConnection.save(

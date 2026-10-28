@@ -63,7 +63,7 @@ async function runDeletionJobs(): Promise<void> {
 
 beforeEach(async () => {
   await cleanup();
-  s3 = await useFakeS3(BUCKET);
+  s3 = await useFakeS3({ archiveBucket: BUCKET });
 });
 
 afterEach(async () => {
@@ -77,7 +77,7 @@ function archived(entryId: string): string[] {
   const prefix = `${BUCKET}/full-content/${entryId}/`;
   return [...s3.objects]
     .filter(([key]) => key.startsWith(prefix))
-    .map(([, object]) => gunzipSync(object).toString("utf8"));
+    .map(([, object]) => gunzipSync(object.body).toString("utf8"));
 }
 
 describe("persistFullContentResult", () => {

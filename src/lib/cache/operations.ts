@@ -221,16 +221,22 @@ export function applyCollectionEntriesChange(
   change: {
     subscriptionId: string;
     added: boolean;
+    positions?: Record<string, number>;
     counts?: UnreadCounts;
     tagLists: EntryTagLists;
   }
 ): void {
-  const { subscriptionId, added, counts } = change;
+  const { subscriptionId, added, positions, counts } = change;
   if (counts) applyUnreadCounts(utils, queryClient, counts);
   const db = getLocalDb(queryClient);
   // One per changed entry.
   for (const { entryId, ...tagLists } of change.tagLists) {
-    const membership = { collectionId: subscriptionId, added, tagLists };
+    const membership = {
+      collectionId: subscriptionId,
+      added,
+      tagLists,
+      position: positions?.[entryId],
+    };
     setCollectionChangeInLists(db.lists, entryId, membership);
     setStoredEntryCollection(db.entries, entryId, membership);
     if (added) {

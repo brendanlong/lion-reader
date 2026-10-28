@@ -11,6 +11,7 @@ import { users, feeds, entries, subscriptions, userEntries } from "@/server/db/s
 import { logger } from "@/lib/logger";
 import { retryDeadlocks } from "@/server/db/errors";
 import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
+import { enqueueStoredObjectsDeletion, userObjectsPrefix } from "./stored-objects";
 
 /**
  * Deletes a user account and all associated data.
@@ -126,6 +127,7 @@ async function deleteUserOnce(db: Database, userId: string): Promise<void> {
       deletedFeedIds = new Set(deletedFeeds.map((f) => f.id));
     }
 
+    await enqueueStoredObjectsDeletion(tx, userObjectsPrefix(userId));
     await enqueueFullContentArchiveDeletion(tx, [
       ...ownedArchived.map((e) => e.id),
       ...feedArchived.filter((e) => e.feedId && deletedFeedIds.has(e.feedId)).map((e) => e.id),

@@ -1,5 +1,6 @@
 package com.lionreader.shared.sync
 
+import com.lionreader.shared.account.ServerConnection
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.BulkStateResponse
 import com.lionreader.shared.api.Deletion
@@ -12,6 +13,9 @@ import com.lionreader.shared.api.GenerateSummaryRequest
 import com.lionreader.shared.api.GeneratedSummary
 import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
+import com.lionreader.shared.api.ImportEbookRequest
+import com.lionreader.shared.api.ImportedCollection
+import com.lionreader.shared.api.ImportedEbook
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SAVED_TYPE
@@ -81,6 +85,9 @@ class FakeServer {
     /** Files saved with `POST /saved/upload`, as sent (Base64 content). */
     val uploads = mutableListOf<UploadFileRequest>()
 
+    /** Ebooks imported with `POST /collections/import-ebook`, as sent (Base64 content). */
+    val ebookImports = mutableListOf<ImportEbookRequest>()
+
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
 
@@ -110,27 +117,34 @@ class FakeServer {
 
     /** [dispatcher]: where it answers; a test's own, to answer in its virtual time. */
     fun api(dispatcher: CoroutineDispatcher? = null): LionReaderApi {
-        val http =
-            HttpClient(
-                MockEngine(
-                    MockEngineConfig().apply {
-                        addHandler { request -> handle(request) }
-                        dispatcher?.let { this.dispatcher = it }
-                    }
-                )
-            )
-        val store =
-            object : TokenStore {
-                var tokens: StoredTokens? = StoredTokens("access", "refresh", Long.MAX_VALUE)
-
-                override fun load() = tokens
-
-                override fun save(tokens: StoredTokens?) {
-                    this.tokens = tokens
-                }
-            }
-        return LionReaderApi(http, AppAuth("https://lion.test", http, store) { 0L })
+        val http = http(dispatcher)
+        return LionReaderApi(http, AppAuth("https://lion.test", http, signedIn()) { 0L })
     }
+
+    /** A signed-in connection to this server. */
+    fun connection(): ServerConnection =
+        ServerConnection("https://lion.test", http(null), signedIn(), "/callback") { 0L }
+
+    private fun http(dispatcher: CoroutineDispatcher?) =
+        HttpClient(
+            MockEngine(
+                MockEngineConfig().apply {
+                    addHandler { request -> handle(request) }
+                    dispatcher?.let { this.dispatcher = it }
+                }
+            )
+        )
+
+    private fun signedIn() =
+        object : TokenStore {
+            var tokens: StoredTokens? = StoredTokens("access", "refresh", Long.MAX_VALUE)
+
+            override fun load() = tokens
+
+            override fun save(tokens: StoredTokens?) {
+                this.tokens = tokens
+            }
+        }
 
     /**
      * The `subscriptionIds` the server sends for an entry: as served, or for one it doesn't have,
@@ -296,6 +310,13 @@ class FakeServer {
                 val summary = summaries[entryId]
                 if (summary == null) respond("{}", HttpStatusCode.InternalServerError, jsonHeaders)
                 else json(GeneratedSummary.serializer(), GeneratedSummary(summary))
+            }
+            path == "/collections/import-ebook" -> {
+                ebookImports += body(request, ImportEbookRequest.serializer())
+                json(
+                    ImportedEbook.serializer(),
+                    ImportedEbook(ImportedCollection("c-1", "A Tale"), listOf("e-1", "e-2")),
+                )
             }
             path == "/saved/upload" -> {
                 uploads += body(request, UploadFileRequest.serializer())
