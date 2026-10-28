@@ -51,8 +51,9 @@ export interface FetchFullContentResult {
  *   keep the default so the pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
  * @throws `SERVER_BUSY` when a document conversion couldn't get its turn, or
- *   `STORAGE_FAILED` when storage refused an image, so the caller retries
- *   rather than storing the failure
+ *   `STORAGE_FAILED` when storage refused an image: failures of ours, not the
+ *   page's, so they aren't returned for the caller to store as the entry's
+ *   fetch error
  */
 export async function fetchFullContent(
   url: string,

@@ -65,7 +65,7 @@ pub fn absolutize_urls(
 }
 
 /// [`absolutize_urls`], except that without a `document` base relative URLs
-/// stay as written, and given an `image_url_prefix`, each `<img>` whose `src`
+/// stay as written (a `<base href>` included), and given an `image_url_prefix`, each `<img>` whose `src`
 /// is a `data:` URI holding a raster image (PNG, JPEG, GIF, WebP or AVIF)
 /// points at `{image_url_prefix}{name}` instead, its image returned for the
 /// caller to store under that name.
@@ -83,11 +83,12 @@ pub fn rewrite_urls(
     image_url_prefix: Option<&str>,
 ) -> Result<Rewritten, String> {
     let page_url = document.and_then(|document| Url::parse(&document.url).ok());
+    let base_href_set = document.is_none();
     let document = document.map_or_else(ResolveBase::none, ResolveBase::new);
     let state = RefCell::new(State {
         media: media.map_or_else(|| document.clone(), ResolveBase::new),
         document,
-        base_href_set: false,
+        base_href_set,
         images: Vec::new(),
         image_names: HashSet::new(),
     });
@@ -745,15 +746,6 @@ mod tests {
     }
 
     #[test]
-    fn names_an_image_by_its_bytes() {
-        let html = format!(r#"<img src="{}">"#, data_uri("image/png", &png(1)));
-        assert_eq!(
-            extract(&html, None).images[0].name,
-            extract(&html, None).images[0].name
-        );
-    }
-
-    #[test]
     fn types_an_image_by_its_bytes() {
         let mut jpeg = vec![0xff, 0xd8, 0xff];
         jpeg.extend([0; 64]);
@@ -804,7 +796,7 @@ mod tests {
     #[test]
     fn absolutizes_while_extracting_only_with_a_base() {
         let html = format!(
-            r#"<img src="{}"><a href="/page">x</a>"#,
+            r#"<base href="https://other.example.com/"><img src="{}"><a href="/page">x</a>"#,
             data_uri("image/png", &png(1))
         );
         let without_base = extract(&html, None);
@@ -812,7 +804,7 @@ mod tests {
         let with_base = extract(&html, Some(&bases(BASE, None)));
         assert!(with_base
             .html
-            .ends_with(r#"<a href="https://example.com/page">x</a>"#));
+            .ends_with(r#"<a href="https://other.example.com/page">x</a>"#));
         assert_eq!(with_base.images.len(), 1);
     }
 

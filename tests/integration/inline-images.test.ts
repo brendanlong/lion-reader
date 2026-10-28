@@ -12,7 +12,11 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds, users } from "../../src/server/db/schema";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
-import { createEntry, generateContentHash } from "../../src/server/feed/entry-processor";
+import {
+  createEntry,
+  generateContentHash,
+  processEntries,
+} from "../../src/server/feed/entry-processor";
 import type { ParsedEntry } from "../../src/server/feed/types";
 import { getAppErrorCode } from "../../src/server/errors";
 import { fetchAndStoreFullContent } from "../../src/server/services/full-content";
@@ -189,6 +193,29 @@ describe("inlined images", () => {
       type === "web" ? feedEntryObjectsPrefix(owner, entryId) : entryObjectsPrefix(userId, entryId);
     const url = expectStoredImage(prefix);
     expect((await storedContent(entryId)).fullCleaned).toContain(url);
+  });
+
+  it("fails a feed's processing when storage refuses an image, after saving the rest", async () => {
+    const feedId = await feed();
+    const withImage: ParsedEntry = {
+      guid: `guid-${generateUuidv7()}`,
+      content: `<img src="${DATA_URI}">`,
+    };
+    const plain: ParsedEntry = { guid: `guid-${generateUuidv7()}`, content: "<p>Text</p>" };
+
+    s3.failPutsWith = 503;
+    try {
+      await expect(processEntries(db, feedId, { items: [withImage, plain] })).rejects.toSatisfy(
+        (error) => getAppErrorCode(error) === "STORAGE_FAILED"
+      );
+    } finally {
+      s3.failPutsWith = null;
+    }
+    const saved = await db
+      .select({ guid: entries.guid })
+      .from(entries)
+      .where(eq(entries.ownerFeedId, feedId));
+    expect(saved).toEqual([{ guid: plain.guid }]);
   });
 
   it("fails an upload storage refuses, saving nothing", async () => {

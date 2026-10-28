@@ -24,6 +24,7 @@ import {
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
 import { logger } from "@/lib/logger";
+import { getAppErrorCode } from "@/server/errors";
 import { retryDeadlocks } from "../db/errors";
 import { feedEntryObjectsPrefix } from "@/server/services/stored-objects";
 import { inlineImageUrlPrefix, storeExtractedImages } from "@/server/services/inline-images";
@@ -807,6 +808,9 @@ async function announceLinkedEntries(
  * @param feed - The parsed feed containing entries
  * @param options - Processing options
  * @returns Processing result with counts and entry details
+ * @throws STORAGE_FAILED after processing the rest, when storage refused an
+ *   entry's image: that entry wasn't saved, so the fetch must fail and be
+ *   retried rather than record the feed as processed
  *
  * @example
  * const result = await processEntries(db, feedId, parsedFeed);
@@ -863,6 +867,7 @@ export async function processEntries(
   );
 
   const results: ProcessedEntry[] = [];
+  let storageError: unknown = null;
   let newCount = 0;
   let updatedCount = 0;
   let unchangedCount = 0;
@@ -893,6 +898,7 @@ export async function processEntries(
         unchangedCount++;
       }
     } catch (error) {
+      if (getAppErrorCode(error) === "STORAGE_FAILED") storageError = error;
       // Log error but continue processing other entries
       // Entry without valid GUID will be skipped
       logger.error("Failed to process entry", {
@@ -1022,6 +1028,8 @@ export async function processEntries(
       error: error instanceof Error ? error.message : String(error),
     });
   }
+
+  if (storageError) throw storageError;
 
   return {
     newCount,
