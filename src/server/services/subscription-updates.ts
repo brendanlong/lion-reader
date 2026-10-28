@@ -30,6 +30,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
+import { deleteSavedArticlesOnlyInCollection } from "@/server/services/saved";
 import { isUniqueViolation } from "@/server/db/errors";
 
 /**
@@ -297,12 +298,20 @@ async function changeSubscriptionTags(
  * Blocking is opt-in because a sender's address can also send mail the user
  * still needs, like a login code from a newsletter platform (#1964). Without
  * it, the sender's next email resubscribes the user.
+ *
+ * For a collection, `deleteSavedArticles` first deletes the saved articles
+ * that are in no other collection, so a collection that was uploaded as a
+ * unit can be removed as one. They go first so a failure leaves the
+ * collection in place to retry.
  */
 export async function unsubscribe(
   db: typeof dbType,
   userId: string,
   subscriptionId: string,
-  { blockSender = false }: { blockSender?: boolean } = {}
+  {
+    blockSender = false,
+    deleteSavedArticles = false,
+  }: { blockSender?: boolean; deleteSavedArticles?: boolean } = {}
 ): Promise<{ counts: BulkUnreadCounts } | null> {
   const [existing] = await db
     .select({
@@ -324,6 +333,10 @@ export async function unsubscribe(
 
   if (!existing) {
     return null;
+  }
+
+  if (deleteSavedArticles && existing.type === "collection") {
+    await deleteSavedArticlesOnlyInCollection(db, userId, subscriptionId);
   }
 
   const now = new Date();

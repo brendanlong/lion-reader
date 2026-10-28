@@ -297,6 +297,48 @@ describe("MCP tool results", () => {
     });
   });
 
+  it("uploads articles into a collection and deletes them with it", async () => {
+    const { id: collectionId } = (await tool("create_collection").handler(db, userId, {
+      name: "Uploaded book",
+    })) as { id: string };
+    const chapter = (await tool("upload_article").handler(db, userId, {
+      content: "Chapter one",
+      title: "Chapter 1",
+      collectionIds: [collectionId],
+    })) as { id: string };
+
+    expect(
+      await tool("delete_collection").handler(db, userId, {
+        collectionId,
+        deleteSavedArticles: true,
+      })
+    ).toEqual({ success: true });
+
+    expect(await db.select().from(entries).where(eq(entries.id, chapter.id))).toEqual([]);
+  });
+
+  it("deletes a collection and its saved articles over REST with an mcp token", async () => {
+    const { id: collectionId } = (await tool("create_collection").handler(db, userId, {
+      name: "REST deleted",
+    })) as { id: string };
+    const chapter = (await tool("upload_article").handler(db, userId, {
+      content: "Chapter one",
+      title: "Chapter 1",
+      collectionIds: [collectionId],
+    })) as { id: string };
+    const { token } = await createApiToken(userId, ["mcp"]);
+
+    const response = await restHandler(
+      new Request(
+        `http://localhost:3000/api/v1/collections/${collectionId}?deleteSavedArticles=true`,
+        { method: "DELETE", headers: { authorization: `Bearer ${token}` } }
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(await db.select().from(entries).where(eq(entries.id, chapter.id))).toEqual([]);
+  });
+
   it("returns save results without the article body (#1835)", async () => {
     const result = (await tool("upload_article").handler(db, userId, {
       title: "MCP upload",

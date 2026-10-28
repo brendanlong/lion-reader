@@ -132,7 +132,11 @@ describe("Sidebar", () => {
     await vi.waitFor(() => {
       const deleteCalls = callsFor("subscriptions.delete");
       expect(deleteCalls).toHaveLength(1);
-      expect(deleteCalls[0].input).toEqual({ id: "sub-1", blockSender: false });
+      expect(deleteCalls[0].input).toEqual({
+        id: "sub-1",
+        blockSender: false,
+        deleteSavedArticles: false,
+      });
     });
 
     // Optimistic removal: the feed disappears from the sidebar.

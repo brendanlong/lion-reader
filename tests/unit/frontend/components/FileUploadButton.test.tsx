@@ -26,6 +26,7 @@ import {
   createCounts,
   createNewEntryEvent,
   createRealTrpcUtils,
+  createSubscriptionRow,
   invalidatedProcedures,
   savedSubscriptionRow,
   SEEDED_SAVED_SUBSCRIPTION_ID,
@@ -38,6 +39,16 @@ import {
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
+
+let mockPathname = "/all";
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockPathname,
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+beforeEach(() => {
+  mockPathname = "/all";
+});
 
 const listItem: NewEntryListItem = {
   entryId: "entry-1",
@@ -58,7 +69,10 @@ const listItem: NewEntryListItem = {
   },
 };
 
+const book = createSubscriptionRow({ id: "collection-1", type: "collection", title: "Book" });
+
 const handlers: ProcedureHandlers = {
+  "subscriptions.list": () => ({ items: [book], nextCursor: undefined }),
   "saved.uploadFile": () => ({
     article: { id: "entry-1", title: "notes" },
     listItem,
@@ -136,6 +150,7 @@ describe("FileUploadButton drop zone accessibility", () => {
   it("retries a file with its key, and gives another file a new one (#2070)", async () => {
     const { callsFor } = renderWithTrpc(<FileUploadButton />, {
       handlers: {
+        ...handlers,
         "saved.uploadFile": () => {
           throw new Error("Network went away");
         },
@@ -184,6 +199,47 @@ describe("FileUploadButton drop zone accessibility", () => {
 
     expect(await screen.findByText(/Unsupported file type/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
+  });
+});
+
+describe("FileUploadButton collection", () => {
+  const uploadedCollectionIds = (callsFor: (path: string) => { input: unknown }[]) =>
+    callsFor("saved.uploadFile").map(
+      (call) => (call.input as { collectionIds?: string[] }).collectionIds
+    );
+
+  it("files into no collection by default", async () => {
+    const { callsFor } = renderWithTrpc(<FileUploadButton />, { handlers });
+    openDialog();
+
+    await uploadMarkdownFile();
+
+    await waitFor(() => expect(uploadedCollectionIds(callsFor)).toEqual([undefined]));
+  });
+
+  it("defaults to the collection being viewed", async () => {
+    mockPathname = `/subscription/${book.id}`;
+    const { callsFor } = renderWithTrpc(<FileUploadButton />, { handlers });
+    openDialog();
+
+    const select = screen.getByLabelText("Add to collection");
+    await waitFor(() => expect(select).toHaveValue(book.id));
+    await uploadMarkdownFile();
+
+    await waitFor(() => expect(uploadedCollectionIds(callsFor)).toEqual([[book.id]]));
+  });
+
+  it("files into the chosen collection, or none", async () => {
+    mockPathname = `/subscription/${book.id}`;
+    const { callsFor } = renderWithTrpc(<FileUploadButton />, { handlers });
+    openDialog();
+
+    const select = screen.getByLabelText("Add to collection");
+    await waitFor(() => expect(select).toHaveValue(book.id));
+    fireEvent.change(select, { target: { value: "" } });
+    await uploadMarkdownFile();
+
+    await waitFor(() => expect(uploadedCollectionIds(callsFor)).toEqual([undefined]));
   });
 });
 

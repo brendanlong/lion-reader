@@ -33,6 +33,7 @@ import {
 } from "@/server/services/subscriptions";
 import type { EntryTagLists } from "@/lib/events/schemas";
 import { errors, getAppErrorCode } from "@/server/errors";
+import { unsubscribe } from "@/server/services/subscription-updates";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 import { isUniqueViolation } from "@/server/db/errors";
 
@@ -190,6 +191,22 @@ async function finishCreate(
   });
 
   return { subscription, counts, created: true };
+}
+
+/**
+ * Deletes one of the user's collections through `unsubscribe`, which every
+ * deletion shares, refusing any other kind of subscription.
+ */
+export async function deleteCollection(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  { deleteSavedArticles = false }: { deleteSavedArticles?: boolean } = {}
+): Promise<{ counts: BulkUnreadCounts }> {
+  await assertOwnedCollections(db, userId, [subscriptionId]);
+  const result = await unsubscribe(db, userId, subscriptionId, { deleteSavedArticles });
+  if (!result) throw errors.subscriptionNotFound();
+  return result;
 }
 
 /**

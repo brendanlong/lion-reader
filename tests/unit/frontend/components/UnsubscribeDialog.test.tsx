@@ -4,12 +4,12 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { screen, cleanup, fireEvent } from "@testing-library/react";
-import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
+import { UnsubscribeDialog, type UnsubscribeOptions } from "@/components/feeds/UnsubscribeDialog";
 import { renderWithTrpc } from "../../../utils/component-test-helpers";
 
 afterEach(cleanup);
 
-function renderEmailDialog(onConfirm: (options: { blockSender: boolean }) => void) {
+function renderEmailDialog(onConfirm: (options: UnsubscribeOptions) => void) {
   return renderWithTrpc(
     <UnsubscribeDialog
       isOpen={true}
@@ -36,7 +36,7 @@ describe("UnsubscribeDialog for an email subscription", () => {
     expect(checkbox).not.toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Unsubscribe" }));
 
-    expect(onConfirm).toHaveBeenCalledWith({ blockSender: false });
+    expect(onConfirm).toHaveBeenCalledWith({ blockSender: false, deleteSavedArticles: false });
   });
 
   it("blocks the sender when its address is checked", async () => {
@@ -46,6 +46,41 @@ describe("UnsubscribeDialog for an email subscription", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /no-reply@substack\.com/ }));
     fireEvent.click(screen.getByRole("button", { name: "Unsubscribe" }));
 
-    expect(onConfirm).toHaveBeenCalledWith({ blockSender: true });
+    expect(onConfirm).toHaveBeenCalledWith({ blockSender: true, deleteSavedArticles: false });
+  });
+});
+
+describe("UnsubscribeDialog for a collection", () => {
+  function renderCollectionDialog(onConfirm: (options: UnsubscribeOptions) => void) {
+    return renderWithTrpc(
+      <UnsubscribeDialog
+        isOpen={true}
+        feedTitle="Book"
+        isCollection
+        isLoading={false}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    );
+  }
+
+  it("keeps its saved articles unless asked", () => {
+    const onConfirm = vi.fn();
+    renderCollectionDialog(onConfirm);
+
+    expect(screen.getByRole("checkbox", { name: /delete its saved articles/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(onConfirm).toHaveBeenCalledWith({ blockSender: false, deleteSavedArticles: false });
+  });
+
+  it("deletes its saved articles when checked", () => {
+    const onConfirm = vi.fn();
+    renderCollectionDialog(onConfirm);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /delete its saved articles/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(onConfirm).toHaveBeenCalledWith({ blockSender: false, deleteSavedArticles: true });
   });
 });

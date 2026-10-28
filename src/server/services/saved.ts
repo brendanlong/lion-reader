@@ -7,13 +7,16 @@
  */
 
 import { z } from "zod";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
-import { entries, subscriptions, userEntries } from "@/server/db/schema";
+import { entries, subscriptionEntries, subscriptions, userEntries } from "@/server/db/schema";
 import { entryMemberships, entryOriginOn } from "./entry-filters";
 import { listEntryTagLists } from "./entry-tag-lists";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
+import { MAX_COLLECTION_BATCH } from "@/lib/collections";
+import { isCollectionSubscription } from "./subscriptions";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
@@ -22,7 +25,7 @@ import {
   listEntryCollectionIds,
   publishEntryLeftCollections,
 } from "./collections";
-import { recordEntryTombstone } from "./entry-tombstones";
+import { recordEntryTombstones } from "./entry-tombstones";
 import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
@@ -871,25 +874,8 @@ export async function deleteSavedArticle(
     return null;
   }
 
-  // Delete the entry (will cascade to user_entries). Scope the DELETE to the
-  // user's own articles as well as the id — the ownership SELECT above already
-  // guarantees it, but pinning the owner keeps the mutation self-evidently
-  // user-scoped in isolation (defense-in-depth against a future refactor).
-  //
-  // The tombstone lets delta-sync clients drop their copy; it commits with the
-  // delete so a client can never see one without the other.
   const collectionIds = await listEntryCollectionIds(db, userId, articleId);
-  await db.transaction(async (tx) => {
-    const deleted = await tx
-      .delete(entries)
-      .where(and(eq(entries.id, articleId), eq(entries.ownerUserId, userId)))
-      .returning({ id: entries.id, fullContentFetchedAt: entries.fullContentFetchedAt });
-    await recordEntryTombstone(tx, userId, articleId);
-    await enqueueFullContentArchiveDeletion(
-      tx,
-      deleted.filter((row) => row.fullContentFetchedAt).map((row) => row.id)
-    );
-  });
+  await hardDeleteSavedArticles(db, userId, [articleId]);
   // The entry is gone, so its collections are named as subscriptions.
   const counts = await getBulkEntryRelatedCounts(
     db,
@@ -898,6 +884,93 @@ export async function deleteSavedArticle(
   );
   publishEntryLeftCollections(userId, articleId, collectionIds, counts);
   return counts;
+}
+
+/**
+ * Hard-deletes the user's saved articles in this collection that are in no
+ * other active collection, for deleting a collection along with the articles
+ * saved into it. Their collection events are left to the caller, which is
+ * deleting the collection.
+ */
+export async function deleteSavedArticlesOnlyInCollection(
+  db: typeof dbType,
+  userId: string,
+  collectionId: string
+): Promise<number> {
+  const otherMembership = alias(subscriptionEntries, "other_membership");
+  const rows = await db
+    .select({ id: entries.id })
+    .from(subscriptionEntries)
+    .innerJoin(entries, eq(entries.id, subscriptionEntries.entryId))
+    .where(
+      and(
+        eq(subscriptionEntries.subscriptionId, collectionId),
+        eq(subscriptionEntries.userId, userId),
+        eq(entries.ownerUserId, userId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(otherMembership)
+            .innerJoin(subscriptions, eq(subscriptions.id, otherMembership.subscriptionId))
+            .where(
+              and(
+                eq(otherMembership.userId, userId),
+                eq(otherMembership.entryId, subscriptionEntries.entryId),
+                ne(otherMembership.subscriptionId, collectionId),
+                isCollectionSubscription(),
+                isNull(subscriptions.unsubscribedAt)
+              )
+            )
+        )
+      )
+    );
+  const ids = rows.map((row) => row.id);
+  for (let i = 0; i < ids.length; i += MAX_COLLECTION_BATCH) {
+    await hardDeleteSavedArticles(db, userId, ids.slice(i, i + MAX_COLLECTION_BATCH));
+  }
+  return ids.length;
+}
+
+/**
+ * Deletes saved articles the user owns (cascading to their user_entries and
+ * memberships). The tombstones let delta-sync clients drop their copies; they
+ * commit with the delete so a client can never see one without the other.
+ */
+async function hardDeleteSavedArticles(
+  db: typeof dbType,
+  userId: string,
+  articleIds: string[]
+): Promise<void> {
+  const sortedIds = [...articleIds].sort();
+  await db.transaction(async (tx) => {
+    // The cascade deletes user_entries rows in no particular order, so take
+    // the lock order (entries, then user_entries, each by id) up front.
+    await tx
+      .select({ id: entries.id })
+      .from(entries)
+      .where(and(inArray(entries.id, sortedIds), eq(entries.ownerUserId, userId)))
+      .orderBy(entries.id)
+      .for("update");
+    await tx
+      .select({ entryId: userEntries.entryId })
+      .from(userEntries)
+      .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, sortedIds)))
+      .orderBy(userEntries.entryId)
+      .for("update");
+    const deleted = await tx
+      .delete(entries)
+      .where(and(inArray(entries.id, sortedIds), eq(entries.ownerUserId, userId)))
+      .returning({ id: entries.id, fullContentFetchedAt: entries.fullContentFetchedAt });
+    await recordEntryTombstones(
+      tx,
+      userId,
+      deleted.map((row) => row.id)
+    );
+    await enqueueFullContentArchiveDeletion(
+      tx,
+      deleted.filter((row) => row.fullContentFetchedAt).map((row) => row.id)
+    );
+  });
 }
 
 export interface UploadFileParams extends CollectionsParam {

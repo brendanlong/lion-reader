@@ -9,6 +9,7 @@ import { db } from "../../src/server/db";
 import {
   subscriptionEntries,
   entries,
+  entryTombstones,
   feeds,
   subscriptionTags,
   subscriptions,
@@ -241,6 +242,55 @@ describe("collections", () => {
       expect(await counters(collectionId)).toEqual({ unread: 1 });
       expect((await getUserUnreadCounts(db, userId)).allUnread).toBe(0);
       await expectNoDrift();
+    });
+  });
+
+  describe("deleting with its saved articles", () => {
+    it("deletes only saved articles in no other active collection", async () => {
+      const { userId, entryA, collectionId } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+      const { subscription: kept } = await createCollection(db, userId, "Kept");
+      const { subscription: deleted } = await createCollection(db, userId, "Deleted");
+      const upload = (title: string, collectionIds: string[]) =>
+        uploadArticle(db, userId, { content: "Body", title, collectionIds });
+      const onlyHere = await upload("Only here", [collectionId]);
+      const alsoKept = await upload("Also kept", [collectionId, kept.id]);
+      const alsoDeleted = await upload("Also in a deleted one", [collectionId, deleted.id]);
+      const notInIt = await upload("Not in it", []);
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+      await caller.collections.delete({ id: deleted.id });
+
+      const { counts } = await caller.collections.delete({
+        id: collectionId,
+        deleteSavedArticles: true,
+      });
+
+      const remaining = await getEntries(db, userId, [
+        onlyHere.id,
+        alsoKept.id,
+        alsoDeleted.id,
+        notInIt.id,
+        entryA,
+      ]);
+      expect(remaining.map((e) => e.id).sort()).toEqual([alsoKept.id, notInIt.id, entryA].sort());
+      const tombstones = await db
+        .select({ entryId: entryTombstones.entryId })
+        .from(entryTombstones)
+        .where(eq(entryTombstones.userId, userId));
+      expect(tombstones.map((t) => t.entryId).sort()).toEqual([onlyHere.id, alsoDeleted.id].sort());
+      expect(counts.saved).toEqual({ unread: 2 });
+      expect(await getEntries(db, userId, [entryA])).toHaveLength(1);
+      await expectNoDrift();
+    });
+
+    it("refuses to delete a feed subscription as a collection", async () => {
+      const { userId, sourceId, entryA } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+
+      await expect(
+        caller.collections.delete({ id: sourceId, deleteSavedArticles: true })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await getEntries(db, userId, [entryA])).toHaveLength(1);
     });
   });
 
