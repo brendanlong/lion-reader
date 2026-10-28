@@ -10,7 +10,7 @@
  * stay until its owner's account is deleted; nobody has their URLs.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { DbOrTx } from "@/server/db";
 import { createJob } from "@/server/jobs/queue";
 import {
@@ -29,15 +29,18 @@ export function entryObjectsPrefix(userId: string, entryId: string): string {
 }
 
 /**
- * Stores an image for an entry, returning its public URL. The key's random
- * part keeps the URL unguessable: the bucket is public.
+ * Stores an image for an entry, returning its public URL. The key ends in the
+ * image's hash, so storing the same image for the entry again (a retry) is
+ * one object; the entry's id in it keeps the URL unguessable, since the
+ * bucket is public, and lets deleting the entry delete its images.
  */
 export async function storeEntryImage(
   userId: string,
   entryId: string,
   image: { data: Buffer; mediaType: string; extension: string }
 ): Promise<string> {
-  const key = `${entryObjectsPrefix(userId, entryId)}${randomUUID()}${image.extension}`;
+  const hash = createHash("sha256").update(image.data).digest("hex");
+  const key = `${entryObjectsPrefix(userId, entryId)}${hash}${image.extension}`;
   await uploadObject(key, image.data, image.mediaType);
   const url = getPublicObjectUrl(key);
   if (url === null) throw new Error("Object storage has no public URL");

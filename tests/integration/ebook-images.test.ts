@@ -4,6 +4,7 @@
  * account deletes them through a `delete_stored_objects` job.
  */
 
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -11,7 +12,12 @@ import { entries, jobs, users } from "../../src/server/db/schema";
 import { importEbook } from "../../src/server/services/ebooks";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { deleteUser } from "../../src/server/services/users";
-import { entryObjectsPrefix, userObjectsPrefix } from "../../src/server/services/stored-objects";
+import {
+  entryObjectsPrefix,
+  storeEntryImage,
+  userObjectsPrefix,
+} from "../../src/server/services/stored-objects";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getAppErrorCode } from "../../src/server/errors";
 import type { JobPayloads } from "../../src/server/jobs/queue";
 import { getPublicObjectUrl } from "../../src/server/storage/s3";
@@ -90,6 +96,21 @@ describe("ebook images in storage", () => {
         .where(eq(entries.id, entryId));
       expect(row.content).toContain(`<img src="${getPublicObjectUrl(key)}">`);
     }
+  });
+
+  it("keys an image by its hash, so storing it for the entry again is one object", async () => {
+    const userId = await createTestUser({ emailPrefix: "ebook-images" });
+    createdUserIds.push(userId);
+    const entryId = generateUuidv7();
+    const image = { data: PNG, mediaType: "image/png", extension: ".png" };
+
+    const first = await storeEntryImage(userId, entryId, image);
+    const again = await storeEntryImage(userId, entryId, image);
+
+    expect(again).toBe(first);
+    expect(keysUnder(entryObjectsPrefix(userId, entryId))).toEqual([
+      `${entryObjectsPrefix(userId, entryId)}${createHash("sha256").update(PNG).digest("hex")}.png`,
+    ]);
   });
 
   it("stores nothing again when the same book is imported twice", async () => {
