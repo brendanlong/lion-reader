@@ -4641,6 +4641,24 @@
                 }
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "deleteSavedArticles",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -9140,6 +9158,228 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.INTERNAL_SERVER_ERROR"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{id}": {
+      "delete": {
+        "operationId": "collections-delete",
+        "summary": "Delete a collection",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "deleteSavedArticles",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "all": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "starred": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "saved": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread",
+                              "tagIds"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "all",
+                        "starred",
+                        "saved",
+                        "subscriptions",
+                        "tags",
+                        "asOf"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "counts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.BAD_REQUEST"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authorization not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.NOT_FOUND"
                 }
               }
             }

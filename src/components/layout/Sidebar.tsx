@@ -134,9 +134,9 @@ export function Sidebar({ onClose }: SidebarProps) {
         isCollection={unsubscribeTarget?.isCollection ?? false}
         emailSubscriptionId={unsubscribeTarget?.isEmail ? unsubscribeTarget.id : undefined}
         isLoading={unsubscribeMutation.isPending}
-        onConfirm={({ blockSender }) => {
+        onConfirm={(options) => {
           if (unsubscribeTarget) {
-            unsubscribeMutation.mutate({ id: unsubscribeTarget.id, blockSender });
+            unsubscribeMutation.mutate({ id: unsubscribeTarget.id, ...options });
           }
         }}
         onCancel={() => setUnsubscribeTarget(null)}

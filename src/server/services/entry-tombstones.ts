@@ -13,14 +13,15 @@ import { entryTombstones } from "@/server/db/schema";
 
 export const ENTRY_TOMBSTONE_RETENTION_MS = 60 * 24 * 60 * 60 * 1000;
 
-export async function recordEntryTombstone(
+export async function recordEntryTombstones(
   db: DbOrTx,
   userId: string,
-  entryId: string
+  entryIds: string[]
 ): Promise<void> {
+  if (entryIds.length === 0) return;
   await db
     .insert(entryTombstones)
-    .values({ userId, entryId })
+    .values(entryIds.map((entryId) => ({ userId, entryId })))
     .onConflictDoUpdate({
       target: [entryTombstones.userId, entryTombstones.entryId],
       set: { deletedAt: sql`now()` },

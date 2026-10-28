@@ -228,7 +228,9 @@ export const subscriptionsRouter = createTRPCRouter({
    * Sets unsubscribedAt timestamp instead of deleting the record.
    * This allows users to resubscribe later while preserving their read state.
    * For an email subscription, `blockSender` also rejects the sender's future
-   * emails; without it, the sender's next email resubscribes.
+   * emails; without it, the sender's next email resubscribes. For a
+   * collection, `deleteSavedArticles` also deletes its saved articles that are
+   * in no other collection.
    */
   delete: protectedProcedure
     .meta({
@@ -243,6 +245,7 @@ export const subscriptionsRouter = createTRPCRouter({
       z.object({
         id: uuidSchema,
         blockSender: booleanQueryParam,
+        deleteSavedArticles: booleanQueryParam,
       })
     )
     .output(z.object({ success: z.boolean(), counts: unreadCountsSchema.optional() }))
@@ -251,7 +254,7 @@ export const subscriptionsRouter = createTRPCRouter({
         ctx.db,
         ctx.session.user.id,
         input.id,
-        { blockSender: input.blockSender }
+        { blockSender: input.blockSender, deleteSavedArticles: input.deleteSavedArticles }
       );
       if (!result) {
         throw errors.subscriptionNotFound();

@@ -14,17 +14,24 @@ import { trpc } from "@/lib/trpc/client";
 interface UnsubscribeDialogProps {
   isOpen: boolean;
   feedTitle: string;
-  /** Collections are deleted rather than unsubscribed from; their articles stay put. */
+  /** Collections are deleted rather than unsubscribed from. */
   isCollection?: boolean;
   /** An email subscription's id, to offer blocking its sender too. */
   emailSubscriptionId?: string;
   isLoading: boolean;
-  onConfirm: (options: { blockSender: boolean }) => void;
+  onConfirm: (options: UnsubscribeOptions) => void;
   onCancel: () => void;
 }
 
+export interface UnsubscribeOptions {
+  blockSender: boolean;
+  deleteSavedArticles: boolean;
+}
+
+const NO_OPTIONS: UnsubscribeOptions = { blockSender: false, deleteSavedArticles: false };
+
 export function UnsubscribeDialog(props: UnsubscribeDialogProps) {
-  // Remounting on each open resets the block-sender choice.
+  // Remounting on each open resets the checkbox choices.
   return <UnsubscribeDialogContent key={props.isOpen ? "open" : "closed"} {...props} />;
 }
 
@@ -36,19 +43,7 @@ function UnsubscribeDialogContent({
   ...props
 }: UnsubscribeDialogProps) {
   if (isCollection) {
-    return (
-      <ConfirmDialog
-        title="Delete collection?"
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        onConfirm={() => onConfirm({ blockSender: false })}
-        {...props}
-      >
-        Delete <span className="text-body font-medium">{feedTitle}</span>? Its articles stay in
-        their feeds and in Saved. Ones from feeds you&apos;ve unsubscribed from disappear unless
-        they&apos;re starred.
-      </ConfirmDialog>
-    );
+    return <DeleteCollectionDialog feedTitle={feedTitle} onConfirm={onConfirm} {...props} />;
   }
   if (emailSubscriptionId) {
     return (
@@ -65,11 +60,46 @@ function UnsubscribeDialogContent({
       title="Unsubscribe from feed?"
       confirmLabel="Unsubscribe"
       confirmVariant="danger"
-      onConfirm={() => onConfirm({ blockSender: false })}
+      onConfirm={() => onConfirm(NO_OPTIONS)}
       {...props}
     >
       Are you sure you want to unsubscribe from{" "}
       <span className="text-body font-medium">{feedTitle}</span>? You can always resubscribe later.
+    </ConfirmDialog>
+  );
+}
+
+function DeleteCollectionDialog({
+  feedTitle,
+  onConfirm,
+  ...props
+}: Omit<UnsubscribeDialogProps, "isCollection" | "emailSubscriptionId">) {
+  // Opt-in, as deleting articles can't be undone.
+  const [deleteSavedArticles, setDeleteSavedArticles] = useState(false);
+
+  return (
+    <ConfirmDialog
+      title="Delete collection?"
+      confirmLabel="Delete"
+      confirmVariant="danger"
+      onConfirm={() => onConfirm({ ...NO_OPTIONS, deleteSavedArticles })}
+      options={
+        <label className="mt-4 flex cursor-pointer items-start gap-3">
+          <Checkbox
+            checked={deleteSavedArticles}
+            onChange={(e) => setDeleteSavedArticles(e.target.checked)}
+            className="mt-1"
+          />
+          <span className="ui-text-sm text-body">
+            Also delete its saved articles that aren&apos;t in another collection.
+          </span>
+        </label>
+      }
+      {...props}
+    >
+      Delete <span className="text-body font-medium">{feedTitle}</span>? Its articles stay in their
+      feeds and in Saved. Ones from feeds you&apos;ve unsubscribed from disappear unless
+      they&apos;re starred.
     </ConfirmDialog>
   );
 }
@@ -96,7 +126,7 @@ function EmailUnsubscribeDialog({
       title="Unsubscribe from newsletter?"
       confirmLabel="Unsubscribe"
       confirmVariant="danger"
-      onConfirm={() => onConfirm({ blockSender: blockSender && !!emailSender })}
+      onConfirm={() => onConfirm({ ...NO_OPTIONS, blockSender: blockSender && !!emailSender })}
       // Rendered (disabled) while the address loads, so it doesn't shift the
       // buttons under a click.
       options={

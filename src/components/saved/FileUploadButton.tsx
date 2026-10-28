@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useState, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -17,6 +17,9 @@ import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { SUPPORTED_UPLOAD_EXTENSIONS } from "@/lib/upload-file-types";
+import { untitledSubscriptionLabel } from "@/lib/collections";
+import { useAppPathname } from "@/lib/hooks/useAppLocation";
+import { extractParamsFromPathname } from "@/lib/navigation";
 import {
   Dialog,
   DialogHeader,
@@ -31,6 +34,7 @@ import {
 // ============================================================================
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const COLLECTIONS_PAGE_SIZE = 100;
 
 // ============================================================================
 // Types
@@ -69,6 +73,10 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   // One per picked file, so a double submit or a retry can't save it twice.
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The collection to file the upload into: "" for none, null until the user
+  // picks, which defaults to the collection being viewed.
+  const [chosenCollectionId, setChosenCollectionId] = useState<string | null>(null);
+  const viewedSubscriptionId = extractParamsFromPathname(useAppPathname()).subscriptionId;
 
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
@@ -89,6 +97,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     setIsOpen(true);
     setSelectedFile(null);
     setError(null);
+    setChosenCollectionId(null);
   };
 
   const handleClose = () => {
@@ -150,6 +159,18 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     }
   };
 
+  const collectionsQuery = trpc.subscriptions.list.useInfiniteQuery(
+    { type: "collection", limit: COLLECTIONS_PAGE_SIZE },
+    { enabled: isOpen, getNextPageParam: (lastPage) => lastPage.nextCursor }
+  );
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = collectionsQuery;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const collections = collectionsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const viewedCollection = collections.find((c) => c.id === viewedSubscriptionId);
+  const collectionId = chosenCollectionId ?? viewedCollection?.id ?? "";
+
   const handleUpload = async () => {
     if (!selectedFile) return;
 
@@ -164,6 +185,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
         content: base64Content,
         filename: selectedFile.name,
         idempotencyKey,
+        collectionIds: collectionId ? [collectionId] : undefined,
       });
     };
     reader.onerror = () => {
@@ -241,6 +263,23 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
               </div>
             )}
           </div>
+
+          <label htmlFor="upload-collection" className="ui-text-sm text-body mt-4 mb-1.5 block">
+            Add to collection
+          </label>
+          <select
+            id="upload-collection"
+            value={collectionId}
+            onChange={(e) => setChosenCollectionId(e.target.value)}
+            className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2"
+          >
+            <option value="">None</option>
+            {collections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title || untitledSubscriptionLabel(c.type)}
+              </option>
+            ))}
+          </select>
         </DialogBody>
 
         <DialogFooter>

@@ -7,8 +7,9 @@
  * articles (one by one, and a fan-out to every user of a shared feed),
  * newsletters through the ingest path with unsubscribing and resubscribing,
  * saving (upload and by URL, including a user's first save) and deleting saved
- * articles, deleting feeds, mark-all-read, statements moving rows both ways,
- * deleting tags, collections and users — plus scoring, whose copies on
+ * articles (one by one, and with their collection), deleting feeds,
+ * mark-all-read, statements moving rows both ways, deleting tags, collections
+ * and users — plus scoring, whose copies on
  * memberships and tag rows the reconcile check covers — through the code the
  * app runs. After every step it checks that:
  *   1. every counter and the set of visible articles equal what #1846's rules
@@ -525,8 +526,26 @@ const OPS: Array<[number, Op]> = [
       const live = w.collections.filter((c) => active.has(c));
       if (live.length > 1 && rng.chance(0.5)) {
         const id = rng.pick(live);
+        const caller = createCaller(await createAuthContext(w.userId));
+        if (rng.chance(0.3)) {
+          await caller.subscriptions.delete({ id, deleteSavedArticles: true });
+          const left = new Set(
+            w.savedIds.length === 0
+              ? []
+              : (
+                  await db
+                    .select({ id: entries.id })
+                    .from(entries)
+                    .where(inArray(entries.id, w.savedIds))
+                ).map((row) => row.id)
+          );
+          const gone = w.savedIds.filter((savedId) => !left.has(savedId));
+          w.savedIds = w.savedIds.filter((savedId) => left.has(savedId));
+          w.entryIds = w.entryIds.filter((entryId) => !gone.includes(entryId));
+          return `delete collection ${id} with saved ${gone.join(",")}`;
+        }
         const before = await membershipCount(id);
-        await createCaller(await createAuthContext(w.userId)).subscriptions.delete({ id });
+        await caller.subscriptions.delete({ id });
         // A deleted collection's memberships stay, and stop counting.
         expect(await membershipCount(id)).toBe(before);
         return `delete collection ${id}`;

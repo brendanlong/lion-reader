@@ -350,6 +350,17 @@ const createCollectionArgs = z.object({
   name: collectionNameSchema.describe("Collection name (unique per user ignoring case)"),
 });
 
+const deleteCollectionArgs = z.object({
+  collectionId: uuidSchema.describe("The collection's subscription ID"),
+  deleteSavedArticles: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also permanently delete the saved articles in this collection that are in no other " +
+        "collection. Off by default: the articles stay in Saved."
+    ),
+});
+
 const collectionEntriesArgs = z.object({
   collectionId: uuidSchema.describe(
     "The collection's subscription ID (list_subscriptions shows collections with type 'collection')"
@@ -631,6 +642,21 @@ function buildTools(): Tool[] {
           params.name
         );
         return { ...subscription, created };
+      },
+    },
+
+    {
+      name: "delete_collection",
+      description:
+        "Delete a collection. Its articles stay in their feeds and in Saved unless " +
+        "deleteSavedArticles is set.",
+      inputSchema: toInputSchema(deleteCollectionArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(deleteCollectionArgs, args);
+        await collectionsService.deleteCollection(db, userId, params.collectionId, {
+          deleteSavedArticles: params.deleteSavedArticles,
+        });
+        return { success: true };
       },
     },
 

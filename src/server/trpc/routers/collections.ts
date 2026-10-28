@@ -1,9 +1,10 @@
 /**
  * Collections Router
  *
- * Collections are subscriptions (#1806), so listing, renaming, tagging and
- * deleting one go through the subscriptions router; this router creates them
- * and changes their membership and order.
+ * Collections are subscriptions (#1806), so listing, renaming and tagging one
+ * go through the subscriptions router; this router creates and deletes them
+ * and changes their membership and order. Deleting is here because, unlike
+ * `subscriptions.delete`, it's open to tokens.
  */
 
 import { z } from "zod";
@@ -11,6 +12,7 @@ import { z } from "zod";
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import {
+  booleanQueryParam,
   collectionEntryIdsSchema,
   collectionNameSchema,
   collectionPositionsSchema,
@@ -54,6 +56,28 @@ export const collectionsRouter = createTRPCRouter({
     )
     .mutation(({ ctx, input }) =>
       collectionsService.createCollection(ctx.db, ctx.session.user.id, input.name)
+    ),
+
+  /**
+   * Delete a collection. Its articles stay in their feeds and in Saved, unless
+   * `deleteSavedArticles`: then saved articles in no other collection are
+   * deleted too.
+   */
+  delete: protectedProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/collections/{id}",
+        tags: ["Collections"],
+        summary: "Delete a collection",
+      },
+    })
+    .input(z.object({ id: uuidSchema, deleteSavedArticles: booleanQueryParam }))
+    .output(z.object({ counts: unreadCountsSchema }))
+    .mutation(({ ctx, input }) =>
+      collectionsService.deleteCollection(ctx.db, ctx.session.user.id, input.id, {
+        deleteSavedArticles: input.deleteSavedArticles,
+      })
     ),
 
   listForEntry: protectedProcedure
