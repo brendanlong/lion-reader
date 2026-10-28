@@ -102,6 +102,14 @@ pub fn convert(bytes: Vec<u8>, limits: &Limits) -> Result<Converted, ConvertErro
         candidates.push(images::page_candidates(&doc, index, &page));
         pages.push(page);
     }
+    // Checked again once cleanup has stripped page numbers, but first here,
+    // before a scan's images are decoded for nothing.
+    if !pages
+        .iter()
+        .any(|page| page.chars().any(char::is_alphanumeric))
+    {
+        return Err(ConvertError::NoText);
+    }
     let placed = images::place(pages, candidates, limits.max_image_bytes)
         .map_err(|images::ImagesTooLarge| ConvertError::ImagesTooLarge)?;
 

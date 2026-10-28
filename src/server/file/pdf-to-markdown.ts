@@ -7,7 +7,8 @@
  * what a hostile PDF costs (`native/pdf/src/main.rs` has the numbers): it caps
  * its own heap and CPU time before reading the file, and we kill it at the
  * deadline or if it floods stdout. Real documents peak well under the cap (a
- * 100-page arXiv paper at ~60MB, a 244-page book under 1s on one core).
+ * 100-page arXiv paper at ~60MB, an illustrated 42-page report with its images
+ * at ~80MB, a 244-page book under 1s on one core).
  * Conversions share the `.docx` converter's one-at-a-time slot.
  */
 
@@ -44,8 +45,9 @@ const PDF_IMAGE_BUDGET_FACTOR = 2;
 /**
  * Room in the helper's stdout beyond twice the Markdown and image budgets, for
  * metadata and JSON framing. The helper strips control characters and caps
- * each metadata string, so JSON escaping at most doubles the text; base64 and
- * each image's framing stay under twice the image bytes.
+ * each metadata string, so JSON escaping at most doubles the text. Base64 is
+ * 4/3 of the image bytes, which leaves the rest of their share for each
+ * image's JSON framing.
  */
 const STDOUT_SLACK_BYTES = 64 * 1024;
 
@@ -55,7 +57,10 @@ const MAX_STDERR_BYTES = 4096;
 /** Exit status of a Rust process that panicked. */
 const RUST_PANIC_EXIT_CODE = 101;
 
-/** How the helper's Markdown refers to `images[i]`. */
+/**
+ * How the helper's Markdown refers to `images[i]`. PDF text can forge one, so
+ * each image is inlined only once: a copy would cost a full image of memory.
+ */
 const IMAGE_PLACEHOLDER = /src="pdf-image:(\d+)"/g;
 
 const helperOutputSchema = z.union([
@@ -323,12 +328,17 @@ export interface PdfArticle {
  */
 export async function convertPdfToArticle(buffer: Buffer): Promise<PdfArticle> {
   const { markdown, images, title, author, summary } = await defaultConverter.convert(buffer);
-  const html = (await markdownToHtmlAsync(markdown)).replace(
+  const rendered = await markdownToHtmlAsync(markdown);
+  const inlined = new Set<number>();
+  const html = (title ? stripTitleHeader(rendered, title) : rendered).replace(
     IMAGE_PLACEHOLDER,
-    (placeholder, i) => {
-      const image = images[Number(i)];
-      return image ? `src="data:${image.contentType};base64,${image.data}"` : placeholder;
+    (placeholder, i: string) => {
+      const index = Number(i);
+      const image = images[index];
+      if (!image || inlined.has(index)) return placeholder;
+      inlined.add(index);
+      return `src="data:${image.contentType};base64,${image.data}"`;
     }
   );
-  return { html: title ? stripTitleHeader(html, title) : html, title, author, summary };
+  return { html, title, author, summary };
 }

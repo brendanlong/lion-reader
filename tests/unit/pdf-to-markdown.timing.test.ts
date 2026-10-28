@@ -87,6 +87,16 @@ describe("PDF uploads", () => {
     expect(html).not.toContain("<img");
   });
 
+  it("inlines each image once, however often the PDF's text names it", async () => {
+    const forged = textPage([
+      '![](pdf-image:0) and <img src="pdf-image:0"> again ![](pdf-image:0)',
+    ]);
+    const pdf = buildPdf([Buffer.concat([figurePage, Buffer.from("\n"), forged])], { image });
+    const { html } = await convertUploadedFile(pdf, "f.pdf");
+
+    expect(html.match(/data:image/g)).toHaveLength(1);
+  });
+
   it("rejects a PDF whose images pass the image budget", async () => {
     const error = await converter({ maxImageBytes: 100 })
       .convert(buildPdf([figurePage], { image }))
@@ -98,6 +108,11 @@ describe("PDF uploads", () => {
   it.each([
     ["isn't a PDF", Buffer.from("just some text"), /not a readable PDF/],
     ["has no text layer", buildPdf([Buffer.from("")]), /no text to extract/],
+    [
+      "has only an image",
+      buildPdf([drawImage(72, 450, 200, 200)], { image }),
+      /no text to extract/,
+    ],
   ])("rejects a file that %s with a message for the user", async (_, file, message) => {
     const error = await convertUploadedFile(file, "file.pdf").catch((e: unknown) => e);
     expect(getAppErrorCode(error)).toBe("VALIDATION_ERROR");

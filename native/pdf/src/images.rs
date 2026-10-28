@@ -11,8 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hasher};
 
-use pdf_oxide::extractors::images::PdfImageHandle;
-use pdf_oxide::extractors::ImageData;
+use pdf_oxide::extractors::images::{PdfFilter, PdfImageHandle};
 use pdf_oxide::geometry::Rect;
 use pdf_oxide::PdfDocument;
 
@@ -21,10 +20,13 @@ use crate::title::SpanBox;
 
 /// pdf_oxide's own cutoff: anything smaller is a glyph, bullet or rule.
 const MIN_IMAGE_SIDE_PIXELS: u32 = 32;
-/// Larger images are skipped before they are decoded: decoding takes several
-/// bytes a pixel, and the helper's heap is capped. pdf_oxide's own default,
-/// which covers a full page at 300 DPI.
-const MAX_IMAGE_PIXELS: u64 = 16_000_000;
+/// Larger JPEGs are skipped. They're copied, not decoded, so this only keeps
+/// out what no figure needs: pdf_oxide's own default, a full page at 300 DPI.
+const MAX_JPEG_PIXELS: u64 = 16_000_000;
+/// Larger images that must be decoded are skipped before decoding. Decoding
+/// and re-encoding takes up to ~7 bytes a pixel (CMYK in, RGB out), which at
+/// this size leaves room under the helper's heap cap for the document.
+const MAX_DECODED_PIXELS: u64 = 4_000_000;
 /// An image covering more of its page than this is the page itself.
 const MAX_PAGE_COVERAGE: f32 = 0.8;
 /// Spans within this many points vertically share a line.
@@ -72,7 +74,12 @@ pub fn page_candidates<'doc>(
         .filter(|h| {
             h.width >= MIN_IMAGE_SIDE_PIXELS
                 && h.height >= MIN_IMAGE_SIDE_PIXELS
-                && u64::from(h.width) * u64::from(h.height) <= MAX_IMAGE_PIXELS
+                && u64::from(h.width) * u64::from(h.height)
+                    <= if is_plain_jpeg(h) {
+                        MAX_JPEG_PIXELS
+                    } else {
+                        MAX_DECODED_PIXELS
+                    }
                 && h.bbox.width * h.bbox.height <= page_area * MAX_PAGE_COVERAGE
         })
         .filter_map(|h| {
@@ -134,8 +141,10 @@ pub fn place(
             if pages_with[&candidate.hash] >= MIN_RUNNING_HEADER_PAGES {
                 continue;
             }
-            // One image pdf_oxide can't decode shouldn't lose the rest.
-            let Some(image) = encode(&candidate.handle) else {
+            // One image pdf_oxide can't decode, or panics on, shouldn't lose
+            // the rest.
+            let encoded = std::panic::catch_unwind(|| encode(&candidate.handle));
+            let Ok(Some(image)) = encoded else {
                 continue;
             };
             total_bytes += image.data.len();
@@ -166,20 +175,25 @@ pub fn place(
     })
 }
 
-/// A JPEG as stored, since every browser shows one; anything else (or a CMYK
-/// JPEG, which browsers draw with the wrong colors) as PNG.
+/// A gray or RGB JPEG, which every browser shows as stored. Browsers draw
+/// CMYK ones with the wrong colors.
+fn is_plain_jpeg(handle: &PdfImageHandle) -> bool {
+    matches!(handle.filter_chain[..], [PdfFilter::DCTDecode])
+        && matches!(handle.color_space.components(), 1 | 3)
+}
+
+/// A plain JPEG as stored; anything else decoded and re-encoded as PNG.
 fn encode(handle: &PdfImageHandle) -> Option<Image> {
-    let image = handle.decode().ok()?;
-    match image.data() {
-        ImageData::Jpeg(data) if image.color_space().components() != 4 => Some(Image {
+    if is_plain_jpeg(handle) {
+        return Some(Image {
             content_type: "image/jpeg",
-            data: data.clone(),
-        }),
-        _ => Some(Image {
-            content_type: "image/png",
-            data: image.to_png_bytes().ok()?,
-        }),
+            data: handle.raw_compressed_bytes().ok()?,
+        });
     }
+    Some(Image {
+        content_type: "image/png",
+        data: handle.decode().ok()?.to_png_bytes().ok()?,
+    })
 }
 
 fn hash_bytes(bytes: &[u8]) -> u64 {

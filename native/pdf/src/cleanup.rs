@@ -16,9 +16,9 @@ use crate::images::IMAGE_URL_SCHEME;
 const EDGE_BLOCKS: usize = 2;
 /// A running header or footer is short; longer edge blocks are content.
 const MAX_FURNITURE_WORDS: usize = 12;
-/// Pages a short edge block must repeat on to count as a running header.
-/// Absolute, not a fraction of the document: a book's per-chapter header only
-/// repeats within its chapter.
+/// Pages a short edge block must repeat on to count as a running header, and
+/// an image to count as a logo. Absolute, not a fraction of the document: a
+/// book's per-chapter header only repeats within its chapter.
 pub const MIN_RUNNING_HEADER_PAGES: usize = 3;
 /// Longest numbered bold line still treated as a section title.
 const MAX_SECTION_TITLE_WORDS: usize = 15;
@@ -457,12 +457,12 @@ mod tests {
     fn rejoins_a_paragraph_across_images_ending_its_page() {
         let out = assemble(pages(&[
             "A sentence that runs\n\n![](pdf-image:0)",
-            "on past the figure.\n\n![](pdf-image:1)",
-            "continues nothing: an image is not a paragraph",
+            "on past one figure\n\n![](pdf-image:1)",
+            "and another.",
         ]));
         assert_eq!(
             out,
-            "A sentence that runs on past the figure.\n\n![](pdf-image:0)\n\n![](pdf-image:1)\n\ncontinues nothing: an image is not a paragraph"
+            "A sentence that runs on past one figure and another.\n\n![](pdf-image:0)\n\n![](pdf-image:1)"
         );
     }
 
