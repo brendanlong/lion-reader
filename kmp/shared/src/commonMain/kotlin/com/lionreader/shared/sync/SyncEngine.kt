@@ -393,17 +393,19 @@ class SyncEngine(
     // ---- Bodies ----------------------------------------------------------
 
     private suspend fun downloadContent() {
-        // Replacing an outdated body hardly moves the total, so it isn't held to the budget. The
-        // same ones again means edits are arriving meanwhile: the next sync gets them.
+        val budget = policy().contentBudgetBytes
+        // An outdated body is replaced whatever the budget (it's already kept), and the trim
+        // after it evicts what a longer one pushes out. The same ones again means edits are
+        // arriving meanwhile: the next sync gets them.
         var refreshed: Set<String>? = null
         while (true) {
             val outdated = writer.outdatedBodies(CONTENT_BATCH.toLong())
             if (outdated.isEmpty() || outdated.keys == refreshed) break
             refreshed = outdated.keys
             fetchBodies(outdated)
+            writer.trimBodies(budget, now())
         }
         // Past the budget, a body more important than ones stored takes their place.
-        val budget = policy().contentBudgetBytes
         while (true) {
             val versions = writer.missingBodies(CONTENT_BATCH.toLong(), budget, now())
             if (versions.isEmpty()) return

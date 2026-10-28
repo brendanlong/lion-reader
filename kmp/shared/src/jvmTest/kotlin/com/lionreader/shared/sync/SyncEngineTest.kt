@@ -970,6 +970,22 @@ class SyncEngineTest {
     }
 
     @Test
+    fun anEditThatGrowsABodyPastTheBudgetEvictsLessImportantOnes() = runTest {
+        server.subscriptions += subscription("sub-1")
+        serve(entry("a", ageDays = 1), entry("b", ageDays = 2))
+        engine.sync()
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("a") + bodySize("b"))
+        server.entries["a"] = entry("a").copy(content = "<p>${"Longer ".repeat(10)}</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+
+        engine.sync()
+
+        assertEquals(listOf("a"), withBodies(listOf("a", "b")))
+    }
+
+    @Test
     fun theBudgetEvictsReadBodiesBeforeOlderUnreadOnes() = runTest {
         server.subscriptions += subscription("sub-1")
         serve(entry("a", ageDays = 1), entry("b", ageDays = 2))
