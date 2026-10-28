@@ -156,4 +156,19 @@ class NarrationFollowsPageTest {
         assertEquals(listOf("b"), followed)
         assertEquals(listOf("b"), supplied)
     }
+
+    @Test
+    fun suppliesTheTextAfterTheScreenGoesOff() {
+        // #2181: swipe, then the screen off before the page settles.
+        narration = on("a")
+        paragraphs = listOf("Hello.")
+        show()
+        entryId = "b"
+        after(300)
+        started = false
+        after(1_500)
+
+        assertEquals(listOf("b"), followed)
+        assertEquals(listOf("b"), supplied)
+    }
 }
