@@ -349,6 +349,23 @@ describe("openEpub", () => {
       expect((error as Error).message).toMatch(/text/);
     });
 
+    it("drops an inlined SVG once the book's chapters have saved its text budget", async () => {
+      const chapters = await readChapters(
+        buildEpub({
+          spine: Array.from({ length: 5 }, (_, i) => ({
+            path: `${i}.xhtml`,
+            xhtml: chapterXhtml('<p>Text</p><img src="pic.svg"/>'),
+          })),
+          files: { "OEBPS/pic.svg": svgOfSize(Math.floor(limit * 0.4)) },
+          manifest: { "pic.svg": "image/svg+xml" },
+        })
+      );
+      const saved = chapters.reduce((sum, chapter) => sum + Buffer.byteLength(chapter.html), 0);
+      expect(saved).toBeLessThanOrEqual(limit * EPUB_MAX_TEXT_FACTOR);
+      expect(chapters[0].html).toContain("data:image/svg+xml");
+      expect(chapters.at(-1)!.html).not.toContain("data:image/svg+xml");
+    });
+
     it("rejects a book whose archive inflates past its budget", async () => {
       const error = await openError(
         buildEpub({
@@ -383,8 +400,8 @@ describe("openEpub", () => {
           manifest: { "pic.svg": "image/svg+xml" },
         })
       );
+      // Read for each chapter, it would pass the archive's inflation budget.
       expect(chapters).toHaveLength(count);
-      expect(chapters.every((chapter) => chapter.html.includes("data:image/svg+xml"))).toBe(true);
     });
 
     it("budgets a chapter's inlined images by its text's UTF-8 bytes", async () => {
