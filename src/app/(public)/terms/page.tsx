@@ -100,6 +100,9 @@ export default function TermsOfServicePage() {
               <strong>Saved articles:</strong> Individual saved article pages are limited to 5 MB
             </li>
             <li>
+              <strong>Ebooks:</strong> Uploaded ebooks are limited to 20 MB
+            </li>
+            <li>
               <strong>Email newsletters:</strong> Individual newsletter emails are limited to 2 MB
             </li>
             <li>

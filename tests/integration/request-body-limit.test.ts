@@ -10,7 +10,7 @@ import { db } from "../../src/server/db";
 import { users } from "../../src/server/db/schema";
 import { createSession } from "../../src/server/auth/session";
 import { MAX_REQUEST_BODY_BYTES } from "../../src/lib/upload-limits";
-import { POST as trpcPost } from "../../src/app/api/trpc/[trpc]/route";
+import { GET as trpcGet, POST as trpcPost } from "../../src/app/api/trpc/[trpc]/route";
 import { POST as restPost } from "../../src/app/api/v1/[...path]/route";
 import { createTestUser } from "./helpers";
 
@@ -56,7 +56,18 @@ describe("request body limit", () => {
 
   it("hands a tRPC request at the limit to the adapter", async () => {
     const error = await trpcImport(MAX_REQUEST_BODY_BYTES);
+    // The adapter parses the cut-off body itself and fails on it.
     expect(error.data.appErrorCode).toBeNull();
+    expect(error.message).toMatch(/JSON/);
+  });
+
+  it("serves a GET whatever length it declares", async () => {
+    const response = await trpcGet(
+      new Request("http://localhost/api/trpc/auth.signupConfig", {
+        headers: { cookie, "content-length": String(MAX_REQUEST_BODY_BYTES + 1) },
+      })
+    );
+    expect(response.status).toBe(200);
   });
 
   it("answers a REST request declaring too many bytes in the REST error format", async () => {

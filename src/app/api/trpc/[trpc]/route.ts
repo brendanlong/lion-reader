@@ -37,7 +37,7 @@ const handler = (req: Request): Promise<Response> =>
     {
       label: "tRPC",
       metricsPath: normalizeTrpcPath(new URL(req.url)),
-      rejectOversized: (error) => serve(withFailingBody(req, error)),
+      rejectOversized: (error, onError) => serve(withFailingBody(req, error), onError),
     },
     (onError) => serve(req, onError)
   );

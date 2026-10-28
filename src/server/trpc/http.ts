@@ -24,6 +24,7 @@ function rateLimitHeaders(error: TRPCError): Record<string, string> {
  * of the body, which would fail to parse as something else.
  */
 function oversizedBodyError(req: Request): TRPCError | null {
+  if (req.method === "GET" || req.method === "HEAD") return null;
   const declared = Number(req.headers.get("content-length"));
   return declared > MAX_REQUEST_BODY_BYTES
     ? errors.contentTooLarge("The upload", MAX_UPLOAD_FILE_BYTES)
@@ -57,22 +58,23 @@ export async function serveTrpcHttp(
     label: string;
     metricsPath: string;
     extraHeaders?: Record<string, string>;
-    rejectOversized: (error: TRPCError) => Response | Promise<Response>;
+    rejectOversized: (error: TRPCError, onError: TrpcErrorHandler) => Response | Promise<Response>;
   },
   handle: (onError: TrpcErrorHandler) => Promise<Response>
 ): Promise<Response> {
   const endTimer = startHttpTimer(req.method, options.metricsPath);
   let errorHeaders: Record<string, string> = {};
 
+  const onError: TrpcErrorHandler = ({ error, path }) => {
+    if (process.env.NODE_ENV === "development") {
+      console.error(`❌ ${options.label} failed on ${path ?? "<no-path>"}: ${error.message}`);
+    }
+    if (error.code === "TOO_MANY_REQUESTS") errorHeaders = rateLimitHeaders(error);
+  };
   const oversized = oversizedBodyError(req);
   const response = oversized
-    ? await options.rejectOversized(oversized)
-    : await handle(({ error, path }) => {
-        if (process.env.NODE_ENV === "development") {
-          console.error(`❌ ${options.label} failed on ${path ?? "<no-path>"}: ${error.message}`);
-        }
-        if (error.code === "TOO_MANY_REQUESTS") errorHeaders = rateLimitHeaders(error);
-      });
+    ? await options.rejectOversized(oversized, onError)
+    : await handle(onError);
 
   endTimer(response.status);
 
