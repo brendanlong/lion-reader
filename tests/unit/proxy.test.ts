@@ -13,7 +13,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { config, proxy } from "../../src/proxy";
-import { isUploadPath, PROXY_BODY_LIMIT_BYTES } from "../../src/lib/upload-limits";
+import { isUploadPath, PROXY_BODY_LIMIT_BYTES, UPLOAD_PATHS } from "../../src/lib/upload-limits";
 import { SENTRY_TUNNEL_ROUTE } from "../../src/lib/sentry/tunnel-route";
 
 function makeRequest(
@@ -228,16 +228,7 @@ describe("proxy matcher", () => {
     unstable_doesMiddlewareMatch({ config, url: `https://reader.example.com${pathname}` });
 
   it("skips exactly the upload endpoints, so Next doesn't buffer their bodies", () => {
-    const uploads = [
-      "/api/trpc/collections.importEbook",
-      "/api/trpc/saved.uploadFile",
-      "/api/v1/collections/import-ebook",
-      "/api/v1/saved/upload",
-    ];
-    for (const pathname of uploads) {
-      expect(isUploadPath(pathname)).toBe(true);
-      expect(matches(pathname)).toBe(false);
-    }
+    for (const pathname of UPLOAD_PATHS) expect(matches(pathname)).toBe(false);
     for (const pathname of [
       "/api/trpc/collections.importEbook,entries.list",
       "/api/trpc/saved.uploadFileX",

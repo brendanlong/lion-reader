@@ -69,7 +69,7 @@ const handler = (req: Request): Promise<Response> => {
       extraHeaders: needsCorsHeaders(url) ? SAVED_CORS_HEADERS : undefined,
       // The adapter's own error shape: it would report a failing body read as
       // a parse error.
-      rejectOversized: (error) =>
+      reject: (error) =>
         Response.json(
           {
             message: error.message,

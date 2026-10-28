@@ -3,8 +3,10 @@
  * route handlers, which serve the same router.
  */
 
-import type { TRPCError } from "@trpc/server";
-import { isUploadPath, MAX_UPLOAD_BODY_BYTES, MAX_UPLOAD_FILE_BYTES } from "@/lib/upload-limits";
+import { TRPCError } from "@trpc/server";
+import { isUploadPath, maxEbookUploadBytes, maxUploadBodyBytes } from "@/lib/upload-limits";
+import { authenticateCredential, getBearerOrSessionCookie } from "@/server/auth/credential";
+import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
 import { startHttpTimer } from "@/server/metrics/metrics";
 
@@ -32,31 +34,6 @@ function withBody(req: Request, body: ReadableStream<Uint8Array>): Request {
   } as RequestInit);
 }
 
-function uploadTooLarge(): TRPCError {
-  return errors.contentTooLarge("The upload", MAX_UPLOAD_FILE_BYTES);
-}
-
-/**
- * `req` with a body that fails past {@link MAX_UPLOAD_BODY_BYTES}, for an
- * upload sent without a length. Uploads bypass the proxy (`isUploadPath`), so
- * nothing else bounds what they send; every other request's body is bounded
- * there.
- */
-function withUploadLimit(req: Request): Request {
-  if (req.body === null) return req;
-  let bytes = 0;
-  const body = req.body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        bytes += chunk.byteLength;
-        if (bytes > MAX_UPLOAD_BODY_BYTES) controller.error(uploadTooLarge());
-        else controller.enqueue(chunk);
-      },
-    })
-  );
-  return withBody(req, body);
-}
-
 /**
  * `req` with a body that fails with `error` when read, so the tRPC adapter
  * answers with it in its own error format.
@@ -66,11 +43,53 @@ export function withFailingBody(req: Request, error: TRPCError): Request {
   return withBody(req, body);
 }
 
+type Reject = (error: TRPCError, onError: TrpcErrorHandler) => Response | Promise<Response>;
+
 /**
- * Runs `handle` (the adapter call, given the request, an upload's with its
- * body limited, and the `onError` to pass it), or for an upload declaring a
- * body past its limit `rejectOversized`, which answers with the error in the
- * adapter's format without reading the body. Records
+ * Serves an upload, which bypasses the proxy (`isUploadPath`), so nothing
+ * else bounds what it sends, and whose body the REST adapter reads whole
+ * before authenticating. So it's rejected without reading its body unless
+ * it's authenticated and declares no more than the limit, and fails once it
+ * passes the limit if it declares no length.
+ */
+async function serveUpload(
+  req: Request,
+  reject: Reject,
+  handle: (req: Request, onError: TrpcErrorHandler) => Promise<Response>,
+  onError: TrpcErrorHandler
+): Promise<Response> {
+  const auth = await authenticateCredential(getBearerOrSessionCookie(req.headers), {
+    accept: ["session", "api_token", "app_token"],
+  });
+  if (!auth.ok) {
+    const message = "You must be logged in to access this resource";
+    return reject(new TRPCError({ code: "UNAUTHORIZED", message }), onError);
+  }
+
+  const maxFileBytes = maxEbookUploadBytes(usageLimitsConfig.maxSavedArticleSizeBytes);
+  const maxBodyBytes = maxUploadBodyBytes(maxFileBytes);
+  const tooLarge = () => errors.contentTooLarge("The upload", maxFileBytes);
+  if (Number(req.headers.get("content-length")) > maxBodyBytes) return reject(tooLarge(), onError);
+
+  let bytes = 0;
+  const body = req.body!.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        bytes += chunk.byteLength;
+        if (bytes > maxBodyBytes) controller.error(tooLarge());
+        else controller.enqueue(chunk);
+      },
+    })
+  );
+  const response = await handle(withBody(req, body), onError);
+  // The REST adapter reports any failure reading the body as a parse error.
+  return bytes > maxBodyBytes ? reject(tooLarge(), onError) : response;
+}
+
+/**
+ * Runs `handle` (the adapter call, given the request and the `onError` to
+ * pass it), an upload's through {@link serveUpload}, whose `reject` answers
+ * with an error in the adapter's format without reading the body. Records
  * its HTTP metrics under `metricsPath`, and returns its response with a
  * rejected request's rate-limit headers and `extraHeaders` added.
  *
@@ -85,7 +104,7 @@ export async function serveTrpcHttp(
     label: string;
     metricsPath: string;
     extraHeaders?: Record<string, string>;
-    rejectOversized: (error: TRPCError, onError: TrpcErrorHandler) => Response | Promise<Response>;
+    reject: Reject;
   },
   handle: (req: Request, onError: TrpcErrorHandler) => Promise<Response>
 ): Promise<Response> {
@@ -98,12 +117,10 @@ export async function serveTrpcHttp(
     }
     if (error.code === "TOO_MANY_REQUESTS") errorHeaders = rateLimitHeaders(error);
   };
-  const isUpload = req.body !== null && isUploadPath(new URL(req.url).pathname);
-  const response = !isUpload
-    ? await handle(req, onError)
-    : Number(req.headers.get("content-length")) > MAX_UPLOAD_BODY_BYTES
-      ? await options.rejectOversized(uploadTooLarge(), onError)
-      : await handle(withUploadLimit(req), onError);
+  const response =
+    req.body !== null && isUploadPath(new URL(req.url).pathname)
+      ? await serveUpload(req, options.reject, handle, onError)
+      : await handle(req, onError);
 
   endTimer(response.status);
 

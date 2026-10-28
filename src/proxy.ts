@@ -173,6 +173,7 @@ export async function proxy(request: NextRequest) {
       {
         message: `The request exceeds the maximum size of ${PROXY_BODY_LIMIT_BYTES / (1024 * 1024)}MB`,
         code: "PAYLOAD_TOO_LARGE",
+        data: { appErrorCode: "CONTENT_TOO_LARGE" },
       },
       { status: 413 }
     );
