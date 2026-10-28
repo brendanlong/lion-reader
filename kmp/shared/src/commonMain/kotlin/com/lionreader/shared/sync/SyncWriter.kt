@@ -331,18 +331,16 @@ internal class SyncWriter(private val driver: SqlDriver) {
      * Stores downloaded bodies, and an empty one for each [missing] id (asked for but not returned:
      * no longer visible) so it isn't requested again, each at the [versions] its entry had when the
      * download started ([putBody] says which are kept). Never touches `entry`, which is why it's
-     * safe outside the sync lock. Returns how much the stored bodies grew.
+     * safe outside the sync lock.
      */
     fun storeBodies(
         fetched: List<FullEntry>,
         missing: List<String>,
         versions: Map<String, Long>,
         now: Long,
-    ): Long {
+    ) {
         val texts = searchTexts(fetched)
-        return db.transactionWithResult {
-            storeBodiesInTransaction(fetched, texts, missing, versions, now)
-        }
+        db.transaction { storeBodiesInTransaction(fetched, texts, missing, versions, now) }
     }
 
     /** Each body's [searchText], worked out before the write transaction to keep it short. */
@@ -356,26 +354,23 @@ internal class SyncWriter(private val driver: SqlDriver) {
         missing: List<String>,
         versions: Map<String, Long>,
         now: Long,
-    ): Long {
-        var stored = 0L
+    ) {
         for (entry in fetched) {
             val version = versions[entry.id] ?: continue
             val content = entry.content ?: ""
             val text = texts.getValue(entry.id)
             // The search index's copy of the text counts against the budget too.
             val size = (content.length + text.length).toLong()
-            stored += putBody(entry.id, content, size, text, version, now)
+            putBody(entry.id, content, size, text, version, now)
         }
-        missing.forEach { id -> versions[id]?.let { stored += putBody(id, "", 0, "", it, now) } }
-        return stored
+        missing.forEach { id -> versions[id]?.let { putBody(id, "", 0, "", it, now) } }
     }
 
     /**
      * Stores a body downloaded at [version] in place of an older one, never a newer one (versions
-     * only grow), while the entry is on the device; how much that grew the stored bodies. One an
-     * edit overtook mid-download is still stored, out of date, rather than leaving the article
-     * without a body: the background download replaces it. A summary goes when the body it
-     * summarized is replaced by a different one.
+     * only grow), while the entry is on the device. One an edit overtook mid-download is still
+     * stored, out of date, rather than leaving the article without a body: the background download
+     * replaces it. A summary goes when the body it summarized is replaced by a different one.
      */
     private fun putBody(
         entryId: String,
@@ -384,10 +379,10 @@ internal class SyncWriter(private val driver: SqlDriver) {
         searchText: String,
         version: Long,
         now: Long,
-    ): Long {
-        if (bodyVersion(entryId) == null) return 0
+    ) {
+        if (bodyVersion(entryId) == null) return
         val stored = db.bodyQueries.stored(entryId).executeAsOneOrNull()
-        if (stored != null && stored.body_version >= version) return 0
+        if (stored != null && stored.body_version >= version) return
         if (db.bodyQueries.matches(entryId, content).executeAsOne() == 0L) {
             db.summaryQueries.deleteOutdated(entryId, version)
         }
@@ -395,20 +390,38 @@ internal class SyncWriter(private val driver: SqlDriver) {
         // old body's.
         db.bodyQueries.put(entryId, content, size, now, version)
         driver.indexBody(entryId, searchText)
-        return size - (stored?.size ?: 0)
     }
 
     /** The entry's body version, or null when it isn't on the device. */
     fun bodyVersion(entryId: String): Long? =
         db.entryQueries.bodyVersion(entryId).executeAsOneOrNull()
 
-    fun bodySize(): Long = db.bodyQueries.totalSize().executeAsOne()
-
-    /** Entries needing a body, with the body version to download them at. */
-    fun missingBodies(limit: Long): Map<String, Long> =
-        db.entryQueries.selectMissingContent(limit).executeAsList().associate {
-            it.id to it.body_version
+    /**
+     * Entries needing a body that [the budget][trimBodies] has room for, at most [limit], most
+     * important first, with the body version to download them at.
+     */
+    fun missingBodies(limit: Long, budget: Long, now: Long): Map<String, Long> {
+        val openedSince = now - RECENTLY_OPENED_MILLIS
+        val stored = rankedBodies(openedSince)
+        var next = 0
+        var above = 0L
+        return buildMap {
+            for (entry in
+                db.entryQueries.selectMissingContent(openedSince, limit).executeAsList()) {
+                val rank =
+                    BodyRank(
+                        entry.kept,
+                        entry.opened == 1L,
+                        entry.effective_read == 1L,
+                        entry.sort_at,
+                        entry.id,
+                    )
+                while (next < stored.size && stored[next].rank < rank) above += stored[next++].size
+                if (above >= budget) break
+                put(entry.id, entry.body_version)
+            }
         }
+    }
 
     /** Entries whose body an edit made out of date, with the body version to download them at. */
     fun outdatedBodies(limit: Long): Map<String, Long> =
@@ -418,22 +431,51 @@ internal class SyncWriter(private val driver: SqlDriver) {
 
     fun hasBody(entryId: String): Boolean = db.bodyQueries.exists(entryId).executeAsOne() > 0
 
-    fun evict(policy: RetentionPolicy, now: Long) = db.transaction {
-        db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
-        db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
-        db.subscriptionEntryQueries.pruneOrphans()
-        db.bodyQueries.pruneOrphans()
-        db.summaryQueries.pruneOrphans()
-        var size = db.bodyQueries.totalSize().executeAsOne()
-        if (size > policy.contentBudgetBytes) {
-            val openedSince = now - RECENTLY_OPENED_MILLIS
-            for (candidate in db.bodyQueries.evictionCandidates(openedSince).executeAsList()) {
-                if (size <= policy.contentBudgetBytes) break
-                db.bodyQueries.deleteForEntry(candidate.entry_id)
-                size -= candidate.size
-            }
+    fun evict(policy: RetentionPolicy, now: Long) {
+        db.transaction {
+            db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
+            db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
+            db.subscriptionEntryQueries.pruneOrphans()
+            db.bodyQueries.pruneOrphans()
+            db.summaryQueries.pruneOrphans()
         }
+        trimBodies(policy.contentBudgetBytes, now)
     }
+
+    /**
+     * Holds the bodies to the content budget. Most important first ([BodyRank]), a body is kept
+     * while the ones before it take less than [budget], so the one reaching it stays too; starred,
+     * saved and collections' articles' bodies always do. [missingBodies] downloads by the same
+     * rule, so what it downloads stays, and an evicted body isn't downloaded again until it would.
+     * Ranked before the write transaction, to keep it short.
+     */
+    fun trimBodies(budget: Long, now: Long) {
+        var above = 0L
+        val evicted =
+            rankedBodies(now - RECENTLY_OPENED_MILLIS).filter { body ->
+                (above >= budget && !body.rank.kept).also { above += body.size }
+            }
+        if (evicted.isEmpty()) return
+        db.transaction { evicted.forEach { db.bodyQueries.deleteForEntry(it.rank.entryId) } }
+    }
+
+    private fun rankedBodies(openedSince: Long): List<RankedBody> =
+        db.bodyQueries
+            .ranked(openedSince)
+            .executeAsList()
+            .map {
+                RankedBody(
+                    BodyRank(
+                        it.kept,
+                        it.opened == 1L,
+                        it.effective_read == 1L,
+                        it.sort_at,
+                        it.entry_id,
+                    ),
+                    it.size,
+                )
+            }
+            .sortedBy { it.rank }
 
     /** Keeps a summary the user asked for, if its entry is still at [bodyVersion]. */
     fun storeSummary(entryId: String, html: String, bodyVersion: Long) =
@@ -441,6 +483,33 @@ internal class SyncWriter(private val driver: SqlDriver) {
 }
 
 private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000
+
+/**
+ * How much an entry's body matters to the content budget, most first (selectMissingContent sorts
+ * the same way): starred, saved and collections' articles' ([kept]); then ones [opened] in the last
+ * day, as opening one marks it read and it may still be on screen; unread before read; newest
+ * first.
+ */
+private data class BodyRank(
+    val kept: Boolean,
+    val opened: Boolean,
+    val read: Boolean,
+    val sortAt: Long,
+    val entryId: String,
+) : Comparable<BodyRank> {
+    override fun compareTo(other: BodyRank): Int =
+        compareValuesBy(
+            other,
+            this,
+            { it.kept },
+            { it.opened },
+            { !it.read },
+            { it.sortAt },
+            { it.entryId },
+        )
+}
+
+private class RankedBody(val rank: BodyRank, val size: Long)
 
 /**
  * Each entry's memberships the events report (the server's, as of the page), with their positions

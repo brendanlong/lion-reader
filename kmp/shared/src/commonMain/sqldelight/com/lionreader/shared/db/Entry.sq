@@ -280,13 +280,19 @@ SELECT count(*) FROM entry_view WHERE effective_read_changed_at IS NOT NULL;
 bodyVersion:
 SELECT body_version FROM entry WHERE id = ?;
 
--- Entries without a body worth keeping offline, newest first.
+-- Entries without a body worth keeping offline, most important first, with
+-- what ranks them for the content budget (SyncWriter.BodyRank, whose order
+-- this is).
 selectMissingContent:
-SELECT id, body_version FROM entry_view
+SELECT id, body_version,
+  effective_starred = 1 OR id IN (SELECT entry_id FROM kept_entry) AS kept,
+  COALESCE(last_opened_at >= :openedSince, 0) AS opened,
+  effective_read, sort_at
+FROM entry_view
 WHERE id NOT IN (SELECT entry_id FROM entry_body)
   AND (effective_read = 0 OR effective_starred = 1 OR id IN (SELECT entry_id FROM kept_entry))
-ORDER BY sort_at DESC, id DESC
-LIMIT ?;
+ORDER BY kept DESC, opened DESC, effective_read ASC, sort_at DESC, id DESC
+LIMIT :limit;
 
 -- Entries whose body an edit made out of date, newest first.
 selectOutdatedBodies:

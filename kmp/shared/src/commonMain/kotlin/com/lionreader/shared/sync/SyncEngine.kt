@@ -76,12 +76,7 @@ class SyncEngine(
                 writer.evict(policy(), now())
             }
         }
-        if (downloadContent) {
-            contentMutex.withLock {
-                downloadContent()
-                mutex.withLock { writer.evict(policy(), now()) }
-            }
-        }
+        if (downloadContent) contentMutex.withLock { downloadContent() }
         flushFailure?.let { throw it }
     }
 
@@ -404,20 +399,21 @@ class SyncEngine(
             refreshed = outdated.keys
             fetchBodies(outdated)
         }
+        // Past the budget, a body more important than ones stored takes their place.
         val budget = policy().contentBudgetBytes
-        var size = writer.bodySize()
-        while (size < budget) {
-            val versions = writer.missingBodies(CONTENT_BATCH.toLong())
+        while (true) {
+            val versions = writer.missingBodies(CONTENT_BATCH.toLong(), budget, now())
             if (versions.isEmpty()) return
-            size += fetchBodies(versions)
+            fetchBodies(versions)
+            writer.trimBodies(budget, now())
         }
     }
 
     /** Downloads bodies for entries at the given body versions. */
-    private suspend fun fetchBodies(versions: Map<String, Long>): Long {
+    private suspend fun fetchBodies(versions: Map<String, Long>) {
         val fetched = api.getEntries(versions.keys.toList())
         val returned = fetched.map { it.id }.toSet()
-        return writer.storeBodies(
+        writer.storeBodies(
             fetched,
             versions.keys.filterNot { it in returned },
             versions,

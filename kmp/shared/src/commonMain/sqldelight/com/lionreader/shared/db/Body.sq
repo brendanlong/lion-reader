@@ -43,17 +43,11 @@ DELETE FROM entry_body WHERE entry_id NOT IN (SELECT id FROM entry);
 deleteAll:
 DELETE FROM entry_body;
 
-totalSize:
-SELECT COALESCE(SUM(size), 0) FROM entry_body;
-
--- Budget eviction order: read before unread, oldest first; starred bodies, and
--- those of saved and collections' articles (kept_entry), are kept
--- (selectMissingContent would download them again). Entries opened since :openedSince go last: opening one marks
--- it read, and it may still be on screen.
-evictionCandidates:
-SELECT b.entry_id, b.size
+-- Every body, with what ranks it for the content budget (SyncWriter.BodyRank).
+ranked:
+SELECT b.entry_id, b.size,
+  v.effective_starred = 1 OR v.id IN (SELECT entry_id FROM kept_entry) AS kept,
+  COALESCE(v.last_opened_at >= :openedSince, 0) AS opened,
+  v.effective_read, v.sort_at
 FROM entry_body b
-JOIN entry_view v ON v.id = b.entry_id
-WHERE v.effective_starred = 0
-  AND v.id NOT IN (SELECT entry_id FROM kept_entry)
-ORDER BY COALESCE(v.last_opened_at >= :openedSince, 0), v.effective_read DESC, v.sort_at ASC;
+JOIN entry_view v ON v.id = b.entry_id;
