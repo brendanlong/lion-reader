@@ -41,7 +41,7 @@ class SyncEngineTest {
     private val server = FakeServer()
     private var clock = NOW
     private var policy = RetentionPolicy()
-    private val engine = SyncEngine(server.api(), db, { clock }, { policy })
+    private val engine = SyncEngine(server.api(), driver, { clock }, { policy })
     private val reader = Reader(db, { clock }, Dispatchers.Unconfined) {}
 
     @AfterTest fun close() = driver.close()
@@ -309,8 +309,8 @@ class SyncEngineTest {
     fun outdatedBodiesAreReplacedPastTheContentBudget() = runTest {
         serve(entry("a"))
         engine.sync()
-        // Full, with the one body (and its search text).
-        policy = RetentionPolicy(contentBudgetBytes = ("<p>Body a</p>" + "Body a").length.toLong())
+        // Full, with the one body.
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("a"))
         server.entries["a"] = entry("a").copy(content = "<p>Body A</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
@@ -568,7 +568,7 @@ class SyncEngineTest {
         engine.sync()
         reader.setRead(listOf("a", "b", "c"), true)
 
-        policy = RetentionPolicy(contentBudgetBytes = ("<p>Body c</p>" + "Body c").length.toLong())
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("c"))
         engine.sync()
 
         assertEquals("<p>Body c</p>", reader.entry("c").first()?.content)
@@ -898,9 +898,8 @@ class SyncEngineTest {
         // Oldest read goes first, unless it was just opened (it may be on screen).
         reader.markOpened("old")
 
-        // Room for one body: its HTML and its text in the search index.
-        policy =
-            RetentionPolicy(contentBudgetBytes = ("<p>Body old</p>" + "Body old").length.toLong())
+        // Room for one body.
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("old"))
         engine.sync()
 
         assertEquals("<p>Body old</p>", reader.entry("old").first()?.content)
@@ -909,6 +908,95 @@ class SyncEngineTest {
 
     private fun requests(path: String) =
         server.requests.filter { it.url.encodedPath.endsWith(path) }
+
+    /** What [id]'s body takes of the content budget: its HTML and its text in the search index. */
+    private fun bodySize(id: String) = ("<p>Body $id</p>" + "Body $id").length.toLong()
+
+    /** [entries] arriving as the server reports new ones: without their bodies. */
+    private fun arrive(vararg entries: FullEntry) {
+        serve(*entries)
+        server.queueChanges(
+            events =
+                entries.map {
+                    server.newEntry(
+                        it.id,
+                        it.subscriptionId,
+                        EventEntry(
+                            type = it.type,
+                            title = it.title,
+                            publishedAt = it.publishedAt,
+                            fetchedAt = it.fetchedAt,
+                        ),
+                    )
+                }
+        )
+    }
+
+    private suspend fun withBodies(ids: List<String>) = ids.filter {
+        reader.entry(it).first()?.content != null
+    }
+
+    @Test
+    fun pastTheBudgetNewArticlesBodiesTakeTheOldestsPlace() = runTest {
+        server.subscriptions += subscription("sub-1")
+        // More than one download's batch of each.
+        val old = (0..CONTENT_BATCH).map { "o%03d".format(it) }
+        val new = (0..CONTENT_BATCH).map { "n%03d".format(it) }
+        serve(*old.map { entry(it, ageDays = 3) }.toTypedArray())
+        engine.sync()
+        policy = RetentionPolicy(contentBudgetBytes = old.sumOf(::bodySize))
+
+        arrive(*new.map { entry(it, ageDays = 1) }.toTypedArray())
+        engine.sync()
+
+        assertEquals(new, withBodies(old + new))
+    }
+
+    @Test
+    fun theBodyReachingTheBudgetStaysAndAnEvictedOneIsntDownloadedAgain() = runTest {
+        server.subscriptions += subscription("sub-1")
+        serve(entry("a", ageDays = 1), entry("b", ageDays = 2), entry("c", ageDays = 3))
+        engine.sync()
+        // a fits, b reaches the budget, and c is past it.
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("a") + bodySize("b") / 2)
+
+        engine.sync()
+        assertEquals(listOf("a", "b"), withBodies(listOf("a", "b", "c")))
+        val downloads = requests("/entries/batch").size
+        engine.sync()
+
+        assertEquals(downloads, requests("/entries/batch").size)
+        assertEquals(listOf("a", "b"), withBodies(listOf("a", "b", "c")))
+    }
+
+    @Test
+    fun anEditThatGrowsABodyPastTheBudgetEvictsLessImportantOnes() = runTest {
+        server.subscriptions += subscription("sub-1")
+        serve(entry("a", ageDays = 1), entry("b", ageDays = 2))
+        engine.sync()
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("a") + bodySize("b"))
+        server.entries["a"] = entry("a").copy(content = "<p>${"Longer ".repeat(10)}</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+
+        engine.sync()
+
+        assertEquals(listOf("a"), withBodies(listOf("a", "b")))
+    }
+
+    @Test
+    fun theBudgetEvictsReadBodiesBeforeOlderUnreadOnes() = runTest {
+        server.subscriptions += subscription("sub-1")
+        serve(entry("a", ageDays = 1), entry("b", ageDays = 2))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("b"))
+        engine.sync()
+
+        assertEquals(listOf("b"), withBodies(listOf("a", "b")))
+    }
 
     @Test
     fun aPageMentioningMoreEntriesThanOneBatchFetchTakesSeveral() = runTest {

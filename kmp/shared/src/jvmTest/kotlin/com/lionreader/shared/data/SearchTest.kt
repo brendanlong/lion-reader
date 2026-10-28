@@ -24,7 +24,7 @@ class SearchTest {
     private val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
     private val db = LionReaderDatabase(driver).also { AppSchema.create(driver) }
     private val server = FakeServer()
-    private val engine = SyncEngine(server.api(), db, { NOW }, { RetentionPolicy() })
+    private val engine = SyncEngine(server.api(), driver, { NOW }, { RetentionPolicy() })
     private val reader = Reader(db, { NOW }, Dispatchers.Unconfined) {}
 
     @AfterTest fun close() = driver.close()

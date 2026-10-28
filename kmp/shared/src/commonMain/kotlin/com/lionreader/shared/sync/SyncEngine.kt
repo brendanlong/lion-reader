@@ -1,5 +1,6 @@
 package com.lionreader.shared.sync
 
+import app.cash.sqldelight.db.SqlDriver
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.COLLECTION_TYPE
@@ -22,7 +23,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private const val CONTENT_BATCH = 50
+internal const val CONTENT_BATCH = 50
 private const val RECENTLY_READ_REFRESH = 20
 
 /**
@@ -36,21 +37,24 @@ private const val RECENTLY_READ_REFRESH = 20
  */
 class SyncEngine(
     private val api: LionReaderApi,
-    db: LionReaderDatabase,
+    driver: SqlDriver,
     private val now: () -> Long,
     private val policy: () -> RetentionPolicy,
 ) {
-    private val writer = SyncWriter(db)
-    private val outboxQueries = db.outboxQueries
+    private val writer = SyncWriter(driver)
+    private val outboxQueries = LionReaderDatabase(driver).outboxQueries
 
     /** Serializes everything that reads or writes cursors, state, or the outbox. */
     private val mutex = Mutex()
 
     /**
      * Serializes the background body downloads, which run outside [mutex] so a long download never
-     * holds up a refresh or a flush. Downloads only write `entry_body` (and drop the summaries of
-     * bodies they replace), guarded by body version (see [SyncWriter.storeBodies]), so they can't
-     * race the sync or each other.
+     * holds up a refresh or a flush. Downloads only write bodies (with their search text, and
+     * dropping the summaries of bodies they replace), guarded by body version (see
+     * [SyncWriter.storeBodies]), and evict them by the budget's rule ([SyncWriter.trimBodies]),
+     * which the sync's eviction shares, so they can't race the sync or each other into a wrong
+     * state: at worst a body is evicted just as its entry is starred or opened, and is fetched
+     * again.
      */
     private val contentMutex = Mutex()
 
@@ -75,12 +79,7 @@ class SyncEngine(
                 writer.evict(policy(), now())
             }
         }
-        if (downloadContent) {
-            contentMutex.withLock {
-                downloadContent()
-                mutex.withLock { writer.evict(policy(), now()) }
-            }
-        }
+        if (downloadContent) contentMutex.withLock { downloadContent() }
         flushFailure?.let { throw it }
     }
 
@@ -394,29 +393,32 @@ class SyncEngine(
     // ---- Bodies ----------------------------------------------------------
 
     private suspend fun downloadContent() {
-        // Replacing an outdated body hardly moves the total, so it isn't held to the budget. The
-        // same ones again means edits are arriving meanwhile: the next sync gets them.
+        val budget = policy().contentBudgetBytes
+        // An outdated body is replaced whatever the budget (it's already kept), and the trim
+        // after it evicts what a longer one pushes out. The same ones again means edits are
+        // arriving meanwhile: the next sync gets them.
         var refreshed: Set<String>? = null
         while (true) {
             val outdated = writer.outdatedBodies(CONTENT_BATCH.toLong())
             if (outdated.isEmpty() || outdated.keys == refreshed) break
             refreshed = outdated.keys
             fetchBodies(outdated)
+            writer.trimBodies(budget, now())
         }
-        val budget = policy().contentBudgetBytes
-        var size = writer.bodySize()
-        while (size < budget) {
-            val versions = writer.missingBodies(CONTENT_BATCH.toLong())
+        // Past the budget, a body more important than ones stored takes their place.
+        while (true) {
+            val versions = writer.missingBodies(CONTENT_BATCH.toLong(), budget, now())
             if (versions.isEmpty()) return
-            size += fetchBodies(versions)
+            fetchBodies(versions)
+            writer.trimBodies(budget, now())
         }
     }
 
     /** Downloads bodies for entries at the given body versions. */
-    private suspend fun fetchBodies(versions: Map<String, Long>): Long {
+    private suspend fun fetchBodies(versions: Map<String, Long>) {
         val fetched = api.getEntries(versions.keys.toList())
         val returned = fetched.map { it.id }.toSet()
-        return writer.storeBodies(
+        writer.storeBodies(
             fetched,
             versions.keys.filterNot { it in returned },
             versions,

@@ -72,7 +72,7 @@ class RealServerTest {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             AppSchema.create(driver)
             val db = LionReaderDatabase(driver)
-            val engine = SyncEngine(api, db, { deviceClock }, { RetentionPolicy() })
+            val engine = SyncEngine(api, driver, { deviceClock }, { RetentionPolicy() })
             val reader = Reader(db, { deviceClock }, Dispatchers.Unconfined) {}
             suspend fun local(scope: ListScope = ListScope.All, unreadOnly: Boolean = false) =
                 reader

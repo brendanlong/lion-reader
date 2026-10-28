@@ -35,8 +35,7 @@ class AccountStorageTest {
         )
         execute(
             null,
-            "INSERT INTO entry_body(entry_id, content, size, downloaded_at, search_text) " +
-                "VALUES ('a', ?, 0, 0, '')",
+            "INSERT INTO entry_body(entry_id, content, size, downloaded_at) VALUES ('a', ?, 0, 0)",
             1,
         ) {
             bindString(0, body)

@@ -1,0 +1,19 @@
+-- The body's search text goes straight into the search index
+-- (SyncWriter.putBody) rather than through an entry_body column a trigger
+-- copied and then emptied, which wrote every body twice. SQLite 3.18 can't drop
+-- a column, so the table is rebuilt; that drops its trigger, which AppSchema
+-- adds back. The index keeps the text it has.
+CREATE TABLE entry_body_rebuilt (
+  entry_id TEXT NOT NULL PRIMARY KEY,
+  content TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  downloaded_at INTEGER NOT NULL,
+  body_version INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO entry_body_rebuilt(entry_id, content, size, downloaded_at, body_version)
+SELECT entry_id, content, size, downloaded_at, body_version FROM entry_body;
+
+DROP TABLE entry_body;
+
+ALTER TABLE entry_body_rebuilt RENAME TO entry_body;

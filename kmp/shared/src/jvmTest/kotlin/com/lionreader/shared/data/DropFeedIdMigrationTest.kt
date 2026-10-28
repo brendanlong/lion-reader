@@ -46,8 +46,18 @@ class DropFeedIdMigrationTest {
 
     @Test
     fun searchKeepsItsEntriesAndFollowsNewChanges() {
-        // As installed: the search triggers, and rowids with a gap.
+        // As installed: the search triggers (bodies then went into the index through this one,
+        // which 11.sqm drops), and rowids with a gap.
         SEARCH_TRIGGERS.forEach(::execute)
+        execute(
+            """
+            CREATE TRIGGER entry_search_body AFTER INSERT ON entry_body BEGIN
+              UPDATE entry_search SET body = NEW.search_text
+              WHERE rowid = (SELECT rowid FROM entry WHERE id = NEW.entry_id);
+              UPDATE entry_body SET search_text = '' WHERE entry_id = NEW.entry_id;
+            END
+            """
+        )
         execute(
             "INSERT INTO entry(id, feed_id, type, title, fetched_at, sort_at, read, starred, " +
                 "body_version) VALUES ('a', 'f', 'web', 'Alpha', 0, 3, 0, 0, 1), " +
