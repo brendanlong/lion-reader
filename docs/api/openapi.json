@@ -9419,8 +9419,7 @@
                 "properties": {
                   "content": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 6991531
+                    "minLength": 1
                   },
                   "filename": {
                     "type": "string",
@@ -10984,8 +10983,7 @@
                 "properties": {
                   "content": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 6991531
+                    "minLength": 1
                   },
                   "filename": {
                     "type": "string",

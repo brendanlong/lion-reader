@@ -8,6 +8,8 @@
 import { createOpenApiFetchHandler } from "trpc-to-openapi";
 import { appRouter } from "@/server/trpc/root";
 import { createContext } from "@/server/trpc/context";
+import { getHTTPStatusCodeFromError } from "@trpc/server/http";
+import { getAppErrorCode } from "@/server/errors";
 import { serveTrpcHttp } from "@/server/trpc/http";
 
 /**
@@ -65,8 +67,19 @@ const handler = (req: Request): Promise<Response> => {
       label: "REST API",
       metricsPath: normalizeRestPath(url),
       extraHeaders: needsCorsHeaders(url) ? SAVED_CORS_HEADERS : undefined,
+      // The adapter's own error shape: it would report a failing body read as
+      // a parse error.
+      reject: (error) =>
+        Response.json(
+          {
+            message: error.message,
+            code: error.code,
+            data: { appErrorCode: getAppErrorCode(error) },
+          },
+          { status: getHTTPStatusCodeFromError(error) }
+        ),
     },
-    (onError) =>
+    (req, onError) =>
       createOpenApiFetchHandler({
         endpoint: "/api/v1",
         req,

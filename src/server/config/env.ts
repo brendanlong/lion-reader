@@ -4,6 +4,8 @@
  * Centralized access to environment variables with type safety.
  */
 
+import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES } from "@/lib/upload-limits";
+
 /**
  * Valid signup provider types.
  * - "email": Email/password signup
@@ -336,9 +338,6 @@ function positiveIntegerFromEnv(name: string, defaultValue: number): number {
   }
   return value;
 }
-
-/** The native app caps a shared file at this before uploading it. */
-export const DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Usage limits configuration.

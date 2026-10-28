@@ -27,6 +27,7 @@ import {
   SUPPORTED_UPLOAD_EXTENSIONS,
   isEbookFile,
 } from "@/lib/upload-file-types";
+import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES, maxEbookUploadBytes } from "@/lib/upload-limits";
 import { untitledSubscriptionLabel } from "@/lib/collections";
 import { useAppHref, useAppPathname } from "@/lib/hooks/useAppLocation";
 import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
@@ -43,7 +44,6 @@ import {
 // Constants
 // ============================================================================
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const COLLECTIONS_PAGE_SIZE = 100;
 
 const ACCEPTED_EXTENSIONS = [...SUPPORTED_UPLOAD_EXTENSIONS, ...EBOOK_UPLOAD_EXTENSIONS];
@@ -150,8 +150,11 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     if (!isValidFileType(file.name)) {
       return `Unsupported file type. Please upload ${ACCEPTED_EXTENSIONS.join(", ")} files.`;
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(MAX_FILE_SIZE)}.`;
+    const maxSize = isEbookFile(file.name, file.type)
+      ? maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES)
+      : DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES;
+    if (file.size > maxSize) {
+      return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(maxSize)}.`;
     }
     return null;
   }, []);

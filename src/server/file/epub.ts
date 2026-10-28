@@ -11,9 +11,10 @@
  *
  * Chapters are read one at a time ({@link Epub.chapters}), so a whole book's
  * HTML is never in memory at once: at most one spine document and the chapters
- * it holds, each bounded by the saved-article size limit. Every byte inflated
- * from the archive also counts against one budget for the book, which bounds
- * the parsing a ZIP bomb can cost.
+ * it holds, each bounded by the saved-article size limit. What the book saves
+ * has a budget ({@link EPUB_MAX_TEXT_FACTOR}), and every byte
+ * inflated from the archive counts against another, which bounds the parsing
+ * a ZIP bomb can cost.
  */
 
 import { posix } from "node:path";
@@ -35,13 +36,14 @@ import { documentConversionSlot, QueueTimeoutError } from "@/server/file/convers
 export const EPUB_MAX_INFLATION_FACTOR = 10;
 
 /**
- * One spine document, inflated, as a multiple of the saved-article size limit:
- * room for a book that's all one file, as `.docx` text gets, but no more,
- * since the document is in memory whole.
+ * What one book saves to the database (its spine documents, inflated, and
+ * every SVG its chapters inline), as a multiple of the saved-article size
+ * limit: room for a book that's all one file, as `.docx` text gets, but no
+ * more, since a document is in memory whole.
  *
  * @testonly
  */
-export const EPUB_MAX_DOCUMENT_FACTOR = 2;
+export const EPUB_MAX_TEXT_FACTOR = 2;
 
 /**
  * How long a spine document may wait for the document conversion slot, as a
@@ -133,6 +135,21 @@ interface Package {
   ncxId: string | null;
 }
 
+/** Charges what one book saves against {@link EPUB_MAX_TEXT_FACTOR}. */
+class TextBudget {
+  private readonly max = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_TEXT_FACTOR;
+  private used = 0;
+
+  get remaining(): number {
+    return this.max - this.used;
+  }
+
+  charge(bytes: number): void {
+    this.used += bytes;
+    if (this.used > this.max) throw errors.contentTooLarge("The ebook's text", this.max);
+  }
+}
+
 /** Reads archive entries, failing once their inflated total passes the budget. */
 class BudgetedZip {
   private inflated = 0;
@@ -145,32 +162,32 @@ class BudgetedZip {
     return entry !== null && !entry.dir;
   }
 
-  async readText(path: string, maxBytes?: number): Promise<string | null> {
-    const bytes = await this.read(path, maxBytes);
+  async readText(path: string): Promise<string | null> {
+    const bytes = await this.read(path);
     return bytes === null ? null : bytes.toString("utf8");
   }
 
   /**
    * Counts the bytes actually inflated rather than trusting the sizes the ZIP
-   * declares, which the file's author controls.
+   * declares, which the file's author controls. Charges them to `text` too,
+   * if given.
    */
-  read(path: string, maxBytes = this.budget): Promise<Buffer | null> {
+  read(path: string, text?: TextBudget): Promise<Buffer | null> {
     const entry = this.zip.file(path);
     if (!entry || entry.dir) return Promise.resolve(null);
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
-      let bytes = 0;
       const stream = entry.nodeStream();
       stream.on("data", (chunk: Buffer) => {
         this.inflated += chunk.length;
-        bytes += chunk.length;
-        if (this.inflated > this.budget || bytes > maxBytes) {
+        try {
+          text?.charge(chunk.length);
+          if (this.inflated > this.budget) {
+            throw errors.contentTooLarge("Decompressed ebook", this.budget);
+          }
+        } catch (error) {
           stream.pause();
-          reject(
-            this.inflated > this.budget
-              ? errors.contentTooLarge("Decompressed ebook", this.budget)
-              : errors.contentTooLarge(`Decompressed ${path}`, maxBytes)
-          );
+          reject(error);
           return;
         }
         chunks.push(chunk);
@@ -704,14 +721,16 @@ function dataUri(image: EpubImage): string {
 
 /**
  * Replaces a chapter's image marks with their URLs (see
- * {@link EpubChapter.html}), in order. An SVG that would take the chapter past
- * the saved-article size limit is dropped; a stored image adds only its URL.
+ * {@link EpubChapter.html}), in order, charging each to the book's `text`. An
+ * SVG that would take the chapter past the saved-article size limit, or the
+ * book past its text budget, is dropped; a stored image adds only its URL.
  * The HTML holds no relative URL, so nothing downstream changes its size.
  */
 async function resolveImages(
   images: ImageReader,
   html: string,
-  store: ImageStore
+  store: ImageStore,
+  text: TextBudget
 ): Promise<string> {
   const segments = html.split(IMAGE_MARK);
   let remaining =
@@ -737,8 +756,9 @@ async function resolveImages(
       }
       urls.set(index, url);
     }
-    if (url.length > remaining) continue;
+    if (url.length > Math.min(remaining, text.remaining)) continue;
     remaining -= url.length;
+    text.charge(url.length);
     resolved += url;
   }
   return resolved;
@@ -874,12 +894,12 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
     zip,
     new Map([...pkg.manifest.values()].map((item) => [item.path, item.mediaType]))
   );
-  const maxDocumentBytes = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_DOCUMENT_FACTOR;
+  const text = new TextBudget();
 
   function toChapter(pending: PendingChapter): EpubChapter {
     return {
       title: pending.label ?? pending.heading,
-      html: (store) => resolveImages(images, pending.html, store),
+      html: (store) => resolveImages(images, pending.html, store, text),
     };
   }
 
@@ -894,8 +914,9 @@ export async function openEpub(buffer: Buffer): Promise<Epub> {
         builder.startDocument(starts.get(path));
         for (const pending of builder.takeFinished()) yield toChapter(pending);
         await withConversionSlot(async () => {
-          const xhtml = await zip.readText(path, maxDocumentBytes);
-          if (xhtml) await builder.addDocument(path, xhtml, starts.get(path));
+          const xhtml = await zip.read(path, text);
+          if (!xhtml?.length) return;
+          await builder.addDocument(path, xhtml.toString("utf8"), starts.get(path));
         });
         for (const pending of builder.takeFinished()) yield toChapter(pending);
       }

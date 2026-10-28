@@ -5,8 +5,8 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  EPUB_MAX_DOCUMENT_FACTOR,
   EPUB_MAX_INFLATION_FACTOR,
+  EPUB_MAX_TEXT_FACTOR,
   openEpub,
   type ImageStore,
 } from "@/server/file/epub";
@@ -335,27 +335,47 @@ describe("openEpub", () => {
     const paddedDocument = (bytes: number) =>
       chapterXhtml(`<p>Short.</p><!--${"a".repeat(bytes)}-->`);
 
-    it("rejects a spine document that inflates past its own budget", async () => {
+    it("rejects a book whose documents together pass its text budget", async () => {
+      const perDocument = Math.ceil((limit * EPUB_MAX_TEXT_FACTOR) / 2);
       const error = await openError(
         buildEpub({
-          spine: [{ path: "a.xhtml", xhtml: paddedDocument(limit * EPUB_MAX_DOCUMENT_FACTOR) }],
+          spine: [
+            { path: "a.xhtml", xhtml: paddedDocument(perDocument) },
+            { path: "b.xhtml", xhtml: paddedDocument(perDocument) },
+          ],
         })
       );
       expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+      expect((error as Error).message).toMatch(/text/);
     });
 
-    it("rejects a book whose documents together inflate past its budget", async () => {
-      const perDocument = limit * EPUB_MAX_DOCUMENT_FACTOR - 1024;
-      const count = Math.floor((limit * EPUB_MAX_INFLATION_FACTOR) / perDocument) + 1;
+    it("drops an inlined SVG once the book's chapters have saved its text budget", async () => {
+      const chapters = await readChapters(
+        buildEpub({
+          spine: Array.from({ length: 5 }, (_, i) => ({
+            path: `${i}.xhtml`,
+            xhtml: chapterXhtml('<p>Text</p><img src="pic.svg"/>'),
+          })),
+          files: { "OEBPS/pic.svg": svgOfSize(Math.floor(limit * 0.4)) },
+          manifest: { "pic.svg": "image/svg+xml" },
+        })
+      );
+      const saved = chapters.reduce((sum, chapter) => sum + Buffer.byteLength(chapter.html), 0);
+      expect(saved).toBeLessThanOrEqual(limit * EPUB_MAX_TEXT_FACTOR);
+      expect(chapters[0].html).toContain("data:image/svg+xml");
+      expect(chapters.at(-1)!.html).not.toContain("data:image/svg+xml");
+    });
+
+    it("rejects a book whose archive inflates past its budget", async () => {
       const error = await openError(
         buildEpub({
-          spine: Array.from({ length: count }, (_, i) => ({
-            path: `${i}.xhtml`,
-            xhtml: paddedDocument(perDocument),
-          })),
+          spine: [{ path: "a.xhtml", xhtml: chapterXhtml('<p>Text</p><img src="pic.png"/>') }],
+          files: { "OEBPS/pic.png": Buffer.alloc(limit * EPUB_MAX_INFLATION_FACTOR + 1) },
+          manifest: { "pic.png": "image/png" },
         })
       );
       expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+      expect((error as Error).message).toMatch(/Decompressed ebook/);
     });
 
     it("rejects a chapter too large to save as soon as it's read", async () => {
@@ -380,8 +400,8 @@ describe("openEpub", () => {
           manifest: { "pic.svg": "image/svg+xml" },
         })
       );
+      // Read for each chapter, it would pass the archive's inflation budget.
       expect(chapters).toHaveLength(count);
-      expect(chapters.every((chapter) => chapter.html.includes("data:image/svg+xml"))).toBe(true);
     });
 
     it("budgets a chapter's inlined images by its text's UTF-8 bytes", async () => {

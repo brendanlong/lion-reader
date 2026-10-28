@@ -38,6 +38,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_LANDING_PATH } from "@/lib/routes";
 import { SENTRY_TUNNEL_ROUTE } from "@/lib/sentry/tunnel-route";
+import { PROXY_BODY_LIMIT_BYTES } from "@/lib/upload-limits";
 import { getSessionCookie } from "@/server/auth/session-cookie";
 import {
   buildContentSecurityPolicy,
@@ -164,6 +165,20 @@ export async function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 405, headers: { Allow: "GET, HEAD" } });
   }
 
+  // Next passes on only the first PROXY_BODY_LIMIT_BYTES of the body, and
+  // drops the request's length, so past this the route couldn't tell it had
+  // lost the rest. Uploads, which may be larger, don't come through here.
+  if (Number(request.headers.get("content-length")) > PROXY_BODY_LIMIT_BYTES) {
+    return NextResponse.json(
+      {
+        message: `The request exceeds the maximum size of ${PROXY_BODY_LIMIT_BYTES / (1024 * 1024)}MB`,
+        code: "PAYLOAD_TOO_LARGE",
+        data: { appErrorCode: "CONTENT_TOO_LARGE" },
+      },
+      { status: 413 }
+    );
+  }
+
   // The service worker script deliberately gets NO CSP. A service worker's
   // fetches are governed by the CSP served on the worker script itself, and
   // the runtime-caching config in next.config.ts fetches cross-origin entry
@@ -219,13 +234,19 @@ export async function proxy(request: NextRequest) {
 }
 
 /**
- * Run the proxy on all requests except Next's build assets. The broad matcher
- * puts the nonce'd CSP on every response — including API/JSON responses, where
- * a CSP is inert but hardens any content-type-confusion angle.
+ * Run the proxy on all requests except Next's build assets and the upload
+ * endpoints. The broad matcher puts the nonce'd CSP on every response —
+ * including API/JSON responses, where a CSP is inert but hardens any
+ * content-type-confusion angle.
  * `_next/static`/`_next/image` are excluded so middleware doesn't run per-asset
  * (a CSP on those subresources is meaningless); `/sw.js` is matched but
- * bypassed inside `proxy()` (see there).
+ * bypassed inside `proxy()` (see there). The upload endpoints
+ * (`isUploadPath`, which a test holds this to) are excluded because Next
+ * buffers the body of every request the proxy sees, up to a limit that would
+ * then have to fit an upload for every route.
  */
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/trpc/collections\\.importEbook$|api/trpc/saved\\.uploadFile$|api/v1/collections/import-ebook$|api/v1/saved/upload$).*)",
+  ],
 };

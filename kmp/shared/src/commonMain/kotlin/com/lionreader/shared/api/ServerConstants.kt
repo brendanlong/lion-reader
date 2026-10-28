@@ -22,6 +22,9 @@ object ServerLimits {
      * so when a file is over it.
      */
     const val UPLOAD_BYTES = 5242880
+
+    /** Bytes of an ebook `/collections/import-ebook` accepts, by default, as for [UPLOAD_BYTES]. */
+    const val EBOOK_UPLOAD_BYTES = 20971520
 }
 
 /** File extensions `/saved/upload` converts; it picks the converter by the filename's. */

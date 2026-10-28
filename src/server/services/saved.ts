@@ -1038,11 +1038,15 @@ function uploadGuid(idempotencyKey: string): string {
 }
 
 /**
- * Enforces the saved article size limit on an upload's raw bytes, before any
- * conversion (mammoth, Readability, Markdown) can burn memory or CPU on it.
+ * Enforces an upload's size limit (by default the saved article size limit) on
+ * its raw bytes, before any conversion (mammoth, Readability, Markdown) can
+ * burn memory or CPU on it.
  */
-export function assertUploadSize(resource: string, bytes: number): void {
-  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+export function assertUploadSize(
+  resource: string,
+  bytes: number,
+  maxSize = usageLimitsConfig.maxSavedArticleSizeBytes
+): void {
   if (bytes > maxSize) {
     throw errors.contentTooLarge(resource, maxSize);
   }

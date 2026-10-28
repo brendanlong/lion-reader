@@ -11,6 +11,7 @@ import { useState, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink, type TRPCLink } from "@trpc/client";
 import superjson from "superjson";
+import { UPLOAD_PROCEDURES } from "@/lib/upload-limits";
 import type { AppRouter } from "@/server/trpc/root";
 import { trpc } from "./client";
 import { getQueryClient } from "./query-client";
@@ -48,7 +49,7 @@ function createHttpLinks(): TRPCLink<AppRouter>[] {
   };
   return [
     splitLink({
-      condition: (op) => op.context.skipBatch === true,
+      condition: (op) => op.context.skipBatch === true || UPLOAD_PROCEDURES.has(op.path),
       true: httpLink(options),
       false: httpBatchLink(options),
     }),

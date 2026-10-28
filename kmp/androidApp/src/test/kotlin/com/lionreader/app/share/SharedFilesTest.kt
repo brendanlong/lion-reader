@@ -140,4 +140,17 @@ class SharedFilesTest {
 
         assertTrue(copySharedFile(context, uri, sharedType = null) is CopyResult.Copied)
     }
+
+    @Test
+    fun holdsAnEbookToTheEbookLimit() {
+        val uri = provider("com.example.files.provider", otherApp)
+        serve("book.epub", "application/epub+zip", ByteArray(ServerLimits.EBOOK_UPLOAD_BYTES))
+        assertTrue(copySharedFile(context, uri, sharedType = null) is CopyResult.Copied)
+
+        serve("book.epub", "application/epub+zip", ByteArray(ServerLimits.EBOOK_UPLOAD_BYTES + 1))
+        assertEquals(
+            CopyResult.Failed("That file is too large to save."),
+            copySharedFile(context, uri, sharedType = null),
+        )
+    }
 }
