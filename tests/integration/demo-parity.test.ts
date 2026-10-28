@@ -19,6 +19,7 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
+import { setEntryScores } from "../../src/server/services/entry-scores";
 import { createDemoStore, type DemoFixtures, type DemoProcedures } from "../../src/lib/demo/store";
 import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "../../src/lib/demo/data";
 import {
@@ -165,6 +166,11 @@ async function realSide(): Promise<Side> {
     );
   }
   toReal.set("demo-saved", await createTestSavedSubscription(userId));
+  await setEntryScores(
+    db,
+    userId,
+    FIXTURES.entries.map((entry) => ({ entryId: toReal.get(entry.id)!, score: entry.score }))
+  );
 
   const caller = createCaller(await createAuthContext(userId));
   const toFixture = new Map(
@@ -202,9 +208,12 @@ async function counts(side: Side): Promise<unknown> {
   };
 }
 
-/** A list's entries, and their ids in the order served. */
+/**
+ * A list's entries, and their ids in the order served. By score, since the
+ * demo opens its lists that way and the server opens them newest first.
+ */
 async function listOrder(side: Side, input: Input<"entries.list">): Promise<unknown> {
-  const { items } = await side.call("entries.list", input);
+  const { items } = await side.call("entries.list", { ...input, sortOrder: "highest" });
   return { order: items.map((item) => item.id), items };
 }
 
