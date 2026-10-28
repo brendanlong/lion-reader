@@ -19,7 +19,7 @@ const article: DemoArticle = {
 
     <p>Use the upload button at the top of the app to add a Word (.docx), PDF, Markdown, HTML, or plain text file. Headings, lists, links, and other formatting come through, and the title is picked up from the document automatically.</p>
 
-    <p>PDFs are converted to flowing text you can read at any screen size, with running headers and page numbers removed. Images aren&rsquo;t carried over, and scanned PDFs (pictures of pages with no text in them) can&rsquo;t be read.</p>
+    <p>PDFs are converted to flowing text you can read at any screen size, with running headers and page numbers removed. Embedded pictures are kept beside their captions, but charts and diagrams drawn as vector graphics aren&rsquo;t carried over, and scanned PDFs (pictures of pages with no text in them) can&rsquo;t be read.</p>
 
     <details>
       <summary>Setting a title and author in Markdown</summary>

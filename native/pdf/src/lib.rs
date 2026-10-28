@@ -2,10 +2,14 @@
 //!
 //! pdf_oxide does the layout analysis (reading order, columns, paragraphs,
 //! headings from font size); [`cleanup`] turns its per-page output into one
-//! article. The Markdown is rendered by the app's usual Markdown pipeline.
+//! article, and [`images`] places the page's images in it. The Markdown is
+//! rendered by the app's usual Markdown pipeline.
 
 mod cleanup;
+mod images;
 mod title;
+
+pub use images::Image;
 
 use pdf_oxide::converters::ConversionOptions;
 use pdf_oxide::object::Object;
@@ -19,11 +23,15 @@ const MAX_METADATA_CHARS: usize = 500;
 pub struct Limits {
     pub max_pages: usize,
     pub max_output_bytes: usize,
+    /// For the images, which aren't part of the Markdown.
+    pub max_image_bytes: usize,
 }
 
 #[derive(Debug)]
 pub struct Converted {
+    /// Image `i` appears as `![](pdf-image:i)`.
     pub markdown: String,
+    pub images: Vec<Image>,
     pub title: Option<String>,
     pub author: Option<String>,
     pub summary: Option<String>,
@@ -37,6 +45,7 @@ pub enum ConvertError {
     Encrypted,
     TooManyPages,
     OutputTooLarge,
+    ImagesTooLarge,
     /// No extractable text: almost always a scan, which would need OCR.
     NoText,
 }
@@ -49,6 +58,7 @@ impl ConvertError {
             ConvertError::Encrypted => "encrypted",
             ConvertError::TooManyPages => "too_many_pages",
             ConvertError::OutputTooLarge => "output_too_large",
+            ConvertError::ImagesTooLarge => "images_too_large",
             ConvertError::NoText => "no_text",
         }
     }
@@ -60,6 +70,7 @@ fn conversion_options() -> ConversionOptions {
         // page (quadratic: 100s for a 244-page book on one core, versus under
         // 1s without it); `cleanup` strips them in one pass instead.
         strip_running_headers_footers: false,
+        // `images` extracts them instead.
         include_images: false,
         ..Default::default()
     }
@@ -79,6 +90,7 @@ pub fn convert(bytes: Vec<u8>, limits: &Limits) -> Result<Converted, ConvertErro
 
     let options = conversion_options();
     let mut pages = Vec::with_capacity(page_count);
+    let mut candidates = Vec::with_capacity(page_count);
     let mut total_bytes = 0;
     for index in 0..page_count {
         // One bad page shouldn't lose the rest of the document.
@@ -87,16 +99,23 @@ pub fn convert(bytes: Vec<u8>, limits: &Limits) -> Result<Converted, ConvertErro
         if total_bytes > limits.max_output_bytes {
             return Err(ConvertError::OutputTooLarge);
         }
+        candidates.push(images::page_candidates(&doc, index, &page));
         pages.push(page);
     }
+    let placed = images::place(pages, candidates, limits.max_image_bytes)
+        .map_err(|images::ImagesTooLarge| ConvertError::ImagesTooLarge)?;
 
-    let markdown = without_control_chars(&cleanup::assemble(pages));
-    if !markdown.chars().any(char::is_alphanumeric) {
+    let markdown = without_control_chars(&cleanup::assemble(placed.pages));
+    if !cleanup::split_blocks(&markdown)
+        .filter(|block| !cleanup::is_image(block))
+        .any(|block| block.chars().any(char::is_alphanumeric))
+    {
         return Err(ConvertError::NoText);
     }
 
     Ok(Converted {
         markdown,
+        images: placed.images,
         title: info_string(&doc, "Title")
             .filter(|title| !title::is_junk_info_title(title))
             .or_else(|| first_page_title(&doc).and_then(|title| metadata_text(&title))),
@@ -128,14 +147,7 @@ fn first_page_title(doc: &PdfDocument) -> Option<String> {
         .extract_spans(0)
         .ok()?
         .into_iter()
-        .map(|span| title::SpanBox {
-            text: span.text,
-            size: span.font_size,
-            x: span.bbox.x,
-            width: span.bbox.width,
-            y: span.bbox.y,
-            height: span.bbox.height,
-        })
+        .map(title::SpanBox::from)
         .collect();
     title::layout_title(&spans, (y0 + y1) / 2.0)
 }

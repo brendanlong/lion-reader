@@ -36,9 +36,16 @@ const CONVERSION_DEADLINE_MS = 20_000;
 const PDF_MAX_PAGES = 1000;
 
 /**
- * Room in the helper's stdout beyond twice the Markdown budget, for metadata
- * and JSON framing. The helper strips control characters and caps each
- * metadata string, so JSON escaping at most doubles the text.
+ * The images' total size, as a multiple of the saved-article limit, which also
+ * caps the PDF itself. The images in real PDFs total less than the file.
+ */
+const PDF_IMAGE_BUDGET_FACTOR = 2;
+
+/**
+ * Room in the helper's stdout beyond twice the Markdown and image budgets, for
+ * metadata and JSON framing. The helper strips control characters and caps
+ * each metadata string, so JSON escaping at most doubles the text; base64 and
+ * each image's framing stay under twice the image bytes.
  */
 const STDOUT_SLACK_BYTES = 64 * 1024;
 
@@ -48,20 +55,36 @@ const MAX_STDERR_BYTES = 4096;
 /** Exit status of a Rust process that panicked. */
 const RUST_PANIC_EXIT_CODE = 101;
 
+/** How the helper's Markdown refers to `images[i]`. */
+const IMAGE_PLACEHOLDER = /src="pdf-image:(\d+)"/g;
+
 const helperOutputSchema = z.union([
   z.object({
     markdown: z.string(),
+    images: z.array(
+      z.object({ contentType: z.enum(["image/png", "image/jpeg"]), data: z.string() })
+    ),
     title: z.string().nullable(),
     author: z.string().nullable(),
     summary: z.string().nullable(),
   }),
   z.object({
-    error: z.enum(["unreadable", "encrypted", "too_many_pages", "output_too_large", "no_text"]),
+    error: z.enum([
+      "unreadable",
+      "encrypted",
+      "too_many_pages",
+      "output_too_large",
+      "images_too_large",
+      "no_text",
+    ]),
   }),
 ]);
 
 interface ConvertedPdf {
+  /** Refers to image `i` as `![](pdf-image:i)`. */
   markdown: string;
+  /** Base64 data. */
+  images: { contentType: string; data: string }[];
   /** Document-info title, else the largest text atop the first page. */
   title: string | null;
   author: string | null;
@@ -74,6 +97,8 @@ interface PdfConverterOptions {
   deadlineMs: number;
   slot: ConversionSlot;
   maxPages: number;
+  /** The images' total size, which the helper enforces. */
+  maxImageBytes: number;
 }
 
 interface HelperExit {
@@ -100,7 +125,8 @@ function runHelper(
   deadline: number
 ): Promise<HelperExit> {
   const maxOutputBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
-  const maxStdoutBytes = maxOutputBytes * 2 + STDOUT_SLACK_BYTES;
+  const { maxImageBytes } = options;
+  const maxStdoutBytes = (maxOutputBytes + maxImageBytes) * 2 + STDOUT_SLACK_BYTES;
   const child = spawn(
     options.binaryPath,
     [
@@ -108,6 +134,7 @@ function runHelper(
       String(Math.ceil(options.deadlineMs / 1000)),
       String(options.maxPages),
       String(maxOutputBytes),
+      String(maxImageBytes),
     ],
     { stdio: ["pipe", "pipe", "pipe"] }
   );
@@ -182,6 +209,8 @@ function parseHelperOutput(options: PdfConverterOptions, exit: HelperExit): Conv
         "Converted document",
         usageLimitsConfig.maxSavedArticleSizeBytes
       );
+    case "images_too_large":
+      throw errors.contentTooLarge("The PDF's total image size", options.maxImageBytes);
   }
 }
 
@@ -262,6 +291,7 @@ const defaultConverter = createPdfConverter({
   deadlineMs: CONVERSION_DEADLINE_MS,
   slot: documentConversionSlot,
   maxPages: PDF_MAX_PAGES,
+  maxImageBytes: usageLimitsConfig.maxSavedArticleSizeBytes * PDF_IMAGE_BUDGET_FACTOR,
 });
 
 /** A PDF as article HTML, with the metadata the helper found. */
@@ -279,8 +309,12 @@ export interface PdfArticle {
  * from the document, so the first heading is only dropped when it repeats that
  * title.
  *
- * @throws `CONTENT_TOO_LARGE` if the result is too large to save, or the
- *   conversion exhausts its memory, CPU, output or deadline
+ * The images are inlined as `data:` URIs after rendering, since they'd count
+ * against the renderer's Markdown budget; saving the article moves them to
+ * storage like any other inlined image.
+ *
+ * @throws `CONTENT_TOO_LARGE` if the result or its images are too large to
+ *   save, or the conversion exhausts its memory, CPU, output or deadline
  * @throws `SERVER_BUSY` if too many conversions are already waiting, or the
  *   deadline passes before this one gets its turn
  * @throws `INTERNAL_ERROR` if the helper can't run or misbehaves
@@ -288,7 +322,13 @@ export interface PdfArticle {
  *   password-protected, scanned, or over the page limit
  */
 export async function convertPdfToArticle(buffer: Buffer): Promise<PdfArticle> {
-  const { markdown, title, author, summary } = await defaultConverter.convert(buffer);
-  const html = await markdownToHtmlAsync(markdown);
+  const { markdown, images, title, author, summary } = await defaultConverter.convert(buffer);
+  const html = (await markdownToHtmlAsync(markdown)).replace(
+    IMAGE_PLACEHOLDER,
+    (placeholder, i) => {
+      const image = images[Number(i)];
+      return image ? `src="data:${image.contentType};base64,${image.data}"` : placeholder;
+    }
+  );
   return { html: title ? stripTitleHeader(html, title) : html, title, author, summary };
 }

@@ -17,11 +17,12 @@ import { createEntry, generateContentHash } from "../../src/server/feed/entry-pr
 import type { ParsedEntry } from "../../src/server/feed/types";
 import { getAppErrorCode } from "../../src/server/errors";
 import { fetchAndStoreFullContent } from "../../src/server/services/full-content";
-import { saveArticle, uploadArticle } from "../../src/server/services/saved";
+import { saveArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { entryObjectsPrefix } from "../../src/server/services/stored-objects";
 import { getPublicObjectUrl } from "../../src/server/storage/s3";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
+import { buildPdf, drawImage, textPage } from "../utils/pdf";
 import {
   createTestEntry,
   createTestFeed,
@@ -116,6 +117,31 @@ describe("inlined images", () => {
       expect(html).toContain(`src="${url}"`);
       expect(html).not.toContain("data:image");
     }
+  });
+
+  it("stores an uploaded PDF's images", async () => {
+    const userId = await user();
+    const side = 40;
+    // Noise, so the PNG is big enough to be worth moving.
+    const rgb = Buffer.from(Array.from({ length: side * side * 3 }, (_, i) => (i * i * 31) % 251));
+    const page = Buffer.concat([
+      textPage(["A PDF with a figure in it, long enough to be an article body."]),
+      Buffer.from("\n"),
+      drawImage(72, 450, 200, 200),
+    ]);
+    const pdf = buildPdf([page], { image: { width: side, height: side, rgb } });
+    const { article } = await uploadFile(db, userId, {
+      content: pdf.toString("base64"),
+      filename: "figure.pdf",
+    });
+
+    const prefix = entryObjectsPrefix(userId, article.id);
+    const keys = [...s3.objects.keys()].filter((key) => key.startsWith(`${BUCKET}/${prefix}`));
+    expect(keys).toHaveLength(1);
+    expect(s3.objects.get(keys[0])?.contentType).toBe("image/png");
+    const { cleaned } = await storedContent(article.id);
+    expect(cleaned).toContain(getPublicObjectUrl(keys[0].slice(BUCKET.length + 1)));
+    expect(cleaned).not.toContain("data:image");
   });
 
   it("moves a saved page's image out before Readability, so its extraction links it too", async () => {

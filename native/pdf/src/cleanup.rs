@@ -4,9 +4,12 @@
 //! undoes line-break hyphenation.
 //!
 //! Works on blocks (runs of lines between blank lines), which is how pdf_oxide
-//! separates paragraphs, headings, lists and tables.
+//! separates paragraphs, headings, lists and tables. The images `images`
+//! placed are blocks of their own, which the text passes look past.
 
 use std::collections::{HashMap, HashSet};
+
+use crate::images::IMAGE_URL_SCHEME;
 
 /// Blocks at each end of a page checked for headers and footers. Two covers a
 /// page number plus a running title on its own line.
@@ -16,7 +19,7 @@ const MAX_FURNITURE_WORDS: usize = 12;
 /// Pages a short edge block must repeat on to count as a running header.
 /// Absolute, not a fraction of the document: a book's per-chapter header only
 /// repeats within its chapter.
-const MIN_RUNNING_HEADER_PAGES: usize = 3;
+pub const MIN_RUNNING_HEADER_PAGES: usize = 3;
 /// Longest numbered bold line still treated as a section title.
 const MAX_SECTION_TITLE_WORDS: usize = 15;
 
@@ -33,10 +36,16 @@ pub fn assemble(pages: Vec<String>) -> String {
     dehyphenate(&blocks.join("\n\n"))
 }
 
-fn split_blocks(page: &str) -> impl Iterator<Item = String> + '_ {
+pub fn split_blocks(page: &str) -> impl Iterator<Item = String> + '_ {
     page.split("\n\n")
         .map(|block| block.trim_matches('\n').to_string())
         .filter(|block| !block.trim().is_empty())
+}
+
+pub fn is_image(block: &str) -> bool {
+    block
+        .strip_prefix("![](")
+        .is_some_and(|rest| rest.starts_with(IMAGE_URL_SCHEME))
 }
 
 /// pdf_oxide bolds each word separately (`**Ashish** **Vaswani**`).
@@ -128,8 +137,14 @@ fn is_page_number_key(key: &str) -> bool {
         .all(|word| matches!(word, "#" | "page" | "of" | "-" | "|"))
 }
 
-fn edge_indices(len: usize) -> impl Iterator<Item = usize> {
-    (0..len.min(EDGE_BLOCKS)).chain(len.saturating_sub(EDGE_BLOCKS).max(EDGE_BLOCKS)..len)
+/// The page's first and last [`EDGE_BLOCKS`] text blocks.
+fn edge_indices(page: &[String]) -> Vec<usize> {
+    let text: Vec<usize> = (0..page.len()).filter(|&i| !is_image(&page[i])).collect();
+    let len = text.len();
+    (0..len.min(EDGE_BLOCKS))
+        .chain(len.saturating_sub(EDGE_BLOCKS).max(EDGE_BLOCKS)..len)
+        .map(|i| text[i])
+        .collect()
 }
 
 fn strip_page_furniture(pages: &mut [Vec<String>]) {
@@ -138,7 +153,8 @@ fn strip_page_furniture(pages: &mut [Vec<String>]) {
     }
     let mut pages_with_key: HashMap<String, usize> = HashMap::new();
     for page in pages.iter() {
-        let keys: HashSet<String> = edge_indices(page.len())
+        let keys: HashSet<String> = edge_indices(page)
+            .into_iter()
             .filter(|&i| !is_heading(&page[i]))
             .filter_map(|i| furniture_key(&page[i]))
             .collect();
@@ -147,7 +163,8 @@ fn strip_page_furniture(pages: &mut [Vec<String>]) {
         }
     }
     for page in pages.iter_mut() {
-        let furniture: HashSet<usize> = edge_indices(page.len())
+        let furniture: HashSet<usize> = edge_indices(page)
+            .into_iter()
             .filter(|&i| {
                 furniture_key(&page[i]).is_some_and(|key| {
                     is_page_number_key(&key)
@@ -165,20 +182,23 @@ fn strip_page_furniture(pages: &mut [Vec<String>]) {
     }
 }
 
-/// A single-line paragraph: not a heading, list, table, quote or code.
+/// A single-line paragraph: not a heading, list, table, quote, code or image.
 fn is_plain_paragraph(block: &str) -> bool {
     !block.contains('\n')
+        && !is_image(block)
         && !block.starts_with(['#', '-', '*', '+', '|', '>', '`'])
         && !block.starts_with(|c: char| c.is_ascii_digit())
 }
 
-/// Rejoins a paragraph that a page break split in two.
+/// Rejoins a paragraph that a page break split in two, moving any images that
+/// ended the first page after it.
 fn join_pages(pages: Vec<Vec<String>>) -> Vec<String> {
     let mut blocks: Vec<String> = Vec::new();
     for page in pages {
         let mut page = page.into_iter();
         if let Some(first) = page.next() {
-            match blocks.last_mut() {
+            let last_text = blocks.iter().rposition(|block| !is_image(block));
+            match last_text.map(|i| &mut blocks[i]) {
                 Some(previous) if continues(previous, &first) => {
                     if !previous.ends_with('-') {
                         previous.push(' ');
@@ -418,6 +438,32 @@ mod tests {
         assert_eq!(out, "No full stop\n\nCapitalised start.");
         let out = assemble(pages(&["- a list item", "continues"]));
         assert_eq!(out, "- a list item\n\ncontinues");
+    }
+
+    #[test]
+    fn finds_page_furniture_past_images_at_the_page_edges() {
+        let out = assemble(pages(&[
+            "Running Title\n\n![](pdf-image:0)\n\nFirst.",
+            "Running Title\n\nSecond.\n\n![](pdf-image:1)",
+            "Running Title\n\nThird.",
+        ]));
+        assert_eq!(
+            out,
+            "![](pdf-image:0)\n\nFirst.\n\nSecond.\n\n![](pdf-image:1)\n\nThird."
+        );
+    }
+
+    #[test]
+    fn rejoins_a_paragraph_across_images_ending_its_page() {
+        let out = assemble(pages(&[
+            "A sentence that runs\n\n![](pdf-image:0)",
+            "on past the figure.\n\n![](pdf-image:1)",
+            "continues nothing: an image is not a paragraph",
+        ]));
+        assert_eq!(
+            out,
+            "A sentence that runs on past the figure.\n\n![](pdf-image:0)\n\n![](pdf-image:1)\n\ncontinues nothing: an image is not a paragraph"
+        );
     }
 
     #[test]

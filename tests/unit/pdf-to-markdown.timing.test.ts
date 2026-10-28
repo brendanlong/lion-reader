@@ -12,7 +12,7 @@ import { convertUploadedFile } from "@/server/file/process-upload";
 import { createPdfConverter } from "@/server/file/pdf-to-markdown";
 import { createConversionSlot } from "@/server/file/conversion-slot";
 import { getAppErrorCode } from "@/server/errors";
-import { buildPdf, textPage } from "../utils/pdf";
+import { buildPdf, drawImage, textPage } from "../utils/pdf";
 
 const BINARY = join(process.cwd(), "native", "pdf", "lion-reader-pdf");
 
@@ -23,11 +23,32 @@ function converter(overrides: Partial<Parameters<typeof createPdfConverter>[0]> 
     deadlineMs: 20_000,
     slot: createConversionSlot(4, "document conversions"),
     maxPages: 100,
+    maxImageBytes: 1024 * 1024,
     ...overrides,
   });
 }
 
 const prose = textPage(["Lion Reader turns this PDF into an article you can read anywhere."]);
+
+const SIDE = 64;
+const image = {
+  width: SIDE,
+  height: SIDE,
+  rgb: Buffer.from(Array.from({ length: SIDE * SIDE * 3 }, (_, i) => (i * 7) % 256)),
+};
+
+/** Text above an image, its caption below, then more text. */
+const figurePage = Buffer.concat([
+  textPage(["The paragraph before the figure, which the figure follows."]),
+  Buffer.from("\n"),
+  drawImage(72, 450, 200, 200),
+  Buffer.from("\n"),
+  textPage(
+    ["Figure 1: A test pattern drawn under its paragraph.", "", "The paragraph after."],
+    12,
+    430
+  ),
+]);
 
 describe("PDF uploads", () => {
   it("takes the title from the first page and drops the heading that repeats it", async () => {
@@ -41,6 +62,37 @@ describe("PDF uploads", () => {
     expect(converted.preCleanedContent?.title).toBe("The Real Title");
     expect(converted.html).not.toContain("The Real Title");
     expect(converted.html).toContain("Body text");
+  });
+
+  it("puts an image before its caption, inlined as a data: URI", async () => {
+    const { html } = await convertUploadedFile(buildPdf([figurePage], { image }), "f.pdf");
+
+    const img = html.indexOf('<img src="data:image/png;base64,');
+    expect(img).toBeGreaterThan(html.indexOf("The paragraph before"));
+    expect(img).toBeLessThan(html.indexOf("Figure 1:"));
+  });
+
+  it("drops an image every page repeats, like a logo", async () => {
+    const fruits = ["apples", "pears", "plums", "figs", "limes", "kiwis", "dates", "grapes"];
+    const pages = fruits.map((fruit) =>
+      Buffer.concat([
+        textPage([`This page is about ${fruit} and has its own paragraph, unlike its logo.`]),
+        Buffer.from("\n"),
+        drawImage(500, 720, 40, 40),
+      ])
+    );
+    const { html } = await convertUploadedFile(buildPdf(pages, { image }), "f.pdf");
+
+    expect(html).toContain("its own paragraph");
+    expect(html).not.toContain("<img");
+  });
+
+  it("rejects a PDF whose images pass the image budget", async () => {
+    const error = await converter({ maxImageBytes: 100 })
+      .convert(buildPdf([figurePage], { image }))
+      .catch((e: unknown) => e);
+    expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+    expect((error as Error).message).toMatch(/image/);
   });
 
   it.each([

@@ -8,6 +8,8 @@ import { deflateSync } from "node:zlib";
 interface BuildPdfOptions {
   /** Document information dictionary entries (Title, Author, Subject). */
   info?: Record<string, string>;
+  /** An RGB image every page can draw as `/Im1` (see {@link drawImage}). */
+  image?: { width: number; height: number; rgb: Buffer };
 }
 
 /**
@@ -20,6 +22,11 @@ export function textPage(lines: string[], fontSize = 12, top = 720): Buffer {
     (line, i) => `BT /F1 ${fontSize} Tf 72 ${top - i * fontSize * 1.5} Td (${escape(line)}) Tj ET`
   );
   return Buffer.from(ops.join("\n"), "latin1");
+}
+
+/** Draws the PDF's image (`BuildPdfOptions.image`) with its bottom-left corner at (x, y). */
+export function drawImage(x: number, y: number, width: number, height: number): Buffer {
+  return Buffer.from(`q ${width} 0 0 ${height} ${x} ${y} cm /Im1 Do Q`, "latin1");
 }
 
 /**
@@ -36,6 +43,23 @@ export function buildPdf(pages: Buffer[], options: BuildPdfOptions = {}): Buffer
   const catalog = add("<< /Type /Catalog /Pages 2 0 R >>");
   const pagesId = add(""); // filled in once the kids exist
   const font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  let xobjects = "";
+  if (options.image) {
+    const { width, height, rgb } = options.image;
+    const compressed = deflateSync(rgb);
+    const image = add(
+      Buffer.concat([
+        Buffer.from(
+          `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} ` +
+            `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${compressed.length} ` +
+            `/Filter /FlateDecode >>\nstream\n`
+        ),
+        compressed,
+        Buffer.from("\nendstream"),
+      ])
+    );
+    xobjects = ` /XObject << /Im1 ${image} 0 R >>`;
+  }
   const kids: number[] = [];
   for (const content of pages) {
     const compressed = deflateSync(content);
@@ -49,7 +73,7 @@ export function buildPdf(pages: Buffer[], options: BuildPdfOptions = {}): Buffer
     kids.push(
       add(
         `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] ` +
-          `/Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${contentId} 0 R >>`
+          `/Resources << /Font << /F1 ${font} 0 R >>${xobjects} >> /Contents ${contentId} 0 R >>`
       )
     );
   }
