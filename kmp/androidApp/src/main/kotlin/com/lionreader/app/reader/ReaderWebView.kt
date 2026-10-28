@@ -76,10 +76,10 @@ import org.json.JSONObject
  * It shows [content] ([readerContent]) in a page with [shell] ([readerShell]), swapping each new
  * article into the page it has rather than loading another, which is what makes an article appear
  * at once; a new shell (another font, theme or text size) loads a new page. A new [visit] shows it
- * afresh even when it's unchanged (from [position], not where the last visit left it). [onDrawn] is
- * called once the page's next frame draws [content] (and on recomposing while it does, so a new
- * [onDrawn] hears too), so a screen can wait for the article rather than show the last one.
- * [hidden]: it's behind something else, so it's kept from accessibility services and focus.
+ * afresh even when it's unchanged (unzoomed, from [position], not where the last visit left it).
+ * [onDrawn] is called once the page's next frame draws [content] (and on recomposing while it does,
+ * so a new [onDrawn] hears too), so a screen can wait for the article rather than show the last
+ * one. [hidden]: it's behind something else, so it's kept from accessibility services and focus.
  */
 @Composable
 fun ReaderWebView(
@@ -131,6 +131,9 @@ fun ReaderWebView(
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
                             settings.domStorageEnabled = false
+                            // Pinch to zoom, without the on-screen +/- buttons.
+                            settings.builtInZoomControls = true
+                            settings.displayZoomControls = false
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             isVerticalScrollBarEnabled = false
                             // Drawn into its own layer, so the pager moving it shifts a
@@ -307,10 +310,12 @@ data class ReaderPaging(
  * down turns the page. Anything steeper stays the WebView's for the whole gesture, so a scroll that
  * drifts sideways never turns into a page turn halfway through. A sideways drag that starts on a
  * wide table or code block (reported by scroll-detect.js) also stays the WebView's while the block
- * can still scroll that way. It has to be decided here, synchronously, before the pager's touch
- * slop is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
- * In page mode a scroll it keeps becomes a page turn instead ([turnPage]), unless it began as a
- * long press: dragging after one extends a text selection.
+ * can still scroll that way, as does one on a pinch-zoomed page that can still pan that way: only a
+ * swipe that starts with the page against its edge turns the article. It has to be decided here,
+ * synchronously, before the pager's touch slop is crossed; Compose honors
+ * [requestDisallowInterceptTouchEvent] for the rest of the gesture. In page mode a scroll it keeps
+ * becomes a page turn instead ([turnPage]), unless it began as a long press: dragging after one
+ * extends a text selection.
  */
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
@@ -341,6 +346,7 @@ private class ReaderView(context: Context) : WebView(context) {
         // Nothing is shown afresh: a new visit to an empty page is the same empty page.
         val sameVisit = visit == this.visit || content.isEmpty()
         if (shell == this.shell && content == this.content && sameVisit) return
+        if (visit != this.visit && zoomed) zoomBy(resources.displayMetrics.density / pageScale)
         this.content = content
         this.visit = visit
         drawn = null
@@ -574,11 +580,22 @@ private class ReaderView(context: Context) : WebView(context) {
     private var downX = 0f
     private var downY = 0f
     private var touched: SideScroller? = null
+
+    /** Physical pixels per CSS pixel: the screen's density times the pinch zoom. */
+    var pageScale = resources.displayMetrics.density
+    // Not exactly the density at 1x: the reported scale is rounded.
+    private val zoomed
+        get() = pageScale > resources.displayMetrics.density * 1.01f
+
     private var deciding = false
     /** This gesture is a scroll kept from the pager (not a sideways one). */
     private var scrolling = false
     /** This gesture is a page turn: the WebView's own handling of it was cancelled. */
     private var turning = false
+    /**
+     * A second finger landed on a page turn: it's a pinch the WebView no longer has, not a turn.
+     */
+    private var pinchedTurn = false
     private val longPress = ViewConfiguration.getLongPressTimeout()
 
     @SuppressLint("ClickableViewAccessibility")
@@ -589,16 +606,17 @@ private class ReaderView(context: Context) : WebView(context) {
                 pointerId = event.getPointerId(0)
                 downX = event.x
                 downY = event.y
-                val density = resources.displayMetrics.density
-                val pageX = (event.x + scrollX) / density
-                val pageY = (event.y + scrollY) / density
+                val pageX = (event.x + scrollX) / pageScale
+                val pageY = (event.y + scrollY) / pageScale
                 touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
                 deciding = true
                 scrolling = false
                 turning = false
+                pinchedTurn = false
             }
             // Two fingers aren't a page turn.
-            MotionEvent.ACTION_POINTER_DOWN -> if (deciding) keep()
+            MotionEvent.ACTION_POINTER_DOWN ->
+                if (deciding) keep() else if (turning) pinchedTurn = true
             MotionEvent.ACTION_MOVE -> {
                 if (deciding) {
                     val index = event.findPointerIndex(pointerId)
@@ -625,7 +643,7 @@ private class ReaderView(context: Context) : WebView(context) {
                     // A finger moving up moves down the page.
                     val index = event.findPointerIndex(pointerId)
                     val y = if (index >= 0) event.getY(index) else event.y
-                    turnPage(if (y < downY) 1 else -1)
+                    if (!pinchedTurn) turnPage(if (y < downY) 1 else -1)
                     return true
                 }
             }
@@ -660,8 +678,9 @@ private class ReaderView(context: Context) : WebView(context) {
             when {
                 abs(dx) < dy * SWIPE_RATIO -> true.also { scrolling = true }
                 // A finger moving left scrolls the block's content right.
-                block != null -> if (dx < 0) block.canScrollRight else block.canScrollLeft
-                else -> false
+                else ->
+                    (if (dx < 0) block?.canScrollRight else block?.canScrollLeft) == true ||
+                        (zoomed && canScrollHorizontally(if (dx < 0) 1 else -1))
             }
         if (wanted) keep()
     }
@@ -721,6 +740,10 @@ private class ReaderWebViewClient(
 
     override fun onPageFinished(view: WebView, url: String?) {
         (view as? ReaderView)?.onLoaded(url)
+    }
+
+    override fun onScaleChanged(view: WebView, oldScale: Float, newScale: Float) {
+        (view as? ReaderView)?.pageScale = newScale
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
