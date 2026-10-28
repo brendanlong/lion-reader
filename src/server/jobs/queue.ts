@@ -146,8 +146,8 @@ const JOB_DEFINITIONS = {
   backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
   // Process an OPML import in the background.
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
-  // Deletes a deleted user's or entry's objects in the public bucket (an
-  // uploaded ebook's images); see src/server/services/stored-objects.ts. The
+  // Deletes a deleted user's or entry's objects in the public bucket (its
+  // images); see src/server/services/stored-objects.ts. The
   // prefix must be one of those two shapes, so a bad payload can't empty the
   // bucket.
   delete_stored_objects: {

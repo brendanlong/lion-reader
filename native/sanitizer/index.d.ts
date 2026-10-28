@@ -49,23 +49,41 @@ export interface NormalizedEmbed {
  */
 export function normalizeEmbed(src: string): NormalizedEmbed | null;
 
-/** See `Bases` in `core/src/absolutize.rs`. */
+/** See `Bases` and `rewrite_urls` in `core/src/absolutize.rs`. */
 export interface AbsolutizeOptions {
   /** The document's root base. */
   rootBaseUrl?: string;
   /** Bases for `src`, `poster` and `srcset`; defaults to the document's pair. */
   media?: { baseUrl: string; rootBaseUrl?: string };
+  /** Moves inlined raster images out to `{imageUrlPrefix}{name}`. */
+  imageUrlPrefix?: string;
+}
+
+/** An inlined image moved out of the HTML, to be stored under its name. */
+export interface ExtractedImage {
+  name: string;
+  contentType: string;
+  data: Buffer;
+}
+
+export interface AbsolutizeOutput {
+  html: string;
+  images: ExtractedImage[];
 }
 
 /**
- * See `absolutize_urls` in `core/src/absolutize.rs`. Throws when lol_html
- * rejects the input.
+ * See `rewrite_urls` in `core/src/absolutize.rs`: a null `baseUrl` leaves
+ * relative URLs as written. Throws when lol_html rejects the input.
  */
-export function absolutizeUrls(html: string, baseUrl: string, options?: AbsolutizeOptions): string;
+export function absolutizeUrls(
+  html: string,
+  baseUrl: string | null,
+  options?: AbsolutizeOptions
+): AbsolutizeOutput;
 
 /** Async form of `absolutizeUrls`, on the libuv thread pool. */
 export function absolutizeUrlsAsync(
   html: string,
-  baseUrl: string,
+  baseUrl: string | null,
   options?: AbsolutizeOptions
-): Promise<string>;
+): Promise<AbsolutizeOutput>;

@@ -16,6 +16,7 @@ import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { archiveFullContentOriginal } from "./full-content-archive";
+import { entryObjectsPrefix } from "./stored-objects";
 import { type FullEntry, getFullEntry } from "./entry-reads";
 import { articleContentFromAcquired, processArticleContent } from "./article-content";
 
@@ -41,6 +42,8 @@ export interface FetchFullContentResult {
  * both the original HTML and the cleaned content.
  *
  * @param url - The article URL to fetch
+ * @param options.objectsPrefix - The entry's, for its inlined images
+ *   (`stored-objects.ts`), or null for a feed's entry, whose images stay inline
  * @param options.offloadClean - Run the content-cleaning pass (Readability, or
  *   Markdown rendering when the URL served Markdown) on the libuv thread pool
  *   instead of inline on the calling thread. On by default; the background feed
@@ -48,14 +51,16 @@ export interface FetchFullContentResult {
  *   async hop is pure overhead. App-server callers (fetchAndStoreFullContent)
  *   keep the default so the pass never stalls the UI-serving event loop.
  * @returns The fetch result with content or error
- * @throws `SERVER_BUSY` when a document conversion couldn't get its turn, so the
- *   caller retries rather than storing the failure
+ * @throws `SERVER_BUSY` when a document conversion couldn't get its turn, or
+ *   `STORAGE_FAILED` when storage refused an image: failures of ours, not the
+ *   page's, so they aren't returned for the caller to store as the entry's
+ *   fetch error
  */
 export async function fetchFullContent(
   url: string,
-  options: { offloadClean?: boolean } = {}
+  options: { objectsPrefix: string | null; offloadClean?: boolean }
 ): Promise<FetchFullContentResult> {
-  const { offloadClean = true } = options;
+  const { objectsPrefix, offloadClean = true } = options;
 
   try {
     const acquired = await acquireArticleContent(url);
@@ -63,7 +68,7 @@ export async function fetchFullContent(
     const { contentOriginal, contentCleaned } = await processArticleContent(
       bundle,
       bundle.contentUrl,
-      { offload: offloadClean }
+      { offload: offloadClean, objectsPrefix }
     );
 
     // Readability failed on a generic page. Storing the whole page would show
@@ -77,8 +82,9 @@ export async function fetchFullContent(
 
     return { success: true, contentOriginal, contentCleaned };
   } catch (error) {
-    // Load, not the page: a stored error would never be retried.
-    if (getAppErrorCode(error) === "SERVER_BUSY") throw error;
+    // Load or storage, not the page: a stored error would never be retried.
+    const code = getAppErrorCode(error);
+    if (code === "SERVER_BUSY" || code === "STORAGE_FAILED") throw error;
     const errorMessage = getErrorMessage(error);
     logger.warn("Failed to fetch full content", { url, error: errorMessage });
 
@@ -252,7 +258,10 @@ export async function fetchFullContentForNewEntries(
     }
     attempted++;
     try {
-      const result = await fetchFullContent(entry.url, { offloadClean: false });
+      const result = await fetchFullContent(entry.url, {
+        objectsPrefix: null,
+        offloadClean: false,
+      });
       // Persists the raw full-content columns or the fetch error onto the shared
       // entry row; sanitization happens per read (issue #1282).
       const update = await persistFullContentResult(db, entry.id, result, new Date());
@@ -328,7 +337,10 @@ export async function fetchAndStoreFullContent(
     url: entry.url,
   });
 
-  const result = await fetchFullContent(entry.url);
+  const result = await fetchFullContent(entry.url, {
+    // A saved article or newsletter belongs to the one user who can see it.
+    objectsPrefix: entry.type === "web" ? null : entryObjectsPrefix(userId, entry.id),
+  });
   const now = new Date();
   // Persist the raw full-content columns onto the shared entry row (see note
   // above); sanitized for the response below (per-read sanitization, #1282).

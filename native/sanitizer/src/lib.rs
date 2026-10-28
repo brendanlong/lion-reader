@@ -5,7 +5,7 @@
 #[macro_use]
 extern crate napi_derive;
 
-use napi::bindgen_prelude::AsyncTask;
+use napi::bindgen_prelude::{AsyncTask, Buffer};
 use napi::{Env, Error, Result, Status, Task};
 
 use lion_reader_sanitizer_core as core;
@@ -106,26 +106,47 @@ pub struct MediaBases {
 pub struct AbsolutizeOptions {
     pub root_base_url: Option<String>,
     pub media: Option<MediaBases>,
+    pub image_url_prefix: Option<String>,
+}
+
+#[napi(object)]
+pub struct ExtractedImage {
+    pub name: String,
+    pub content_type: String,
+    pub data: Buffer,
+}
+
+#[napi(object)]
+pub struct AbsolutizeOutput {
+    pub html: String,
+    pub images: Vec<ExtractedImage>,
 }
 
 fn run_absolutize(
     html: &str,
-    base_url: String,
+    base_url: Option<String>,
     options: Option<AbsolutizeOptions>,
-) -> Result<String> {
+) -> Result<core::absolutize::Rewritten> {
     let options = options.unwrap_or(AbsolutizeOptions {
         root_base_url: None,
         media: None,
+        image_url_prefix: None,
     });
-    let document = core::absolutize::Bases {
-        url: base_url,
+    let document = base_url.map(|url| core::absolutize::Bases {
+        url,
         root: options.root_base_url,
-    };
+    });
     let media = options.media.map(|media| core::absolutize::Bases {
         url: media.base_url,
         root: media.root_base_url,
     });
-    core::absolutize::absolutize_urls(html, &document, media.as_ref()).map_err(|message| {
+    core::absolutize::rewrite_urls(
+        html,
+        document.as_ref(),
+        media.as_ref(),
+        options.image_url_prefix.as_deref(),
+    )
+    .map_err(|message| {
         Error::new(
             Status::GenericFailure,
             format!("absolutizeUrls failed: {message}"),
@@ -133,45 +154,57 @@ fn run_absolutize(
     })
 }
 
-/// Absolutizes relative URLs in `src`/`href`/`poster`/`srcset` (see
-/// `core/src/absolutize.rs`). Throws when lol_html rejects the input.
+fn to_output(rewritten: core::absolutize::Rewritten) -> AbsolutizeOutput {
+    AbsolutizeOutput {
+        html: rewritten.html,
+        images: rewritten
+            .images
+            .into_iter()
+            .map(|image| ExtractedImage {
+                name: image.name,
+                content_type: image.content_type.to_string(),
+                data: image.data.into(),
+            })
+            .collect(),
+    }
+}
+
+/// Absolutizes relative URLs in `src`/`href`/`poster`/`srcset` and moves
+/// inlined images out (see `rewrite_urls` in `core/src/absolutize.rs`).
+/// Throws when lol_html rejects the input.
 #[napi]
 pub fn absolutize_urls(
     html: String,
-    base_url: String,
+    base_url: Option<String>,
     options: Option<AbsolutizeOptions>,
-) -> Result<String> {
-    run_absolutize(&html, base_url, options)
+) -> Result<AbsolutizeOutput> {
+    run_absolutize(&html, base_url, options).map(to_output)
 }
 
 pub struct AbsolutizeJob {
     html: String,
-    base_url: String,
+    base_url: Option<String>,
     options: Option<AbsolutizeOptions>,
 }
 
 impl Task for AbsolutizeJob {
-    type Output = String;
-    type JsValue = String;
+    type Output = core::absolutize::Rewritten;
+    type JsValue = AbsolutizeOutput;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        run_absolutize(
-            &self.html,
-            std::mem::take(&mut self.base_url),
-            self.options.take(),
-        )
+        run_absolutize(&self.html, self.base_url.take(), self.options.take())
     }
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
+        Ok(to_output(output))
     }
 }
 
 /// Async form of `absolutizeUrls`, on the libuv thread pool.
-#[napi(ts_return_type = "Promise<string>")]
+#[napi(ts_return_type = "Promise<AbsolutizeOutput>")]
 pub fn absolutize_urls_async(
     html: String,
-    base_url: String,
+    base_url: Option<String>,
     options: Option<AbsolutizeOptions>,
 ) -> AsyncTask<AbsolutizeJob> {
     AsyncTask::new(AbsolutizeJob {

@@ -59,7 +59,7 @@ Deltas key off change times, so a hard delete is invisible to them. **Hard-delet
 
 ## Stored Objects
 
-An uploaded ebook's images go to the public bucket or the save fails: no inline fallback (an SVG is the exception, always inline, since from the bucket's origin it would run scripts). Dev and tests use an S3-compatible server (`scripts/fake-s3.ts`, which `pnpm services` runs and tests start with `useFakeS3`, or docker-compose's S3Mock), never another backend.
+A user's entry (saved, uploaded, ebook chapter, email) keeps its images in the public bucket under its objects prefix (`services/stored-objects.ts`). Every path that writes such content passes that prefix, and images inlined as `data:` URIs move there in the write-time URL pass (`rewriteContentUrls`), so none is stored inline while storage is configured. Feed entries pass no prefix and keep inlined images: anyone can publish a feed, so it would be free public hosting until per-feed limits exist (#2188). Storage refusing an image fails the write: no inline fallback. An SVG is the exception, always inline, since from the bucket's origin it would run scripts. Without storage, inlined images stay inline and ebooks can't be imported. Dev and tests use an S3-compatible server (`scripts/fake-s3.ts`, which `pnpm services` runs and tests start with `useFakeS3`, or docker-compose's S3Mock), never another backend.
 
 ## Ordering & Pagination
 

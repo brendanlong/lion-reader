@@ -53,6 +53,7 @@ const ROUTES: Record<string, { type: string; body: Buffer }> = {
 let server: Server;
 let baseUrl: string;
 const createdUserIds: string[] = [];
+const OBJECTS_PREFIX = "uploads/test/";
 
 async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "pdf-url" });
@@ -140,6 +141,7 @@ describe("saveArticle on a PDF URL", () => {
 describe("fetchFullContent on a PDF URL", () => {
   it("converts the PDF", async () => {
     const result = await fetchFullContent(`${baseUrl}/papers/report.pdf`, {
+      objectsPrefix: OBJECTS_PREFIX,
       offloadClean: false,
     });
 

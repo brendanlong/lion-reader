@@ -14,7 +14,7 @@ import {
   absolutizeUrls as nativeAbsolutizeUrls,
   absolutizeUrlsAsync as nativeAbsolutizeUrlsAsync,
 } from "@lion-reader/sanitizer";
-import type { AbsolutizeOptions } from "@lion-reader/sanitizer";
+import type { AbsolutizeOptions, AbsolutizeOutput, ExtractedImage } from "@lion-reader/sanitizer";
 import { logger } from "@/lib/logger";
 import { startReadabilityTimer } from "@/server/metrics/metrics";
 
@@ -28,6 +28,21 @@ export function absolutizeUrls(
   baseUrl: string,
   options: AbsolutizeOptions = {}
 ): string {
+  return rewriteContentUrls(html, baseUrl, options).html;
+}
+
+/**
+ * {@link absolutizeUrls}, except that a null `baseUrl` leaves relative URLs as
+ * written, and with `options.imageUrlPrefix` it also moves inlined images out
+ * of the HTML, returning them to store (`rewrite_urls` in
+ * `native/sanitizer/core/src/absolutize.rs`). If lol_html can't parse the
+ * input, returns it unchanged, with no images.
+ */
+export function rewriteContentUrls(
+  html: string,
+  baseUrl: string | null,
+  options: AbsolutizeOptions = {}
+): AbsolutizeOutput {
   try {
     return nativeAbsolutizeUrls(html, baseUrl, options);
   } catch (error) {
@@ -36,16 +51,16 @@ export function absolutizeUrls(
 }
 
 /**
- * Async form of {@link absolutizeUrls} for request paths: inputs over
+ * Async form of {@link rewriteContentUrls} for request paths: inputs over
  * {@link INLINE_MAX_CHARS} run on the libuv thread pool.
  */
-export async function absolutizeUrlsAsync(
+export async function rewriteContentUrlsAsync(
   html: string,
-  baseUrl: string,
+  baseUrl: string | null,
   options: AbsolutizeOptions = {}
-): Promise<string> {
+): Promise<AbsolutizeOutput> {
   if (html.length <= INLINE_MAX_CHARS) {
-    return absolutizeUrls(html, baseUrl, options);
+    return rewriteContentUrls(html, baseUrl, options);
   }
   try {
     return await nativeAbsolutizeUrlsAsync(html, baseUrl, options);
@@ -54,12 +69,12 @@ export async function absolutizeUrlsAsync(
   }
 }
 
-function absolutizeFailed(html: string, baseUrl: string, error: unknown): string {
+function absolutizeFailed(html: string, baseUrl: string | null, error: unknown): AbsolutizeOutput {
   logger.warn("Failed to absolutize URLs in content", {
     baseUrl,
     error: error instanceof Error ? error.message : String(error),
   });
-  return html;
+  return { html, images: [] };
 }
 
 /**
@@ -111,6 +126,12 @@ export interface CleanedContent {
   title: string | null;
   /** Author byline extracted by Readability */
   byline: string | null;
+  /**
+   * Inlined images moved out of the content (`imageUrlPrefix`), for the
+   * caller to store: Readability can surface images the input pass couldn't
+   * see, such as a `<noscript>` fallback's
+   */
+  images: ExtractedImage[];
 }
 
 /**
@@ -128,6 +149,8 @@ export interface CleanContentOptions {
    * Default: 50 characters
    */
   minCleanedLength?: number;
+  /** Where inlined images in the cleaned content move to (`inlineImageUrlPrefix`) */
+  imageUrlPrefix?: string;
 }
 
 /**
@@ -252,7 +275,7 @@ function finishCleaned(
   html: string,
   options: CleanContentOptions
 ): CleanedContent | null {
-  const { url, minCleanedLength = 50 } = options;
+  const { url, minCleanedLength = 50, imageUrlPrefix } = options;
 
   if (!article) {
     logger.debug("Readability failed to parse content", { url });
@@ -278,8 +301,11 @@ function finishCleaned(
 
   // Absolutize relative URLs in the cleaned content if we have a base URL.
   // Extract <base href> from the raw HTML since Readability strips it.
-  const effectiveUrl = url ? extractBaseHref(html, url) : undefined;
-  const content = effectiveUrl ? absolutizeUrls(article.content, effectiveUrl) : article.content;
+  const effectiveUrl = url ? extractBaseHref(html, url) : null;
+  const { html: content, images } =
+    effectiveUrl || imageUrlPrefix
+      ? rewriteContentUrls(article.content, effectiveUrl, { imageUrlPrefix })
+      : { html: article.content, images: [] };
 
   return {
     content,
@@ -287,5 +313,6 @@ function finishCleaned(
     excerpt: article.excerpt ?? "",
     title: article.title ?? null,
     byline: article.byline ?? null,
+    images,
   };
 }

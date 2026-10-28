@@ -495,6 +495,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-url"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
+
+[[package]]
 name = "debug_unsafe"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1264,6 +1270,8 @@ dependencies = [
 name = "lion-reader-sanitizer-core"
 version = "1.0.0"
 dependencies = [
+ "base64",
+ "data-url",
  "getrandom 0.3.4",
  "html-escape",
  "html5ever 0.35.0",
@@ -1271,6 +1279,7 @@ dependencies = [
  "memchr",
  "regex",
  "scraper",
+ "sha2",
  "url",
 ]
 

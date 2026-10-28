@@ -1,10 +1,11 @@
 /**
- * Objects an entry keeps in storage (an uploaded ebook's images): their keys,
- * and their deletion with the entry or account they belong to.
+ * Objects an entry keeps in storage (its images): their keys, and their
+ * deletion with the entry or account they belong to.
  *
- * An entry's objects live under {@link entryObjectsPrefix}, inside its owner's
- * {@link userObjectsPrefix}, so deleting either is deleting a prefix. That
- * deletion is a `delete_stored_objects` job enqueued in the transaction that
+ * A user's entry keeps its objects under {@link entryObjectsPrefix}, inside its
+ * owner's {@link userObjectsPrefix}, so deleting either is deleting a prefix.
+ * A feed's entry has none: anyone can publish a feed, so its images stay
+ * inline until per-feed limits exist (#2188). That deletion is a `delete_stored_objects` job enqueued in the transaction that
  * deletes the owner, so it can't be lost to a crash and is retried until
  * storage confirms it. Objects stored for an entry whose save then fails
  * stay until its owner's account is deleted; nobody has their URLs.

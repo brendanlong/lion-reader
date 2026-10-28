@@ -138,7 +138,7 @@ export const errors = {
 
   /** Object storage refused a write; `retry` says what trying again does. */
   storageFailed: (retry: string) =>
-    createError("STORAGE_FAILED", `Couldn't store the ebook's images. ${retry}`),
+    createError("STORAGE_FAILED", `Couldn't store the article's images. ${retry}`),
 
   validation: (message: string, details?: Record<string, unknown>) =>
     createError("VALIDATION_ERROR", message, details),
