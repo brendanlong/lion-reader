@@ -1,7 +1,8 @@
 //! Absolutizes relative URLs in `src`, `href`, `poster` and `srcset`
-//! (`absolutizeUrls` in `src/server/feed/content-cleaner.ts`). Runs on raw
-//! feed and article HTML before it's stored, so it isn't part of the sanitizer
-//! pipeline, which still runs on everything this outputs.
+//! (`absolutizeUrls` in `src/server/feed/content-cleaner.ts`), and moves
+//! images inlined as `data:` URIs out to storage. Runs on raw feed and article
+//! HTML before it's stored, so it isn't part of the sanitizer pipeline, which
+//! still runs on everything this outputs.
 //!
 //! One streaming lol_html pass. Only start tags whose URL actually changes are
 //! re-serialized; every other byte passes through untouched. Values are read
@@ -9,9 +10,13 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::HashSet;
+use std::fmt::Write;
 
+use data_url::DataUrl;
 use lol_html::html_content::Element;
 use lol_html::{element, rewrite_str, HandlerResult, RewriteStrSettings};
+use sha2::{Digest, Sha256};
 use url::Url;
 
 /// A base URL and, optionally, the directory URL that root-relative paths
@@ -21,6 +26,22 @@ use url::Url;
 pub struct Bases {
     pub url: String,
     pub root: Option<String>,
+}
+
+/// An image [`rewrite_urls`] moved out of the HTML. Its `<img>` now points at
+/// the image URL prefix plus `name`, where the caller must store `data`.
+pub struct ExtractedImage {
+    /// A hash of `data` plus its extension, so the same image gets the same
+    /// name each time its entry is processed.
+    pub name: String,
+    pub content_type: &'static str,
+    pub data: Vec<u8>,
+}
+
+pub struct Rewritten {
+    pub html: String,
+    /// Each distinct image once, however many `<img>`s showed it.
+    pub images: Vec<ExtractedImage>,
 }
 
 /// Rewrites URLs against `document`, except that the embedded-resource
@@ -40,12 +61,35 @@ pub fn absolutize_urls(
     document: &Bases,
     media: Option<&Bases>,
 ) -> Result<String, String> {
-    let page_url = Url::parse(&document.url).ok();
-    let document = ResolveBase::new(document);
+    rewrite_urls(html, Some(document), media, None).map(|rewritten| rewritten.html)
+}
+
+/// [`absolutize_urls`], except that without a `document` base relative URLs
+/// stay as written, and given an `image_url_prefix`, each `<img>` whose `src`
+/// is a `data:` URI holding a raster image (PNG, JPEG, GIF, WebP or AVIF)
+/// points at `{image_url_prefix}{name}` instead, its image returned for the
+/// caller to store under that name.
+///
+/// The type comes from the image's bytes, never its declared type, since
+/// storage serves it with that type: an SVG (which would run its scripts from
+/// the bucket's origin) or anything else that isn't a raster image stays
+/// inline, for the sanitizer to judge on every read. So does an image whose
+/// `data:` URI is no longer than its replacement URL (a lazy-loading
+/// placeholder pixel): moving it wouldn't shrink the HTML.
+pub fn rewrite_urls(
+    html: &str,
+    document: Option<&Bases>,
+    media: Option<&Bases>,
+    image_url_prefix: Option<&str>,
+) -> Result<Rewritten, String> {
+    let page_url = document.and_then(|document| Url::parse(&document.url).ok());
+    let document = document.map_or_else(ResolveBase::none, ResolveBase::new);
     let state = RefCell::new(State {
         media: media.map_or_else(|| document.clone(), ResolveBase::new),
         document,
         base_href_set: false,
+        images: Vec::new(),
+        image_names: HashSet::new(),
     });
 
     let settings = RewriteStrSettings {
@@ -72,6 +116,13 @@ pub fn absolutize_urls(
                 Ok(())
             }),
             element!("[src]", |el| {
+                if let Some(prefix) = image_url_prefix.filter(|_| el.tag_name() == "img") {
+                    let src = el.get_attribute("src").unwrap_or_default();
+                    if let Some(stored_src) = extract_image(&src, prefix, &mut state.borrow_mut()) {
+                        el.set_attribute("src", &stored_src)?;
+                        return Ok(());
+                    }
+                }
                 rewrite(el, "src", |v| resolve_url(v, &state.borrow().media))
             }),
             element!("[href]", |el| {
@@ -92,13 +143,76 @@ pub fn absolutize_urls(
         ],
         ..RewriteStrSettings::new()
     };
-    rewrite_str(html, settings).map_err(|e| e.to_string())
+    let html = rewrite_str(html, settings).map_err(|e| e.to_string())?;
+    Ok(Rewritten {
+        html,
+        images: state.into_inner().images,
+    })
+}
+
+/// Hex digits of an image's name: its whole sha256, as `storeEntryImage`
+/// (`src/server/services/stored-objects.ts`) names the images it stores.
+const IMAGE_HASH_HEX_LEN: usize = 64;
+
+/// The longest name [`extract_image`] gives an image: its hash and extension.
+const MAX_IMAGE_NAME_LEN: usize = IMAGE_HASH_HEX_LEN + ".webp".len();
+
+/// Moves an inlined raster image out (see [`rewrite_urls`]), returning the
+/// `src` that replaces it.
+fn extract_image(src: &str, url_prefix: &str, state: &mut State) -> Option<String> {
+    // Checked before decoding anything, so the many short data: URIs cost
+    // nothing.
+    if src.len() <= url_prefix.len() + MAX_IMAGE_NAME_LEN {
+        return None;
+    }
+    let trimmed = src.trim_matches(is_js_whitespace);
+    if !trimmed.get(..5)?.eq_ignore_ascii_case("data:") {
+        return None;
+    }
+    let (data, _) = DataUrl::process(trimmed).ok()?.decode_to_vec().ok()?;
+    let (content_type, extension) = sniff_raster_image(&data)?;
+
+    let mut name = String::with_capacity(MAX_IMAGE_NAME_LEN);
+    for byte in Sha256::digest(&data) {
+        let _ = write!(name, "{byte:02x}");
+    }
+    name.push_str(extension);
+
+    let stored_src = format!("{url_prefix}{name}");
+    if state.image_names.insert(name.clone()) {
+        state.images.push(ExtractedImage {
+            name,
+            content_type,
+            data,
+        });
+    }
+    Some(stored_src)
+}
+
+/// The content type and extension of a raster image, from its magic bytes.
+fn sniff_raster_image(data: &[u8]) -> Option<(&'static str, &'static str)> {
+    let brand = data.get(4..12);
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some(("image/png", ".png"))
+    } else if data.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some(("image/jpeg", ".jpg"))
+    } else if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        Some(("image/gif", ".gif"))
+    } else if data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP") {
+        Some(("image/webp", ".webp"))
+    } else if brand == Some(b"ftypavif") || brand == Some(b"ftypavis") {
+        Some(("image/avif", ".avif"))
+    } else {
+        None
+    }
 }
 
 struct State {
     document: ResolveBase,
     media: ResolveBase,
     base_href_set: bool,
+    images: Vec<ExtractedImage>,
+    image_names: HashSet<String>,
 }
 
 /// [`Bases`], parsed once. `None`/`Err` mean the URL doesn't parse, so
@@ -122,6 +236,13 @@ impl ResolveBase {
                     Url::parse(&format!("{root}/"))
                 }
             }),
+        }
+    }
+
+    fn none() -> Self {
+        Self {
+            url: None,
+            root: None,
         }
     }
 
@@ -571,6 +692,152 @@ mod tests {
     fn unparseable_bases_leave_values_alone() {
         let html = r#"<img src="/image.jpg"><a href="https://ok.example.com/">x</a>"#;
         assert_eq!(abs(html, "not-a-valid-url"), html);
+    }
+
+    const PREFIX: &str = "https://bucket.example.com/feeds/f/e/";
+
+    /// A PNG's signature plus `filler` bytes: enough for the sniffer, and
+    /// long enough that its data: URI outgrows its replacement.
+    fn png(filler: u8) -> Vec<u8> {
+        let mut data = b"\x89PNG\r\n\x1a\n".to_vec();
+        data.extend([filler; 64]);
+        data
+    }
+
+    fn data_uri(declared_type: &str, data: &[u8]) -> String {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+        format!("data:{declared_type};base64,{encoded}")
+    }
+
+    fn extract(html: &str, document: Option<&Bases>) -> Rewritten {
+        rewrite_urls(html, document, None, Some(PREFIX)).unwrap()
+    }
+
+    fn image_src(image: &ExtractedImage) -> String {
+        format!("{PREFIX}{}", image.name)
+    }
+
+    #[test]
+    fn moves_inlined_images_out_once_each() {
+        let (a, b) = (png(1), png(2));
+        let html = format!(
+            r#"<p><img alt="a" src="{}"><img src="{}"><img src=" {} "></p>"#,
+            data_uri("image/png", &a),
+            data_uri("image/png", &b),
+            data_uri("image/png", &a),
+        );
+        let rewritten = extract(&html, None);
+        assert_eq!(rewritten.images.len(), 2);
+        let (first, second) = (&rewritten.images[0], &rewritten.images[1]);
+        assert_eq!((first.data.clone(), first.content_type), (a, "image/png"));
+        assert_eq!(second.data, b);
+        assert!(first.name.ends_with(".png") && first.name != second.name);
+        assert_eq!(
+            rewritten.html,
+            format!(
+                r#"<p><img alt="a" src="{}"><img src="{}"><img src="{}"></p>"#,
+                image_src(first),
+                image_src(second),
+                image_src(first),
+            )
+        );
+    }
+
+    #[test]
+    fn names_an_image_by_its_bytes() {
+        let html = format!(r#"<img src="{}">"#, data_uri("image/png", &png(1)));
+        assert_eq!(
+            extract(&html, None).images[0].name,
+            extract(&html, None).images[0].name
+        );
+    }
+
+    #[test]
+    fn types_an_image_by_its_bytes() {
+        let mut jpeg = vec![0xff, 0xd8, 0xff];
+        jpeg.extend([0; 64]);
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend([0; 64]);
+        let mut webp = b"RIFF\0\0\0\0WEBP".to_vec();
+        webp.extend([0; 64]);
+        let mut avif = b"\0\0\0\x1cftypavif".to_vec();
+        avif.extend([0; 64]);
+        for (data, content_type, extension) in [
+            (jpeg, "image/jpeg", ".jpg"),
+            (gif, "image/gif", ".gif"),
+            (webp, "image/webp", ".webp"),
+            (avif, "image/avif", ".avif"),
+            (png(0), "image/png", ".png"),
+        ] {
+            // Declared as SVG: the bytes decide.
+            let html = format!(r#"<img src="{}">"#, data_uri("image/svg+xml", &data));
+            let image = &extract(&html, None).images[0];
+            assert_eq!(image.content_type, content_type);
+            assert!(image.name.ends_with(extension));
+        }
+    }
+
+    #[test]
+    fn keeps_what_it_cannot_serve_as_an_image_inline() {
+        let svg = format!("<svg>{}</svg>", " ".repeat(200));
+        let html_page = format!("<script>alert(1)</script>{}", " ".repeat(200));
+        let placeholder_gif =
+            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+        let html = format!(
+            concat!(
+                r#"<img src="{}"><img src="{}"><img src="{}">"#,
+                r#"<img src="data:image/png;base64,%%%{}"><iframe src="{}"></iframe>"#,
+                r#"<img src="https://cdn.example.com/a.png">"#,
+            ),
+            data_uri("image/svg+xml", svg.as_bytes()),
+            data_uri("image/png", html_page.as_bytes()),
+            placeholder_gif,
+            "A".repeat(200),
+            data_uri("image/png", &png(1)),
+        );
+        let rewritten = extract(&html, None);
+        assert!(rewritten.images.is_empty());
+        assert_eq!(rewritten.html, html);
+    }
+
+    #[test]
+    fn absolutizes_while_extracting_only_with_a_base() {
+        let html = format!(
+            r#"<img src="{}"><a href="/page">x</a>"#,
+            data_uri("image/png", &png(1))
+        );
+        let without_base = extract(&html, None);
+        assert!(without_base.html.ends_with(r#"<a href="/page">x</a>"#));
+        let with_base = extract(&html, Some(&bases(BASE, None)));
+        assert!(with_base
+            .html
+            .ends_with(r#"<a href="https://example.com/page">x</a>"#));
+        assert_eq!(with_base.images.len(), 1);
+    }
+
+    #[test]
+    fn extracts_nothing_without_a_prefix() {
+        let html = format!(r#"<img src="{}">"#, data_uri("image/png", &png(1)));
+        let rewritten = rewrite_urls(&html, None, None, None).unwrap();
+        assert!(rewritten.images.is_empty());
+        assert_eq!(rewritten.html, html);
+    }
+
+    #[test]
+    fn extraction_stays_linear() {
+        // Distinct images, so the name set grows with the input.
+        let image_count = 20_000;
+        let html: String = (0..image_count)
+            .map(|i: u32| {
+                let mut data = png(0);
+                data.extend(i.to_le_bytes());
+                format!(r#"<img src="{}">"#, data_uri("image/png", &data))
+            })
+            .collect();
+        let started = Instant::now();
+        assert_eq!(extract(&html, None).images.len(), image_count as usize);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

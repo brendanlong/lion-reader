@@ -3,7 +3,7 @@
 //! This crate is pure Rust (no N-API) so it can be unit-tested with plain
 //! `cargo test`. The thin napi wrapper crate in the parent directory exposes
 //! [`sanitize_entry_html`], [`embeds::normalize_embed`] and
-//! [`absolutize::absolutize_urls`] to Node.
+//! [`absolutize::rewrite_urls`] to Node.
 //!
 //! The pipeline:
 //!
