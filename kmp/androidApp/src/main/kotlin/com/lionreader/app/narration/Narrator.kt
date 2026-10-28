@@ -60,12 +60,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * the article. A chunk the engine can't say is skipped, so the playlist can have gaps: items are
  * found by their chunk index (the media id).
  *
- * While narration is on, the player is never empty: a chunk is queued as
- * [pending][NarrationDataSource.PENDING] when its synthesis starts and replaced by its audio once
- * that's in, and before there are chunks (the text or the engine isn't ready) a pending placeholder
- * stands in. So the player buffers rather than ends or empties while it waits, and media3 keeps the
- * service in the foreground: once the app is in the background it can't be put back there, and
- * without it the system freezes the app or (from Android 17) mutes it.
+ * While narration is on (on an article with something to say), the player is never empty: a chunk
+ * is queued as [pending][NarrationDataSource.PENDING] when its synthesis starts and replaced by its
+ * audio once that's in, and before there are chunks (the text or the engine isn't ready) a pending
+ * placeholder stands in. So the player buffers rather than ends or empties while it waits, and
+ * media3 keeps the service in the foreground: once the app is in the background it can't be put
+ * back there, and without it the system freezes the app or (from Android 17) mutes it.
  *
  * Main thread only (ExoPlayer's rule). Its coroutines run on [Dispatchers.Main], not
  * `Main.immediate`, so that publishing a state never runs one there and then: a waiter woken in the
@@ -143,9 +143,6 @@ class Narrator(
                 /* handleAudioFocus= */ true,
             )
             .setHandleAudioBecomingNoisy(true)
-            // It buffers on a chunk until it's synthesized, for as long as that takes: the
-            // narrator gives up on an engine itself (see [interrupted]).
-            .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
             .build()
             .also { it.addListener(listener) }
 
@@ -258,8 +255,8 @@ class Narrator(
         player.replaceMediaItem(0, item(article.title, article.source, chunk = null))
         if (article.paragraphs.none(::isSpeakable)) {
             current = Current.Silent
-            // Nothing to wait for (or hold audio focus over) until narration follows on.
-            player.stop()
+            // Nothing to wait for (or for the media controls to play) until narration follows on.
+            player.clearMediaItems()
             publish(state.copy(title = article.title))
             return
         }
@@ -667,7 +664,7 @@ class Narrator(
     /**
      * [chunk]'s audio stopped partway ([SpeechStreamBroken]): synthesizes it again and plays it
      * from its start, or moves past it if it can't be said or has stopped partway too often. The
-     * player waits, idle, meanwhile.
+     * player waits, idle, meanwhile, unless moved elsewhere (which this then leaves alone).
      */
     private fun replay(chunk: Int) {
         val audio = onArticle ?: return
@@ -689,17 +686,19 @@ class Narrator(
                 (0 until player.mediaItemCount).firstOrNull {
                     player.getMediaItemAt(it).mediaId == "$chunk"
                 } ?: return@launch
+            // Unless it was moved off meanwhile.
+            val playing = player.currentMediaItemIndex == index
             if (again == null) {
                 player.removeMediaItem(index)
                 // The last: anything after it would be queued already.
                 if (index >= player.mediaItemCount) {
-                    if (feed.fed) stop()
+                    if (playing && feed.fed) stop()
                     return@launch
                 }
             } else {
                 player.replaceMediaItem(index, item(audio.article, chunk, again))
             }
-            player.seekTo(index, 0)
+            if (playing) player.seekTo(index, 0)
             player.prepare()
         }
     }

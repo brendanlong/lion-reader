@@ -256,6 +256,8 @@ class NarratorTest {
 
         assertEquals("b", state?.entryId)
         assertFalse(state!!.waiting)
+        // Nothing for the media controls to play (and wait on forever).
+        assertEquals(0, narrator.player.mediaItemCount)
         narrator.togglePlaying()
         narrator.togglePlaying()
         assertFalse(state!!.waiting)
