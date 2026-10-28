@@ -366,16 +366,20 @@ export async function fetchAndUploadImage(
 }
 
 // ============================================================================
-// Archive (private bucket)
+// Archive (private bucket), listing and deletion
 // ============================================================================
 
 /**
- * Timeout for one archive request. Archiving happens inline in full-content
+ * Timeout for one request below. Archiving happens inline in full-content
  * fetches, which mustn't hang on a stalled store.
  */
 const ARCHIVE_REQUEST_TIMEOUT_MS = 30000;
 
-function requireArchive(): { client: AwsClient; bucket: string } {
+/** A bucket to list or delete from: the public one, or the private archive. */
+export type BucketName = "public" | "archive";
+
+function requireBucket(which: BucketName): { client: AwsClient; bucket: string } {
+  if (which === "public") return { client: requireS3Client(), bucket: storageConfig.bucket! };
   const client = getS3Client();
   if (!client || !isArchiveAvailable()) {
     throw new Error("The archive bucket isn't configured (STORAGE_ARCHIVE_BUCKET)");
@@ -398,7 +402,7 @@ export async function putArchiveObject(
   data: Uint8Array,
   contentType: string
 ): Promise<void> {
-  const { client, bucket } = requireArchive();
+  const { client, bucket } = requireBucket("archive");
   const response = await client.fetch(getObjectRequestUrl(bucket, key), {
     method: "PUT",
     headers: {
@@ -411,9 +415,9 @@ export async function putArchiveObject(
   await ensureOk(response, "PUT");
 }
 
-/** Deletes `key` from the archive bucket; deleting a missing key succeeds. */
-export async function deleteArchiveObject(key: string): Promise<void> {
-  const { client, bucket } = requireArchive();
+/** Deletes `key`; deleting a missing key succeeds. */
+async function deleteObject(which: BucketName, key: string): Promise<void> {
+  const { client, bucket } = requireBucket(which);
   const response = await client.fetch(getObjectRequestUrl(bucket, key), {
     method: "DELETE",
     signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
@@ -456,9 +460,9 @@ function parseListObjectsV2(xml: string): ListObjectsPage {
   return { keys, nextContinuationToken };
 }
 
-/** Every key under `prefix` in the archive bucket, a page (up to 1000) at a time. */
-export async function* listArchiveKeys(prefix: string): AsyncGenerator<string[]> {
-  const { client, bucket } = requireArchive();
+/** Every key under `prefix`, a page (up to 1000) at a time. */
+async function* listKeys(which: BucketName, prefix: string): AsyncGenerator<string[]> {
+  const { client, bucket } = requireBucket(which);
   let continuationToken: string | null = null;
   do {
     const url = new URL(getObjectRequestUrl(bucket));
@@ -474,4 +478,19 @@ export async function* listArchiveKeys(prefix: string): AsyncGenerator<string[]>
     if (page.keys.length > 0) yield page.keys;
     continuationToken = page.nextContinuationToken;
   } while (continuationToken);
+}
+
+/**
+ * Deletes every object under `prefix` (idempotent), returning how many. Throws
+ * if the bucket isn't configured or refuses, so a job can retry.
+ */
+export async function deleteObjectsWithPrefix(which: BucketName, prefix: string): Promise<number> {
+  let deleted = 0;
+  for await (const keys of listKeys(which, prefix)) {
+    for (const key of keys) {
+      await deleteObject(which, key);
+      deleted++;
+    }
+  }
+  return deleted;
 }

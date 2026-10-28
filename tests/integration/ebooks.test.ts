@@ -3,7 +3,7 @@
  * chapter, read in the book's order.
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, userEntries, users } from "../../src/server/db/schema";
@@ -13,9 +13,15 @@ import { listEntries } from "../../src/server/services/entries";
 import { usageLimitsConfig } from "../../src/server/config/env";
 import { getAppErrorCode } from "../../src/server/errors";
 import { buildEpub, chapterXhtml } from "../utils/epub";
+import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
 import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
+let s3: FakeS3;
+
+beforeAll(async () => {
+  s3 = await useFakeS3();
+});
 
 async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "ebook" });
@@ -24,6 +30,7 @@ async function createUser(): Promise<string> {
 }
 
 afterAll(async () => {
+  await s3.close();
   for (const id of createdUserIds) {
     await db.delete(users).where(eq(users.id, id));
   }
@@ -147,6 +154,19 @@ describe("importEbook", () => {
       );
     } finally {
       usageLimitsConfig.maxSubscriptionsPerUser = cap;
+    }
+    expect(await savedEntryCount(userId)).toBe(0);
+  });
+
+  it("is refused on a server without object storage", async () => {
+    const userId = await createUser();
+    await s3.close();
+    try {
+      await expect(upload(userId)).rejects.toSatisfy(
+        (error) => getAppErrorCode(error) === "EBOOKS_NOT_CONFIGURED"
+      );
+    } finally {
+      s3 = await useFakeS3();
     }
     expect(await savedEntryCount(userId)).toBe(0);
   });

@@ -19,7 +19,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icons";
-import { isEbookFilename } from "@/lib/upload-file-types";
+import { isEbookFile } from "@/lib/upload-file-types";
 
 export default function SavePage() {
   return (
@@ -31,6 +31,8 @@ export default function SavePage() {
 
 interface SharedFile {
   content: string;
+  /** The MIME type the sharing app gave it. */
+  type?: string;
   filename: string;
   title?: string;
   /** Generated once per shared file, so a retry can't save it twice. */
@@ -55,6 +57,7 @@ function takeSharedFile(onFile: (file: SharedFile) => void) {
       if (fileData) {
         onFile({
           content: fileData.content,
+          type: fileData.type,
           filename: fileData.filename,
           title: fileData.title,
           idempotencyKey: crypto.randomUUID(),
@@ -171,11 +174,12 @@ function SaveContent() {
   const uploadFile = uploadFileMutation.mutate;
   const uploadSharedFile = useCallback(
     (file: SharedFile) => {
-      if (isEbookFilename(file.filename)) {
+      if (isEbookFile(file.filename, file.type)) {
         setSharedEbook(true);
         importEbook({ content: file.content, filename: file.filename });
       } else {
-        uploadFile(file);
+        const { content, filename, title, idempotencyKey } = file;
+        uploadFile({ content, filename, title, idempotencyKey });
       }
     },
     [importEbook, uploadFile]

@@ -35,6 +35,7 @@ import { handleFetchFeed } from "./handlers/fetch-feed";
 import { handleRenewWebsub } from "./handlers/renew-websub";
 import { handleProcessOpmlImport } from "./handlers/process-opml-import";
 import { handleDeleteFullContentArchives } from "./handlers/delete-full-content-archives";
+import { handleDeleteStoredObjects } from "./handlers/delete-stored-objects";
 import { handleFetchFullContent } from "./handlers/fetch-full-content";
 import { handleMonitorFeedHealth } from "./handlers/monitor-feed-health";
 import { handleCleanup } from "./handlers/cleanup";
@@ -210,6 +211,7 @@ const JOB_HANDLERS: {
   },
   backfill_getting_started: handleBackfillGettingStarted,
   process_opml_import: async (payload) => finishOneTime(await handleProcessOpmlImport(payload)),
+  delete_stored_objects: async (payload) => finishOneTime(await handleDeleteStoredObjects(payload)),
   delete_full_content_archives: async (payload) =>
     finishOneTime(await handleDeleteFullContentArchives(payload)),
   fetch_full_content: async (payload, job) =>

@@ -63,8 +63,7 @@ val UPLOAD_EXTENSIONS: List<String> =
     listOf(${SUPPORTED_UPLOAD_EXTENSIONS.map((ext) => JSON.stringify(ext)).join(", ")})
 
 /** File extensions \`/collections/import-ebook\` imports as a collection of chapters. */
-val EBOOK_UPLOAD_EXTENSIONS: List<String> =
-    listOf(${EBOOK_UPLOAD_EXTENSIONS.map((ext) => JSON.stringify(ext)).join(", ")})
+val EBOOK_UPLOAD_EXTENSIONS: List<String> = listOf(${EBOOK_UPLOAD_EXTENSIONS.map((ext) => JSON.stringify(ext)).join(", ")})
 
 /** The silence after each chunk of cloud speech (\`pauseSeconds\`), as the web sets it. */
 object CloudSpeechPause {

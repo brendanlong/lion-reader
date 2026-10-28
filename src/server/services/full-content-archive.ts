@@ -14,12 +14,7 @@ import { promisify } from "node:util";
 import { gzip } from "node:zlib";
 import type { DbOrTx } from "@/server/db";
 import { createJob } from "@/server/jobs/queue";
-import {
-  deleteArchiveObject,
-  isArchiveAvailable,
-  listArchiveKeys,
-  putArchiveObject,
-} from "@/server/storage/s3";
+import { deleteObjectsWithPrefix, isArchiveAvailable, putArchiveObject } from "@/server/storage/s3";
 
 const gzipAsync = promisify(gzip);
 
@@ -80,12 +75,7 @@ export async function deleteFullContentArchives(entryIds: string[]): Promise<num
 
   let deleted = 0;
   for (const entryId of entryIds) {
-    for await (const keys of listArchiveKeys(`${KEY_PREFIX}${entryId.toLowerCase()}/`)) {
-      for (const key of keys) {
-        await deleteArchiveObject(key);
-        deleted++;
-      }
-    }
+    deleted += await deleteObjectsWithPrefix("archive", `${KEY_PREFIX}${entryId.toLowerCase()}/`);
   }
   return deleted;
 }
