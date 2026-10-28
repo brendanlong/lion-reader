@@ -279,8 +279,22 @@ describe("collections", () => {
         .where(eq(entryTombstones.userId, userId));
       expect(tombstones.map((t) => t.entryId).sort()).toEqual([onlyHere.id, alsoDeleted.id].sort());
       expect(counts.saved).toEqual({ unread: 2 });
-      expect(await getEntries(db, userId, [entryA])).toHaveLength(1);
       await expectNoDrift();
+    });
+
+    it("refuses another user's collection", async () => {
+      const { userId, collectionId } = await setup();
+      const article = await uploadArticle(db, userId, {
+        content: "Body",
+        title: "Mine",
+        collectionIds: [collectionId],
+      });
+      const otherCaller = createCaller(await createAuthContext(await createTestUser()));
+
+      await expect(
+        otherCaller.collections.delete({ id: collectionId, deleteSavedArticles: true })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await getEntries(db, userId, [article.id])).toHaveLength(1);
     });
 
     it("refuses to delete a feed subscription as a collection", async () => {

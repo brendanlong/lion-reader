@@ -11,7 +11,13 @@ import { eq, and, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
-import { entries, subscriptionEntries, subscriptions, userEntries } from "@/server/db/schema";
+import {
+  entries,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+  users,
+} from "@/server/db/schema";
 import { entryMemberships, entryOriginOn } from "./entry-filters";
 import { listEntryTagLists } from "./entry-tag-lists";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
@@ -943,8 +949,9 @@ async function hardDeleteSavedArticles(
 ): Promise<void> {
   const sortedIds = [...articleIds].sort();
   await db.transaction(async (tx) => {
-    // The cascade deletes user_entries rows in no particular order, so take
-    // the lock order (entries, then user_entries, each by id) up front.
+    // The cascade deletes rows one article at a time, and each one's
+    // triggers lock its subscriptions and then the user, so take the lock
+    // order (entries, user_entries, subscriptions, users) up front.
     await tx
       .select({ id: entries.id })
       .from(entries)
@@ -957,6 +964,29 @@ async function hardDeleteSavedArticles(
       .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, sortedIds)))
       .orderBy(userEntries.entryId)
       .for("update");
+    await tx
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          inArray(
+            subscriptions.id,
+            tx
+              .select({ id: subscriptionEntries.subscriptionId })
+              .from(subscriptionEntries)
+              .where(
+                and(
+                  eq(subscriptionEntries.userId, userId),
+                  inArray(subscriptionEntries.entryId, sortedIds)
+                )
+              )
+          )
+        )
+      )
+      .orderBy(subscriptions.id)
+      .for("no key update");
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
     const deleted = await tx
       .delete(entries)
       .where(and(inArray(entries.id, sortedIds), eq(entries.ownerUserId, userId)))
