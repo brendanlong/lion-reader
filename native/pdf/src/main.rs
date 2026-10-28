@@ -64,6 +64,7 @@ fn main() -> ExitCode {
         max_pages: max_pages as usize,
         max_output_bytes: max_output_bytes as usize,
         max_image_bytes: max_image_bytes as usize,
+        max_memory_bytes,
     };
     let output = match convert(bytes, &limits) {
         Ok(converted) => json!({

@@ -21,6 +21,8 @@ use pdf_oxide::PdfDocument;
 const MAX_METADATA_CHARS: usize = 500;
 
 pub struct Limits {
+    /// The heap cap the process runs under, which bounds the images decoded.
+    pub max_memory_bytes: u64,
     pub max_pages: usize,
     pub max_output_bytes: usize,
     /// For the images, which aren't part of the Markdown.
@@ -99,7 +101,12 @@ pub fn convert(bytes: Vec<u8>, limits: &Limits) -> Result<Converted, ConvertErro
         if total_bytes > limits.max_output_bytes {
             return Err(ConvertError::OutputTooLarge);
         }
-        candidates.push(images::page_candidates(&doc, index, &page));
+        candidates.push(images::page_candidates(
+            &doc,
+            index,
+            &page,
+            limits.max_memory_bytes,
+        ));
         pages.push(page);
     }
     // Checked again once cleanup has stripped page numbers, but first here,

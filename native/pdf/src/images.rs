@@ -23,10 +23,11 @@ const MIN_IMAGE_SIDE_PIXELS: u32 = 32;
 /// Larger JPEGs are skipped. They're copied, not decoded, so this only keeps
 /// out what no figure needs: pdf_oxide's own default, a full page at 300 DPI.
 const MAX_JPEG_PIXELS: u64 = 16_000_000;
-/// Larger images that must be decoded are skipped before decoding. Decoding
-/// and re-encoding takes up to ~7 bytes a pixel (CMYK in, RGB out), which at
-/// this size leaves room under the helper's heap cap for the document.
-const MAX_DECODED_PIXELS: u64 = 4_000_000;
+/// Decoding and re-encoding an image takes up to ~7 bytes a pixel (CMYK in,
+/// RGB out). An image that must be decoded may have one pixel per this many
+/// bytes of the helper's heap cap, which leaves over half the heap for the
+/// document: a 3.4MP PNG took a 32MB paper to 48MB.
+const HEAP_BYTES_PER_DECODED_PIXEL: u64 = 16;
 /// An image covering more of its page than this is the page itself.
 const MAX_PAGE_COVERAGE: f32 = 0.8;
 /// Spans within this many points vertically share a line.
@@ -60,7 +61,9 @@ pub fn page_candidates<'doc>(
     doc: &'doc PdfDocument,
     page_index: usize,
     markdown: &str,
+    max_memory_bytes: u64,
 ) -> Vec<Candidate<'doc>> {
+    let max_decoded_pixels = max_memory_bytes / HEAP_BYTES_PER_DECODED_PIXEL;
     let Ok(handles) = doc.page_image_handles(page_index) else {
         return Vec::new();
     };
@@ -78,7 +81,7 @@ pub fn page_candidates<'doc>(
                     <= if is_plain_jpeg(h) {
                         MAX_JPEG_PIXELS
                     } else {
-                        MAX_DECODED_PIXELS
+                        max_decoded_pixels
                     }
                 && h.bbox.width * h.bbox.height <= page_area * MAX_PAGE_COVERAGE
         })
