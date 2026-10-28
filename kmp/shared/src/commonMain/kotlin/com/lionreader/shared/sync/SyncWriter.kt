@@ -407,7 +407,9 @@ internal class SyncWriter(private val driver: SqlDriver) {
 
     /**
      * Entries needing a body that [the budget][trimBodies] has room for, at most [limit], most
-     * important first, with the body version to download them at.
+     * important first, with the body version to download them at. Their own sizes aren't known yet,
+     * so near the budget a batch can overshoot it, and the trim after it evicts the overshoot
+     * (once: those then rank below a full budget).
      */
     fun missingBodies(limit: Long, budget: Long, now: Long): Map<String, Long> {
         val openedSince = now - RECENTLY_OPENED_MILLIS
@@ -455,8 +457,8 @@ internal class SyncWriter(private val driver: SqlDriver) {
      * Holds the bodies to the content budget. Most important first ([BodyRank]), a body is kept
      * while the ones before it take less than [budget], so the one reaching it stays too; starred,
      * saved and collections' articles' bodies always do. [missingBodies] downloads by the same
-     * rule, so what it downloads stays, and an evicted body isn't downloaded again until it would.
-     * Ranked before writing, and a transaction per body (see [storeBodies]).
+     * rule, so an evicted body isn't downloaded again until it would be kept. Ranked before
+     * writing, and a transaction per body (see [storeBodies]).
      */
     fun trimBodies(budget: Long, now: Long) {
         var above = 0L

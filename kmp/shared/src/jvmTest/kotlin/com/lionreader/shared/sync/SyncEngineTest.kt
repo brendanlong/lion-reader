@@ -940,8 +940,8 @@ class SyncEngineTest {
     fun pastTheBudgetNewArticlesBodiesTakeTheOldestsPlace() = runTest {
         server.subscriptions += subscription("sub-1")
         // More than one download's batch of each.
-        val old = (0 until 60).map { "o%02d".format(it) }
-        val new = (0 until 60).map { "n%02d".format(it) }
+        val old = (0..CONTENT_BATCH).map { "o%03d".format(it) }
+        val new = (0..CONTENT_BATCH).map { "n%03d".format(it) }
         serve(*old.map { entry(it, ageDays = 3) }.toTypedArray())
         engine.sync()
         policy = RetentionPolicy(contentBudgetBytes = old.sumOf(::bodySize))

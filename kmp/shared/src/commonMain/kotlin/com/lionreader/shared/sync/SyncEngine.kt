@@ -23,7 +23,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private const val CONTENT_BATCH = 50
+internal const val CONTENT_BATCH = 50
 private const val RECENTLY_READ_REFRESH = 20
 
 /**
@@ -49,9 +49,12 @@ class SyncEngine(
 
     /**
      * Serializes the background body downloads, which run outside [mutex] so a long download never
-     * holds up a refresh or a flush. Downloads only write `entry_body` (and drop the summaries of
-     * bodies they replace), guarded by body version (see [SyncWriter.storeBodies]), so they can't
-     * race the sync or each other.
+     * holds up a refresh or a flush. Downloads only write bodies (with their search text, and
+     * dropping the summaries of bodies they replace), guarded by body version (see
+     * [SyncWriter.storeBodies]), and evict them by the budget's rule ([SyncWriter.trimBodies]),
+     * which the sync's eviction shares, so they can't race the sync or each other into a wrong
+     * state: at worst a body is evicted just as its entry is starred or opened, and is fetched
+     * again.
      */
     private val contentMutex = Mutex()
 

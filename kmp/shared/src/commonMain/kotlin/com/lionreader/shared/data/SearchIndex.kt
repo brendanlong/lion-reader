@@ -15,8 +15,8 @@ import com.lionreader.shared.db.LionReaderDatabase
  * keyed by `entry`'s implicit rowid, so a migration that rebuilds `entry` must keep each row's
  * rowid (as 7.sqm does) and be listed in [ENTRY_REBUILDS], since dropping `entry` drops its
  * triggers; so must one that drops the triggers to change them (as 8.sqm does). One that rebuilds
- * `entry_body` adds its trigger back the same way (as 11.sqm does). Don't VACUUM: it renumbers
- * rowids.
+ * `entry_body` adds its trigger back in its own `AfterVersion` (as 11.sqm's does). Don't VACUUM: it
+ * renumbers rowids.
  */
 object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Schema {
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
