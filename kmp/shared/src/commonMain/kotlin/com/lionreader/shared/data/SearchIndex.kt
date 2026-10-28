@@ -22,6 +22,7 @@ object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Sche
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
         LionReaderDatabase.Schema.create(driver)
         SEARCH_TRIGGERS.forEach { driver.execute(null, it, 0) }
+        driver.execute(null, AUTOMERGE, 0)
         return QueryResult.Unit
     }
 
@@ -53,10 +54,21 @@ object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Sche
                     0,
                 )
             },
-            AfterVersion(11) { d -> BODY_TRIGGERS.forEach { d.execute(null, it, 0) } },
+            AfterVersion(11) { d ->
+                BODY_TRIGGERS.forEach { d.execute(null, it, 0) }
+                d.execute(null, AUTOMERGE, 0)
+            },
             *callbacks,
         )
 }
+
+/**
+ * Has FTS4 merge the index's segments a little on each write, rather than all of a level's at once
+ * when it fills: that merge, inside a body download's transaction, held the write lock for seconds
+ * (1.8 s on a Pixel 4), with the user waiting behind it to store an article's body. SQLite stores
+ * the setting in the database. 8 is SQLite's suggestion, and overall the fastest of those measured.
+ */
+private const val AUTOMERGE = "INSERT INTO entry_search(entry_search) VALUES('automerge=8')"
 
 /** The migrations (by the version they start from) that drop `entry`'s triggers. */
 private val ENTRY_REBUILDS = listOf(7L, 8L)
