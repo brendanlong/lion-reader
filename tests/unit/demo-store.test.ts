@@ -52,6 +52,28 @@ describe("createDemoStore", () => {
       expect(times("oldest")).toEqual([...newest].reverse());
     });
 
+    it("reverses the score order for lowest first", () => {
+      const { procedures } = createDemoStore();
+      const ids = (sortOrder?: "lowest") =>
+        procedures["entries.list"]({ sortOrder, limit: 100 }).items.map((i) => i.id);
+      expect(ids("lowest")).toEqual(ids().reverse());
+    });
+
+    it.each(["first", "last"] as const)(
+      "lists a collection without positions newest first when sorted %s",
+      (sortOrder) => {
+        const { procedures } = createDemoStore();
+        const { id } = procedures["collections.create"]({ name: "Reading" }).subscription;
+        const members = DEMO_ENTRIES.slice(0, 5).map((e) => e.id);
+        procedures["collections.addEntries"]({ id, entryIds: members });
+        const page = procedures["entries.list"]({ subscriptionId: id, sortOrder, limit: 100 });
+        const times = page.items.map((i) => i.publishedAt!.getTime());
+        expect(page.items).toHaveLength(members.length);
+        expect(times).toEqual([...times].sort((a, b) => b - a));
+        expect(page.sortable).toEqual({ score: true, position: false });
+      }
+    );
+
     it("paginates with an opaque cursor and reports the end of the list", () => {
       const { procedures } = createDemoStore();
       const first = procedures["entries.list"]({ limit: 10 });

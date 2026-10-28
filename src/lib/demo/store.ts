@@ -19,7 +19,7 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
-import { entryMatchesList } from "@/lib/local-db/entry-lists";
+import { compareListEntries, entryMatchesList } from "@/lib/local-db/entry-lists";
 import type { TagLists } from "@/lib/events/schemas";
 import {
   DEMO_ENTRIES,
@@ -134,11 +134,17 @@ function toDate(value: unknown, fallback: Date): Date {
   return value instanceof Date ? value : fallback;
 }
 
-function encodeCursor(position: { key: number; id: string }): string {
+/** A list item's place for paging: its read time (Recently Read's key) and id. */
+interface Place {
+  key: number;
+  id: string;
+}
+
+function encodeCursor(position: Place): string {
   return `${position.key}:${position.id}`;
 }
 
-function decodeCursor(cursor: string | undefined): { key: number; id: string } | null {
+function decodeCursor(cursor: string | undefined): Place | null {
   if (!cursor) return null;
   const separator = cursor.indexOf(":");
   const key = Number(cursor.slice(0, separator));
@@ -431,6 +437,20 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
     };
   }
 
+  /** What a list orders an entry by; a cursor's entry may have left the list since. */
+  function sortFields(id: string) {
+    const state = entries.get(id);
+    if (!state) throw procedureError("BAD_REQUEST", "Invalid cursor");
+    const { entry } = state;
+    return {
+      id,
+      publishedAt: entry.publishedAt,
+      fetchedAt: entry.fetchedAt,
+      score: entry.score,
+      positions: {},
+    };
+  }
+
   function requireEntry(id: string): EntryState {
     const state = entries.get(id);
     if (!state || !isVisible(state)) throw procedureError("NOT_FOUND", "Entry not found");
@@ -488,20 +508,25 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         starredOnly: bool(input.starredOnly),
         query: input.query,
       };
-      const sortKey = (state: EntryState): number =>
-        sortBy === "readChanged"
-          ? (state.readChangedAt?.getTime() ?? 0)
-          : sortBy === "score"
-            ? state.entry.score
-            : (state.entry.publishedAt ?? state.entry.fetchedAt).getTime();
       const sortOrder = input.sortOrder ?? ENTRY_SORT_DIRECTIONS[sortBy][0];
-      // Demo articles have no positions, so that sort lists them newest first
-      // in both directions, as the service lists articles without one.
-      const direction =
-        sortBy !== "position" && sortOrder === ENTRY_SORT_DIRECTIONS[sortBy][1] ? 1 : -1;
-      const compare = (a: { key: number; id: string }, b: { key: number; id: string }) =>
-        direction * (a.key - b.key) || a.id.localeCompare(b.id);
-      const position = (state: EntryState) => ({ key: sortKey(state), id: state.entry.id });
+      // Recently Read orders by a field entries don't carry, so the client
+      // keeps the server's order; every other list is ordered as the client
+      // orders it. A cursor names its entry's place, which for a read time
+      // must travel with it (marking it read again moves the entry).
+      const listOrder = compareListEntries({
+        subscriptionId: input.subscriptionId,
+        sortBy,
+        sortOrder,
+      });
+      const readOrder = sortOrder === "oldest" ? 1 : -1;
+      const compare = (a: Place, b: Place) =>
+        sortBy === "readChanged"
+          ? readOrder * (a.key - b.key) || a.id.localeCompare(b.id)
+          : listOrder(sortFields(a.id), sortFields(b.id));
+      const position = (state: EntryState): Place => ({
+        key: state.readChangedAt?.getTime() ?? 0,
+        id: state.entry.id,
+      });
 
       const sorted = select(filter)
         // The recently-read view lists only entries whose read state has changed.
@@ -522,7 +547,9 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         items: page.map(toListItem),
         nextCursor: hasMore && last ? encodeCursor(position(last)) : undefined,
         ...(!input.cursor &&
-          sortBy !== "readChanged" && { sortable: { score: true, position: false } }),
+          sortBy !== "readChanged" && {
+            sortable: { score: sorted.length > 0, position: false },
+          }),
         ...(!input.cursor && { sort: { sortBy, sortOrder } }),
       };
     },
