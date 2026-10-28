@@ -12,9 +12,9 @@ const article: DemoArticle = {
   publishedAt: new Date("2025-12-27T16:00:00Z"),
   score: 230,
   starred: true,
-  summaryHtml: `<p>Saving an article to Lion Reader keeps a clean, ad-free copy that stays readable even if the original disappears. Save it from the browser extension, a phone&rsquo;s share menu, a file, or the Discord bot, and tricky pages like <strong>YouTube</strong> videos or Google Docs come through as real content.</p>`,
+  summaryHtml: `<p>Save a page to Lion Reader for a clean, ad-free copy that stays readable even if the original disappears. Save from the browser, phone, files, Discord, or an AI assistant. <strong>YouTube</strong> videos and Google Docs come through as real content, and saved articles can be starred, searched, and collected.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-03"),
+  summaryGeneratedAt: new Date("2026-10-28"),
   contentHtml: `
     <p>Found something you want to read later? Save it to Lion Reader and you get a clean, readable copy &mdash; no ads, no pop-ups, no sidebar clutter &mdash; in the same place as your newsletters and the sites you follow. Lion Reader keeps its own copy, so the article stays readable even if the original page changes or disappears.</p>
 

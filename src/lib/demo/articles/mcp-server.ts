@@ -12,9 +12,9 @@ const article: DemoArticle = {
   publishedAt: new Date("2026-01-14T12:00:00Z"),
   score: 180,
   starred: true,
-  summaryHtml: `<p>Connect Lion Reader to Claude or another AI assistant and ask it, in plain language, to summarize posts, round up newsletters, or save a link &mdash; it gets the same results you&rsquo;d get doing it yourself. Setup is copy-and-paste in Settings, and you can revoke its access to your reader.</p>`,
+  summaryHtml: `<p>Connect Lion Reader to Claude or another MCP-compatible <strong>AI assistant</strong> to search, summarize, star, save, tag, and organize articles in plain language. It can also score unread articles and order collections. Setup is copy-and-paste in Settings, and access can be revoked anytime.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-03"),
+  summaryGeneratedAt: new Date("2026-10-28"),
   contentHtml: `
     <p>Connect Lion Reader to Claude or another AI assistant, and it can work with your reading the way you would. Just ask:</p>
 

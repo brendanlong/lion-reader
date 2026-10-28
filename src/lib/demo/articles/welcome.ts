@@ -13,9 +13,9 @@ const article: DemoArticle = {
   publishedAt: new Date("2025-12-26T22:47:17Z"),
   score: 260,
   starred: true,
-  summaryHtml: `<p>Lion Reader brings the sites you follow, your email newsletters, and articles you save for later into one fast, private reader that&rsquo;s free, open source, and works with your existing RSS apps and AI assistants. It runs with no ads, no data selling, and no ad trackers.</p>`,
+  summaryHtml: `<p>Lion Reader combines followed sites, email newsletters, and saved articles in one fast, private reader. It&rsquo;s free, open source, and ad-free, with no data selling. Optional <strong>AI</strong> summaries, text-to-speech, and assistant integration, plus search, tags, shortcuts, themes, and compatibility with existing RSS apps.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-03"),
+  summaryGeneratedAt: new Date("2026-10-28"),
   contentHtml: `
     <p>Lion Reader brings the sites you follow, your email newsletters, and the articles you save for later into one fast, private reader. Newsletters arrive at a private address you subscribe with, so it never needs access to your inbox. It&rsquo;s free to use, open source, and works on your phone and computer.</p>
 
