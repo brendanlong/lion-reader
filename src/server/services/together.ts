@@ -141,8 +141,8 @@ function pcmFromEvents(events: ReadableStream<Uint8Array>): ReadableStream<Uint8
 }
 
 /**
- * Speech as 16-bit PCM, streamed as it's generated. Answers once the first
- * audio is in, so an error the stream sends before any is this request's.
+ * Speech as 16-bit PCM, streamed as it's generated, answered once the first
+ * audio is in ({@link pcmOrWav}).
  */
 export async function togetherSpeech(
   apiKey: string,

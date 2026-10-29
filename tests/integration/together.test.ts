@@ -35,7 +35,7 @@ const busy = new Map<string, number>();
 /** Together models that refuse speech requests. */
 const refusing = new Set<string>();
 /** Together models whose speech requests fail: a 500, or an error event before any audio. */
-const failing = new Map<string, "500" | "event">();
+const failing = new Map<string, "500" | "event" | "empty">();
 const saved = new Map<string, string | undefined>();
 
 /** A quarter second of sound at 24 kHz mono, 16-bit. */
@@ -101,6 +101,11 @@ beforeAll(async () => {
             return json({ error: { message: "Model busy", type: "rate_limit" } }, 429);
           }
           if (failing.get(model) === "500") return json({ error: "Internal error" }, 500);
+          if (failing.get(model) === "empty") {
+            res.writeHead(200, { "Content-Type": "text/event-stream" });
+            res.end("data: [DONE]\n\n");
+            return;
+          }
           if (failing.get(model) === "event") {
             res.writeHead(200, { "Content-Type": "text/event-stream" });
             res.end(`data: ${JSON.stringify({ error: { message: "Model busy" } })}\n\n`);
@@ -247,6 +252,7 @@ describe("speech failover", () => {
       () => busy.set(ORPHEUS, 1),
       () => refusing.add(ORPHEUS),
       () => failing.set(ORPHEUS, "event"),
+      () => failing.set(ORPHEUS, "empty"),
     ]) {
       busy.set(KOKORO, 1);
       passOver();
