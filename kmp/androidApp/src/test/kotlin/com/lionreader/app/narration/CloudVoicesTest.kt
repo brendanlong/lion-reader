@@ -5,7 +5,6 @@ import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.LionReaderApi
-import com.lionreader.shared.api.SPEECH_FAILOVER_HEADER
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -54,7 +53,7 @@ class CloudVoicesTest {
 
     /** An answer: speech, an error's status and JSON, or a stream the test writes itself. */
     private sealed interface Answer {
-        class Speech(val audio: ByteArray, val failoverModel: String? = null) : Answer
+        class Speech(val audio: ByteArray) : Answer
 
         class Error(val status: HttpStatusCode, val json: String = "{}") : Answer
 
@@ -88,17 +87,7 @@ class CloudVoicesTest {
                             ?: ok
                     val mp4 = headersOf(HttpHeaders.ContentType, "audio/mp4")
                     when (answer) {
-                        is Answer.Speech ->
-                            respond(
-                                answer.audio,
-                                HttpStatusCode.OK,
-                                answer.failoverModel?.let {
-                                    headersOf(
-                                        HttpHeaders.ContentType to listOf("audio/mp4"),
-                                        SPEECH_FAILOVER_HEADER to listOf(it),
-                                    )
-                                } ?: mp4,
-                            )
+                        is Answer.Speech -> respond(answer.audio, HttpStatusCode.OK, mp4)
                         is Answer.Stream -> respond(answer.channel, HttpStatusCode.OK, mp4)
                         is Answer.Error ->
                             respond(
@@ -212,16 +201,6 @@ class CloudVoicesTest {
         assertEquals(1, requests)
         // Outside the narrator's directory, which it clears.
         assertEquals(cache, File(again.path!!).parentFile)
-    }
-
-    @Test
-    fun speechAFailoverModelSaidIsPlayedButNotCachedAsTheVoiceAskedFor() = runTest {
-        responses += Answer.Speech(audio, failoverModel = "breezeblue:breeze-tts-2")
-        val engine = engine()
-        assertArrayEquals(audio, played(engine.synthesize("Hello.", dir, "0")))
-
-        assertArrayEquals(audio, played(engine.synthesize("Hello.", dir, "1")))
-        assertEquals(2, requests)
     }
 
     @Test

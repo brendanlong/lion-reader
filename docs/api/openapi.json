@@ -15364,14 +15364,6 @@
         "responses": {
           "200": {
             "description": "The speech, streamed",
-            "headers": {
-              "Speech-Failover-Model": {
-                "description": "The model that said it, when the one asked for was busy and the server failed over: don't cache it as the one asked for",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
             "content": {
               "audio/mp4": {
                 "schema": {

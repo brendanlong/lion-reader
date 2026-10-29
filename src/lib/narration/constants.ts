@@ -104,13 +104,6 @@ export const SUGGESTED_CLOUD_VOICE_MODELS: string[] = [
 export const MAX_CLOUD_SPEECH_CHARS = 1000;
 
 /**
- * The speech route's response header naming the model that said a chunk when
- * the server failed over from the busy one asked for (`SPEECH_FAILOVER_MODELS`),
- * so a client doesn't cache that audio as the voice it asked for.
- */
-export const SPEECH_FAILOVER_HEADER = "Speech-Failover-Model";
-
-/**
  * The silence each chunk of cloud speech ends in. Models leave varying silence
  * at a clip's ends, some next to none, so the server evens each clip's out to
  * this (`ClipEdges`); without it chunks run together while the sentences

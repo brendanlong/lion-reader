@@ -184,8 +184,10 @@ export default function PrivacyPolicyPage() {
               </LegalParagraph>
               <LegalParagraph>
                 You choose which provider and model to use in your settings, and you may provide a
-                custom summarization prompt. Generated summaries are cached on our servers so the
-                same article does not need to be reprocessed.
+                custom summarization prompt. When that provider is too busy or failing, the request
+                may instead be sent to another of these providers that hosts the same model.
+                Generated summaries are cached on our servers so the same article does not need to
+                be reprocessed.
               </LegalParagraph>
               <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 <TextLink
@@ -223,8 +225,9 @@ export default function PrivacyPolicyPage() {
                 AI text processing in narration settings, article content is sent to the AI provider
                 you chose—Cerebras or OpenRouter—to convert it into speakable text. This
                 preprocessing expands abbreviations, formats numbers for speech, and improves
-                pronunciation. The processed text is cached on our servers to avoid repeated
-                processing.
+                pronunciation. As with summaries, a request may go to another provider hosting the
+                same model when the one you chose is busy. The processed text is cached on our
+                servers to avoid repeated processing.
               </LegalParagraph>
               <LegalParagraph>
                 When AI processing is disabled, the article is converted to speakable text on your
@@ -236,8 +239,8 @@ export default function PrivacyPolicyPage() {
                 sent to the provider of the speech model you picked to generate the audio: DeepInfra
                 directly (the default, Kokoro), BreezeBlue or Together AI directly, or OpenRouter,
                 which forwards it to the company hosting that model (for example DeepInfra or
-                Together). When that provider is too busy, the text may instead be sent to another
-                of these providers to say it in the same or a similar voice. The generated audio is
+                Together). When that provider is too busy or failing, the text may instead be sent
+                to another of these providers that hosts the same voice. The generated audio is
                 streamed back to your device and not stored on our servers. We ask BreezeBlue not to
                 save the text or audio in the generation history of the account whose key was used.
               </LegalParagraph>

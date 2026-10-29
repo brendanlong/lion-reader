@@ -1,6 +1,7 @@
 /**
- * Together AI cloud voices, and failing over to another model when the one
- * asked for is busy, against local stand-ins for Together and BreezeBlue.
+ * Together AI cloud voices, and failing over to another host of the same
+ * model when the one asked is busy, against local stand-ins for Together and
+ * BreezeBlue.
  */
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
@@ -8,19 +9,12 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
-import { eq } from "drizzle-orm";
-import { SPEECH_FAILOVER_HEADER } from "../../src/lib/narration/constants";
 import {
   listSpeechModels,
   SpeechRejectedError,
   streamSpeech,
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
-import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
-import { createSession } from "../../src/server/auth/session";
-import { db } from "../../src/server/db";
-import { users } from "../../src/server/db/schema";
-import { createTestUser } from "./helpers";
 
 const KOKORO = "together:hexgrad/Kokoro-82M";
 const ORPHEUS = "together:canopylabs/orpheus-3b-0.1-ft";
@@ -131,7 +125,14 @@ beforeAll(async () => {
       }
       if (provider === "breezeblue") {
         if (path === "/models") return json([{ model_id: "breeze-tts-2", name: "Breeze TTS 2" }]);
-        if (path === "/voices") return json({ voices: [{ voice_id: "elara", name: "Elara" }] });
+        if (path === "/voices") {
+          return json({
+            voices: [
+              { voice_id: "elara", name: "Elara" },
+              { voice_id: "af_bella", name: "Bella" },
+            ],
+          });
+        }
         if (path.startsWith("/text-to-speech/")) {
           requests.push({ model: BREEZE, path, body: JSON.parse(body) });
           res.writeHead(200, { "Content-Type": "audio/pcm" });
@@ -147,7 +148,7 @@ beforeAll(async () => {
   const env: Record<string, string | undefined> = {
     TOGETHER_BASE_URL: `${base}/together`,
     BREEZEBLUE_BASE_URL: `${base}/breezeblue`,
-    SPEECH_FAILOVER_MODELS: FAILOVER,
+    MODEL_FAILOVER: FAILOVER,
     SERVER_KEY_MODELS: undefined,
     ...Object.fromEntries(Object.values(AI_PROVIDER_ENV_KEYS).map((name) => [name, undefined])),
   };
@@ -170,7 +171,7 @@ afterEach(() => {
   busy.clear();
   refusing.clear();
   failing.clear();
-  process.env.SPEECH_FAILOVER_MODELS = FAILOVER;
+  process.env.MODEL_FAILOVER = FAILOVER;
   for (const name of ["SERVER_KEY_MODELS", "TOGETHER_API_KEY", "BREEZEBLUE_API_KEY"]) {
     delete process.env[name];
   }
@@ -178,13 +179,13 @@ afterEach(() => {
 
 const userKeys = () => ({ together: randomUUID(), breezeblue: randomUUID() });
 
-/** Says "Hi." as `model` asks for it, and which models were asked, in order. */
+/** Says "Hi." as asked, returning which models were asked for it, in order. */
 async function speak(
   keys: Parameters<typeof streamSpeech>[0],
   options: { model?: string; voice?: string; exact?: boolean } = {}
 ) {
   const before = requests.length;
-  const { audio, failoverModel } = await streamSpeech(keys, {
+  const audio = await streamSpeech(keys, {
     model: options.model ?? KOKORO,
     voice: options.voice ?? "af_bella",
     text: "Hi.",
@@ -192,8 +193,10 @@ async function speak(
     exact: options.exact,
   });
   await new Response(audio).arrayBuffer();
-  return { failoverModel, asked: requests.slice(before) };
+  return requests.slice(before);
 }
+
+const modelsOf = (asked: typeof requests) => asked.map((request) => request.model);
 
 describe("Together voices", () => {
   it("lists the speech models it serves serverless, with their voices and price", async () => {
@@ -212,7 +215,7 @@ describe("Together voices", () => {
 
   it("streams the voice as fragmented MP4, asking for 16-bit PCM", async () => {
     const before = requests.length;
-    const { audio, failoverModel } = await streamSpeech(
+    const audio = await streamSpeech(
       { together: randomUUID() },
       { model: KOKORO, voice: "af_bella", text: "Hello.", userId: randomUUID() }
     );
@@ -221,7 +224,6 @@ describe("Together voices", () => {
       source: new BufferSource(await new Response(audio).arrayBuffer()),
     });
     expect(await input.computeDuration()).toBeGreaterThan(0.2);
-    expect(failoverModel).toBeNull();
     expect(requests[before].body).toMatchObject({
       model: "hexgrad/Kokoro-82M",
       voice: "af_bella",
@@ -232,22 +234,22 @@ describe("Together voices", () => {
   });
 });
 
+// Kokoro, Orpheus and BreezeBlue stand in for hosts of one model: the
+// stand-ins share af_bella, and only Kokoro has af_heart.
 describe("speech failover", () => {
-  it("goes straight to the next model, in the same voice when it has it", async () => {
+  it("goes straight to the next host, in the same voice", async () => {
     busy.set(KOKORO, 1);
-    const { failoverModel, asked } = await speak(userKeys());
-    expect(failoverModel).toBe(ORPHEUS);
-    expect(asked.map((request) => request.model)).toEqual([KOKORO, ORPHEUS]);
+    const asked = await speak(userKeys());
+    expect(modelsOf(asked)).toEqual([KOKORO, ORPHEUS]);
     expect(asked[1].body).toMatchObject({ voice: "af_bella" });
   });
 
-  it("fails over when the model asked for fails", async () => {
+  it("fails over when the host asked fails", async () => {
     failing.set(KOKORO, "500");
-    const { failoverModel } = await speak(userKeys());
-    expect(failoverModel).toBe(ORPHEUS);
+    expect(modelsOf(await speak(userKeys()))).toEqual([KOKORO, ORPHEUS]);
   });
 
-  it("passes over a failover that's busy, refuses or fails, to the model's default voice", async () => {
+  it("passes over a host that's busy, refuses or fails", async () => {
     for (const passOver of [
       () => busy.set(ORPHEUS, 1),
       () => refusing.add(ORPHEUS),
@@ -256,33 +258,30 @@ describe("speech failover", () => {
     ]) {
       busy.set(KOKORO, 1);
       passOver();
-      const { failoverModel, asked } = await speak(userKeys());
-      expect(failoverModel).toBe(BREEZE);
-      expect(asked.map((request) => request.model)).toEqual([KOKORO, ORPHEUS, BREEZE]);
-      // BreezeBlue has no af_bella.
-      expect(asked[2].path).toBe("/text-to-speech/elara/stream");
+      const asked = await speak(userKeys());
+      expect(modelsOf(asked)).toEqual([KOKORO, ORPHEUS, BREEZE]);
+      expect(asked[2].path).toBe("/text-to-speech/af_bella/stream");
       busy.clear();
       refusing.clear();
       failing.clear();
     }
   });
 
-  it("doesn't fail over a request the model asked for refused", async () => {
+  it("doesn't fail over a request the host asked refused", async () => {
     refusing.add(KOKORO);
     const before = requests.length;
     await expect(speak(userKeys())).rejects.toThrow(SpeechRejectedError);
-    expect(requests.slice(before).map((request) => request.model)).toEqual([KOKORO]);
+    expect(modelsOf(requests.slice(before))).toEqual([KOKORO]);
   });
 
   it.each([
-    ["a model that isn't in the list", () => (process.env.SPEECH_FAILOVER_MODELS = BREEZE), {}],
+    ["a voice no other host has", () => {}, { voice: "af_heart" }],
+    ["a model in no group", () => (process.env.MODEL_FAILOVER = `${ORPHEUS},${BREEZE}`), {}],
     ["an exact request", () => {}, { exact: true }],
-  ])("waits out a busy model for %s", async (_, setUp, options) => {
+  ])("waits out a busy host for %s", async (_, setUp, options) => {
     setUp();
     busy.set(KOKORO, 1);
-    const { failoverModel, asked } = await speak(userKeys(), options);
-    expect(failoverModel).toBeNull();
-    expect(asked.map((request) => request.model)).toEqual([KOKORO, KOKORO]);
+    expect(modelsOf(await speak(userKeys(), options))).toEqual([KOKORO, KOKORO]);
   });
 
   it("fails over on the server's key to a model it doesn't let users pick", async () => {
@@ -292,37 +291,13 @@ describe("speech failover", () => {
     expect(models.map((model) => model.id)).toEqual([KOKORO]);
 
     busy.set(KOKORO, 1);
-    const { failoverModel } = await speak({});
-    expect(failoverModel).toBe(ORPHEUS);
+    expect(modelsOf(await speak({}))).toEqual([KOKORO, ORPHEUS]);
   });
 
   it("never fails over from the user's own key to the server's", async () => {
     process.env.BREEZEBLUE_API_KEY = randomUUID();
     busy.set(KOKORO, 1);
     busy.set(ORPHEUS, 1);
-    const { failoverModel, asked } = await speak({ together: randomUUID() });
-    expect(failoverModel).toBeNull();
-    expect(asked.map((request) => request.model)).toEqual([KOKORO, ORPHEUS, KOKORO]);
-  });
-
-  it("names the failover model in the speech route's answer", async () => {
-    process.env.TOGETHER_API_KEY = randomUUID();
-    const userId = await createTestUser({ emailPrefix: "together" });
-    busy.set(KOKORO, 1);
-    try {
-      const { token } = await createSession(db, { userId });
-      const res = await speechPost(
-        new Request("http://localhost:3000/api/v1/narration/speech", {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie: `session=${token}` },
-          body: JSON.stringify({ model: KOKORO, voice: "af_bella", text: "Hi." }),
-        })
-      );
-      expect(res.status).toBe(200);
-      expect(res.headers.get(SPEECH_FAILOVER_HEADER)).toBe(ORPHEUS);
-      await res.arrayBuffer();
-    } finally {
-      await db.delete(users).where(eq(users.id, userId));
-    }
+    expect(modelsOf(await speak({ together: randomUUID() }))).toEqual([KOKORO, ORPHEUS, KOKORO]);
   });
 });

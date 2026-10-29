@@ -54,6 +54,7 @@ import {
   type OpenRouterModel,
 } from "@/server/services/openrouter";
 import { listTogetherSpeechModels, togetherSpeech } from "@/server/services/together";
+import { failoverModels, isFailoverModel } from "@/server/services/model-failover";
 
 export interface SpeechVoice {
   /** What the provider calls the voice; what's stored and sent. */
@@ -132,9 +133,8 @@ export interface SpeechCatalog {
   /** Models with at least one voice that the user can pick. */
   models: SpeechModel[];
   /**
-   * The `SPEECH_FAILOVER_MODELS` with a key, in that order, whether or not
-   * they can be picked: listing a model there allows it on the server's key
-   * as a failover ({@link failoverCandidates}).
+   * Models with a key in a `MODEL_FAILOVER` group, whether or not they can be
+   * picked ({@link failoverCandidates}).
    */
   failover: SpeechModel[];
   /** Providers with a key whose catalog couldn't be fetched just now, and why. */
@@ -152,18 +152,6 @@ export interface SpeechChoice {
   model: string | null;
   voice: string | null;
   userId: string;
-}
-
-/**
- * `SPEECH_FAILOVER_MODELS`: comma-separated `provider:model` refs, in the
- * order to try them when the one asked for is busy.
- */
-function failoverModelIds(): string[] {
-  return (process.env.SPEECH_FAILOVER_MODELS ?? "")
-    .split(",")
-    .map((model) => model.trim())
-    .filter(Boolean)
-    .map(normalizeModelRef);
 }
 
 /**
@@ -214,9 +202,7 @@ export async function listSpeechModels(
   );
   const all = lists.flat();
   const models = pickableSpeechModels(all, keys).sort(byDisplayName);
-  const failover = failoverModelIds().flatMap((id) =>
-    all.filter((model) => model.id === id && model.voices.length > 0)
-  );
+  const failover = all.filter((model) => isFailoverModel(model.id));
   const kept = picked?.voice ? await keepPickedVoice(models, keys, picked) : "listed";
   return {
     models,
@@ -580,11 +566,11 @@ interface SpeechCandidate {
 }
 
 /**
- * What to say a chunk in when `first` is busy: if it's one of the `failover`
- * models, the others in order, in the same voice if the model has it, else
- * its default. Only those billed to whoever `first` is (the user's own key or
- * the server's), so a busy model never charges the user's key for one they
- * didn't pick, nor the server's for a user who brought their own.
+ * Where to say a chunk when `first` is busy or failing: the other hosts of
+ * its model ({@link failoverModels}) that have the same voice, in order. Only
+ * those billed to whoever `first` is (the user's own key or the server's), so
+ * a busy host never charges the user's key for one they didn't pick, nor the
+ * server's for a user who brought their own.
  */
 function failoverCandidates(
   failover: SpeechModel[],
@@ -592,14 +578,13 @@ function failoverCandidates(
   first: SpeechModel,
   voice: string
 ): SpeechCandidate[] {
-  if (!failover.some((model) => model.id === first.id)) return [];
   const onUserKey = isOnUserKey(first.provider, keys);
-  return failover.flatMap((model): SpeechCandidate[] => {
-    const apiKey = getProviderApiKey(model.provider, keys);
-    if (model.id === first.id || !apiKey || isOnUserKey(model.provider, keys) !== onUserKey) {
-      return [];
-    }
-    return [{ model, voice: hasVoice(model, voice) ? voice : defaultVoiceFor(model), apiKey }];
+  return failoverModels(first.id).flatMap((id): SpeechCandidate[] => {
+    const model = failover.find((candidate) => candidate.id === id);
+    const apiKey = model && getProviderApiKey(model.provider, keys);
+    if (!model || !apiKey || !hasVoice(model, voice)) return [];
+    if (isOnUserKey(model.provider, keys) !== onUserKey) return [];
+    return [{ model, voice, apiKey }];
   });
 }
 
@@ -645,23 +630,16 @@ async function speakWithFirstFree(
   throw firstError;
 }
 
-/** What {@link streamSpeech} answers. */
-export interface SpokenSpeech {
-  audio: ReadableStream<Uint8Array>;
-  /** The failover model that said it, when the one asked for was busy or failing. */
-  failoverModel: string | null;
-}
-
 /**
  * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
  * as the provider generates it, ending in `pauseSeconds` of silence. A null model
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request. A
- * provider that's busy or failing is passed over for the next of
- * {@link failoverCandidates} at once ({@link speakWithFirstFree}), and when
- * all are busy, they're asked again for a while ({@link speakWhenFree}). An
- * `exact` request never fails over.
+ * provider that's busy or failing is passed over for another host of the same
+ * model and voice at once ({@link failoverCandidates}, {@link speakWithFirstFree}),
+ * and when all are busy, they're asked again for a while ({@link speakWhenFree}).
+ * An `exact` request never fails over.
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
@@ -672,7 +650,7 @@ export async function streamSpeech(
     exact?: boolean;
   },
   signal?: AbortSignal
-): Promise<SpokenSpeech> {
+): Promise<ReadableStream<Uint8Array>> {
   const catalog = await listSpeechModels(keys, options);
   const { model, voice } = resolveSpeechModel(catalog, keys, options.model, options.voice);
   // Saying it in the default voice instead would be cached as the picked one's.
@@ -719,10 +697,7 @@ export async function streamSpeech(
   if (answered !== model) {
     logger.info("Speech failed over", { model: model.id, failoverModel: answered.id });
   }
-  return {
-    audio: await encodeSpeech(spoken.pcm, { pauseSeconds: options.pauseSeconds }),
-    failoverModel: answered === model ? null : answered.id,
-  };
+  return encodeSpeech(spoken.pcm, { pauseSeconds: options.pauseSeconds });
 }
 
 /** How long a busy provider is asked again before the client is told to come back later. */

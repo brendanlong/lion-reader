@@ -17,12 +17,9 @@
  * 4xx when trying again won't help (a provider refusing the key is a 422, its
  * message written to be shown), 503 when it might. A failure after audio has
  * started cuts the stream short.
- *
- * Audio from a failover model (the one asked for was busy) carries
- * {@link SPEECH_FAILOVER_HEADER}.
  */
 
-import { MAX_CLOUD_SPEECH_CHARS, SPEECH_FAILOVER_HEADER } from "@/lib/narration/constants";
+import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import {
   BodyReadTimeoutError,
@@ -111,17 +108,12 @@ export async function POST(req: Request): Promise<Response> {
 
   const keys = await getUserApiKeys(auth.userId);
   try {
-    const { audio, failoverModel } = await streamSpeech(
-      keys,
-      { ...input, userId: auth.userId },
-      req.signal
-    );
+    const audio = await streamSpeech(keys, { ...input, userId: auth.userId }, req.signal);
     return new Response(audio, {
       headers: {
         ...limitHeaders,
         "Content-Type": "audio/mp4",
         "Cache-Control": "no-store",
-        ...(failoverModel ? { [SPEECH_FAILOVER_HEADER]: failoverModel } : {}),
       },
     });
   } catch (error) {

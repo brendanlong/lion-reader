@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import Anthropic from "@anthropic-ai/sdk";
@@ -48,6 +48,7 @@ const ENV_VARS = [
   "SERVER_KEY_MAX_OUTPUT_PRICE",
   "SERVER_KEY_MAX_SPEECH_PRICE",
   "ANTHROPIC_BASE_URL",
+  "MODEL_FAILOVER",
   "CEREBRAS_BASE_URL",
 ] as const;
 
@@ -495,6 +496,8 @@ describe("generateChatCompletion", () => {
     let server: Server;
     const requests: { url: string; userAgent: string | undefined; apiKey: string | undefined }[] =
       [];
+    /** What Cerebras (the OpenAI-shaped path) answers instead, if anything. */
+    let cerebrasFailure: number | null = null;
 
     beforeAll(async () => {
       server = createServer((req, res) => {
@@ -507,6 +510,11 @@ describe("generateChatCompletion", () => {
             req.headers.authorization?.replace(/^Bearer /, ""),
         });
         res.setHeader("Content-Type", "application/json");
+        if (cerebrasFailure && req.url?.includes("/chat/completions")) {
+          res.statusCode = cerebrasFailure;
+          res.end(JSON.stringify({ error: { message: "No." } }));
+          return;
+        }
         // Both the Anthropic and the OpenAI-compatible answer shapes.
         res.end(
           JSON.stringify({
@@ -523,6 +531,7 @@ describe("generateChatCompletion", () => {
     function pointSdksAtServer() {
       clearEnv();
       requests.length = 0;
+      cerebrasFailure = null;
       const { port } = server.address() as AddressInfo;
       for (const name of ["ANTHROPIC_BASE_URL", "CEREBRAS_BASE_URL"] as const) {
         process.env[name] = `http://127.0.0.1:${port}`;
@@ -564,6 +573,62 @@ describe("generateChatCompletion", () => {
         ]);
       }
     );
+
+    describe("failover", () => {
+      // Anthropic stands in for another host of the model.
+      const model = { provider: "cerebras" as const, model: "some-model" };
+      const options = { userPrompt: "hi", maxTokens: 10 };
+      const providersAsked = () =>
+        requests.map((request) =>
+          request.url.includes("/chat/completions") ? "cerebras" : "anthropic"
+        );
+
+      beforeEach(() => {
+        pointSdksAtServer();
+        process.env.MODEL_FAILOVER = "cerebras:some-model,anthropic:some-model;x:y,z:w";
+      });
+
+      it.each([429, 500])(
+        "goes to the model's next host when the first answers %i",
+        async (status) => {
+          cerebrasFailure = status;
+          const text = await generateChatCompletion(
+            model,
+            { cerebras: "c", anthropic: "a" },
+            options
+          );
+          expect(text).toBe("hello");
+          // The SDK's own retry, then the next host.
+          expect(providersAsked()).toEqual(["cerebras", "cerebras", "anthropic"]);
+        }
+      );
+
+      it("doesn't fail over a request the first host refused", async () => {
+        cerebrasFailure = 401;
+        await expect(
+          generateChatCompletion(model, { cerebras: "c", anthropic: "a" }, options)
+        ).rejects.toMatchObject({ failure: "rejected", provider: "cerebras" });
+        expect(providersAsked()).toEqual(["cerebras"]);
+      });
+
+      it("allows a failover on the server's key that users can't pick", async () => {
+        process.env.CEREBRAS_API_KEY = "server-c";
+        process.env.ANTHROPIC_API_KEY = "server-a";
+        process.env.SERVER_KEY_MODELS = "cerebras:some-model";
+        cerebrasFailure = 503;
+        expect(await generateChatCompletion(model, {}, options)).toBe("hello");
+        expect(providersAsked().at(-1)).toBe("anthropic");
+      });
+
+      it("never fails over from the user's own key to the server's", async () => {
+        process.env.ANTHROPIC_API_KEY = "server-a";
+        cerebrasFailure = 503;
+        await expect(
+          generateChatCompletion(model, { cerebras: "c" }, options)
+        ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
+        expect(providersAsked()).not.toContain("anthropic");
+      });
+    });
 
     it("never asks a provider that can't do JSON mode for it, nor lists its models", async () => {
       pointSdksAtServer();
