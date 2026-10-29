@@ -26,6 +26,8 @@ let server: Server;
 const requests: Array<{ model: string; path: string; body: unknown }> = [];
 /** How many speech requests for a Together model to turn away as busy. */
 const busy = new Map<string, number>();
+/** BreezeBlue speech requests to turn away as busy. */
+let breezeBusy = 0;
 /** Together models that refuse speech requests. */
 const refusing = new Set<string>();
 /** Together models whose speech requests fail: a 500, or an error event before any audio. */
@@ -135,6 +137,10 @@ beforeAll(async () => {
         }
         if (path.startsWith("/text-to-speech/")) {
           requests.push({ model: BREEZE, path, body: JSON.parse(body) });
+          if (breezeBusy > 0) {
+            breezeBusy--;
+            return json({ detail: "Busy" }, 429);
+          }
           res.writeHead(200, { "Content-Type": "audio/pcm" });
           res.end(speech());
           return;
@@ -171,6 +177,7 @@ afterEach(() => {
   busy.clear();
   refusing.clear();
   failing.clear();
+  breezeBusy = 0;
   process.env.MODEL_FAILOVER = FAILOVER;
   for (const name of ["SERVER_KEY_MODELS", "TOGETHER_API_KEY", "BREEZEBLUE_API_KEY"]) {
     delete process.env[name];
@@ -299,5 +306,13 @@ describe("speech failover", () => {
     busy.set(KOKORO, 1);
     busy.set(ORPHEUS, 1);
     expect(modelsOf(await speak({ together: randomUUID() }))).toEqual([KOKORO, ORPHEUS, KOKORO]);
+  });
+
+  it("never fails over from the server's key to the user's own", async () => {
+    process.env.MODEL_FAILOVER = `${BREEZE},${KOKORO}`;
+    process.env.BREEZEBLUE_API_KEY = randomUUID();
+    breezeBusy = 1;
+    const asked = await speak({ together: randomUUID() }, { model: BREEZE });
+    expect(modelsOf(asked)).toEqual([BREEZE, BREEZE]);
   });
 });

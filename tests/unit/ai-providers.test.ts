@@ -498,6 +498,8 @@ describe("generateChatCompletion", () => {
       [];
     /** What Cerebras (the OpenAI-shaped path) answers instead, if anything. */
     let cerebrasFailure: number | null = null;
+    /** What Anthropic answers instead, if anything. */
+    let anthropicFailure: number | null = null;
 
     beforeAll(async () => {
       server = createServer((req, res) => {
@@ -510,8 +512,9 @@ describe("generateChatCompletion", () => {
             req.headers.authorization?.replace(/^Bearer /, ""),
         });
         res.setHeader("Content-Type", "application/json");
-        if (cerebrasFailure && req.url?.includes("/chat/completions")) {
-          res.statusCode = cerebrasFailure;
+        const failure = req.url?.includes("/chat/completions") ? cerebrasFailure : anthropicFailure;
+        if (failure) {
+          res.statusCode = failure;
           res.end(JSON.stringify({ error: { message: "No." } }));
           return;
         }
@@ -532,6 +535,7 @@ describe("generateChatCompletion", () => {
       clearEnv();
       requests.length = 0;
       cerebrasFailure = null;
+      anthropicFailure = null;
       const { port } = server.address() as AddressInfo;
       for (const name of ["ANTHROPIC_BASE_URL", "CEREBRAS_BASE_URL"] as const) {
         process.env[name] = `http://127.0.0.1:${port}`;
@@ -620,11 +624,36 @@ describe("generateChatCompletion", () => {
         expect(providersAsked().at(-1)).toBe("anthropic");
       });
 
-      it("never fails over from the user's own key to the server's", async () => {
-        process.env.ANTHROPIC_API_KEY = "server-a";
+      it.each([
+        ["the user's own key to the server's", { cerebras: "c" }, "ANTHROPIC_API_KEY"],
+        ["the server's key to the user's own", { anthropic: "a" }, "CEREBRAS_API_KEY"],
+      ] as const)("never fails over from %s", async (_, keys, serverKey) => {
+        process.env[serverKey] = "server-key";
+        cerebrasFailure = 503;
+        await expect(generateChatCompletion(model, keys, options)).rejects.toMatchObject({
+          failure: "busy",
+          provider: "cerebras",
+        });
+        expect(providersAsked()).not.toContain("anthropic");
+      });
+
+      it("throws the first host's error when every host fails", async () => {
+        cerebrasFailure = 503;
+        anthropicFailure = 400;
+        await expect(
+          generateChatCompletion(model, { cerebras: "c", anthropic: "a" }, options)
+        ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
+        expect(providersAsked().at(-1)).toBe("anthropic");
+      });
+
+      it("skips a host that can't do what's asked", async () => {
         cerebrasFailure = 503;
         await expect(
-          generateChatCompletion(model, { cerebras: "c" }, options)
+          generateChatCompletion(
+            model,
+            { cerebras: "c", anthropic: "a" },
+            { ...options, jsonObject: true }
+          )
         ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
         expect(providersAsked()).not.toContain("anthropic");
       });

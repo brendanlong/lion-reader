@@ -129,10 +129,11 @@ export function getAvailableProviders(keys?: AiProviderKeys): TextAiProvider[] {
 }
 
 /**
- * How long a text request may take in all, retries included: enough for a
- * slow reasoning model, but a hung provider doesn't hold a summary nobody's
- * still waiting for (the SDK defaults, Anthropic's 10 minutes and two retries
- * everywhere, would).
+ * How long a text request to one host may take in all, retries included
+ * (a failover to another host gets its own): enough for a slow reasoning
+ * model, but a hung provider doesn't hold a summary nobody's still waiting
+ * for (the SDK defaults, Anthropic's 10 minutes and two retries everywhere,
+ * would).
  */
 const TEXT_REQUEST_BUDGET_MS = 120_000;
 
@@ -383,7 +384,7 @@ export async function generateChatCompletion(
       if (index === 0) {
         if (error.failure === "rejected") throw error;
         firstError = error;
-      } else {
+      } else if (error.failure !== "busy") {
         logger.warn("Text failover model failed", {
           model: formatModelRef(call.provider, call.model),
           error: error.message,
