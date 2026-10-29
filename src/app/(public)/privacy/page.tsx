@@ -216,7 +216,7 @@ export default function PrivacyPolicyPage() {
           <Card padding="md">
             <LegalSubsection
               id="audio-narration"
-              title="Audio Narration (Cerebras, OpenRouter, DeepInfra, BreezeBlue) — Optional"
+              title="Audio Narration (Cerebras, OpenRouter, DeepInfra, BreezeBlue, Together AI) — Optional"
             >
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
@@ -234,11 +234,12 @@ export default function PrivacyPolicyPage() {
                 With browser or enhanced voices, audio is generated entirely on your device. If you
                 choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
                 sent to the provider of the speech model you picked to generate the audio: DeepInfra
-                directly (the default, Kokoro), BreezeBlue directly, or OpenRouter, which forwards
-                it to the company hosting that model (for example DeepInfra or Together). The
-                generated audio is streamed back to your device and not stored on our servers. We
-                ask BreezeBlue not to save the text or audio in the generation history of the
-                account whose key was used.
+                directly (the default, Kokoro), BreezeBlue or Together AI directly, or OpenRouter,
+                which forwards it to the company hosting that model (for example DeepInfra or
+                Together). When that provider is too busy, the text may instead be sent to another
+                of these providers to say it in the same or a similar voice. The generated audio is
+                streamed back to your device and not stored on our servers. We ask BreezeBlue not to
+                save the text or audio in the generation history of the account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
@@ -274,6 +275,13 @@ export default function PrivacyPolicyPage() {
                   className="ui-text-sm"
                 >
                   BreezeBlue&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink
+                  href={AI_PROVIDER_INFO.together.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
+                  Together AI&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
             </LegalSubsection>

@@ -50,18 +50,20 @@ const getPrerecordedSpeech = createPrerecordedSpeech({
   // On the server's keys, so its allowlist applies, in exactly the voice the
   // key names. No abort signal: a chunk the listener leaves halfway is still
   // worth finishing and keeping.
-  synthesize: ({ voice, text }) =>
-    streamSpeech(
-      {},
-      {
-        model: voice.model,
-        voice: voice.voice,
-        text,
-        pauseSeconds: voice.pauseSeconds,
-        userId: "demo",
-        exact: true,
-      }
-    ),
+  synthesize: async ({ voice, text }) =>
+    (
+      await streamSpeech(
+        {},
+        {
+          model: voice.model,
+          voice: voice.voice,
+          text,
+          pauseSeconds: voice.pauseSeconds,
+          userId: "demo",
+          exact: true,
+        }
+      )
+    ).audio,
   store: isStorageAvailable()
     ? (key, audio) => uploadObject(prerecordedSpeechObjectKey(key), audio, "audio/mp4")
     : null,

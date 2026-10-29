@@ -313,7 +313,7 @@ describe("resolveSpeechModel", () => {
 
   it("needs a provider, and names them", () => {
     expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
-      "Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue"
+      "Cloud voices require an API key from DeepInfra, OpenRouter, BreezeBlue, or Together AI"
     );
   });
 

@@ -53,6 +53,7 @@ import {
   pricePerMillionUnits,
   type OpenRouterModel,
 } from "@/server/services/openrouter";
+import { listTogetherSpeechModels, togetherSpeech } from "@/server/services/together";
 
 export interface SpeechVoice {
   /** What the provider calls the voice; what's stored and sent. */
@@ -110,6 +111,23 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
       toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey), keys),
     findVoice: findBreezeBlueVoice,
     speak: breezeBlueSpeech,
+  },
+  together: {
+    listModels: async (keys, apiKey) =>
+      (await listTogetherSpeechModels(apiKey)).flatMap((model): SpeechModel[] => {
+        const id = formatModelRef("together", model.id);
+        if (!isModelAllowed(id, keys, model)) return [];
+        return [
+          {
+            id,
+            displayName: model.name,
+            provider: "together",
+            voices: voicesNamedById(model.voices),
+            pricePerMillionCharacters: model.pricePerMillionCharacters,
+          },
+        ];
+      }),
+    speak: togetherSpeech,
   },
 };
 
@@ -549,13 +567,101 @@ export const speechRequestSchema = z.object({
 
 /** Longest a provider gets to finish a chunk. */
 const SPEECH_TIMEOUT_MS = 120_000;
+
+/** A model and voice to say a chunk in, and the key that pays for it. */
+interface SpeechCandidate {
+  model: SpeechModel;
+  voice: string;
+  apiKey: string;
+}
+
+/**
+ * `SPEECH_FAILOVER_MODELS`: comma-separated `provider:model` refs, in the
+ * order to try them when the one asked for is busy.
+ */
+function failoverModels(): string[] {
+  return (process.env.SPEECH_FAILOVER_MODELS ?? "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean)
+    .map(normalizeModelRef);
+}
+
+/**
+ * What to say a chunk in when `first` is busy: if it's in
+ * `SPEECH_FAILOVER_MODELS`, the others there in order that this user can pick
+ * (so each is allowed on the key it bills), in the same voice if the model has
+ * it, else its default.
+ */
+function failoverCandidates(
+  models: SpeechModel[],
+  keys: AiProviderKeys,
+  first: SpeechModel,
+  voice: string
+): SpeechCandidate[] {
+  const order = failoverModels();
+  if (!order.includes(first.id)) return [];
+  return order.flatMap((id): SpeechCandidate[] => {
+    const model = models.find((candidate) => candidate.id === id);
+    const apiKey = model && getProviderApiKey(model.provider, keys);
+    if (!model || !apiKey || model.id === first.id) return [];
+    return [{ model, voice: hasVoice(model, voice) ? voice : defaultVoiceFor(model), apiKey }];
+  });
+}
+
+/**
+ * The first of `candidates` that isn't busy, speaking `text`. A failover
+ * that fails otherwise is logged and passed over; if none answers, the first
+ * candidate's error is thrown, so it's waited out as before.
+ */
+async function speakWithFirstFree(
+  candidates: SpeechCandidate[],
+  text: string,
+  signal: AbortSignal
+): Promise<{ candidate: SpeechCandidate; pcm: PcmStream }> {
+  let firstError: unknown = null;
+  for (const [index, candidate] of candidates.entries()) {
+    const { model, voice, apiKey } = candidate;
+    try {
+      const pcm = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
+        apiKey,
+        parseModelRef(model.id).model,
+        voice,
+        text,
+        signal
+      );
+      return { candidate, pcm };
+    } catch (error) {
+      if (index === 0) {
+        if (classifyProviderError(error) !== "busy") throw error;
+        firstError = error;
+      } else if (classifyProviderError(error) !== "busy") {
+        logger.warn("Speech failover model failed", {
+          model: model.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+  throw firstError;
+}
+
+/** What {@link streamSpeech} answers. */
+export interface SpokenSpeech {
+  audio: ReadableStream<Uint8Array>;
+  /** The `SPEECH_FAILOVER_MODELS` model that said it, when the one asked for was busy. */
+  failoverModel: string | null;
+}
+
 /**
  * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
  * as the provider generates it, ending in `pauseSeconds` of silence. A null model
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request. A
- * provider that's busy is asked again for a while ({@link speakWhenFree}).
+ * provider that's busy is passed over for the next of
+ * {@link failoverCandidates} at once, and when all are, they're asked again
+ * for a while ({@link speakWhenFree}). An `exact` request never fails over.
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
@@ -566,7 +672,7 @@ export async function streamSpeech(
     exact?: boolean;
   },
   signal?: AbortSignal
-): Promise<ReadableStream<Uint8Array>> {
+): Promise<SpokenSpeech> {
   const catalog = await listSpeechModels(keys, options);
   const { model, voice } = resolveSpeechModel(catalog, keys, options.model, options.voice);
   // Saying it in the default voice instead would be cached as the picked one's.
@@ -585,20 +691,16 @@ export async function streamSpeech(
   if (!apiKey) {
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
-  const providerModel = parseModelRef(model.id).model;
+  const candidates = [
+    { model, voice, apiKey },
+    ...(options.exact ? [] : failoverCandidates(catalog.models, keys, model, voice)),
+  ];
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  let pcm: PcmStream;
+  let spoken: Awaited<ReturnType<typeof speakWithFirstFree>>;
   try {
-    pcm = await speakWhenFree(
-      () =>
-        SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
-          apiKey,
-          providerModel,
-          voice,
-          options.text,
-          combined
-        ),
+    spoken = await speakWhenFree(
+      () => speakWithFirstFree(candidates, options.text, combined),
       combined
     );
   } catch (error) {
@@ -613,7 +715,14 @@ export async function streamSpeech(
     }
     throw error;
   }
-  return encodeSpeech(pcm, { pauseSeconds: options.pauseSeconds });
+  const answered = spoken.candidate.model;
+  if (answered !== model) {
+    logger.info("Speech failed over", { model: model.id, failoverModel: answered.id });
+  }
+  return {
+    audio: await encodeSpeech(spoken.pcm, { pauseSeconds: options.pauseSeconds }),
+    failoverModel: answered === model ? null : answered.id,
+  };
 }
 
 /** How long a busy provider is asked again before the client is told to come back later. */

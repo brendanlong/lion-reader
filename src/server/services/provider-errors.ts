@@ -1,7 +1,8 @@
 /**
  * Errors from the AI providers' HTTP APIs, which share their error shapes:
- * a message in `detail` (DeepInfra, BreezeBlue) or `error.message`
- * (OpenRouter and other OpenAI-compatible APIs).
+ * a message in `detail` (DeepInfra, BreezeBlue), `error.message`
+ * (OpenRouter and other OpenAI-compatible APIs) or `error` (Together, for
+ * some errors).
  */
 
 /**
@@ -99,8 +100,16 @@ export async function providerError(
 ): Promise<Error> {
   let detail: string | null = null;
   try {
-    const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
-    const message = typeof body.detail === "string" ? body.detail : body.error?.message;
+    const body = (await response.json()) as {
+      detail?: unknown;
+      error?: string | { message?: unknown };
+    };
+    const message =
+      typeof body.detail === "string"
+        ? body.detail
+        : typeof body.error === "string"
+          ? body.error
+          : body.error?.message;
     if (typeof message === "string") detail = message.slice(0, 500);
   } catch {
     // Non-JSON error body; the status is enough.

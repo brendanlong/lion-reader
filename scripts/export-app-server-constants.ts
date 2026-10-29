@@ -12,6 +12,7 @@ import {
   DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS,
   MAX_CLOUD_SPEECH_CHARS,
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
+  SPEECH_FAILOVER_HEADER,
 } from "../src/lib/narration/constants";
 import { EBOOK_UPLOAD_EXTENSIONS, SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
 import {
@@ -81,6 +82,12 @@ object CloudSpeechPause {
     /** The settings slider's step. */
     const val STEP_SECONDS = ${float(CLOUD_SPEECH_PAUSE_STEP_SECONDS)}
 }
+
+/**
+ * The \`/narration/speech\` response header naming the model that said a chunk when the one asked for
+ * was busy: that audio isn't the voice asked for, so it isn't cached as it.
+ */
+const val SPEECH_FAILOVER_HEADER = ${JSON.stringify(SPEECH_FAILOVER_HEADER)}
 `;
 }
 

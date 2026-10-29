@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { generateOpenApiDocument } from "trpc-to-openapi";
+import { SPEECH_FAILOVER_HEADER } from "@/lib/narration/constants";
 import { speechRequestSchema } from "@/server/services/speech";
 import { appRouter } from "./root";
 
@@ -55,6 +56,13 @@ export const openApiDocument = generateOpenApiDocument(appRouter, {
         responses: {
           "200": {
             description: "The speech, streamed",
+            headers: {
+              [SPEECH_FAILOVER_HEADER]: {
+                description:
+                  "The model that said it, when the one asked for was busy and the server failed over: don't cache it as the one asked for",
+                schema: { type: "string" },
+              },
+            },
             content: { "audio/mp4": { schema: { type: "string", contentMediaType: "audio/mp4" } } },
           },
           ...routeErrors({

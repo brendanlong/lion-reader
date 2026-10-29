@@ -300,7 +300,7 @@ describe("BreezeBlue speech", () => {
         text: "Hello.",
       }
     );
-    const audio = Buffer.from(await new Response(stream).arrayBuffer());
+    const audio = Buffer.from(await new Response(stream.audio).arrayBuffer());
 
     expect(audio.subarray(4, 8).toString()).toBe("ftyp");
     expect(speechRequests.at(-1)).toEqual({
@@ -323,7 +323,7 @@ describe("BreezeBlue speech", () => {
           pauseSeconds,
         }
       );
-      const audio = new Uint8Array(await new Response(stream).arrayBuffer());
+      const audio = new Uint8Array(await new Response(stream.audio).arrayBuffer());
       return new Input({ source: new BufferSource(audio), formats: ALL_FORMATS }).computeDuration();
     };
 
@@ -341,7 +341,7 @@ describe("BreezeBlue speech", () => {
       { breezeblue: randomUUID() },
       { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: null, text: "Busy." }
     );
-    const audio = Buffer.from(await new Response(stream).arrayBuffer());
+    const audio = Buffer.from(await new Response(stream.audio).arrayBuffer());
     expect(audio.subarray(4, 8).toString()).toBe("ftyp");
     expect(busyAnswers).toBe(0);
     expect(speechRequests.length).toBe(before + 1);
@@ -357,7 +357,7 @@ describe("BreezeBlue speech", () => {
         text: "It shipped [sic] in 2019.[2]",
       }
     );
-    await new Response(stream).arrayBuffer();
+    await new Response(stream.audio).arrayBuffer();
     expect(speechRequests.at(-1)?.body).toMatchObject({ text: "It shipped (sic) in 2019.(2)" });
   });
 
@@ -367,7 +367,7 @@ describe("BreezeBlue speech", () => {
       { breezeblue: randomUUID() },
       { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: picked, text: "Hi." }
     );
-    await new Response(stream).arrayBuffer();
+    await new Response(stream.audio).arrayBuffer();
     expect(speechRequests.at(-1)?.path).toContain(`/text-to-speech/${picked}/`);
   });
 
@@ -377,7 +377,7 @@ describe("BreezeBlue speech", () => {
       { breezeblue: key },
       { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: "gone", text: "Hi." }
     );
-    await new Response(stream).arrayBuffer();
+    await new Response(stream.audio).arrayBuffer();
     expect(speechRequests.at(-1)?.path).toContain(`/text-to-speech/fav-narrator-${key}/`);
   });
 
@@ -428,7 +428,7 @@ describe("BreezeBlue speech", () => {
         text: "Hi.",
       }
     );
-    await expect(new Response(stream).arrayBuffer()).rejects.toThrow();
+    await expect(new Response(stream.audio).arrayBuffer()).rejects.toThrow();
   });
 });
 
