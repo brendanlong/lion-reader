@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import Anthropic from "@anthropic-ai/sdk";
@@ -48,6 +48,7 @@ const ENV_VARS = [
   "SERVER_KEY_MAX_OUTPUT_PRICE",
   "SERVER_KEY_MAX_SPEECH_PRICE",
   "ANTHROPIC_BASE_URL",
+  "MODEL_FAILOVER",
   "CEREBRAS_BASE_URL",
 ] as const;
 
@@ -495,6 +496,10 @@ describe("generateChatCompletion", () => {
     let server: Server;
     const requests: { url: string; userAgent: string | undefined; apiKey: string | undefined }[] =
       [];
+    /** What Cerebras (the OpenAI-shaped path) answers instead, if anything. */
+    let cerebrasFailure: number | null = null;
+    /** What Anthropic answers instead, if anything. */
+    let anthropicFailure: number | null = null;
 
     beforeAll(async () => {
       server = createServer((req, res) => {
@@ -507,6 +512,12 @@ describe("generateChatCompletion", () => {
             req.headers.authorization?.replace(/^Bearer /, ""),
         });
         res.setHeader("Content-Type", "application/json");
+        const failure = req.url?.includes("/chat/completions") ? cerebrasFailure : anthropicFailure;
+        if (failure) {
+          res.statusCode = failure;
+          res.end(JSON.stringify({ error: { message: "No." } }));
+          return;
+        }
         // Both the Anthropic and the OpenAI-compatible answer shapes.
         res.end(
           JSON.stringify({
@@ -523,6 +534,8 @@ describe("generateChatCompletion", () => {
     function pointSdksAtServer() {
       clearEnv();
       requests.length = 0;
+      cerebrasFailure = null;
+      anthropicFailure = null;
       const { port } = server.address() as AddressInfo;
       for (const name of ["ANTHROPIC_BASE_URL", "CEREBRAS_BASE_URL"] as const) {
         process.env[name] = `http://127.0.0.1:${port}`;
@@ -564,6 +577,67 @@ describe("generateChatCompletion", () => {
         ]);
       }
     );
+
+    describe("failover", () => {
+      // Anthropic stands in for another host of the model.
+      const model = { provider: "cerebras" as const, model: "some-model" };
+      const options = { userPrompt: "hi", maxTokens: 10 };
+      const asked = () =>
+        requests.map((request) => [
+          request.url.includes("/chat/completions") ? "cerebras" : "anthropic",
+          request.apiKey,
+        ]);
+
+      beforeEach(() => {
+        pointSdksAtServer();
+        process.env.MODEL_FAILOVER = "cerebras:some-model,anthropic:some-model;x:y,z:w";
+        process.env.CEREBRAS_API_KEY = "server-c";
+        process.env.ANTHROPIC_API_KEY = "server-a";
+      });
+
+      it.each([
+        ["is busy", 429],
+        ["fails", 500],
+        ["refuses its key, as when it's out of credit", 402],
+      ])("goes to the model's next host when the first %s", async (_, status) => {
+        cerebrasFailure = status;
+        expect(await generateChatCompletion(model, {}, options)).toBe("hello");
+        expect(asked().at(-1)).toEqual(["anthropic", "server-a"]);
+      });
+
+      it("allows a failover on the server's key that users can't pick", async () => {
+        process.env.SERVER_KEY_MODELS = "cerebras:some-model";
+        cerebrasFailure = 503;
+        expect(await generateChatCompletion(model, {}, options)).toBe("hello");
+        expect(asked().at(-1)).toEqual(["anthropic", "server-a"]);
+      });
+
+      it("backs the user's own key up with the server's, never another of theirs", async () => {
+        cerebrasFailure = 402;
+        await generateChatCompletion(model, { cerebras: "user-c", anthropic: "user-a" }, options);
+        expect(asked()).toEqual([
+          ["cerebras", "user-c"],
+          ["anthropic", "server-a"],
+        ]);
+      });
+
+      it("throws the first host's error when every host fails", async () => {
+        cerebrasFailure = 402;
+        anthropicFailure = 503;
+        await expect(
+          generateChatCompletion(model, { cerebras: "user-c" }, options)
+        ).rejects.toMatchObject({ failure: "rejected", provider: "cerebras", usedUserKey: true });
+        expect(asked().at(-1)?.[0]).toBe("anthropic");
+      });
+
+      it("skips a host that can't do what's asked", async () => {
+        cerebrasFailure = 503;
+        await expect(
+          generateChatCompletion(model, {}, { ...options, jsonObject: true })
+        ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
+        expect(asked().map(([provider]) => provider)).not.toContain("anthropic");
+      });
+    });
 
     it("never asks a provider that can't do JSON mode for it, nor lists its models", async () => {
       pointSdksAtServer();

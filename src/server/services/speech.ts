@@ -8,6 +8,7 @@ import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model
 import {
   aiProviderName,
   aiProviderNames,
+  isSpeechProvider,
   SPEECH_PROVIDERS,
   type SpeechProvider,
 } from "@/lib/ai/providers";
@@ -53,6 +54,8 @@ import {
   pricePerMillionUnits,
   type OpenRouterModel,
 } from "@/server/services/openrouter";
+import { listTogetherSpeechModels, togetherSpeech } from "@/server/services/together";
+import { failoverModels } from "@/server/services/model-failover";
 
 export interface SpeechVoice {
   /** What the provider calls the voice; what's stored and sent. */
@@ -76,8 +79,8 @@ export interface SpeechModel {
  * `AiProvider` (`@/lib/ai/providers`), which is where its name and key live.
  */
 interface SpeechProviderAdapter {
-  /** The models the user can pick on these keys; `apiKey` is this provider's. */
-  listModels(keys: AiProviderKeys | undefined, apiKey: string): Promise<SpeechModel[]>;
+  /** The provider's speech models, as `apiKey` (this provider's) sees them. */
+  listModels(apiKey: string): Promise<SpeechModel[]>;
   /**
    * For a provider that lists only some of its voices: `voice` as `apiKey`
    * sees it, or null if it has none such (see {@link keepPickedVoice}).
@@ -98,18 +101,28 @@ interface SpeechProviderAdapter {
 
 const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = {
   deepinfra: {
-    listModels: async (keys) => toDeepInfraSpeechModels(await listDeepInfraSpeechModels(), keys),
+    listModels: async () => toDeepInfraSpeechModels(await listDeepInfraSpeechModels()),
     speak: deepInfraSpeech,
   },
   openrouter: {
-    listModels: async (keys) => toSpeechModels(await listOpenRouterModels("speech"), keys),
+    listModels: async () => toSpeechModels(await listOpenRouterModels("speech")),
     speak: openRouterSpeech,
   },
   breezeblue: {
-    listModels: async (keys, apiKey) =>
-      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey), keys),
+    listModels: async (apiKey) => toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey)),
     findVoice: findBreezeBlueVoice,
     speak: breezeBlueSpeech,
+  },
+  together: {
+    listModels: async (apiKey) =>
+      (await listTogetherSpeechModels(apiKey)).map((model) => ({
+        id: formatModelRef("together", model.id),
+        displayName: model.name,
+        provider: "together",
+        voices: voicesNamedById(model.voices),
+        pricePerMillionCharacters: model.pricePerMillionCharacters,
+      })),
+    speak: togetherSpeech,
   },
 };
 
@@ -118,7 +131,7 @@ function voicesNamedById(ids: string[]): SpeechVoice[] {
 }
 
 export interface SpeechCatalog {
-  /** Models with at least one voice. */
+  /** Models with at least one voice that the user can pick. */
   models: SpeechModel[];
   /** Providers with a key whose catalog couldn't be fetched just now, and why. */
   unavailable: { provider: SpeechProvider; error: unknown }[];
@@ -138,6 +151,21 @@ export interface SpeechChoice {
 }
 
 /**
+ * The models with voices the user can pick: those allowed on the key they'd
+ * run on (see `isModelAllowed`).
+ */
+export function pickableSpeechModels(
+  models: SpeechModel[],
+  keys: AiProviderKeys | undefined
+): SpeechModel[] {
+  return models.filter(
+    (model) =>
+      model.voices.length > 0 &&
+      isModelAllowed(model.id, keys, { pricePerMillionCharacters: model.pricePerMillionCharacters })
+  );
+}
+
+/**
  * Speech models the user can pick, across the providers that have a key. A
  * provider whose catalog can't be fetched is logged and left out, so the
  * others still show up. Given the user's pick, its voice is kept among its
@@ -154,7 +182,7 @@ export async function listSpeechModels(
       return apiKey ? [{ provider, apiKey }] : [];
     }).map(async ({ provider, apiKey }) => {
       try {
-        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys, apiKey);
+        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (error instanceof ProviderRejectedError) {
@@ -167,10 +195,7 @@ export async function listSpeechModels(
       }
     })
   );
-  const models = lists
-    .flat()
-    .filter((model) => model.voices.length > 0)
-    .sort(byDisplayName);
+  const models = pickableSpeechModels(lists.flat(), keys).sort(byDisplayName);
   const kept = picked?.voice ? await keepPickedVoice(models, keys, picked) : "listed";
   return { models, unavailable, ...(kept === "unchecked" ? { pickedVoiceUnchecked: true } : {}) };
 }
@@ -274,76 +299,41 @@ async function keepPickedVoice(
   return "kept";
 }
 
-/**
- * OpenRouter's speech models the user can pick: those that list voices and are
- * allowed on the key they'd run on (see `isModelAllowed`).
- */
-export function toSpeechModels(
-  catalog: OpenRouterModel[],
-  keys: AiProviderKeys | undefined
-): SpeechModel[] {
-  return catalog
-    .flatMap((model): SpeechModel[] => {
-      const voices = model.supported_voices ?? [];
-      const id = formatModelRef("openrouter", model.id);
-      const price = pricePerMillionCharacters(model);
-      if (voices.length === 0 || !isModelAllowed(id, keys, { pricePerMillionCharacters: price })) {
-        return [];
-      }
-      return [
-        {
-          id,
-          displayName: model.name,
-          provider: "openrouter",
-          voices: voicesNamedById(voices),
-          pricePerMillionCharacters: price,
-        },
-      ];
-    })
-    .sort(byDisplayName);
+/** OpenRouter's speech models. */
+export function toSpeechModels(catalog: OpenRouterModel[]): SpeechModel[] {
+  return catalog.map((model): SpeechModel => ({
+    id: formatModelRef("openrouter", model.id),
+    displayName: model.name,
+    provider: "openrouter",
+    voices: voicesNamedById(model.supported_voices ?? []),
+    pricePerMillionCharacters: pricePerMillionCharacters(model),
+  }));
 }
 
 function byDisplayName(a: SpeechModel, b: SpeechModel): number {
   return a.displayName.localeCompare(b.displayName);
 }
 
-/** DeepInfra's speech models the user can pick, like {@link toSpeechModels}. */
-export function toDeepInfraSpeechModels(
-  catalog: DeepInfraSpeechModel[],
-  keys: AiProviderKeys | undefined
-): SpeechModel[] {
-  return catalog
-    .flatMap((model): SpeechModel[] => {
-      const id = formatModelRef("deepinfra", model.name);
-      if (!isModelAllowed(id, keys, model)) return [];
-      return [
-        {
-          id,
-          // "hexgrad/Kokoro-82M" → "hexgrad: Kokoro 82M", like OpenRouter's names.
-          displayName: model.name.replace("/", ": ").replaceAll("-", " "),
-          provider: "deepinfra",
-          voices: voicesNamedById(model.voices),
-          pricePerMillionCharacters: model.pricePerMillionCharacters,
-        },
-      ];
-    })
-    .sort(byDisplayName);
+/** DeepInfra's speech models. */
+export function toDeepInfraSpeechModels(catalog: DeepInfraSpeechModel[]): SpeechModel[] {
+  return catalog.map((model): SpeechModel => ({
+    id: formatModelRef("deepinfra", model.name),
+    // "hexgrad/Kokoro-82M" → "hexgrad: Kokoro 82M", like OpenRouter's names.
+    displayName: model.name.replace("/", ": ").replaceAll("-", " "),
+    provider: "deepinfra",
+    voices: voicesNamedById(model.voices),
+    pricePerMillionCharacters: model.pricePerMillionCharacters,
+  }));
 }
 
 /** BreezeBlue's models, each with the voices this key can pick from. */
-function toBreezeBlueSpeechModels(
-  catalog: BreezeBlueCatalog,
-  keys: AiProviderKeys | undefined
-): SpeechModel[] {
-  return catalog.models
-    .map((model): SpeechModel => ({
-      id: formatModelRef("breezeblue", model.id),
-      displayName: model.name,
-      provider: "breezeblue",
-      voices: catalog.voices,
-    }))
-    .filter((model) => isModelAllowed(model.id, keys))
-    .sort(byDisplayName);
+function toBreezeBlueSpeechModels(catalog: BreezeBlueCatalog): SpeechModel[] {
+  return catalog.models.map((model): SpeechModel => ({
+    id: formatModelRef("breezeblue", model.id),
+    displayName: model.name,
+    provider: "breezeblue",
+    voices: catalog.voices,
+  }));
 }
 
 /**
@@ -470,9 +460,9 @@ export function speechErrorAnswer(
 }
 
 /**
- * What to tell the user about a provider refusing: on their own key, what the
- * provider said (a bad key, no credit), which they can act on; on the
- * server's, nothing about the operator's account.
+ * What to tell the user about a provider refusing, saying whose key it was
+ * and what they can do: on their own key, what the provider said (a bad key,
+ * no credit); on the server's, nothing about the operator's account.
  */
 function speechRejection(
   provider: SpeechProvider,
@@ -481,12 +471,17 @@ function speechRejection(
 ): SpeechRejectedError {
   const name = aiProviderName(provider);
   if (!isOnUserKey(provider, keys)) {
-    return new SpeechRejectedError(`${name} cloud voices aren't available right now`);
+    return new SpeechRejectedError(
+      error.refusedKey
+        ? `This server's ${name} API key was refused, so its voices can't be used. Pick another cloud voice, or add your own ${name} API key in Settings.`
+        : `${name} refused the request. Try another cloud voice in Settings.`
+    );
   }
+  const said = error.detail ? `: ${error.detail}` : "";
   return new SpeechRejectedError(
-    error.detail
-      ? `${name} refused the request: ${error.detail}`
-      : `${name} refused the request; check your ${name} API key`
+    error.refusedKey
+      ? `${name} refused your API key${said}. Check your ${name} account, or change the key in Settings.`
+      : `${name} refused the request${said}`
   );
 }
 
@@ -496,7 +491,7 @@ function speechRejection(
  * can't be read.
  */
 export function resolveSpeechModel(
-  { models, unavailable }: SpeechCatalog,
+  { models, unavailable }: Pick<SpeechCatalog, "models" | "unavailable">,
   keys: AiProviderKeys,
   requestedModel: string | null,
   requestedVoice: string | null
@@ -549,13 +544,88 @@ export const speechRequestSchema = z.object({
 
 /** Longest a provider gets to finish a chunk. */
 const SPEECH_TIMEOUT_MS = 120_000;
+
+/** A model and voice to say a chunk in, and the key that pays for it. */
+interface SpeechCandidate {
+  model: SpeechModel;
+  voice: string;
+  apiKey: string;
+}
+
+/**
+ * Where to say a chunk when `first` fails: the other hosts of its model
+ * ({@link failoverModels}) that have the same voice, in order, on the
+ * server's keys. A user's own key is only used the way they picked, but the
+ * server's back them up. A host whose catalog can't be fetched is passed over.
+ */
+async function failoverCandidates(first: SpeechModel, voice: string): Promise<SpeechCandidate[]> {
+  const candidates = await Promise.all(
+    failoverModels(first.id).map(async (id): Promise<SpeechCandidate[]> => {
+      const { provider } = parseModelRef(id);
+      const apiKey = getProviderApiKey(provider);
+      if (!apiKey || !isSpeechProvider(provider)) return [];
+      const models = await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey).catch(() => []);
+      const model = models.find((candidate) => candidate.id === id);
+      return model && hasVoice(model, voice) ? [{ model, voice, apiKey }] : [];
+    })
+  );
+  return candidates.flat();
+}
+
+/**
+ * The first of `candidates` to start speaking `text`, each failure (a key
+ * that's out of credit too) moving on to the next. If none answers, the
+ * first candidate's error is thrown: a busy one is then waited out
+ * ({@link speakWhenFree}), and a refusal is the user's to act on.
+ */
+async function speakWithFirstFree(
+  candidates: SpeechCandidate[],
+  text: string,
+  signal: AbortSignal
+): Promise<PcmStream> {
+  let firstError: unknown = null;
+  for (const [index, candidate] of candidates.entries()) {
+    signal.throwIfAborted();
+    const { model, voice, apiKey } = candidate;
+    try {
+      const pcm = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
+        apiKey,
+        parseModelRef(model.id).model,
+        voice,
+        text,
+        signal
+      );
+      if (index > 0) {
+        logger.info("Speech failed over", {
+          model: candidates[0].model.id,
+          failoverModel: model.id,
+        });
+      }
+      return pcm;
+    } catch (error) {
+      signal.throwIfAborted();
+      const failure = classifyProviderError(error);
+      if (index === 0) {
+        firstError = error;
+      } else if (failure !== "busy") {
+        logger.warn("Speech failover model failed", {
+          model: model.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+  throw firstError;
+}
+
 /**
  * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
  * as the provider generates it, ending in `pauseSeconds` of silence. A null model
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request. A
- * provider that's busy is asked again for a while ({@link speakWhenFree}).
+ * provider that fails is passed over for another host of the same model and
+ * voice at once ({@link failoverCandidates}, {@link speakWithFirstFree}).
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
@@ -585,20 +655,13 @@ export async function streamSpeech(
   if (!apiKey) {
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
-  const providerModel = parseModelRef(model.id).model;
+  const candidates = [{ model, voice, apiKey }, ...(await failoverCandidates(model, voice))];
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let pcm: PcmStream;
   try {
     pcm = await speakWhenFree(
-      () =>
-        SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
-          apiKey,
-          providerModel,
-          voice,
-          options.text,
-          combined
-        ),
+      () => speakWithFirstFree(candidates, options.text, combined),
       combined
     );
   } catch (error) {

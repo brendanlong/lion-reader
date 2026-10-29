@@ -11,8 +11,8 @@
  * - `SERVER_KEY_MAX_SPEECH_PRICE`: also allow speech models whose price per
  *   million characters (USD) is at most this.
  *
- * Only OpenRouter (text and speech) and DeepInfra (speech) report prices, so
- * other providers' models have to be listed.
+ * Only OpenRouter (text and speech), DeepInfra and Together (speech) report
+ * prices, so other providers' models have to be listed.
  */
 
 import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";

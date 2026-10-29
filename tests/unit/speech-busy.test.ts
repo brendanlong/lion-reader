@@ -179,7 +179,7 @@ describe("classifyProviderError", () => {
   });
 
   it("passes on rejections, and calls anything else a failure", () => {
-    expect(classifyProviderError(new ProviderRejectedError("402", "DeepInfra", null))).toBe(
+    expect(classifyProviderError(new ProviderRejectedError("402", "DeepInfra", null, 402))).toBe(
       "rejected"
     );
     expect(classifyProviderError(new DOMException("gone", "AbortError"))).toBe("failed");

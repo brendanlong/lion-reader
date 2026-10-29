@@ -184,8 +184,10 @@ export default function PrivacyPolicyPage() {
               </LegalParagraph>
               <LegalParagraph>
                 You choose which provider and model to use in your settings, and you may provide a
-                custom summarization prompt. Generated summaries are cached on our servers so the
-                same article does not need to be reprocessed.
+                custom summarization prompt. When that provider is too busy or failing, the request
+                may instead be sent to another of these providers that hosts the same model.
+                Generated summaries are cached on our servers so the same article does not need to
+                be reprocessed.
               </LegalParagraph>
               <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 <TextLink
@@ -216,15 +218,16 @@ export default function PrivacyPolicyPage() {
           <Card padding="md">
             <LegalSubsection
               id="audio-narration"
-              title="Audio Narration (Cerebras, OpenRouter, DeepInfra, BreezeBlue) — Optional"
+              title="Audio Narration (Cerebras, OpenRouter, DeepInfra, BreezeBlue, Together AI) — Optional"
             >
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
                 AI text processing in narration settings, article content is sent to the AI provider
                 you chose—Cerebras or OpenRouter—to convert it into speakable text. This
                 preprocessing expands abbreviations, formats numbers for speech, and improves
-                pronunciation. The processed text is cached on our servers to avoid repeated
-                processing.
+                pronunciation. As with summaries, a request may go to another provider hosting the
+                same model when the one you chose is busy. The processed text is cached on our
+                servers to avoid repeated processing.
               </LegalParagraph>
               <LegalParagraph>
                 When AI processing is disabled, the article is converted to speakable text on your
@@ -234,11 +237,12 @@ export default function PrivacyPolicyPage() {
                 With browser or enhanced voices, audio is generated entirely on your device. If you
                 choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
                 sent to the provider of the speech model you picked to generate the audio: DeepInfra
-                directly (the default, Kokoro), BreezeBlue directly, or OpenRouter, which forwards
-                it to the company hosting that model (for example DeepInfra or Together). The
-                generated audio is streamed back to your device and not stored on our servers. We
-                ask BreezeBlue not to save the text or audio in the generation history of the
-                account whose key was used.
+                directly (the default, Kokoro), BreezeBlue or Together AI directly, or OpenRouter,
+                which forwards it to the company hosting that model (for example DeepInfra or
+                Together). When that provider is too busy or failing, the text may instead be sent
+                to another of these providers that hosts the same voice. The generated audio is
+                streamed back to your device and not stored on our servers. We ask BreezeBlue not to
+                save the text or audio in the generation history of the account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
@@ -274,6 +278,13 @@ export default function PrivacyPolicyPage() {
                   className="ui-text-sm"
                 >
                   BreezeBlue&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink
+                  href={AI_PROVIDER_INFO.together.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
+                  Together AI&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
             </LegalSubsection>

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   defaultSpeechModelId,
   defaultVoiceFor,
+  pickableSpeechModels,
   resolveSpeechModel,
   SpeechRejectedError,
   SpeechUnavailableError,
@@ -11,6 +12,7 @@ import {
   toSpeechModels,
 } from "@/server/services/speech";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import type { AiProviderKeys } from "@/server/services/ai-providers";
 import type { SpeechProvider } from "@/lib/ai/providers";
 import {
   canNarrate,
@@ -62,32 +64,35 @@ afterEach(() => {
   }
 });
 
-describe("toSpeechModels", () => {
+const openRouterModels = (keys: Parameters<typeof pickableSpeechModels>[1]) =>
+  pickableSpeechModels(toSpeechModels(catalog), keys);
+
+describe("OpenRouter speech models", () => {
   it("lists every model with voices on the user's own key, priced per character", () => {
-    const models = toSpeechModels(catalog, { openrouter: "o" });
+    const models = openRouterModels({ openrouter: "o" });
     expect(models.map((model) => model.id)).toEqual([
-      "openrouter:google/gemini-3.8-flash-tts",
       "openrouter:hexgrad/kokoro-82m",
       "openrouter:minimax/speech-2.8-hd",
+      "openrouter:google/gemini-3.8-flash-tts",
     ]);
-    expect(models[1].pricePerMillionCharacters).toBe(4);
+    expect(models[0].pricePerMillionCharacters).toBe(4);
   });
 
   it("omits the per-character price for models that also bill generated audio", () => {
-    const [gemini] = toSpeechModels(catalog, { openrouter: "o" });
+    const [, , gemini] = openRouterModels({ openrouter: "o" });
     expect(gemini.pricePerMillionCharacters).toBeUndefined();
   });
 
   it("lists every model with voices on the server's key by default", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
-    expect(toSpeechModels(catalog, {})).toHaveLength(3);
+    expect(openRouterModels({})).toHaveLength(3);
   });
 
   it("limits the server's key to models within the speech price cap", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MAX_SPEECH_PRICE = "5";
     // Gemini's per-character cost is unknown, so it's left out too.
-    expect(toSpeechModels(catalog, {}).map((model) => model.id)).toEqual([
+    expect(openRouterModels({}).map((model) => model.id)).toEqual([
       "openrouter:hexgrad/kokoro-82m",
     ]);
   });
@@ -95,7 +100,7 @@ describe("toSpeechModels", () => {
 
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
-    const [, kokoro, minimax] = toSpeechModels(catalog, { openrouter: "o" });
+    const [kokoro, minimax] = openRouterModels({ openrouter: "o" });
     expect(defaultVoiceFor(kokoro)).toBe(DEFAULT_CLOUD_VOICES[OPENROUTER_KOKORO]);
     expect(defaultVoiceFor(minimax)).toBe("English_expressive_narrator");
   });
@@ -110,9 +115,12 @@ const deepInfraCatalog: DeepInfraSpeechModel[] = [
   },
 ];
 
-describe("toDeepInfraSpeechModels", () => {
+const deepInfraModels = (keys: Parameters<typeof pickableSpeechModels>[1]) =>
+  pickableSpeechModels(toDeepInfraSpeechModels(deepInfraCatalog), keys);
+
+describe("DeepInfra speech models", () => {
   it("lists every model on the user's own key, named like OpenRouter's", () => {
-    const models = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfra: "d" });
+    const models = deepInfraModels({ deepinfra: "d" });
     expect(models.map((model) => [model.id, model.displayName, model.provider])).toEqual([
       ["deepinfra:hexgrad/Kokoro-82M", "hexgrad: Kokoro 82M", "deepinfra"],
       ["deepinfra:inworld-ai/realtime-tts-2", "inworld ai: realtime tts 2", "deepinfra"],
@@ -123,21 +131,19 @@ describe("toDeepInfraSpeechModels", () => {
   it("limits the server's key to the listed models", () => {
     process.env.DEEPINFRA_API_KEY = "server";
     process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
-    expect(toDeepInfraSpeechModels(deepInfraCatalog, {}).map((model) => model.id)).toEqual([
-      "deepinfra:hexgrad/Kokoro-82M",
-    ]);
+    expect(deepInfraModels({}).map((model) => model.id)).toEqual(["deepinfra:hexgrad/Kokoro-82M"]);
   });
 
   it("isn't unlocked by an OpenRouter key", () => {
     process.env.DEEPINFRA_API_KEY = "server";
     process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
-    expect(toDeepInfraSpeechModels(deepInfraCatalog, { openrouter: "o" })).toHaveLength(1);
+    expect(deepInfraModels({ openrouter: "o" })).toHaveLength(1);
   });
 });
 
 describe("defaultSpeechModelId", () => {
-  const openRouter = toSpeechModels(catalog, { openrouter: "o" });
-  const deepInfra = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfra: "d" });
+  const openRouter = openRouterModels({ openrouter: "o" });
+  const deepInfra = deepInfraModels({ deepinfra: "d" });
 
   it("prefers DeepInfra's Kokoro, then OpenRouter's", () => {
     expect(defaultSpeechModelId([...openRouter, ...deepInfra])).toBe(DEEPINFRA_KOKORO);
@@ -295,25 +301,39 @@ describe("resolveSpeechModel", () => {
     );
   });
 
-  it("passes on a provider refusing the key, with its reason only on the user's own key", () => {
-    const refused = new ProviderRejectedError("402", "OpenRouter", "Insufficient credits");
-    expect(() =>
-      resolveSpeechModel(
-        catalog([], ["openrouter"], refused),
-        { openrouter: "o" },
-        OPENROUTER_KOKORO,
-        null
-      )
-    ).toThrow(new SpeechRejectedError("OpenRouter refused the request: Insufficient credits"));
-    process.env.OPENROUTER_API_KEY = "or-server";
-    expect(() =>
-      resolveSpeechModel(catalog([], ["openrouter"], refused), {}, OPENROUTER_KOKORO, null)
-    ).toThrow(new SpeechRejectedError("OpenRouter cloud voices aren't available right now"));
+  describe("a provider refusing", () => {
+    const refusal = (keys: AiProviderKeys, status = 402) => {
+      const refused = new ProviderRejectedError("", "OpenRouter", "Insufficient credits", status);
+      try {
+        resolveSpeechModel(catalog([], ["openrouter"], refused), keys, OPENROUTER_KOKORO, null);
+      } catch (error) {
+        expect(error).toBeInstanceOf(SpeechRejectedError);
+        return (error as Error).message;
+      }
+      throw new Error("Not refused");
+    };
+
+    it("says it was the user's own key, and why", () => {
+      const message = refusal({ openrouter: "o" });
+      expect(message).toContain("your API key");
+      expect(message).toContain("Insufficient credits");
+    });
+
+    it("says it was the server's key, keeping the operator's account private", () => {
+      process.env.OPENROUTER_API_KEY = "or-server";
+      const message = refusal({});
+      expect(message).toContain("server's OpenRouter API key");
+      expect(message).not.toContain("Insufficient credits");
+    });
+
+    it("doesn't blame a key for a refused request", () => {
+      expect(refusal({ openrouter: "o" }, 400)).not.toContain("key");
+    });
   });
 
   it("needs a provider, and names them", () => {
     expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
-      "Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue"
+      "Cloud voices require an API key from DeepInfra, OpenRouter, BreezeBlue, or Together AI"
     );
   });
 

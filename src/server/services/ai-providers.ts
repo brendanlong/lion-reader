@@ -36,6 +36,7 @@ import {
   type ModelPrice,
 } from "@/server/services/server-key-models";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import { failoverModels } from "@/server/services/model-failover";
 import {
   classifyProviderStatus,
   isFetchConnectionError,
@@ -128,10 +129,11 @@ export function getAvailableProviders(keys?: AiProviderKeys): TextAiProvider[] {
 }
 
 /**
- * How long a text request may take in all, retries included: enough for a
- * slow reasoning model, but a hung provider doesn't hold a summary nobody's
- * still waiting for (the SDK defaults, Anthropic's 10 minutes and two retries
- * everywhere, would).
+ * How long a text request to one host may take in all, retries included
+ * (a failover to another host gets its own): enough for a slow reasoning
+ * model, but a hung provider doesn't hold a summary nobody's still waiting
+ * for (the SDK defaults, Anthropic's 10 minutes and two retries everywhere,
+ * would).
  */
 const TEXT_REQUEST_BUDGET_MS = 120_000;
 
@@ -283,20 +285,20 @@ export function classifyTextGenerationError(error: unknown): TextGenerationFailu
   return status === undefined ? "failed" : classifyProviderStatus(status);
 }
 
-/**
- * Runs a single-turn chat completion on the referenced model and returns the
- * response text (empty string if the model produced no text — callers decide
- * how to handle that).
- *
- * @throws Error if the provider is not configured, the model isn't allowed
- *   on the server's key, or the provider can't do what's asked
- * @throws TextGenerationError if the provider call fails
- */
-export async function generateChatCompletion(
+/** A text model to run a completion on, and the key that pays for it. */
+interface TextCall {
+  provider: TextAiProvider;
+  model: string;
+  apiKey: string;
+  onUserKey: boolean;
+}
+
+/** The call for `ref` on `keys`, or why it can't be made. */
+async function textCall(
   ref: ModelRef,
   keys: AiProviderKeys | undefined,
   options: ChatCompletionOptions
-): Promise<string> {
+): Promise<TextCall> {
   const provider = ref.provider;
   if (!isTextAiProvider(provider)) {
     throw new Error(`${aiProviderName(provider)} is only used for cloud voices`);
@@ -312,19 +314,78 @@ export async function generateChatCompletion(
   if (!(await isTextModelAllowed(modelRef, keys))) {
     throw new Error(`${modelRef} isn't allowed on the server's ${aiProviderName(provider)} key`);
   }
-  const adapter = TEXT_PROVIDER_ADAPTERS[provider];
-  if (options.jsonObject && !adapter.jsonObject) {
+  if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) {
     throw new Error(`JSON-object responses are not supported for ${aiProviderName(provider)}`);
   }
-  const onUserKey = isOnUserKey(provider, keys);
-  try {
-    return await adapter.complete({ apiKey, onUserKey }, ref.model, {
-      ...options,
-      reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
-    });
-  } catch (error) {
-    throw new TextGenerationError(provider, classifyTextGenerationError(error), onUserKey, error);
+  return { provider, model: ref.model, apiKey, onUserKey: isOnUserKey(provider, keys) };
+}
+
+/**
+ * The other hosts of `first`'s model to fail over to ({@link failoverModels}),
+ * in order: those the server has a key for that can do what's asked. A
+ * user's own key is only used the way they picked, but the server's back
+ * them up, whether or not users may pick that host (`model-failover.ts`).
+ */
+function textFailovers(first: TextCall, options: ChatCompletionOptions): TextCall[] {
+  return failoverModels(formatModelRef(first.provider, first.model)).flatMap((id) => {
+    const { provider, model } = parseModelRef(id);
+    const apiKey = getProviderApiKey(provider);
+    if (!apiKey || !isTextAiProvider(provider)) return [];
+    if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) return [];
+    return [{ provider, model, apiKey, onUserKey: false }];
+  });
+}
+
+/**
+ * Runs a single-turn chat completion on the referenced model and returns the
+ * response text (empty string if the model produced no text — callers decide
+ * how to handle that). If the provider fails (a key that's out of credit
+ * too), the model's other hosts are tried in turn ({@link textFailovers}).
+ *
+ * @throws Error if the provider is not configured, the model isn't allowed
+ *   on the server's key, or the provider can't do what's asked
+ * @throws TextGenerationError if the provider call fails (the first host's,
+ *   when every host failed)
+ */
+export async function generateChatCompletion(
+  ref: ModelRef,
+  keys: AiProviderKeys | undefined,
+  options: ChatCompletionOptions
+): Promise<string> {
+  const first = await textCall(ref, keys, options);
+  const calls = [first, ...textFailovers(first, options)];
+  let firstError: TextGenerationError | null = null;
+  for (const [index, call] of calls.entries()) {
+    try {
+      const text = await TEXT_PROVIDER_ADAPTERS[call.provider].complete(call, call.model, {
+        ...options,
+        reasoningEffort: supportsReasoningEffort(call.model) ? options.reasoningEffort : undefined,
+      });
+      if (index > 0) {
+        logger.info("Text failed over", {
+          model: formatModelRef(first.provider, first.model),
+          failoverModel: formatModelRef(call.provider, call.model),
+        });
+      }
+      return text;
+    } catch (cause) {
+      const error = new TextGenerationError(
+        call.provider,
+        classifyTextGenerationError(cause),
+        call.onUserKey,
+        cause
+      );
+      if (index === 0) {
+        firstError = error;
+      } else if (error.failure !== "busy") {
+        logger.warn("Text failover model failed", {
+          model: formatModelRef(call.provider, call.model),
+          error: error.message,
+        });
+      }
+    }
   }
+  throw firstError;
 }
 
 /**

@@ -64,6 +64,14 @@ export const AI_PROVIDER_INFO = {
     text: false,
     speech: true,
   },
+  together: {
+    displayName: "Together AI",
+    keyUrl: "https://api.together.ai/settings/api-keys",
+    keyPlaceholder: "Your Together AI API key",
+    privacyPolicyUrl: "https://www.together.ai/privacy",
+    text: false,
+    speech: true,
+  },
 } as const satisfies Record<string, AiProviderInfo>;
 
 export type AiProvider = keyof typeof AI_PROVIDER_INFO;
@@ -83,7 +91,7 @@ export function isTextAiProvider(provider: AiProvider): provider is TextAiProvid
   return AI_PROVIDER_INFO[provider].text;
 }
 
-function isSpeechProvider(provider: AiProvider): provider is SpeechProvider {
+export function isSpeechProvider(provider: AiProvider): provider is SpeechProvider {
   return AI_PROVIDER_INFO[provider].speech;
 }
 

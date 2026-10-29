@@ -1,7 +1,8 @@
 /**
  * Errors from the AI providers' HTTP APIs, which share their error shapes:
- * a message in `detail` (DeepInfra, BreezeBlue) or `error.message`
- * (OpenRouter and other OpenAI-compatible APIs).
+ * a message in `detail` (DeepInfra, BreezeBlue), `error.message`
+ * (OpenRouter and other OpenAI-compatible APIs) or `error` (Together, for
+ * some errors).
  */
 
 /**
@@ -73,9 +74,16 @@ export class ProviderRejectedError extends Error {
     /** The provider's name, for showing. */
     readonly provider: string,
     /** What the provider said, if anything. */
-    readonly detail: string | null
+    readonly detail: string | null,
+    /** The HTTP status it answered with. */
+    readonly status: number
   ) {
     super(message);
+  }
+
+  /** It refused the key (unauthorized, out of credit, forbidden), not the request. */
+  get refusedKey(): boolean {
+    return this.status === 401 || this.status === 402 || this.status === 403;
   }
 }
 
@@ -99,8 +107,16 @@ export async function providerError(
 ): Promise<Error> {
   let detail: string | null = null;
   try {
-    const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
-    const message = typeof body.detail === "string" ? body.detail : body.error?.message;
+    const body = (await response.json()) as {
+      detail?: unknown;
+      error?: string | { message?: unknown };
+    };
+    const message =
+      typeof body.detail === "string"
+        ? body.detail
+        : typeof body.error === "string"
+          ? body.error
+          : body.error?.message;
     if (typeof message === "string") detail = message.slice(0, 500);
   } catch {
     // Non-JSON error body; the status is enough.
@@ -111,7 +127,7 @@ export async function providerError(
     case "busy":
       return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
     case "rejected":
-      return new ProviderRejectedError(message, provider, detail);
+      return new ProviderRejectedError(message, provider, detail, status);
     case "failed":
       return new Error(message);
   }

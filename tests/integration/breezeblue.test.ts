@@ -410,12 +410,14 @@ describe("BreezeBlue speech", () => {
         { breezeblue: key },
         { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: null, text: "Hi." }
       );
-    await expect(speak(`broke-${randomUUID()}`)).rejects.toThrow(
-      new SpeechRejectedError("BreezeBlue refused the request: Insufficient credits")
-    );
-    await expect(speak(`refused-${randomUUID()}`)).rejects.toThrow(
-      new SpeechRejectedError("BreezeBlue refused the request: Invalid API key")
-    );
+    for (const [key, reason] of [
+      [`broke-${randomUUID()}`, "Insufficient credits"],
+      [`refused-${randomUUID()}`, "Invalid API key"],
+    ]) {
+      const refusal = speak(key);
+      await expect(refusal).rejects.toThrow(SpeechRejectedError);
+      await expect(refusal).rejects.toThrow(`BreezeBlue refused your API key: ${reason}`);
+    }
   });
 
   it("errors the audio, rather than ending it, when BreezeBlue stops partway", async () => {
@@ -446,7 +448,9 @@ describe("the speech route", () => {
         })
       );
       expect(res.status).toBe(422);
-      expect((await res.json()).message).toBe("BreezeBlue cloud voices aren't available right now");
+      const { message } = await res.json();
+      expect(message).toContain("server's BreezeBlue API key was refused");
+      expect(message).not.toContain("Invalid API key");
     } finally {
       delete process.env.BREEZEBLUE_API_KEY;
       await db.delete(users).where(eq(users.id, userId));

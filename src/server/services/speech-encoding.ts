@@ -89,6 +89,8 @@ export async function pcmFromWav(body: ReadableStream<Uint8Array>): Promise<PcmS
 /**
  * `data`, asked for as bare PCM in `format`: unless it's a WAV after all (some
  * models ignore the format asked for), whose header then says what it is.
+ * Answers once the first audio is in, and rejects a stream that ends without
+ * any, so the provider's request is what fails (and can fail over).
  */
 export async function pcmOrWav(
   data: ReadableStream<Uint8Array>,
@@ -101,6 +103,7 @@ export async function pcmOrWav(
     if (done) break;
     head = concat(head, value);
   }
+  if (head.length === 0) throw new Error("Speech audio was empty");
   const rest = prepend(head, reader);
   return new TextDecoder().decode(head.subarray(0, 4)) === "RIFF"
     ? pcmFromWav(rest)

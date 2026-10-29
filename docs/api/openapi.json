@@ -3235,7 +3235,8 @@
                           "cerebras",
                           "deepinfra",
                           "openrouter",
-                          "breezeblue"
+                          "breezeblue",
+                          "together"
                         ]
                       }
                     },
@@ -3248,7 +3249,8 @@
                           "cerebras",
                           "deepinfra",
                           "openrouter",
-                          "breezeblue"
+                          "breezeblue",
+                          "together"
                         ]
                       }
                     },
@@ -3375,7 +3377,8 @@
                         "cerebras",
                         "deepinfra",
                         "openrouter",
-                        "breezeblue"
+                        "breezeblue",
+                        "together"
                       ]
                     },
                     "additionalProperties": {
@@ -3440,7 +3443,8 @@
                           "cerebras",
                           "deepinfra",
                           "openrouter",
-                          "breezeblue"
+                          "breezeblue",
+                          "together"
                         ]
                       }
                     },
@@ -3453,7 +3457,8 @@
                           "cerebras",
                           "deepinfra",
                           "openrouter",
-                          "breezeblue"
+                          "breezeblue",
+                          "together"
                         ]
                       }
                     },
@@ -11750,7 +11755,8 @@
                             "enum": [
                               "deepinfra",
                               "openrouter",
-                              "breezeblue"
+                              "breezeblue",
+                              "together"
                             ]
                           },
                           "providerDisplayName": {
