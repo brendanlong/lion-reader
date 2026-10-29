@@ -24,7 +24,7 @@ const article: DemoArticle = {
       <li><strong>Notion</strong> &mdash; save a published Notion page and get the whole document, where a normal save gets a blank page.</li>
       <li><strong>Bluesky</strong> &mdash; follow any profile and see the quoted posts, images, and link previews that Bluesky&rsquo;s own feed leaves out.</li>
       <li><strong>GitHub</strong> &mdash; save a project or file and its README reads like a proper page.</li>
-      <li><strong>arXiv</strong> &mdash; save a paper from its abstract or PDF link and read arXiv&rsquo;s HTML version when there is one, instead of squinting at a PDF.</li>
+      <li><strong>arXiv</strong> &mdash; save a paper from its abstract or PDF link and read arXiv&rsquo;s HTML version, or the full PDF as <a href="/demo/all?entry=pdfs">flowing text</a> when there isn&rsquo;t one, with the title, authors, and abstract from arXiv.</li>
       <li><strong>LessWrong</strong> &mdash; follow an author&rsquo;s posts or a post&rsquo;s comment thread, with full text and properly displayed math.</li>
     </ul>
 
