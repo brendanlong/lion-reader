@@ -155,7 +155,9 @@ export async function fetchArxivPaper({
 async function fetchArxivPdf(url: string): Promise<{ pdf: Buffer; finalUrl: string } | null> {
   try {
     const fetched = await fetchArticle(url);
-    return fetched.format === "pdf" ? { pdf: fetched.pdf, finalUrl: fetched.finalUrl } : null;
+    if (fetched.format === "pdf") return { pdf: fetched.pdf, finalUrl: fetched.finalUrl };
+    logger.warn("ArXiv PDF URL served a page, falling back to the abstract page", { url });
+    return null;
   } catch (error) {
     if (error instanceof HttpFetchError && error.isRateLimited()) throw error;
     logger.warn("ArXiv PDF fetch failed, falling back to the abstract page", {
