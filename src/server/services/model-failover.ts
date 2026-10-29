@@ -2,9 +2,10 @@
  * `MODEL_FAILOVER`: groups of `provider:model` refs that are the same model on
  * different hosts, each in the order to try them, separated by `;`, e.g.
  * `deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b`.
- * A request for one that's busy or failing goes to the others in its group.
- * Listing a model here allows it on the server's key as a failover, even if
- * `SERVER_KEY_MODELS` doesn't let users pick it.
+ * A request for one that fails (busy, down, or its key refused) goes to the
+ * others in its group, on the server's keys: a user's own key is only used
+ * the way they picked. Listing a model here allows it on the server's key as
+ * a failover, even if `SERVER_KEY_MODELS` doesn't let users pick it.
  */
 
 import { normalizeModelRef } from "@/lib/ai/model-ref";

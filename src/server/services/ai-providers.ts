@@ -294,8 +294,9 @@ interface TextCall {
 }
 
 /**
- * The call for `ref`, or why it can't be made. A failover model is allowed on
- * the server's key whether or not users may pick it (`model-failover.ts`).
+ * The call for `ref` on `keys`, or why it can't be made. A failover (on the
+ * server's key) is allowed whether or not users may pick it
+ * (`model-failover.ts`).
  */
 async function textCall(
   ref: ModelRef,
@@ -326,27 +327,24 @@ async function textCall(
 
 /**
  * The other hosts of `first`'s model to fail over to ({@link failoverModels}),
- * in order: only those billed to whoever `first` is (the user's own key or
- * the server's) that can do what's asked.
+ * in order: those the server has a key for that can do what's asked. A
+ * user's own key is only used the way they picked, but the server's back
+ * them up.
  */
-async function textFailovers(
-  first: TextCall,
-  keys: AiProviderKeys | undefined,
-  options: ChatCompletionOptions
-): Promise<TextCall[]> {
+async function textFailovers(first: TextCall, options: ChatCompletionOptions): Promise<TextCall[]> {
   const calls = await Promise.all(
     failoverModels(formatModelRef(first.provider, first.model)).map((id) =>
-      textCall(parseModelRef(id), keys, options, true).catch(() => null)
+      textCall(parseModelRef(id), undefined, options, true).catch(() => null)
     )
   );
-  return calls.filter((call): call is TextCall => call?.onUserKey === first.onUserKey);
+  return calls.filter((call): call is TextCall => call !== null);
 }
 
 /**
  * Runs a single-turn chat completion on the referenced model and returns the
  * response text (empty string if the model produced no text — callers decide
- * how to handle that). If the provider fails other than by refusing, the
- * model's other hosts are tried in turn ({@link textFailovers}).
+ * how to handle that). If the provider fails (a key that's out of credit
+ * too), the model's other hosts are tried in turn ({@link textFailovers}).
  *
  * @throws Error if the provider is not configured, the model isn't allowed
  *   on the server's key, or the provider can't do what's asked
@@ -359,7 +357,7 @@ export async function generateChatCompletion(
   options: ChatCompletionOptions
 ): Promise<string> {
   const first = await textCall(ref, keys, options, false);
-  const calls = [first, ...(await textFailovers(first, keys, options))];
+  const calls = [first, ...(await textFailovers(first, options))];
   let firstError: TextGenerationError | null = null;
   for (const [index, call] of calls.entries()) {
     try {
@@ -382,7 +380,6 @@ export async function generateChatCompletion(
         cause
       );
       if (index === 0) {
-        if (error.failure === "rejected") throw error;
         firstError = error;
       } else if (error.failure !== "busy") {
         logger.warn("Text failover model failed", {

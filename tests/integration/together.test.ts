@@ -4,7 +4,7 @@
  * BreezeBlue.
  */
 
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
@@ -23,7 +23,7 @@ const FAILOVER = `${KOKORO}, ${ORPHEUS}, ${BREEZE}`;
 
 let server: Server;
 /** Speech requests, by the model asked for. */
-const requests: Array<{ model: string; path: string; body: unknown }> = [];
+const requests: Array<{ model: string; path: string; key: string; body: unknown }> = [];
 /** How many speech requests for a Together model to turn away as busy. */
 const busy = new Map<string, number>();
 /** BreezeBlue speech requests to turn away as busy. */
@@ -90,7 +90,8 @@ beforeAll(async () => {
         if (path === "/audio/speech") {
           const request = JSON.parse(body) as { model: string };
           const model = `together:${request.model}`;
-          requests.push({ model, path, body: request });
+          const key = String(req.headers.authorization).replace(/^Bearer /, "");
+          requests.push({ model, path, key, body: request });
           const turnAway = busy.get(model) ?? 0;
           if (turnAway > 0) {
             busy.set(model, turnAway - 1);
@@ -136,7 +137,8 @@ beforeAll(async () => {
           });
         }
         if (path.startsWith("/text-to-speech/")) {
-          requests.push({ model: BREEZE, path, body: JSON.parse(body) });
+          const key = String(req.headers["xi-api-key"]);
+          requests.push({ model: BREEZE, path, key, body: JSON.parse(body) });
           if (breezeBusy > 0) {
             breezeBusy--;
             return json({ detail: "Busy" }, 429);
@@ -183,8 +185,6 @@ afterEach(() => {
     delete process.env[name];
   }
 });
-
-const userKeys = () => ({ together: randomUUID(), breezeblue: randomUUID() });
 
 /** Says "Hi." as asked, returning which models were asked for it, in order. */
 async function speak(
@@ -244,16 +244,24 @@ describe("Together voices", () => {
 // Kokoro, Orpheus and BreezeBlue stand in for hosts of one model: the
 // stand-ins share af_bella, and only Kokoro has af_heart.
 describe("speech failover", () => {
+  beforeEach(() => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    process.env.BREEZEBLUE_API_KEY = "server-breezeblue";
+  });
+
   it("goes straight to the next host, in the same voice", async () => {
     busy.set(KOKORO, 1);
-    const asked = await speak(userKeys());
+    const asked = await speak({});
     expect(modelsOf(asked)).toEqual([KOKORO, ORPHEUS]);
     expect(asked[1].body).toMatchObject({ voice: "af_bella" });
   });
 
-  it("fails over when the host asked fails", async () => {
-    failing.set(KOKORO, "500");
-    expect(modelsOf(await speak(userKeys()))).toEqual([KOKORO, ORPHEUS]);
+  it.each([
+    ["fails", () => failing.set(KOKORO, "500")],
+    ["refuses, as for a key that's out of credit", () => refusing.add(KOKORO)],
+  ])("fails over when the host asked %s", async (_, setUp) => {
+    setUp();
+    expect(modelsOf(await speak({}))).toEqual([KOKORO, ORPHEUS]);
   });
 
   it("passes over a host that's busy, refuses or fails", async () => {
@@ -265,7 +273,7 @@ describe("speech failover", () => {
     ]) {
       busy.set(KOKORO, 1);
       passOver();
-      const asked = await speak(userKeys());
+      const asked = await speak({});
       expect(modelsOf(asked)).toEqual([KOKORO, ORPHEUS, BREEZE]);
       expect(asked[2].path).toBe("/text-to-speech/af_bella/stream");
       busy.clear();
@@ -274,11 +282,11 @@ describe("speech failover", () => {
     }
   });
 
-  it("doesn't fail over a request the host asked refused", async () => {
+  it("gives the first host's refusal when no host can say it", async () => {
+    process.env.MODEL_FAILOVER = `${KOKORO},${ORPHEUS}`;
     refusing.add(KOKORO);
-    const before = requests.length;
-    await expect(speak(userKeys())).rejects.toThrow(SpeechRejectedError);
-    expect(modelsOf(requests.slice(before))).toEqual([KOKORO]);
+    refusing.add(ORPHEUS);
+    await expect(speak({})).rejects.toThrow(SpeechRejectedError);
   });
 
   it.each([
@@ -288,11 +296,10 @@ describe("speech failover", () => {
   ])("waits out a busy host for %s", async (_, setUp, options) => {
     setUp();
     busy.set(KOKORO, 1);
-    expect(modelsOf(await speak(userKeys(), options))).toEqual([KOKORO, KOKORO]);
+    expect(modelsOf(await speak({}, options))).toEqual([KOKORO, KOKORO]);
   });
 
   it("fails over on the server's key to a model it doesn't let users pick", async () => {
-    process.env.TOGETHER_API_KEY = randomUUID();
     process.env.SERVER_KEY_MODELS = KOKORO;
     const { models } = await listSpeechModels({});
     expect(models.map((model) => model.id)).toEqual([KOKORO]);
@@ -301,18 +308,22 @@ describe("speech failover", () => {
     expect(modelsOf(await speak({}))).toEqual([KOKORO, ORPHEUS]);
   });
 
-  it("never fails over from the user's own key to the server's", async () => {
-    process.env.BREEZEBLUE_API_KEY = randomUUID();
+  it("backs the user's own key up with the server's", async () => {
     busy.set(KOKORO, 1);
-    busy.set(ORPHEUS, 1);
-    expect(modelsOf(await speak({ together: randomUUID() }))).toEqual([KOKORO, ORPHEUS, KOKORO]);
+    const asked = await speak({ together: "user-together" });
+    expect(asked.map(({ model, key }) => [model, key])).toEqual([
+      [KOKORO, "user-together"],
+      [ORPHEUS, "server-together"],
+    ]);
   });
 
-  it("never fails over from the server's key to the user's own", async () => {
-    process.env.MODEL_FAILOVER = `${BREEZE},${KOKORO}`;
-    process.env.BREEZEBLUE_API_KEY = randomUUID();
-    breezeBusy = 1;
-    const asked = await speak({ together: randomUUID() }, { model: BREEZE });
-    expect(modelsOf(asked)).toEqual([BREEZE, BREEZE]);
+  it("never fails over to another of the user's own keys", async () => {
+    delete process.env.TOGETHER_API_KEY;
+    busy.set(KOKORO, 1);
+    const asked = await speak({ together: "user-together", breezeblue: "user-breezeblue" });
+    expect(asked.map(({ model, key }) => [model, key])).toEqual([
+      [KOKORO, "user-together"],
+      [BREEZE, "server-breezeblue"],
+    ]);
   });
 });

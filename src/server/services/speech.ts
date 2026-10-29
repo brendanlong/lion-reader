@@ -566,34 +566,29 @@ interface SpeechCandidate {
 }
 
 /**
- * Where to say a chunk when `first` is busy or failing: the other hosts of
- * its model ({@link failoverModels}) that have the same voice, in order. Only
- * those billed to whoever `first` is (the user's own key or the server's), so
- * a busy host never charges the user's key for one they didn't pick, nor the
- * server's for a user who brought their own.
+ * Where to say a chunk when `first` fails: the other hosts of its model
+ * ({@link failoverModels}) that have the same voice, in order, on the
+ * server's keys. A user's own key is only used the way they picked, but the
+ * server's back them up.
  */
 function failoverCandidates(
   failover: SpeechModel[],
-  keys: AiProviderKeys,
   first: SpeechModel,
   voice: string
 ): SpeechCandidate[] {
-  const onUserKey = isOnUserKey(first.provider, keys);
   return failoverModels(first.id).flatMap((id): SpeechCandidate[] => {
     const model = failover.find((candidate) => candidate.id === id);
-    const apiKey = model && getProviderApiKey(model.provider, keys);
+    const apiKey = model && getProviderApiKey(model.provider);
     if (!model || !apiKey || !hasVoice(model, voice)) return [];
-    if (isOnUserKey(model.provider, keys) !== onUserKey) return [];
     return [{ model, voice, apiKey }];
   });
 }
 
 /**
- * The first of `candidates` to start speaking `text`. Only the first
- * candidate refusing (a bad key, a text it won't take) ends it, since that's
- * the user's to act on; anything else from it, or any failure of a failover,
- * moves on to the next. If none answers, the first candidate's error is
- * thrown: a busy one is then waited out as before.
+ * The first of `candidates` to start speaking `text`, each failure (a key
+ * that's out of credit too) moving on to the next. If none answers, the
+ * first candidate's error is thrown: a busy one is then waited out as before,
+ * and a refusal is the user's to act on.
  */
 async function speakWithFirstFree(
   candidates: SpeechCandidate[],
@@ -617,7 +612,6 @@ async function speakWithFirstFree(
       signal.throwIfAborted();
       const failure = classifyProviderError(error);
       if (index === 0) {
-        if (failure === "rejected") throw error;
         firstError = error;
       } else if (failure !== "busy") {
         logger.warn("Speech failover model failed", {
@@ -671,7 +665,7 @@ export async function streamSpeech(
   }
   const candidates = [
     { model, voice, apiKey },
-    ...(options.exact ? [] : failoverCandidates(catalog.failover, keys, model, voice)),
+    ...(options.exact ? [] : failoverCandidates(catalog.failover, model, voice)),
   ];
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
