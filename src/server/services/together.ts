@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
-import type { PcmStream } from "@/server/services/speech-encoding";
+import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
 import { CatalogCache } from "@/server/services/catalog-cache";
 
@@ -140,7 +140,10 @@ function pcmFromEvents(events: ReadableStream<Uint8Array>): ReadableStream<Uint8
   );
 }
 
-/** Speech as 16-bit PCM, streamed as it's generated. */
+/**
+ * Speech as 16-bit PCM, streamed as it's generated. Answers once the first
+ * audio is in, so an error the stream sends before any is this request's.
+ */
 export async function togetherSpeech(
   apiKey: string,
   model: string,
@@ -163,5 +166,5 @@ export async function togetherSpeech(
     }),
   });
   if (!response.ok || !response.body) throw await providerError("Together", response);
-  return { ...PCM_FORMAT, data: pcmFromEvents(response.body) };
+  return pcmOrWav(pcmFromEvents(response.body), PCM_FORMAT);
 }

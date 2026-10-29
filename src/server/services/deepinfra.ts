@@ -261,18 +261,16 @@ export async function deepInfraSpeech(
   input: string,
   signal: AbortSignal
 ): Promise<PcmStream> {
-  const [speech, probed] = await Promise.allSettled([
-    requestSpeech(apiKey, model, voice, input, "pcm", signal),
-    pcmFormatOf(apiKey, model, voice),
-  ]);
-  if (speech.status === "rejected") throw speech.reason;
-  const response = speech.value;
+  const probe = pcmFormatOf(apiKey, model, voice);
+  // Awaited once there's speech; a refused or busy request doesn't wait for it.
+  probe.catch(() => {});
+  const response = await requestSpeech(apiKey, model, voice, input, "pcm", signal);
   if (!response.ok || !response.body) throw await providerError("DeepInfra", response);
   let format: PcmFormat;
   try {
     // The probe may have been someone else's, failing for their key: once
     // more on ours (the failed one is gone from the cache by now).
-    format = probed.status === "fulfilled" ? probed.value : await pcmFormatOf(apiKey, model, voice);
+    format = await probe.catch(() => pcmFormatOf(apiKey, model, voice));
   } catch (error) {
     await response.body.cancel();
     throw error;

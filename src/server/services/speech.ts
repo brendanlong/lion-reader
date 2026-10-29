@@ -604,9 +604,11 @@ function failoverCandidates(
 }
 
 /**
- * The first of `candidates` that isn't busy, speaking `text`. A failover
- * that fails otherwise is logged and passed over; if none answers, the first
- * candidate's error is thrown, so it's waited out as before.
+ * The first of `candidates` to start speaking `text`. Only the first
+ * candidate refusing (a bad key, a text it won't take) ends it, since that's
+ * the user's to act on; anything else from it, or any failure of a failover,
+ * moves on to the next. If none answers, the first candidate's error is
+ * thrown: a busy one is then waited out as before.
  */
 async function speakWithFirstFree(
   candidates: SpeechCandidate[],
@@ -628,10 +630,11 @@ async function speakWithFirstFree(
       return { candidate, pcm };
     } catch (error) {
       signal.throwIfAborted();
+      const failure = classifyProviderError(error);
       if (index === 0) {
-        if (classifyProviderError(error) !== "busy") throw error;
+        if (failure === "rejected") throw error;
         firstError = error;
-      } else if (classifyProviderError(error) !== "busy") {
+      } else if (failure !== "busy") {
         logger.warn("Speech failover model failed", {
           model: model.id,
           error: error instanceof Error ? error.message : String(error),
@@ -645,7 +648,7 @@ async function speakWithFirstFree(
 /** What {@link streamSpeech} answers. */
 export interface SpokenSpeech {
   audio: ReadableStream<Uint8Array>;
-  /** The failover model that said it, when the one asked for was busy. */
+  /** The failover model that said it, when the one asked for was busy or failing. */
   failoverModel: string | null;
 }
 
@@ -655,9 +658,10 @@ export interface SpokenSpeech {
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request. A
- * provider that's busy is passed over for the next of
- * {@link failoverCandidates} at once, and when all are, they're asked again
- * for a while ({@link speakWhenFree}). An `exact` request never fails over.
+ * provider that's busy or failing is passed over for the next of
+ * {@link failoverCandidates} at once ({@link speakWithFirstFree}), and when
+ * all are busy, they're asked again for a while ({@link speakWhenFree}). An
+ * `exact` request never fails over.
  */
 export async function streamSpeech(
   keys: AiProviderKeys,

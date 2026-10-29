@@ -34,6 +34,8 @@ const requests: Array<{ model: string; path: string; body: unknown }> = [];
 const busy = new Map<string, number>();
 /** Together models that refuse speech requests. */
 const refusing = new Set<string>();
+/** Together models whose speech requests fail: a 500, or an error event before any audio. */
+const failing = new Map<string, "500" | "event">();
 const saved = new Map<string, string | undefined>();
 
 /** A quarter second of sound at 24 kHz mono, 16-bit. */
@@ -98,6 +100,12 @@ beforeAll(async () => {
             busy.set(model, turnAway - 1);
             return json({ error: { message: "Model busy", type: "rate_limit" } }, 429);
           }
+          if (failing.get(model) === "500") return json({ error: "Internal error" }, 500);
+          if (failing.get(model) === "event") {
+            res.writeHead(200, { "Content-Type": "text/event-stream" });
+            res.end(`data: ${JSON.stringify({ error: { message: "Model busy" } })}\n\n`);
+            return;
+          }
           if (refusing.has(model)) {
             // What Together answers for a model it serves only on a dedicated endpoint.
             return json({ error: { message: "Unable to access non-serverless model" } }, 400);
@@ -156,6 +164,7 @@ afterAll(async () => {
 afterEach(() => {
   busy.clear();
   refusing.clear();
+  failing.clear();
   process.env.SPEECH_FAILOVER_MODELS = FAILOVER;
   for (const name of ["SERVER_KEY_MODELS", "TOGETHER_API_KEY", "BREEZEBLUE_API_KEY"]) {
     delete process.env[name];
@@ -227,8 +236,18 @@ describe("speech failover", () => {
     expect(asked[1].body).toMatchObject({ voice: "af_bella" });
   });
 
-  it("passes over a busy or refusing failover, to the model's default voice", async () => {
-    for (const passOver of [() => busy.set(ORPHEUS, 1), () => refusing.add(ORPHEUS)]) {
+  it("fails over when the model asked for fails", async () => {
+    failing.set(KOKORO, "500");
+    const { failoverModel } = await speak(userKeys());
+    expect(failoverModel).toBe(ORPHEUS);
+  });
+
+  it("passes over a failover that's busy, refuses or fails, to the model's default voice", async () => {
+    for (const passOver of [
+      () => busy.set(ORPHEUS, 1),
+      () => refusing.add(ORPHEUS),
+      () => failing.set(ORPHEUS, "event"),
+    ]) {
       busy.set(KOKORO, 1);
       passOver();
       const { failoverModel, asked } = await speak(userKeys());
@@ -238,6 +257,7 @@ describe("speech failover", () => {
       expect(asked[2].path).toBe("/text-to-speech/elara/stream");
       busy.clear();
       refusing.clear();
+      failing.clear();
     }
   });
 
