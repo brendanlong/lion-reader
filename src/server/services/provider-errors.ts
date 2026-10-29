@@ -74,9 +74,16 @@ export class ProviderRejectedError extends Error {
     /** The provider's name, for showing. */
     readonly provider: string,
     /** What the provider said, if anything. */
-    readonly detail: string | null
+    readonly detail: string | null,
+    /** The HTTP status it answered with. */
+    readonly status: number
   ) {
     super(message);
+  }
+
+  /** It refused the key (unauthorized, out of credit, forbidden), not the request. */
+  get refusedKey(): boolean {
+    return this.status === 401 || this.status === 402 || this.status === 403;
   }
 }
 
@@ -120,7 +127,7 @@ export async function providerError(
     case "busy":
       return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
     case "rejected":
-      return new ProviderRejectedError(message, provider, detail);
+      return new ProviderRejectedError(message, provider, detail, status);
     case "failed":
       return new Error(message);
   }

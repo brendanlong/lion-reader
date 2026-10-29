@@ -12,6 +12,7 @@ import {
   toSpeechModels,
 } from "@/server/services/speech";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import type { AiProviderKeys } from "@/server/services/ai-providers";
 import type { SpeechProvider } from "@/lib/ai/providers";
 import {
   canNarrate,
@@ -300,20 +301,34 @@ describe("resolveSpeechModel", () => {
     );
   });
 
-  it("passes on a provider refusing the key, with its reason only on the user's own key", () => {
-    const refused = new ProviderRejectedError("402", "OpenRouter", "Insufficient credits");
-    expect(() =>
-      resolveSpeechModel(
-        catalog([], ["openrouter"], refused),
-        { openrouter: "o" },
-        OPENROUTER_KOKORO,
-        null
-      )
-    ).toThrow(new SpeechRejectedError("OpenRouter refused the request: Insufficient credits"));
-    process.env.OPENROUTER_API_KEY = "or-server";
-    expect(() =>
-      resolveSpeechModel(catalog([], ["openrouter"], refused), {}, OPENROUTER_KOKORO, null)
-    ).toThrow(new SpeechRejectedError("OpenRouter cloud voices aren't available right now"));
+  describe("a provider refusing", () => {
+    const refusal = (keys: AiProviderKeys, status = 402) => {
+      const refused = new ProviderRejectedError("", "OpenRouter", "Insufficient credits", status);
+      try {
+        resolveSpeechModel(catalog([], ["openrouter"], refused), keys, OPENROUTER_KOKORO, null);
+      } catch (error) {
+        expect(error).toBeInstanceOf(SpeechRejectedError);
+        return (error as Error).message;
+      }
+      throw new Error("Not refused");
+    };
+
+    it("says it was the user's own key, and why", () => {
+      const message = refusal({ openrouter: "o" });
+      expect(message).toContain("your API key");
+      expect(message).toContain("Insufficient credits");
+    });
+
+    it("says it was the server's key, keeping the operator's account private", () => {
+      process.env.OPENROUTER_API_KEY = "or-server";
+      const message = refusal({});
+      expect(message).toContain("server's OpenRouter API key");
+      expect(message).not.toContain("Insufficient credits");
+    });
+
+    it("doesn't blame a key for a refused request", () => {
+      expect(refusal({ openrouter: "o" }, 400)).not.toContain("key");
+    });
   });
 
   it("needs a provider, and names them", () => {

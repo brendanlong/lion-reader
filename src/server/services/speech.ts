@@ -478,9 +478,9 @@ export function speechErrorAnswer(
 }
 
 /**
- * What to tell the user about a provider refusing: on their own key, what the
- * provider said (a bad key, no credit), which they can act on; on the
- * server's, nothing about the operator's account.
+ * What to tell the user about a provider refusing, saying whose key it was
+ * and what they can do: on their own key, what the provider said (a bad key,
+ * no credit); on the server's, nothing about the operator's account.
  */
 function speechRejection(
   provider: SpeechProvider,
@@ -489,12 +489,17 @@ function speechRejection(
 ): SpeechRejectedError {
   const name = aiProviderName(provider);
   if (!isOnUserKey(provider, keys)) {
-    return new SpeechRejectedError(`${name} cloud voices aren't available right now`);
+    return new SpeechRejectedError(
+      error.refusedKey
+        ? `This server's ${name} API key was refused, so its voices can't be used. Pick another cloud voice, or add your own ${name} API key in Settings.`
+        : `${name} refused the request. Try another cloud voice in Settings.`
+    );
   }
+  const said = error.detail ? `: ${error.detail}` : "";
   return new SpeechRejectedError(
-    error.detail
-      ? `${name} refused the request: ${error.detail}`
-      : `${name} refused the request; check your ${name} API key`
+    error.refusedKey
+      ? `${name} refused your API key${said}. Check your ${name} account, or change the key in Settings.`
+      : `${name} refused the request${said}`
   );
 }
 
