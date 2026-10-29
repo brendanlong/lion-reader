@@ -113,8 +113,13 @@ describe("fetchArxivPaper", () => {
     // rather than the PDF's Info dictionary.
     const fields = await buildArticleFields(
       await articleContentFromAcquired(
-        { kind: "pdf", pdf: result.pdf, finalUrl: result.finalUrl, plugin: result },
-        { offload: true }
+        {
+          kind: "pdf",
+          pdf: result.pdf,
+          finalUrl: result.finalUrl,
+          plugin: { title: result.title, author: result.author, excerpt: result.excerpt },
+        },
+        { offload: true, pdfImages: true }
       ),
       {},
       { objectsPrefix: "uploads/test/" }

@@ -94,7 +94,7 @@ interface PluginArticle {
 }
 
 /** A PDF, fetched generically or by a plugin. */
-interface PdfArticle {
+interface FetchedPdf {
   kind: "pdf";
   pdf: Buffer;
   finalUrl: string;
@@ -102,7 +102,7 @@ interface PdfArticle {
   plugin?: Omit<SavedArticlePdf, "pdf" | "finalUrl"> & { siteName?: string };
 }
 
-export type AcquiredArticle = PluginArticle | ({ kind: "page" } & FetchHtmlPageResult) | PdfArticle;
+export type AcquiredArticle = PluginArticle | ({ kind: "page" } & FetchHtmlPageResult) | FetchedPdf;
 
 export interface AcquireArticleOptions {
   /** The saving user, for plugins that can fetch with their credentials. */
