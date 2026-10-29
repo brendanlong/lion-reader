@@ -26,9 +26,3 @@ export function failoverModels(modelRef: string): string[] {
   const group = failoverGroups().find((models) => models.includes(ref)) ?? [];
   return group.filter((model) => model !== ref);
 }
-
-/** Whether `modelRef` is in any failover group. */
-export function isFailoverModel(modelRef: string): boolean {
-  const ref = normalizeModelRef(modelRef);
-  return failoverGroups().some((models) => models.includes(ref));
-}

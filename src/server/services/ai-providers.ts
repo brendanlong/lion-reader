@@ -293,16 +293,11 @@ interface TextCall {
   onUserKey: boolean;
 }
 
-/**
- * The call for `ref` on `keys`, or why it can't be made. A failover (on the
- * server's key) is allowed whether or not users may pick it
- * (`model-failover.ts`).
- */
+/** The call for `ref` on `keys`, or why it can't be made. */
 async function textCall(
   ref: ModelRef,
   keys: AiProviderKeys | undefined,
-  options: ChatCompletionOptions,
-  asFailover: boolean
+  options: ChatCompletionOptions
 ): Promise<TextCall> {
   const provider = ref.provider;
   if (!isTextAiProvider(provider)) {
@@ -316,7 +311,7 @@ async function textCall(
     throw new Error(`${aiProviderName(provider)} API key not configured`);
   }
   const modelRef = formatModelRef(provider, ref.model);
-  if (!asFailover && !(await isTextModelAllowed(modelRef, keys))) {
+  if (!(await isTextModelAllowed(modelRef, keys))) {
     throw new Error(`${modelRef} isn't allowed on the server's ${aiProviderName(provider)} key`);
   }
   if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) {
@@ -329,15 +324,16 @@ async function textCall(
  * The other hosts of `first`'s model to fail over to ({@link failoverModels}),
  * in order: those the server has a key for that can do what's asked. A
  * user's own key is only used the way they picked, but the server's back
- * them up.
+ * them up, whether or not users may pick that host (`model-failover.ts`).
  */
-async function textFailovers(first: TextCall, options: ChatCompletionOptions): Promise<TextCall[]> {
-  const calls = await Promise.all(
-    failoverModels(formatModelRef(first.provider, first.model)).map((id) =>
-      textCall(parseModelRef(id), undefined, options, true).catch(() => null)
-    )
-  );
-  return calls.filter((call): call is TextCall => call !== null);
+function textFailovers(first: TextCall, options: ChatCompletionOptions): TextCall[] {
+  return failoverModels(formatModelRef(first.provider, first.model)).flatMap((id) => {
+    const { provider, model } = parseModelRef(id);
+    const apiKey = getProviderApiKey(provider);
+    if (!apiKey || !isTextAiProvider(provider)) return [];
+    if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) return [];
+    return [{ provider, model, apiKey, onUserKey: false }];
+  });
 }
 
 /**
@@ -356,8 +352,8 @@ export async function generateChatCompletion(
   keys: AiProviderKeys | undefined,
   options: ChatCompletionOptions
 ): Promise<string> {
-  const first = await textCall(ref, keys, options, false);
-  const calls = [first, ...(await textFailovers(first, options))];
+  const first = await textCall(ref, keys, options);
+  const calls = [first, ...textFailovers(first, options)];
   let firstError: TextGenerationError | null = null;
   for (const [index, call] of calls.entries()) {
     try {

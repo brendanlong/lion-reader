@@ -71,15 +71,15 @@ describe("OpenRouter speech models", () => {
   it("lists every model with voices on the user's own key, priced per character", () => {
     const models = openRouterModels({ openrouter: "o" });
     expect(models.map((model) => model.id)).toEqual([
-      "openrouter:google/gemini-3.8-flash-tts",
       "openrouter:hexgrad/kokoro-82m",
       "openrouter:minimax/speech-2.8-hd",
+      "openrouter:google/gemini-3.8-flash-tts",
     ]);
-    expect(models[1].pricePerMillionCharacters).toBe(4);
+    expect(models[0].pricePerMillionCharacters).toBe(4);
   });
 
   it("omits the per-character price for models that also bill generated audio", () => {
-    const [gemini] = openRouterModels({ openrouter: "o" });
+    const [, , gemini] = openRouterModels({ openrouter: "o" });
     expect(gemini.pricePerMillionCharacters).toBeUndefined();
   });
 
@@ -100,7 +100,7 @@ describe("OpenRouter speech models", () => {
 
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
-    const [, kokoro, minimax] = openRouterModels({ openrouter: "o" });
+    const [kokoro, minimax] = openRouterModels({ openrouter: "o" });
     expect(defaultVoiceFor(kokoro)).toBe(DEFAULT_CLOUD_VOICES[OPENROUTER_KOKORO]);
     expect(defaultVoiceFor(minimax)).toBe("English_expressive_narrator");
   });

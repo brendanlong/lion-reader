@@ -91,7 +91,7 @@ export function isTextAiProvider(provider: AiProvider): provider is TextAiProvid
   return AI_PROVIDER_INFO[provider].text;
 }
 
-function isSpeechProvider(provider: AiProvider): provider is SpeechProvider {
+export function isSpeechProvider(provider: AiProvider): provider is SpeechProvider {
   return AI_PROVIDER_INFO[provider].speech;
 }
 
