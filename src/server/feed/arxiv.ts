@@ -70,6 +70,10 @@ export function buildArxivAbsUrl(paperId: string): string {
   return `https://arxiv.org/abs/${paperId}`;
 }
 
+export function buildArxivPdfUrl(paperId: string): string {
+  return `https://arxiv.org/pdf/${paperId}`;
+}
+
 // ============================================================================
 // Paper metadata (title / abstract / authors)
 // ============================================================================

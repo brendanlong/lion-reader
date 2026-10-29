@@ -116,10 +116,10 @@ export interface FeedTitleContext {
 
 export interface SavedArticleCapability {
   /**
-   * Fetch content for a saved article.
-   * Return null to fall back to normal fetching.
+   * Fetch content for a saved article: HTML, or a PDF to convert like any
+   * other. Return null to fall back to normal fetching.
    */
-  fetchContent(url: URL): Promise<SavedArticleContent | null>;
+  fetchContent(url: URL): Promise<SavedArticleContent | SavedArticlePdf | null>;
 
   /**
    * Fetch content with the saving user's own credentials for the source (e.g.
@@ -204,6 +204,17 @@ export interface SavedArticleContent {
    * resolve them itself before returning (see `github.ts`).
    */
   canonicalUrl?: string;
+}
+
+/**
+ * A PDF a plugin fetched, converted the way the generic fetch converts one
+ * (Readability skipped), with the plugin's metadata preferred over the
+ * document's own.
+ */
+export interface SavedArticlePdf extends Pick<SavedArticleContent, "title" | "author" | "excerpt"> {
+  pdf: Buffer;
+  /** Where the PDF was fetched from, after redirects. */
+  finalUrl: string;
 }
 
 // ============ Email Link Capability ============

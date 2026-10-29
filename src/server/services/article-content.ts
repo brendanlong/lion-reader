@@ -81,10 +81,11 @@ export async function articleContentFromAcquired(
 
   if (acquired.kind === "pdf") {
     const pdf = await convertPdfToArticle(acquired.pdf);
+    const { plugin } = acquired;
     return {
       html: pdf.html,
       contentUrl: acquired.finalUrl,
-      pluginContent: null,
+      pluginContent: plugin ? { ...plugin, html: pdf.html } : null,
       preCleanedContent: {
         title: pdf.title ?? titleFromUrl(acquired.finalUrl),
         summary: pdf.summary,
