@@ -124,7 +124,6 @@ fun ReaderWebView(
                             scrolled = it.scrollIndicator
                         }
                         .apply {
-                            onLinkLongPress = { linkPress = it }
                             // For our scripts; the CSP keeps anything else from running.
                             @SuppressLint("SetJavaScriptEnabled")
                             settings.javaScriptEnabled = true
@@ -179,6 +178,8 @@ fun ReaderWebView(
                     view.pageScrolling = paging.swipes
                     view.highlight(narration.paragraph, narration.autoScroll)
                     view.onListenFrom = narration.onListenFrom
+                    // Here, not in the factory: each article has its own linkPress.
+                    view.onLinkLongPress = { linkPress = it }
                     if (view.drawn == content) onDrawn()
                 },
                 onRelease = { it.destroy() },
