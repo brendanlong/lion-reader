@@ -19,7 +19,9 @@ import com.lionreader.shared.data.EntryDetail
 internal class ArticlePages(shownSummaries: Set<String> = emptySet()) {
     private val entries = mutableStateMapOf<String, EntryDetail>()
     private val spoken = mutableStateMapOf<String, List<String>>()
-    /** Summaries the user asked to see; hidden until then, like on the web. Kept across rotation. */
+    /**
+     * Summaries the user asked to see; hidden until then, like on the web. Kept across rotation.
+     */
     var shownSummaries by mutableStateOf(shownSummaries)
         private set
 
