@@ -36,7 +36,7 @@ class ArticlePagesTest {
 
     @Test
     fun summarizingStartsOnceAndShowsTheSummary() {
-        val pages = ArticlePages(hiddenSummaries = setOf("a"))
+        val pages = ArticlePages()
         assertTrue(pages.startSummarizing("a"))
         assertFalse(pages.startSummarizing("a"))
         assertTrue(pages.isSummarizing("a"))
@@ -48,14 +48,15 @@ class ArticlePagesTest {
     }
 
     @Test
-    fun summariesToggleAndTheHiddenOnesAreSaved() {
+    fun summariesStartHiddenToggleAndTheShownOnesAreSaved() {
         val pages = ArticlePages()
-        pages.toggleSummary("a")
         assertFalse(pages.summaryShown("a"))
+        pages.toggleSummary("a")
+        assertTrue(pages.summaryShown("a"))
 
-        val restored = ArticlePages(pages.hiddenSummaries)
-        assertFalse(restored.summaryShown("a"))
-        restored.toggleSummary("a")
+        val restored = ArticlePages(pages.shownSummaries)
         assertTrue(restored.summaryShown("a"))
+        restored.toggleSummary("a")
+        assertFalse(restored.summaryShown("a"))
     }
 }
