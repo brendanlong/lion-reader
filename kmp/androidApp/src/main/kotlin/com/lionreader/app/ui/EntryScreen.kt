@@ -375,7 +375,7 @@ internal fun EntryScreen(
                         pageId,
                         opened?.opening,
                         tokens,
-                        showSummary = pageId == null || articles.summaryShown(pageId),
+                        showSummary = pageId != null && articles.summaryShown(pageId),
                         onEntry = articles::loaded,
                         narration =
                             ReaderNarration(

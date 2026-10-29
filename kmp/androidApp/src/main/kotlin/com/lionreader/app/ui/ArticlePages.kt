@@ -16,11 +16,13 @@ import com.lionreader.shared.data.EntryDetail
  * its reader extracted to narrate, and its summary's state.
  */
 @Stable
-internal class ArticlePages(hiddenSummaries: Set<String> = emptySet()) {
+internal class ArticlePages(shownSummaries: Set<String> = emptySet()) {
     private val entries = mutableStateMapOf<String, EntryDetail>()
     private val spoken = mutableStateMapOf<String, List<String>>()
-    /** Summaries the user hid; kept across rotation. */
-    var hiddenSummaries by mutableStateOf(hiddenSummaries)
+    /**
+     * Summaries the user asked to see; hidden until then, like on the web. Kept across rotation.
+     */
+    var shownSummaries by mutableStateOf(shownSummaries)
         private set
 
     private var summarizing by mutableStateOf(emptySet<String>())
@@ -43,19 +45,19 @@ internal class ArticlePages(hiddenSummaries: Set<String> = emptySet()) {
         spoken[id] = paragraphs
     }
 
-    fun summaryShown(id: String): Boolean = id !in hiddenSummaries
+    fun summaryShown(id: String): Boolean = id in shownSummaries
 
     fun isSummarizing(id: String): Boolean = id in summarizing
 
     fun toggleSummary(id: String) {
-        hiddenSummaries = if (id in hiddenSummaries) hiddenSummaries - id else hiddenSummaries + id
+        shownSummaries = if (id in shownSummaries) shownSummaries - id else shownSummaries + id
     }
 
     /** Whether to start summarizing [id]: not if it already is. Its summary shows when done. */
     fun startSummarizing(id: String): Boolean {
         if (id in summarizing) return false
         summarizing += id
-        hiddenSummaries -= id
+        shownSummaries += id
         return true
     }
 
@@ -66,7 +68,7 @@ internal class ArticlePages(hiddenSummaries: Set<String> = emptySet()) {
     companion object {
         val saver: Saver<ArticlePages, ArrayList<String>> =
             Saver(
-                save = { ArrayList(it.hiddenSummaries) },
+                save = { ArrayList(it.shownSummaries) },
                 restore = { ArticlePages(it.toSet()) },
             )
     }
