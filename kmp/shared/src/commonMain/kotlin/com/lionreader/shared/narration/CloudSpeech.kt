@@ -24,9 +24,11 @@ class CloudSpeechAnswers {
 }
 
 /**
- * Streams [text] in [model]'s [voice] to [onAudio]. Until audio starts, trouble is retried and
- * sorted into the [SpeechException]s; once it has, a failure is the player's to handle, so it's
- * thrown as is. Any other exception means this text can't be said, so the narrator skips it.
+ * Streams [text] in [model]'s [voice] to [onAudio], returning the model the server failed over to
+ * if it said it in another (see [LionReaderApi.streamSpeech]). Until audio starts, trouble is
+ * retried and sorted into the [SpeechException]s; once it has, a failure is the player's to handle,
+ * so it's thrown as is. Any other exception means this text can't be said, so the narrator skips
+ * it.
  */
 suspend fun streamCloudSpeech(
     api: LionReaderApi,
@@ -37,7 +39,7 @@ suspend fun streamCloudSpeech(
     pauseSeconds: Float,
     answers: CloudSpeechAnswers,
     onAudio: suspend (ByteArray) -> Unit,
-) {
+): String? {
     val answeredBefore = answers.value
     var wait = 1_000L
     var serverTrouble = false
@@ -45,12 +47,11 @@ suspend fun streamCloudSpeech(
     for (attempt in 1..CLOUD_SPEECH_ATTEMPTS) {
         var started = false
         try {
-            api.streamSpeech(model, voice, text, pauseSeconds) { bytes ->
+            return api.streamSpeech(model, voice, text, pauseSeconds) { bytes ->
                 if (!started) answers.increment()
                 started = true
                 onAudio(bytes)
             }
-            return
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

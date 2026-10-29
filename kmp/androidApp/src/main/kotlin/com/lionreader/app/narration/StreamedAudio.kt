@@ -46,11 +46,11 @@ class StreamedAudio(file: File) {
 
     /**
      * All of it is written: moves it to [to] (readers already open read on), or leaves it where it
-     * is if it can't.
+     * is if it can't or there's none.
      */
-    fun finish(to: File) =
+    fun finish(to: File?) =
         synchronized(lock) {
-            if (file.renameTo(to)) file = to
+            if (to != null && file.renameTo(to)) file = to
             finished = true
             lock.notifyAll()
         }

@@ -151,8 +151,10 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     /**
      * Speaks [text] (at most [ServerLimits.CLOUD_SPEECH_CHARS]) with a cloud voice, handing
-     * [onAudio] the audio (AAC in fragmented MP4) as the server streams it. Throws [ApiException]
-     * for an error answer; a failure once audio has started throws from reading it.
+     * [onAudio] the audio (AAC in fragmented MP4) as the server streams it. Returns the model the
+     * server failed over to if the one asked for was busy ([SPEECH_FAILOVER_HEADER]), else null.
+     * Throws [ApiException] for an error answer; a failure once audio has started throws from
+     * reading it.
      */
     suspend fun streamSpeech(
         model: String,
@@ -160,7 +162,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         text: String,
         pauseSeconds: Float,
         onAudio: suspend (ByteArray) -> Unit,
-    ) = withToken { token, canRetry ->
+    ): String? = withToken { token, canRetry ->
         http
             .prepareRequest {
                 method = HttpMethod.Post
@@ -191,6 +193,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                     if (read < 0) break
                     if (read > 0) onAudio(buffer.copyOf(read))
                 }
+                response.headers[SPEECH_FAILOVER_HEADER]
             }
     }
 

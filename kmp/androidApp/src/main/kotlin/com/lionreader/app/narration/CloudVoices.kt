@@ -51,10 +51,10 @@ class CloudSpeechRequests {
  * Cloud voices (Kokoro and friends through the server's `/narration/speech`, on the user's or the
  * server's provider key). Each chunk streams: [synthesize] answers as soon as the first audio is
  * in, and the player reads the rest as it arrives ([StreamedAudio]). Audio is cached on disk by
- * model, voice, pause and text, so listening again doesn't pay again; the cache is trimmed to
- * [cacheBytes], least recently used first. Requests run in [scope], not the caller's: every request
- * is paid for, so one the narrator stops waiting for (the user skipped past it) still finishes into
- * the cache.
+ * model, voice, pause and text, so listening again doesn't pay again (except what a failover model
+ * said, which isn't that voice); the cache is trimmed to [cacheBytes], least recently used first.
+ * Requests run in [scope], not the caller's: every request is paid for, so one the narrator stops
+ * waiting for (the user skipped past it) still finishes into the cache.
  */
 class CloudVoices(
     private val api: LionReaderApi,
@@ -104,15 +104,16 @@ class CloudVoices(
         scope.launch(io, CoroutineStart.LAZY) {
             var writer: CacheWriter? = null
             try {
-                requests.streams.withPermit {
-                    request(text) { bytes ->
-                        val into = writer ?: CacheWriter(cached).also { writer = it }
-                        into.write(bytes)
-                        started.complete(into.audio)
+                val failover =
+                    requests.streams.withPermit {
+                        request(text) { bytes ->
+                            val into = writer ?: CacheWriter(cached).also { writer = it }
+                            into.write(bytes)
+                            started.complete(into.audio)
+                        }
                     }
-                }
                 val done = writer ?: throw IOException("The cloud voice sent no audio")
-                started.complete(done.finish())
+                started.complete(done.finish(keep = failover == null))
                 requests.inFlight.remove(key, started)
                 trim()
             } catch (e: Throwable) {
@@ -140,10 +141,11 @@ class CloudVoices(
             audio.appended(bytes.size)
         }
 
-        fun finish(): StreamedAudio {
+        /** Done: into the cache if [keep], else left to be trimmed once played. */
+        fun finish(keep: Boolean): StreamedAudio {
             out.close()
             // Not cached if it can't be moved, but it plays from where it is.
-            audio.finish(cached)
+            audio.finish(cached.takeIf { keep })
             return audio
         }
 

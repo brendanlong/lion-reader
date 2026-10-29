@@ -44,3 +44,9 @@ object CloudSpeechPause {
     /** The settings slider's step. */
     const val STEP_SECONDS = 0.05f
 }
+
+/**
+ * The `/narration/speech` response header naming the model that said a chunk when the one asked for
+ * was busy: that audio isn't the voice asked for, so it isn't cached as it.
+ */
+const val SPEECH_FAILOVER_HEADER = "Speech-Failover-Model"
