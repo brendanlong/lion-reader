@@ -6,11 +6,10 @@
  * - /pdf/XXXX.XXXXX - PDF version
  * - /html/XXXX.XXXXX - HTML version (not available for all papers)
  *
- * URL helpers here let the saved-article plugin address a paper in either form,
+ * URL helpers here let the saved-article plugin address a paper in each form,
  * and `parseArxivAbsMetadata` reads the paper's title/abstract/authors off the
- * abstract page — the plugin fetches both forms in parallel and picks the HTML
- * render for content when it exists. Pure functions only; the plugin owns the
- * fetching.
+ * abstract page. Pure functions only; the plugin (`plugins/arxiv.ts`) owns the
+ * fetching and decides which form becomes the article.
  */
 
 import { createSaxParser } from "@/server/html/sax";
@@ -37,7 +36,7 @@ const ARXIV_URL_PATTERN =
  * Returns null if the URL is not a valid ArXiv paper URL.
  *
  * The version suffix is **preserved**, and that is load-bearing: the id is fed
- * straight back into `buildArxivHtmlUrl`/`buildArxivAbsUrl`, and a paper's
+ * straight back into the `buildArxiv*Url` helpers, and a paper's
  * abstract differs between versions, so dropping `v2` would save the wrong one.
  *
  * @example
@@ -68,6 +67,11 @@ export function buildArxivHtmlUrl(paperId: string): string {
  */
 export function buildArxivAbsUrl(paperId: string): string {
   return `https://arxiv.org/abs/${paperId}`;
+}
+
+/** Builds the PDF URL for an ArXiv paper. */
+export function buildArxivPdfUrl(paperId: string): string {
+  return `https://arxiv.org/pdf/${paperId}`;
 }
 
 // ============================================================================
