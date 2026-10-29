@@ -9,6 +9,7 @@ import com.lionreader.shared.narration.streamCloudSpeech
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -141,11 +142,16 @@ class CloudVoices(
             audio.appended(bytes.size)
         }
 
-        /** Done: into the cache if [keep], else left to be trimmed once played. */
+        /**
+         * Done: into the cache under its key if [keep], else under a name no key has, so it's
+         * trimmed like the rest but never found for the voice asked for.
+         */
         fun finish(keep: Boolean): StreamedAudio {
             out.close()
             // Not cached if it can't be moved, but it plays from where it is.
-            audio.finish(cached.takeIf { keep })
+            audio.finish(
+                if (keep) cached else File(cacheDir, "failover-${UUID.randomUUID()}.$EXTENSION")
+            )
             return audio
         }
 

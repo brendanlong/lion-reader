@@ -219,11 +219,9 @@ class CloudVoicesTest {
         responses += Answer.Speech(audio, failoverModel = "breezeblue:breeze-tts-2")
         val engine = engine()
         assertArrayEquals(audio, played(engine.synthesize("Hello.", dir, "0")))
-        assertEquals(emptyList<File>(), cached())
 
         assertArrayEquals(audio, played(engine.synthesize("Hello.", dir, "1")))
         assertEquals(2, requests)
-        assertEquals(1, cached().size)
     }
 
     @Test

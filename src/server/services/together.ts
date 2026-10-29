@@ -50,7 +50,11 @@ const voicesSchema = z.object({
   data: z.array(z.object({ model: z.string(), voices: z.array(z.object({ name: z.string() })) })),
 });
 
-const chunkSchema = z.object({ type: z.string().optional(), delta: z.string().optional() });
+const chunkSchema = z.object({
+  type: z.string().optional(),
+  delta: z.string().optional(),
+  error: z.unknown().optional(),
+});
 
 function headers(apiKey: string): Record<string, string> {
   return { "User-Agent": USER_AGENT, Authorization: `Bearer ${apiKey}` };
@@ -111,7 +115,9 @@ function pcmFromEvents(events: ReadableStream<Uint8Array>): ReadableStream<Uint8
     const data = line.slice("data:".length).trim();
     if (data === "[DONE]") return null;
     const chunk = chunkSchema.parse(JSON.parse(data));
-    if (chunk.type?.includes("error")) throw new Error(`Together speech failed: ${data}`);
+    if (chunk.error !== undefined || chunk.type?.includes("error")) {
+      throw new Error(`Together speech failed: ${data}`);
+    }
     return chunk.delta ? Buffer.from(chunk.delta, "base64") : null;
   };
   const decoder = new TextDecoder();
