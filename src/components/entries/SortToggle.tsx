@@ -85,8 +85,7 @@ export function SortToggle({ sortOrder, sortable, onChange, className = "" }: So
       )}
       <StateToggleButton
         icon={<Icon className="h-5 w-5" />}
-        label={DIRECTION_LABELS[sortOrder]}
-        ariaLabel={`Sort ${DIRECTION_LABELS[next].toLowerCase()} first`}
+        name={`${DIRECTION_LABELS[ENTRY_SORT_DIRECTIONS[field][1]]} first`}
         isPressed={reversed}
         onToggle={onChange && (() => onChange(next))}
       />

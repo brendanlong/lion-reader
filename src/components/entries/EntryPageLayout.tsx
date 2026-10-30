@@ -151,8 +151,7 @@ export function EntryPageLayout({
           <div className="float-right ml-4 flex min-h-11 items-center gap-2">
             <StateToggleButton
               icon={<SearchIcon className="h-5 w-5" />}
-              label={showSearchBar ? "Close search" : "Search"}
-              ariaLabel={showSearchBar ? "Close search bar" : "Search entries"}
+              name="Search entries"
               isPressed={showSearchBar}
               onToggle={handleSearchToggle}
             />
