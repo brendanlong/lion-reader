@@ -53,57 +53,21 @@ function generateHighlightCSS(paragraphIds: Set<number>): string {
   // Build selectors for images specifically
   const imageSelectors = Array.from(paragraphIds).map((id) => `img[data-para-id="para-${id}"]`);
 
-  // Prefix every selector in the list, not just the first
-  const scoped = (prefix: string, selectors: string[]) =>
-    selectors.map((selector) => `${prefix} ${selector}`).join(",\n");
-
-  // Return CSS rules that apply the highlight styles.
-  // Text elements get background color, images get border.
-  // The prefers-color-scheme fallback (for "system" with no class applied yet)
-  // must not override an explicit .light/.epaper theme, mirroring the
-  // narration-highlight rules in globals.css. E-paper uses solid grays: the
-  // translucent yellow tints are near-invisible when forced to grayscale.
+  // The colors are per-theme tokens in globals.css.
   return `
 ${textSelectors.join(",\n")} {
-  background-color: rgba(253, 230, 138, 0.3);
+  background-color: var(--narration-highlight);
+  box-shadow: 0 0 0 var(--narration-highlight-edge) var(--narration-highlight-ring);
   border-radius: 0.25rem;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
   scroll-margin-top: 100px;
 }
 
-${scoped(".dark", textSelectors)} {
-  background-color: rgba(113, 63, 18, 0.3);
-}
-
-@media (prefers-color-scheme: dark) {
-  ${scoped(":root:not(.light):not(.epaper)", textSelectors)} {
-    background-color: rgba(113, 63, 18, 0.3);
-  }
-}
-
-${scoped(".epaper", textSelectors)} {
-  background-color: #e4e4e7; /* zinc-200 */
-}
-
 ${imageSelectors.join(",\n")} {
-  box-shadow: 0 0 0 3px rgba(253, 230, 138, 0.5);
+  box-shadow: 0 0 0 3px var(--narration-highlight-ring);
   border-radius: 0.25rem;
   transition: box-shadow 0.3s ease;
   scroll-margin-top: 100px;
-}
-
-${scoped(".dark", imageSelectors)} {
-  box-shadow: 0 0 0 3px rgba(113, 63, 18, 0.5);
-}
-
-@media (prefers-color-scheme: dark) {
-  ${scoped(":root:not(.light):not(.epaper)", imageSelectors)} {
-    box-shadow: 0 0 0 3px rgba(113, 63, 18, 0.5);
-  }
-}
-
-${scoped(".epaper", imageSelectors)} {
-  box-shadow: 0 0 0 3px #a1a1aa; /* zinc-400 */
 }
 `;
 }

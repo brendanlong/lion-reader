@@ -12,14 +12,14 @@
  * These shortcuts only work when:
  * - An article is open (narration controls are rendered)
  * - Narration is supported in the browser
- * - User is not typing in an input field
+ * - User is not typing in an input field, and no dialog is open
  */
 
 "use client";
 
-import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { SHORTCUTS } from "@/components/keyboard/shortcuts";
+import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import type { NarrationPhase } from "./useNarrationTypes";
 
 // [ and ] need AltGr (or Option) on many non-US layouts, so modifiers are
@@ -83,16 +83,15 @@ export interface UseNarrationKeyboardShortcutsOptions {
  */
 export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShortcutsOptions): void {
   const { phase, controls, isSupported } = options;
-  const { enabled: keyboardShortcutsEnabled, isModalOpen } = useKeyboardShortcutsContext();
+  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
 
   const { isGenerating, shouldPause, canSkipForward, canSkipBackward } = phase;
   const { play, pause, skipForward, skipBackward } = controls;
 
-  // Base enabled condition: shortcuts enabled, modal not open, narration supported
-  const baseEnabled = keyboardShortcutsEnabled && !isModalOpen && isSupported;
+  const baseEnabled = keyboardShortcutsEnabled && isSupported;
 
   // p - Toggle play/pause
-  useHotkeys(
+  useShortcutHotkeys(
     SHORTCUTS.playPause.hotkey,
     (e) => {
       e.preventDefault();
@@ -104,13 +103,12 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     },
     {
       enabled: baseEnabled && !isGenerating,
-      enableOnFormTags: false,
     },
     [shouldPause, isGenerating, play, pause, baseEnabled]
   );
 
   // ] - Skip to next paragraph
-  useHotkeys(
+  useShortcutHotkeys(
     SHORTCUTS.nextParagraph.hotkey,
     (e) => {
       if (isBracketChord(e)) return;
@@ -119,7 +117,6 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     },
     {
       enabled: baseEnabled && canSkipForward,
-      enableOnFormTags: false,
       useKey: true,
       ignoreModifiers: true,
     },
@@ -127,7 +124,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
   );
 
   // [ - Skip to previous paragraph
-  useHotkeys(
+  useShortcutHotkeys(
     SHORTCUTS.previousParagraph.hotkey,
     (e) => {
       if (isBracketChord(e)) return;
@@ -136,7 +133,6 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     },
     {
       enabled: baseEnabled && canSkipBackward,
-      enableOnFormTags: false,
       useKey: true,
       ignoreModifiers: true,
     },

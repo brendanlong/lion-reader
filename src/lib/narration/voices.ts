@@ -67,25 +67,25 @@ export function waitForVoices(
       return;
     }
 
-    // Try to get voices immediately (works in Firefox and Safari)
-    const voices = getAvailableVoices(lang);
-    if (voices.length > 0) {
-      resolve(voices);
+    // Once any voices have loaded the answer is final: waiting on for one in
+    // `lang` would stall every caller on a device without one.
+    if (speechSynthesis.getVoices().length > 0) {
+      resolve(getAvailableVoices(lang));
       return;
     }
 
-    // Set up timeout to avoid hanging forever
-    const timeoutId = setTimeout(() => {
-      speechSynthesis.onvoiceschanged = null;
-      resolve(getAvailableVoices(lang));
-    }, timeout);
-
-    // Wait for voices to load (needed in Chrome)
-    speechSynthesis.onvoiceschanged = () => {
+    // A listener per caller: a shared `onvoiceschanged` would be overwritten
+    // by a concurrent caller, leaving this one to the timeout.
+    const done = () => {
       clearTimeout(timeoutId);
-      speechSynthesis.onvoiceschanged = null;
+      speechSynthesis.removeEventListener("voiceschanged", onVoicesChanged);
       resolve(getAvailableVoices(lang));
     };
+    const onVoicesChanged = () => {
+      if (speechSynthesis.getVoices().length > 0) done();
+    };
+    const timeoutId = setTimeout(done, timeout);
+    speechSynthesis.addEventListener("voiceschanged", onVoicesChanged);
   });
 }
 

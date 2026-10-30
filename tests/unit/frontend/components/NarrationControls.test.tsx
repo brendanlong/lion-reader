@@ -21,6 +21,7 @@
  * "End of article.", which highlights no element.
  */
 
+import { useRef, type ReactElement } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Mock } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -28,6 +29,7 @@ import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcu
 import { NarrationControlsImpl } from "@/components/narration/NarrationControls";
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
 import { useNarration } from "@/components/narration/useNarration";
+import { useEntryNarration } from "@/components/narration/useEntryNarration";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
@@ -125,10 +127,16 @@ function NarrationHarness({
   return <NarrationControlsImpl narration={narration} />;
 }
 
-function renderHarness(content: string, showFullContent = false) {
-  return renderWithTrpc(<NarrationHarness content={content} showFullContent={showFullContent} />, {
+function renderHarnessWith(harness: ReactElement) {
+  return renderWithTrpc(harness, {
     wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
   });
+}
+
+function renderHarness(content: string, showFullContent = false) {
+  return renderHarnessWith(
+    <NarrationHarness content={content} showFullContent={showFullContent} />
+  );
 }
 
 /** Clicks "Listen" and waits for the first paragraph to be speaking. */
@@ -226,6 +234,21 @@ describe("NarrationControls paragraph position", () => {
     fireEvent.keyDown(document, { key: "[", code: "BracketLeft" });
     await waitFor(() => expect(screen.getByText("1 of 8")).toBeInTheDocument());
   });
+
+  it("leaves the keyboard to an open dialog", async () => {
+    renderHarness(SKEWED_HTML);
+    await startNarration();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.append(dialog);
+
+    fireEvent.keyDown(document, { key: "]", code: "BracketRight" });
+    fireEvent.keyDown(document, { key: "p", code: "KeyP" });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(screen.getByText("1 of 8")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    dialog.remove();
+  });
 });
 
 describe("NarrationControls content variant switching", () => {
@@ -305,6 +328,96 @@ describe("playFromElement", () => {
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
     expect(lastSpoken()).toBe("Eta");
+  });
+});
+
+describe("the narrated article's HTML", () => {
+  // jsdom has no layout; the view scrolls to the spoken paragraph.
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = () => {};
+  });
+  afterEach(() => {
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  function EntryHarness() {
+    const contentRef = useRef<HTMLDivElement>(null);
+    const narration = useEntryNarration({
+      contentRef,
+      articleId: "entry-1",
+      title: "Test article",
+      feedTitle: "Test feed",
+      content: SPARSE_HTML,
+      showFullContent: false,
+      showOriginal: false,
+    });
+    return (
+      <>
+        {narration.engine}
+        {narration.controls}
+        <div
+          ref={contentRef}
+          data-testid="article"
+          dangerouslySetInnerHTML={{ __html: narration.contentHtml ?? "" }}
+        />
+      </>
+    );
+  }
+
+  it("is marked for highlighting and stays the same as narration starts and stops", async () => {
+    renderHarnessWith(<EntryHarness />);
+    const first = () => screen.getByTestId("article").firstElementChild;
+    const before = first();
+    expect(before?.getAttribute("data-para-id")).toBe("para-0");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument());
+    await startNarration();
+    expect(first()).toBe(before);
+
+    // Played to the end, which stops it.
+    for (let i = 0; i < 10 && !screen.queryByRole("button", { name: "Listen" }); i++) {
+      const utterance = speech.speak.mock.lastCall?.[0] as { onend: (() => void) | null };
+      await act(async () => utterance.onend?.());
+    }
+    expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument();
+    expect(first()).toBe(before);
+  });
+});
+
+describe("playback-started telemetry", () => {
+  function StopHarness() {
+    const narration = useNarration({
+      id: "entry-1",
+      title: "Test article",
+      feedTitle: "Test feed",
+      content: SPARSE_HTML,
+    });
+    return (
+      <>
+        <NarrationControlsImpl narration={narration} />
+        <button onClick={() => narration.stop()}>Stop</button>
+      </>
+    );
+  }
+
+  it("counts an article once, however often it's started again", async () => {
+    const telemetry = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(new Response(null, { status: 204 }))
+    );
+    vi.stubGlobal("fetch", telemetry);
+    renderWithTrpc(<StopHarness />, {
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+
+    await startNarration();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument());
+    await startNarration();
+
+    const started = telemetry.mock.calls.filter(([, init]) =>
+      String(init?.body).includes("narration_playback_started")
+    );
+    expect(started).toHaveLength(1);
   });
 });
 

@@ -5,8 +5,7 @@ import android.os.Looper
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.lionreader.shared.narration.NEXT_ARTICLE
-import com.lionreader.shared.narration.NO_MORE_ARTICLES
+import com.lionreader.shared.api.NarrationCues
 import com.lionreader.shared.narration.NarratedArticle
 import com.lionreader.shared.narration.NarrationList
 import com.lionreader.shared.narration.SpeechInterrupted
@@ -15,6 +14,7 @@ import java.io.File
 import java.io.IOException
 import java.time.Duration
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -31,8 +31,12 @@ import org.robolectric.annotation.Config
 @Config(application = android.app.Application::class)
 class NarratorTest {
     private val synthesized = mutableListOf<String>()
+    /** Syntheses that failed as unreachable. */
+    private var unreached = 0
     /** Calls to fail as unreachable before the engine answers again; -1 for all of them. */
     private var unreachableFor = 0
+    /** How long a synthesis takes to fail as unreachable. */
+    private var unreachableAfterMillis = 0L
     /** Getting the engine fails as unreachable while this is set. */
     private var engineUnreachable = false
     /** Texts whose next synthesis streams half its audio and waits: see [streamed]. */
@@ -58,6 +62,8 @@ class NarratorTest {
                 synthesisDone?.await()
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
+                    unreached++
+                    delay(unreachableAfterMillis)
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
@@ -78,13 +84,17 @@ class NarratorTest {
     private val settings = MutableStateFlow(AppSettings(narrationContinue = false))
 
     /** A list of [ids], recording where narration goes on to. */
-    private class Listed(private val ids: List<String>) : NarrationList {
+    private class Listed(
+        private val ids: List<String>,
+        private val onOpen: (String) -> Unit = {},
+    ) : NarrationList {
         val opened = mutableListOf<String>()
 
         override fun after(entryId: String): String? = ids.getOrNull(ids.indexOf(entryId) + 1)
 
         override fun open(entryId: String) {
             opened += entryId
+            onOpen(entryId)
         }
     }
 
@@ -209,7 +219,7 @@ class NarratorTest {
         idleUntil { list.opened.isNotEmpty() }
 
         assertEquals(listOf("b"), list.opened)
-        assertEquals(listOf("One.", NEXT_ARTICLE), synthesized)
+        assertEquals(listOf("One.", NarrationCues.NEXT_ARTICLE), synthesized)
         // On until the article screen turns to the next, and narration follows it there.
         assertEquals("a", state?.entryId)
         assertPlayerWaits()
@@ -218,8 +228,25 @@ class NarratorTest {
         narrator.follow("b", "Title b")
         narrator.supply(article("b", "Two."))
         idleUntil { state == null }
-        assertEquals(listOf("Two.", NO_MORE_ARTICLES), synthesized)
+        assertEquals(listOf("Two.", NarrationCues.NO_MORE_ARTICLES), synthesized)
         assertEquals(listOf("b"), list.opened)
+    }
+
+    @Test
+    fun aListThatOpensTheNextArticleAtOnceIsFollowedThere() {
+        settings.value = AppSettings(narrationContinue = true)
+        brief = true
+        val list =
+            Listed(listOf("a", "b")) { narrator.follow(it, "Title $it") }
+                .also { narrator.list = it }
+        narrator.narrate(article("a", "One.", "Two."))
+        idleUntil { list.opened.isNotEmpty() }
+
+        assertEquals("b", state?.entryId)
+        assertEquals("Title b", narrator.player.currentMediaItem?.mediaMetadata?.title)
+        narrator.follow("a", "Title a")
+        // Finished, so not resumed at its end.
+        assertNull(state?.paragraph)
     }
 
     @Test
@@ -260,20 +287,6 @@ class NarratorTest {
         idle()
 
         assertNull(state)
-    }
-
-    @Test
-    fun anArticleWithNothingToSayFollowedToByHandIsNotPassedOver() {
-        settings.value = AppSettings(narrationContinue = true)
-        val list = Listed(listOf("a", "b", "c")).also { narrator.list = it }
-        narrator.narrate(article("a", "One."))
-        idle()
-        narrator.follow("b", "Title b")
-        narrator.supply(article("b", " ", "↩"))
-        idle()
-
-        assertTrue(list.opened.isEmpty())
-        assertEquals("b", state?.entryId)
     }
 
     @Test
@@ -516,6 +529,18 @@ class NarratorTest {
     }
 
     @Test
+    fun anEngineOutOfReachBeforeFollowingDoesNotPauseTheNextArticle() {
+        engineUnreachable = true
+        narrator.narrate(article("a", "One."))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+        narrator.follow("b", "Title b")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(70))
+
+        assertTrue(state!!.playing)
+        assertNull(narrator.notice.value)
+    }
+
+    @Test
     fun anEngineOutOfReachForLongPausesNarrationRatherThanEndingIt() {
         unreachableFor = -1
         narrator.narrate(article("a", "One."))
@@ -533,6 +558,33 @@ class NarratorTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
         assertEquals(listOf("One."), synthesized)
         assertNull(narrator.notice.value)
+    }
+
+    @Test
+    fun narrationPausesOnceDryForLongEvenWhileEachTryIsSlowToFail() {
+        unreachableFor = -1
+        unreachableAfterMillis = 50_000
+        narrator.narrate(article("a", "One."))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(55))
+        assertTrue(state!!.playing)
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
+        assertFalse(state!!.playing)
+        assertTrue(narrator.notice.value!!.startsWith("Narration paused"))
+    }
+
+    @Test
+    fun anArticleWhoseTextNeverComesPausesNarration() {
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.follow("b", "Title b")
+        // Past the player's stuck-buffering timeout (ExoPlayer.Builder's default).
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(11))
+        idleUntil { narrator.notice.value != null }
+
+        assertEquals("b", state?.entryId)
+        assertFalse(state!!.playing)
+        assertTrue(narrator.notice.value!!.startsWith("Narration paused"))
     }
 
     @Test
@@ -585,6 +637,21 @@ class NarratorTest {
         assertEquals("a", state?.entryId)
         assertTrue(state!!.playing)
         assertEquals(0, state?.paragraph)
+    }
+
+    @Test
+    fun stoppingEndsTheTriesToSaySpeechAgain() {
+        streamHalf += "One."
+        narrator.narrate(article("a", "One.", "Two."))
+        idle()
+        unreachableFor = -1
+        breakOff(streamed.single())
+        idleUntil { unreached > 0 }
+        narrator.stop()
+        val tried = unreached
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(5))
+        assertEquals(tried, unreached)
     }
 
     @Test

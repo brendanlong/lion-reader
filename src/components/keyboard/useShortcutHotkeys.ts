@@ -8,6 +8,8 @@ interface ShortcutHotkeyOptions {
   enabled: boolean;
   /** Match the produced character (`event.key`), for keys like `?` and `/` with no layout-independent code. */
   useKey?: boolean;
+  /** Match whatever modifiers are held, e.g. for a character that needs AltGr on some layouts. */
+  ignoreModifiers?: boolean;
 }
 
 /**

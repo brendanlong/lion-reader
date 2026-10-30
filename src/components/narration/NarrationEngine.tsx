@@ -9,7 +9,6 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarration } from "./useNarration";
 import type { NarrationEngineView, UseNarrationConfig } from "./useNarrationTypes";
 
@@ -39,39 +38,12 @@ export function NarrationEngineImpl({ onChange, ...config }: NarrationEngineProp
     []
   );
 
-  const { state, isSupported, processedHtml } = narration;
-  const isHighlighting = isSupported && (processedHtml !== null || state.status !== "idle");
-  const { content } = config;
-
-  // Content is sanitized on the server (src/server/html/sanitize.ts), so this
-  // only adds the highlighting markup. Client-side narration already produced
-  // it (processedHtml), with ids that exactly match its paragraph map.
-  const highlightHtml = useMemo(() => {
-    if (!content || !isHighlighting) return null;
-    return processedHtml ?? processHtmlForHighlighting(content);
-  }, [content, isHighlighting, processedHtml]);
+  const { state, isSupported } = narration;
 
   // Layout effects, so the view re-renders with a new state before paint.
   useLayoutEffect(() => {
-    onChange({
-      ...controls,
-      state,
-      isSupported,
-      processedHtml,
-      isHighlighting,
-      highlightHtml,
-      highlightSource: content ?? null,
-    });
-  }, [
-    onChange,
-    controls,
-    state,
-    isSupported,
-    processedHtml,
-    isHighlighting,
-    highlightHtml,
-    content,
-  ]);
+    onChange({ ...controls, state, isSupported });
+  }, [onChange, controls, state, isSupported]);
   useLayoutEffect(() => () => onChange(null), [onChange]);
 
   return null;

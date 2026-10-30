@@ -917,6 +917,47 @@ describe("MediaSourcePlayer", () => {
     expect(player.getStatus()).toBe("idle");
   });
 
+  it("leaves no listener on the element when stopped before the stream opens", async () => {
+    const audio = new FakeAudio();
+    const errorListeners = new Set<unknown>();
+    const add = audio.addEventListener.bind(audio);
+    audio.addEventListener = (type, listener, options) => {
+      if (type === "error") errorListeners.add(listener);
+      if (typeof options === "object") {
+        options.signal?.addEventListener("abort", () => errorListeners.delete(listener));
+      }
+      add(type, listener, options);
+    };
+    const remove = audio.removeEventListener.bind(audio);
+    audio.removeEventListener = (type, listener, options) => {
+      if (type === "error") errorListeners.delete(listener);
+      remove(type, listener, options);
+    };
+    const player = new MediaSourcePlayer({
+      synthesize: async function* () {
+        yield new Uint8Array(1000);
+      },
+      chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, 1000),
+      maxConcurrentSyntheses: 4,
+      bufferAheadSeconds: 4,
+      loadMimeType: async () => MIME_TYPE,
+      createAudio: () => audio as unknown as HTMLAudioElement,
+      createMediaSource: () => new FakeMediaSource() as unknown as MediaSource,
+      // Never opens.
+      attach: () => () => {},
+    });
+    const listening = errorListeners.size;
+    for (let i = 0; i < 3; i++) {
+      player.load(["A."]);
+      player.prime();
+      void player.play();
+      await flush();
+      player.stop();
+    }
+
+    expect(errorListeners.size).toBe(listening);
+  });
+
   it("reports browsers without Media Source Extensions", async () => {
     const { calls, player, events } = setup(["A."], { supportsMse: false });
     player.prime();

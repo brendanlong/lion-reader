@@ -131,7 +131,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     () => (prerecordedVoice ? canPlayPrerecordedSpeech() : isNarrationSupported()), // Client snapshot
     () => false // Server snapshot - always false during SSR
   );
-  const [processedHtml, setProcessedHtml] = useState<string | null>(null);
 
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
@@ -144,7 +143,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const playRequestRef = useRef(0);
   // Counts narration loads, so only the latest one clears the generating flag.
   const loadRequestRef = useRef(0);
-  // Track if we've already set up playback tracking for this session
+  // Playback-started is counted once per article and voice (reset below).
   const hasTrackedPlaybackRef = useRef(false);
   // Paragraph mapping for translating narration indices to DOM element indices
   const paragraphMapRef = useRef<ParagraphMapEntry[]>([]);
@@ -333,6 +332,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // this entry's controls, and cloud playback is paid.
     const request = playRequestRef.current;
     const isStale = () => playRequestRef.current !== request;
+    const trackPlaybackStarted = () => {
+      // Demo plays aren't voice use.
+      if (hasTrackedPlaybackRef.current || prerecordedVoice) return;
+      hasTrackedPlaybackRef.current = true;
+      trackNarrationPlaybackStarted(settings.provider);
+    };
 
     // Start the audio element within this user gesture, before any async
     // narration generation, so the browser grants it while the gesture's
@@ -368,12 +373,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
       try {
         let generated: { narrationText: string; paragraphMap: ParagraphMapEntry[] };
-        let processedHtmlResult: string | null = null;
 
         if (!settings.useLlmNormalization && content) {
-          const clientResult = htmlToClientNarration(content);
-          generated = clientResult;
-          processedHtmlResult = clientResult.processedHtml;
+          generated = htmlToClientNarration(content);
         } else {
           const result = await generateMutation.mutateAsync({
             id,
@@ -393,7 +395,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         paragraphMapRef.current = paragraphMap;
         if (splitNarrationParagraphs(narration).some(isSpeakable)) {
           setNarrationText(narration);
-          setProcessedHtml(processedHtmlResult);
           await start(narration);
         } else {
           // Nothing to narrate — release the primed media-session audio.
@@ -417,11 +418,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
       const start = async (narration: string) => {
         player.load(splitNarrationParagraphs(narration));
-        // Demo plays aren't cloud voice use.
-        if (!hasTrackedPlaybackRef.current && !prerecordedVoice) {
-          trackNarrationPlaybackStarted(settings.provider);
-          hasTrackedPlaybackRef.current = true;
-        }
+        trackPlaybackStarted();
         await player.play();
       };
       if (narrationText) await start(narrationText);
@@ -441,7 +438,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     const startBrowser = () => {
       const voice = settings.voiceId ? findVoiceByUri(settings.voiceId) : null;
       narrator.play(voice ?? undefined, settings.rate, settings.pitch);
-      trackNarrationPlaybackStarted(settings.provider);
+      trackPlaybackStarted();
     };
     if (narrationText && playerState.totalParagraphs > 0) {
       startBrowser();
@@ -551,7 +548,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
   if (narrationResetKey !== prevNarrationResetKey) {
     setPrevNarrationResetKey(narrationResetKey);
-    setProcessedHtml(null);
     setNarrationText(null);
     // A load still in flight is abandoned (the effect cleanup below cancels
     // it), so end its spinner now rather than when the stale request returns.
@@ -626,6 +622,5 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     playFromElement,
     stop,
     isSupported,
-    processedHtml,
   };
 }

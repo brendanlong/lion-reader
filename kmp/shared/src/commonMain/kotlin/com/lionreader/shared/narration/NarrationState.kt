@@ -15,14 +15,6 @@ data class NarratedArticle(
     }
 }
 
-/** Spoken after an article's "End of article." when narration goes on to the next one. */
-const val NEXT_ARTICLE = "Loading next article."
-
-/**
- * Spoken after an article's "End of article." when narration would go on, but the list has ended.
- */
-const val NO_MORE_ARTICLES = "No more articles."
-
 /** The articles narration goes on through, one after another. */
 interface NarrationList {
     /** The article after [entryId], if there is one. */

@@ -6,7 +6,16 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { NarrationControls, NarrationEngine } from "./index";
 import { FloatingNarrationControls } from "./FloatingNarrationControls";
 import { NarrationHighlightStyles } from "./NarrationHighlightStyles";
@@ -19,6 +28,7 @@ import { useNarrationHighlight } from "./useNarrationHighlight";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { seekTargetElement } from "@/lib/narration/seek-target";
 import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "@/lib/narration/paragraph-map";
+import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import {
   clearNarrationContinuation,
   continueNarrationTo,
@@ -51,7 +61,11 @@ interface UseEntryNarrationOptions {
 interface EntryNarration {
   /** Renders nothing visible; mount it anywhere. */
   engine: ReactNode;
-  /** The HTML to render: `content`, with paragraph ids while highlighting. */
+  /**
+   * The HTML to render: `content`, with paragraph ids while narration is
+   * enabled. It doesn't change as narration starts and stops, which would
+   * replace the article (restarting embeds, losing the selection).
+   */
   contentHtml: string | null;
   onContentClick: React.MouseEventHandler;
   /** For the action bar. */
@@ -148,14 +162,23 @@ export function useEntryNarration({
     [isNarrationActive, playFromElement]
   );
 
-  const shouldProcessForHighlighting = narration?.isHighlighting ?? false;
-  const highlightHtml = narration?.highlightSource === content ? narration.highlightHtml : null;
-  const contentHtml = content ? (highlightHtml ?? content) : null;
+  // Marked in the browser (DOMParser), so server rendering shows `content` as is.
+  const inBrowser = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  // Content is sanitized on the server (src/server/html/sanitize.ts), so this
+  // only adds the highlighting markup.
+  const contentHtml = useMemo(
+    () => (content && showNarration && inBrowser ? processHtmlForHighlighting(content) : content),
+    [content, showNarration, inBrowser]
+  );
 
   // Auto-scroll to the highlighted paragraph while playing. The highlight
   // itself is CSS (NarrationHighlightStyles), not DOM manipulation.
   useEffect(() => {
-    if (!contentRef.current || !shouldProcessForHighlighting) return;
+    if (!contentRef.current || !isSupported) return;
     if (!narrationSettings.autoScrollEnabled) return;
     if (narrationState.status !== "playing") return;
     if (highlightedParagraphIds.size === 0) return;
@@ -184,7 +207,7 @@ export function useEntryNarration({
   }, [
     contentRef,
     highlightedParagraphIds,
-    shouldProcessForHighlighting,
+    isSupported,
     narrationSettings.autoScrollEnabled,
     narrationState.status,
   ]);
@@ -208,7 +231,7 @@ export function useEntryNarration({
     contentHtml,
     onContentClick,
     controls: showNarration && <NarrationControls narration={narration} />,
-    highlightStyles: showNarration && shouldProcessForHighlighting && (
+    highlightStyles: showNarration && isSupported && (
       <NarrationHighlightStyles
         highlightedParagraphIds={highlightedParagraphIds}
         enabled={narrationSettings.highlightEnabled}

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from "vitest";
-import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
+import {
+  htmlToClientNarration,
+  processHtmlForHighlighting,
+} from "@/lib/narration/client-paragraph-ids";
 import {
   narrationParagraphForElement,
   splitNarrationParagraphs,
@@ -42,7 +45,7 @@ describe("the app reader's narration", () => {
     expect(prepared.firstElementChild?.className).toBe("lr-header");
     const article = prepared.cloneNode(true) as HTMLElement;
     article.querySelectorAll(".lr-header, .lr-summary").forEach((el) => el.remove());
-    expect(article.innerHTML).toBe(htmlToClientNarration(ARTICLE).processedHtml);
+    expect(article.innerHTML).toBe(processHtmlForHighlighting(ARTICLE));
   });
 
   it("highlights a paragraph's element", () => {
@@ -141,7 +144,7 @@ describe("the app reader's narration", () => {
     ]);
     const article = document.body.cloneNode(true) as HTMLElement;
     article.querySelector(".lr-header")?.remove();
-    expect(article.innerHTML).toBe(htmlToClientNarration(next).processedHtml);
+    expect(article.innerHTML).toBe(processHtmlForHighlighting(next));
 
     window.lionNarration?.highlight(1, false);
     expect(document.querySelector(".lr-narrating")?.getAttribute("data-para-id")).toBe(
