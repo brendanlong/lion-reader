@@ -50,6 +50,12 @@ async function listJobs(options: { type?: JobType; limit?: number } = {}) {
   return db.select().from(jobs).limit(limit);
 }
 
+async function createSubscribedFeed(): Promise<string> {
+  const feedId = await createTestFeed();
+  await createTestSubscription(await createTestUser(), feedId);
+  return feedId;
+}
+
 describe("Job Queue", () => {
   async function cleanup(): Promise<void> {
     await db.delete(jobs);
@@ -84,8 +90,8 @@ describe("Job Queue", () => {
   describe("claimJob", () => {
     it("claims a pending job", async () => {
       const created = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       const claimed = await claimJob();
@@ -104,8 +110,8 @@ describe("Job Queue", () => {
       const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
         nextRunAt: futureDate,
       });
 
@@ -119,14 +125,14 @@ describe("Job Queue", () => {
 
       // Create jobs in reverse order
       const job2 = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-2" },
+        type: "process_opml_import",
+        payload: { importId: "feed-2" },
         nextRunAt: now,
       });
 
       const job1 = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-1" },
+        type: "process_opml_import",
+        payload: { importId: "feed-1" },
         nextRunAt: earlier,
       });
 
@@ -144,31 +150,22 @@ describe("Job Queue", () => {
       expect(claimed2!.id).toBe(job2.id);
     });
 
-    it("filters jobs by type", async () => {
-      await createJob({
-        type: "renew_websub",
-        payload: {},
+    it("claims only one-time jobs", async () => {
+      await createJob({ type: "renew_websub", payload: {} });
+      await createJob({ type: "fetch_feed", payload: { feedId: "test-feed-id" } });
+      const oneTime = await createJob({
+        type: "process_opml_import",
+        payload: { importId: "test-import-id" },
       });
 
-      await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      // Should only claim fetch_feed jobs
-      const claimed = await claimJob({ types: ["fetch_feed"] });
-      expect(claimed).not.toBeNull();
-      expect(claimed!.type).toBe("fetch_feed");
-
-      // The renew_websub job should still be pending
-      const remainingJobs = await listJobs({ type: "renew_websub" });
-      expect(remainingJobs).toHaveLength(1);
+      expect((await claimJob())!.id).toBe(oneTime.id);
+      expect(await claimJob()).toBeNull();
     });
 
     it("does not claim already running jobs", async () => {
       const created = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       // Claim the job
@@ -182,8 +179,8 @@ describe("Job Queue", () => {
 
     it("reclaims stale jobs", async () => {
       const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       // Claim the job
@@ -206,8 +203,8 @@ describe("Job Queue", () => {
     it("only one worker gets a job when claiming concurrently", async () => {
       // Create a single job
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       // Simulate 5 workers trying to claim the job concurrently
@@ -226,16 +223,16 @@ describe("Job Queue", () => {
     it("multiple jobs can be claimed by multiple workers", async () => {
       // Create 3 jobs
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-1" },
+        type: "process_opml_import",
+        payload: { importId: "feed-1" },
       });
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-2" },
+        type: "process_opml_import",
+        payload: { importId: "feed-2" },
       });
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "feed-3" },
+        type: "process_opml_import",
+        payload: { importId: "feed-3" },
       });
 
       // 5 workers try to claim jobs concurrently
@@ -294,8 +291,8 @@ describe("Job Queue", () => {
   describe("finishJob", () => {
     it("finishes a job successfully", async () => {
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       const claimed = await claimJob();
@@ -315,8 +312,8 @@ describe("Job Queue", () => {
 
     it("finishes a job with failure", async () => {
       await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       const claimed = await claimJob();
@@ -337,8 +334,8 @@ describe("Job Queue", () => {
 
     it("increments consecutiveFailures on repeated failures", async () => {
       const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       // First failure
@@ -363,8 +360,8 @@ describe("Job Queue", () => {
 
     it("resets consecutiveFailures on success", async () => {
       const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
+        type: "process_opml_import",
+        payload: { importId: "test-feed-id" },
       });
 
       // Fail twice
@@ -498,9 +495,9 @@ describe("Job Queue", () => {
     });
 
     it("finishJob consumes the forceReprocess token on a successful run", async () => {
-      const feedId = generateUuidv7();
+      const feedId = await createSubscribedFeed();
       await scheduleFeedRefreshNow(db, feedId);
-      const claimed = await claimJob();
+      const claimed = await claimFeedJob();
       const claimedAt = getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt;
       expect(typeof claimedAt).toBe("string");
 
@@ -522,9 +519,9 @@ describe("Job Queue", () => {
       // claims; sub2 re-arms with a newer token while the fetch runs. The finish
       // must NOT drop sub2's request — it keeps the token and pulls next_run to
       // now so the fetch re-runs and covers sub2.
-      const feedId = generateUuidv7();
+      const feedId = await createSubscribedFeed();
       await scheduleFeedRefreshNow(db, feedId);
-      const claimed = await claimJob();
+      const claimed = await claimFeedJob();
       const claimedAt = getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt!;
 
       // Re-arm with a strictly-later token (simulate sub2 mid-run).
@@ -549,9 +546,9 @@ describe("Job Queue", () => {
     it("finishJob after an ordinary poll runs now if a request landed mid-run", async () => {
       // A plain poll (no token at claim) finishes while a subscribe arms the job.
       // The finish must honor the pending request: keep it and run now.
-      const feedId = generateUuidv7();
+      const feedId = await createSubscribedFeed();
       await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: new Date() });
-      const claimed = await claimJob();
+      const claimed = await claimFeedJob();
       expect(getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt).toBeUndefined();
 
       // A subscribe arms the job during the run.

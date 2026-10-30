@@ -24,7 +24,6 @@ import {
   isFixedIntervalJobType,
   isJobType,
   seedSingletonJobs,
-  GENERIC_CLAIM_JOB_TYPES,
   SINGLETON_JOB_TYPES,
   type FinishJobOptions,
   type FixedIntervalJobType,
@@ -183,8 +182,6 @@ export function createWorkerClaimJob(deps: WorkerClaimDeps): () => Promise<Job |
   };
 }
 
-const UNKNOWN_JOB_TYPE_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
-
 type WorkerJobResult = Omit<JobHandlerResult, "nextRunAt"> &
   Pick<FinishJobOptions, "nextRunAt" | "consumeForceReprocess">;
 
@@ -280,7 +277,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
   //    fetch_full_content jobs - round-robined so none can starve the others
   //    (see createWorkerClaimJob).
   const claimJob = createWorkerClaimJob({
-    claimRegular: () => claimRegularJob({ types: GENERIC_CLAIM_JOB_TYPES }),
+    claimRegular: claimRegularJob,
     claimFeed: claimFeedJob,
     claimSingleton: claimSingletonJob,
     claimFullContent: claimFullContentJob,
@@ -329,15 +326,9 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         consecutiveFailures: job.consecutiveFailures,
       });
 
-      const result: WorkerJobResult = isJobType(job.type)
-        ? await runJobHandler(job, job.type, startTime)
-        : {
-            // Possibly enqueued by a newer release during a rolling deploy:
-            // leave it for a worker that knows the type.
-            success: false,
-            nextRunAt: new Date(Date.now() + UNKNOWN_JOB_TYPE_RETRY_MS),
-            error: `Unknown job type: ${job.type}`,
-          };
+      // Every claim filters on this release's job types.
+      if (!isJobType(job.type)) throw new Error(`Claimed a job of unknown type ${job.type}`);
+      const result = await runJobHandler(job, job.type, startTime);
 
       const duration = Date.now() - startTime;
 
