@@ -20,6 +20,12 @@ import {
 } from "../../src/server/db/schema";
 import { MAX_SYNC_PAGE_ENTRIES } from "../../src/server/services/sync";
 import { createCaller } from "../../src/server/trpc/root";
+import {
+  addEntriesToCollection,
+  createCollection,
+  removeEntriesFromCollection,
+} from "../../src/server/services/collections";
+import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
 import { parseTimestamptz } from "../../src/server/db/temporal";
 import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
 import type { SyncEvent } from "../../src/lib/events/schemas";
@@ -1442,6 +1448,107 @@ describe("sync.events", () => {
         stateEvents[0]
       );
       expect(advanced.entries).toBe(newer);
+    });
+  });
+  // ==========================================================================
+  // Collection counts
+  //
+  // Membership changes aren't replayed as events, and a replayed entry carries
+  // counts only for the collections it's in now, so a catch-up's last page
+  // carries every collection's counts.
+  // ==========================================================================
+
+  describe("collection counts", () => {
+    async function catchUp(userId: string, start: SyncCursors) {
+      return createCaller(await createAuthContext(userId)).sync.events({
+        cursors: {
+          entries: start.entries ?? undefined,
+          entriesAfterId: start.entriesAfterId ?? undefined,
+          subscriptions: start.subscriptions ?? undefined,
+          tags: start.tags ?? undefined,
+        },
+      });
+    }
+
+    it("counts the collections an entry left elsewhere, their tags and Uncategorized", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      const sourceId = await createTestSubscription(userId, feedId);
+      await createTestTag(userId, { subscriptionIds: [sourceId] });
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
+      const tagged = (await createCollection(db, userId, "Tagged")).subscription.id;
+      const untagged = (await createCollection(db, userId, "Untagged")).subscription.id;
+      const collectionTag = await createTestTag(userId, { subscriptionIds: [tagged] });
+      await addEntriesToCollection(db, userId, tagged, [entryId]);
+      await addEntriesToCollection(db, userId, untagged, [entryId]);
+      const caller = createCaller(await createAuthContext(userId));
+      const start = await caller.sync.cursors();
+
+      await removeEntriesFromCollection(db, userId, tagged, [entryId]);
+      await removeEntriesFromCollection(db, userId, untagged, [entryId]);
+      const result = await catchUp(userId, start);
+
+      expect(result.hasMore).toBe(false);
+      expect(result.counts?.subscriptions).toEqual(
+        expect.arrayContaining([
+          { id: tagged, unread: 0, tagIds: [collectionTag] },
+          { id: untagged, unread: 0, tagIds: [] },
+        ])
+      );
+      expect(result.counts?.tags).toEqual([{ id: collectionTag, unread: 0 }]);
+      // The source is tagged, so the untagged collection was its only way in.
+      expect(result.counts?.uncategorized).toEqual({ unread: 0 });
+      expect(result.counts?.all).toEqual({ unread: 1 });
+    });
+
+    it("counts a collection whose article was deleted, with no entry to replay", async () => {
+      const userId = await createTestUser();
+      const collectionId = (await createCollection(db, userId, "Papers")).subscription.id;
+      const saved = await uploadArticle(db, userId, {
+        content: "Body",
+        title: "Paper",
+        collectionIds: [collectionId],
+      });
+      const caller = createCaller(await createAuthContext(userId));
+      const start = await caller.sync.cursors();
+
+      await deleteSavedArticle(db, userId, saved.id);
+      const result = await catchUp(userId, start);
+
+      expect(result.events).toEqual([]);
+      expect(result.counts).toMatchObject({
+        saved: { unread: 0 },
+        subscriptions: [{ id: collectionId, unread: 0 }],
+      });
+    });
+
+    it("sends the counts only with the catch-up's last page", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      await createTestSubscription(userId, feedId);
+      await createCollection(db, userId, "Reading");
+      const changedAt = new Date("2025-03-01T00:00:00.000Z");
+      const entryIds = await createTestEntryBatch(feedId, MAX_SYNC_PAGE_ENTRIES + 1, {
+        start: changedAt,
+        stepMs: 0,
+      });
+      await createTestUserEntries(
+        entryIds.map((entryId) => ({ userId, entryId, updatedAt: changedAt }))
+      );
+      const start: SyncCursors = {
+        entries: new Date("2025-02-01T00:00:00.000Z").toISOString(),
+        entriesAfterId: null,
+        subscriptions: null,
+        tags: null,
+      };
+
+      const first = await catchUp(userId, start);
+      expect(first.hasMore).toBe(true);
+      expect(first.counts).toBeUndefined();
+
+      const last = await catchUp(userId, first.events.reduce(advanceCursors, start));
+      expect(last.hasMore).toBe(false);
+      expect(last.counts).toBeDefined();
     });
   });
 });

@@ -24,8 +24,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { refreshStoredCollections } from "@/lib/cache/operations";
+import { applyCatchUpPage, handleSyncEvent } from "@/lib/cache/event-handlers";
 import {
   connectionStatusForPhase,
   INITIAL_CONNECTION_STATE,
@@ -172,21 +171,15 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
             syncRetryTimeoutRef.current = null;
           }
           break;
-        case "refresh-after-catch-up":
-          void utils.subscriptions.list.invalidate();
-          void utils.tags.list.invalidate();
-          refreshStoredCollections(utils, queryClient);
-          break;
       }
     }
 
     async function runSync(action: Extract<SyncSessionAction, { type: "run-sync" }>) {
       let result: SyncSessionEvent;
       try {
-        const { events, hasMore } = await utils.client.sync.events.query({
-          cursors: action.cursors,
-        });
-        for (const event of events) handleSyncEvent(utils, queryClient, event);
+        const page = await utils.client.sync.events.query({ cursors: action.cursors });
+        applyCatchUpPage(utils, queryClient, page);
+        const { events, hasMore } = page;
         result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
       } catch (error) {
         console.error("Sync failed:", error);

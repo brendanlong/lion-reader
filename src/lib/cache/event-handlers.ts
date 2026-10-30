@@ -20,6 +20,7 @@ import {
   applyTagDeleted,
   applyUnreadCounts,
   toEntryRow,
+  type UnreadCounts,
 } from "./operations";
 import { patchServerEntryMetadata } from "@/lib/local-db/entries";
 import { getLocalDb } from "@/lib/local-db/local-db";
@@ -47,6 +48,20 @@ function fetchSubscription(utils: TRPCClientUtils, id: string): void {
 // ============================================================================
 // Event Handler
 // ============================================================================
+
+/**
+ * Applies one `sync.events` catch-up page: its events, as live ones are, then
+ * the collections' counts its last page carries (a collection an entry left
+ * gets no count from the replayed entry). Nothing is refetched.
+ */
+export function applyCatchUpPage(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  page: { events: SyncEvent[]; counts?: UnreadCounts }
+): void {
+  for (const event of page.events) handleSyncEvent(utils, queryClient, event);
+  if (page.counts) applyUnreadCounts(utils, queryClient, page.counts);
+}
 
 /**
  * Handles a sync event by updating the local entry store and the React Query

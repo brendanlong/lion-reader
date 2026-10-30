@@ -36,7 +36,7 @@ import {
 } from "@/server/services/subscription-sync-events";
 import type { Database } from "@/server/db";
 import { databaseNow, parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
-import { getBulkEntryRelatedCounts } from "@/server/services/counts";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   getSubscriptionsByIds,
@@ -440,6 +440,32 @@ async function collectTagEvents(db: Database, userId: string, cursor: string) {
 }
 
 /**
+ * Absolute counts of every one of the user's active collections, with their
+ * tags, Uncategorized and the global lists, or none without collections.
+ * Collection membership changes aren't replayed as events, and a replayed
+ * entry carries counts only for the collections it's in now, so a catch-up
+ * sends these for the collections an entry left. Sending all of them (rather
+ * than recording which ones changed) keeps the write paths untouched; a user
+ * has few collections.
+ */
+async function collectCollectionCounts(
+  db: Database,
+  userId: string
+): Promise<BulkUnreadCounts | undefined> {
+  const collections = await db
+    .select({ subscriptionId: subscriptions.id })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        isCollectionSubscription()
+      )
+    );
+  return collections.length > 0 ? getBulkEntryRelatedCounts(db, userId, collections) : undefined;
+}
+
+/**
  * Changes since the given cursors as individual events (SSE-compatible format),
  * sorted by timestamp, plus the cursors to send next time.
  *
@@ -454,15 +480,20 @@ async function collectTagEvents(db: Database, userId: string, cursor: string) {
  * otherwise keep them (starred) forever. Only for a caller that takes the
  * returned cursors — a page of nothing but hidden rows has no events for a
  * client to advance its own cursor from.
+ *
+ * With `collectionCounts`, the last page (no `hasMore`) also carries
+ * {@link collectCollectionCounts}, so a catch-up needs no refetch to correct
+ * the count of a collection an entry left or was deleted from.
  */
 export async function collectSyncEvents(
   db: Database,
   userId: string,
   cursors: SyncCursorsInput,
-  options: { reportHidden?: boolean } = {}
+  options: { reportHidden?: boolean; collectionCounts?: boolean } = {}
 ): Promise<{
   events: SyncEvent[];
   hasMore: boolean;
+  counts?: BulkUnreadCounts;
   next: SyncCursorsInput;
   hidden: Array<{ entryId: string; deletedAt: string }>;
   /** Visible entries whose per-user state (collection membership included) changed. */
@@ -471,7 +502,7 @@ export async function collectSyncEvents(
   // Cursors stay strings to keep Postgres µs precision (#680). A type without
   // one has nothing to diff against (sync.cursors establishes them).
   const { entries: entriesCursor, subscriptions: subscriptionsCursor, tags: tagsCursor } = cursors;
-  const [entryResult, subscriptionResult, tagResult] = await Promise.all([
+  const [entryResult, subscriptionResult, tagResult, collectionCounts] = await Promise.all([
     entriesCursor
       ? collectEntryEvents(
           db,
@@ -482,7 +513,9 @@ export async function collectSyncEvents(
       : null,
     subscriptionsCursor ? collectSubscriptionEvents(db, userId, subscriptionsCursor) : null,
     tagsCursor ? collectTagEvents(db, userId, tagsCursor) : null,
+    options.collectionCounts ? collectCollectionCounts(db, userId) : undefined,
   ]);
+  const hasMore = entryResult?.hasMore ?? false;
 
   const events = [
     ...(entryResult?.events ?? []),
@@ -494,7 +527,8 @@ export async function collectSyncEvents(
 
   return {
     events,
-    hasMore: entryResult?.hasMore ?? false,
+    hasMore,
+    ...(!hasMore && collectionCounts && { counts: collectionCounts }),
     next: {
       entries: entryResult?.next?.entries ?? cursors.entries,
       entriesAfterId: entryResult?.next?.entriesAfterId ?? cursors.entriesAfterId,
