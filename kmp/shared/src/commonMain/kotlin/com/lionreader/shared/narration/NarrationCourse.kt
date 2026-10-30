@@ -56,7 +56,8 @@ class NarrationCourse(private val goesOn: () -> Boolean) {
      */
     fun silent(entryId: String): Silent {
         if (continuedTo != entryId) return Silent.Stays
-        return if (goOn(entryId)) Silent.GoneOn else Silent.Ended
+        goOnTo(next(entryId) ?: return Silent.Ended)
+        return Silent.GoneOn
     }
 
     enum class Silent {
@@ -66,20 +67,19 @@ class NarrationCourse(private val goesOn: () -> Boolean) {
     }
 
     /**
-     * [entryId] has played to its end. Whether narration goes on to the next article, which the
-     * [list] then opens for narration to follow; otherwise it stops. Coming back to it starts it
-     * again.
+     * [entryId] has played to its end: the article narration goes on to, for the narrator to
+     * [goOnTo] once it's ready to follow, or null to stop. Coming back to it starts it again.
      */
-    fun finished(entryId: String): Boolean {
+    fun finished(entryId: String): String? {
         if (left?.first == entryId) left = null
-        return goOn(entryId)
+        return next(entryId)
     }
 
-    private fun goOn(entryId: String): Boolean {
-        val list = list?.takeIf { goesOn() } ?: return false
-        val next = list.after(entryId) ?: return false
+    /** Has the [list] open [next], for narration to follow. */
+    fun goOnTo(next: String) {
         continuedTo = next
-        list.open(next)
-        return true
+        list?.open(next)
     }
+
+    private fun next(entryId: String): String? = list?.takeIf { goesOn() }?.after(entryId)
 }

@@ -145,6 +145,8 @@ class Narrator(
                     if (!dry) return@collectLatest
                     delay(pauseAfterMillis)
                     val error = unreachable.filterNotNull().first()
+                    // Resumed after whatever else was queued, which may have stopped it.
+                    if (_state.value?.let { it.playing && it.waiting } != true) return@collectLatest
                     player.pause()
                     _notice.value = "Narration paused: ${error.message}"
                 }
@@ -373,13 +375,14 @@ class Narrator(
         dir.deleteRecursively()
         publish(null)
         _notice.value = null
-        unreachable.value = null
         session?.invoke()
         session = null
     }
 
     private fun forget() {
         onArticle?.cancel()
+        // What said so was cancelled too.
+        unreachable.value = null
         current = Current.Awaiting
     }
 
@@ -558,10 +561,11 @@ class Narrator(
         val feed = onArticle?.feed ?: return
         if (!finished(snapshot(), feed.fed)) return
         val article = onArticle?.article ?: return
-        if (!course.finished(article.entryId)) return stop()
+        val next = course.finished(article.entryId) ?: return stop()
         // Waiting, not ended, until narration follows the article screen there.
         reset(article.title, article.source)
         publish(_state.value?.copy(paragraph = null))
+        course.goOnTo(next)
     }
 
     private fun item(

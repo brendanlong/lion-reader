@@ -84,13 +84,17 @@ class NarratorTest {
     private val settings = MutableStateFlow(AppSettings(narrationContinue = false))
 
     /** A list of [ids], recording where narration goes on to. */
-    private class Listed(private val ids: List<String>) : NarrationList {
+    private class Listed(
+        private val ids: List<String>,
+        private val onOpen: (String) -> Unit = {},
+    ) : NarrationList {
         val opened = mutableListOf<String>()
 
         override fun after(entryId: String): String? = ids.getOrNull(ids.indexOf(entryId) + 1)
 
         override fun open(entryId: String) {
             opened += entryId
+            onOpen(entryId)
         }
     }
 
@@ -226,6 +230,23 @@ class NarratorTest {
         idleUntil { state == null }
         assertEquals(listOf("Two.", NarrationCues.NO_MORE_ARTICLES), synthesized)
         assertEquals(listOf("b"), list.opened)
+    }
+
+    @Test
+    fun aListThatOpensTheNextArticleAtOnceIsFollowedThere() {
+        settings.value = AppSettings(narrationContinue = true)
+        brief = true
+        val list =
+            Listed(listOf("a", "b")) { narrator.follow(it, "Title $it") }
+                .also { narrator.list = it }
+        narrator.narrate(article("a", "One.", "Two."))
+        idleUntil { list.opened.isNotEmpty() }
+
+        assertEquals("b", state?.entryId)
+        assertEquals("Title b", narrator.player.currentMediaItem?.mediaMetadata?.title)
+        narrator.follow("a", "Title a")
+        // Finished, so not resumed at its end.
+        assertNull(state?.paragraph)
     }
 
     @Test
@@ -505,6 +526,18 @@ class NarratorTest {
         assertNull(narrator.notice.value)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
         assertEquals(listOf("One."), synthesized)
+    }
+
+    @Test
+    fun anEngineOutOfReachBeforeFollowingDoesNotPauseTheNextArticle() {
+        engineUnreachable = true
+        narrator.narrate(article("a", "One."))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+        narrator.follow("b", "Title b")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(70))
+
+        assertTrue(state!!.playing)
+        assertNull(narrator.notice.value)
     }
 
     @Test
