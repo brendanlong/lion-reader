@@ -24,6 +24,7 @@ import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
+import { entrySourceName } from "@/lib/entry-types";
 import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
 import { EntryArticleSkeleton } from "./EntryArticle";
@@ -285,9 +286,7 @@ function EntryContentInner({
       <EntryContentBody
         articleId={entryId}
         title={entry.title ?? "Untitled"}
-        source={
-          (entry.type === "saved" ? entry.siteName : null) ?? entry.feedTitle ?? "Unknown Feed"
-        }
+        source={entrySourceName(entry)}
         author={entry.author}
         url={entry.url}
         date={entry.publishedAt ?? entry.fetchedAt}

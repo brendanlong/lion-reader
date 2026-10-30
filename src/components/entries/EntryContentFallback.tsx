@@ -13,6 +13,7 @@
 "use client";
 
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
+import { entrySourceName } from "@/lib/entry-types";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
@@ -45,7 +46,7 @@ export function EntryContentFallback({
         <EntryArticle
           title={cachedEntry.title ?? "Untitled"}
           url={cachedEntry.url}
-          source={cachedEntry.feedTitle ?? "Unknown Feed"}
+          source={entrySourceName(cachedEntry)}
           author={cachedEntry.author}
           date={cachedEntry.publishedAt ?? cachedEntry.fetchedAt}
           contentHtml={null}

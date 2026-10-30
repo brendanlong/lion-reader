@@ -13,7 +13,7 @@ import { LocalTime } from "@/components/ui/local-time";
 import type { ListDensity } from "@/lib/appearance/settings";
 import { StarIcon, StarFilledIcon } from "@/components/ui/icons";
 import { getItemClasses } from "./entryItemClasses";
-import type { EntryType } from "@/lib/entry-types";
+import { entrySourceName, type EntryType } from "@/lib/entry-types";
 
 /**
  * Entry data for list display (lightweight, no full content).
@@ -93,12 +93,9 @@ export const EntryListItem = memo(function EntryListItem({
   onToggleStar,
   density = "comfortable",
 }: EntryListItemProps) {
-  const { id, title, summary, read, starred, type, feedTitle, siteName, publishedAt, fetchedAt } =
-    entry;
+  const { id, title, summary, read, starred, publishedAt, fetchedAt } = entry;
   const displayTitle = title ?? "Untitled";
-  // For saved articles, prefer siteName (extracted from page metadata) over feedTitle
-  // feedTitle for saved articles is always "Saved Articles" (the feed name)
-  const source = (type === "saved" ? siteName : null) ?? feedTitle ?? "Unknown Feed";
+  const source = entrySourceName(entry);
   const date = publishedAt ?? fetchedAt;
 
   const handleClick = () => {
