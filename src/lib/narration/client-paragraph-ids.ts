@@ -55,9 +55,6 @@ function markParagraphs(html: string): { body: Element; count: number } | null {
 /**
  * Adds data-para-id attributes to the elements narration can highlight.
  *
- * Used for the server-narration path, where the text comes from the LLM and the
- * client only needs the highlight targets.
- *
  * @param html - The HTML content to process
  * @returns Object containing the processed HTML and marked-element count
  *

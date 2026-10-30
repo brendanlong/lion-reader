@@ -9,7 +9,6 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { useNarration } from "./useNarration";
 import type { NarrationEngineView, UseNarrationConfig } from "./useNarrationTypes";
 
@@ -40,25 +39,11 @@ export function NarrationEngineImpl({ onChange, ...config }: NarrationEngineProp
   );
 
   const { state, isSupported } = narration;
-  const { content } = config;
-
-  // Content is sanitized on the server (src/server/html/sanitize.ts), so this
-  // only adds the highlighting markup.
-  const highlightHtml = useMemo(
-    () => (content && isSupported ? processHtmlForHighlighting(content) : null),
-    [content, isSupported]
-  );
 
   // Layout effects, so the view re-renders with a new state before paint.
   useLayoutEffect(() => {
-    onChange({
-      ...controls,
-      state,
-      isSupported,
-      highlightHtml,
-      highlightSource: content ?? null,
-    });
-  }, [onChange, controls, state, isSupported, highlightHtml, content]);
+    onChange({ ...controls, state, isSupported });
+  }, [onChange, controls, state, isSupported]);
   useLayoutEffect(() => () => onChange(null), [onChange]);
 
   return null;

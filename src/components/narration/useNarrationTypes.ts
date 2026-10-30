@@ -100,19 +100,7 @@ export interface UseNarrationReturn {
  * controls are stable across renders (they forward to the latest engine), so
  * the view can hold the report in state without a render loop.
  */
-export interface NarrationEngineView extends UseNarrationReturn {
-  /**
-   * The displayed content with paragraph ids, for highlighting and seeking.
-   * Made whether or not narration is playing, so starting and stopping it
-   * doesn't replace the article (restarting embeds, losing the selection).
-   */
-  highlightHtml: string | null;
-  /**
-   * The content `highlightHtml` was made from. The view lags a commit behind a
-   * content change, so only use `highlightHtml` when this matches.
-   */
-  highlightSource: string | null;
-}
+export type NarrationEngineView = UseNarrationReturn;
 
 // ============================================================================
 // Default State

@@ -21,15 +21,15 @@
  * "End of article.", which highlights no element.
  */
 
+import { useRef, type ReactElement } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Mock } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { NarrationControlsImpl } from "@/components/narration/NarrationControls";
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
-import { NarrationEngineImpl } from "@/components/narration/NarrationEngine";
 import { useNarration } from "@/components/narration/useNarration";
-import type { NarrationEngineView } from "@/components/narration/useNarrationTypes";
+import { useEntryNarration } from "@/components/narration/useEntryNarration";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
@@ -127,10 +127,16 @@ function NarrationHarness({
   return <NarrationControlsImpl narration={narration} />;
 }
 
-function renderHarness(content: string, showFullContent = false) {
-  return renderWithTrpc(<NarrationHarness content={content} showFullContent={showFullContent} />, {
+function renderHarnessWith(harness: ReactElement) {
+  return renderWithTrpc(harness, {
     wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
   });
+}
+
+function renderHarness(content: string, showFullContent = false) {
+  return renderHarnessWith(
+    <NarrationHarness content={content} showFullContent={showFullContent} />
+  );
 }
 
 /** Clicks "Listen" and waits for the first paragraph to be speaking. */
@@ -325,33 +331,56 @@ describe("playFromElement", () => {
   });
 });
 
-describe("NarrationEngine's article HTML", () => {
-  it("is the same before, during and after narration, so the article isn't replaced", async () => {
-    let view: NarrationEngineView | null = null;
-    const onChange = (next: NarrationEngineView | null) => {
-      view = next;
-    };
-    const current = () => view as NarrationEngineView;
-    renderWithTrpc(
-      <NarrationEngineImpl
-        id="entry-1"
-        title="Test article"
-        feedTitle="Test feed"
-        content={SPARSE_HTML}
-        onChange={onChange}
-      />
+describe("the narrated article's HTML", () => {
+  // jsdom has no layout; the view scrolls to the spoken paragraph.
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = () => {};
+  });
+  afterEach(() => {
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  function EntryHarness() {
+    const contentRef = useRef<HTMLDivElement>(null);
+    const narration = useEntryNarration({
+      contentRef,
+      articleId: "entry-1",
+      title: "Test article",
+      feedTitle: "Test feed",
+      content: SPARSE_HTML,
+      showFullContent: false,
+      showOriginal: false,
+    });
+    return (
+      <>
+        {narration.engine}
+        {narration.controls}
+        <div
+          ref={contentRef}
+          data-testid="article"
+          dangerouslySetInnerHTML={{ __html: narration.contentHtml ?? "" }}
+        />
+      </>
     );
-    await waitFor(() => expect(current().isSupported).toBe(true));
-    const idle = current().highlightHtml;
-    expect(idle).toContain('data-para-id="para-3"');
+  }
 
-    await act(() => current().play());
-    await waitFor(() => expect(current().state.status).toBe("playing"));
-    expect(current().highlightHtml).toBe(idle);
+  it("is marked for highlighting and stays the same as narration starts and stops", async () => {
+    renderHarnessWith(<EntryHarness />);
+    const first = () => screen.getByTestId("article").firstElementChild;
+    const before = first();
+    expect(before?.getAttribute("data-para-id")).toBe("para-0");
 
-    act(() => current().stop());
-    await waitFor(() => expect(current().state.status).toBe("idle"));
-    expect(current().highlightHtml).toBe(idle);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument());
+    await startNarration();
+    expect(first()).toBe(before);
+
+    // Played to the end, which stops it.
+    for (let i = 0; i < 10 && !screen.queryByRole("button", { name: "Listen" }); i++) {
+      const utterance = speech.speak.mock.lastCall?.[0] as { onend: (() => void) | null };
+      await act(async () => utterance.onend?.());
+    }
+    expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument();
+    expect(first()).toBe(before);
   });
 });
 
