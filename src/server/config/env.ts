@@ -73,7 +73,7 @@ function resolvePublicSignupProviders(): readonly SignupProvider[] {
 export const signupConfig = {
   /** Secret for admin API endpoints. If not set, admin endpoints are disabled. */
   get allowlistSecret() {
-    return process.env.ADMIN_SECRET ?? process.env.ALLOWLIST_SECRET;
+    return process.env.ALLOWLIST_SECRET;
   },
 
   /** Providers allowed for new signups when a valid invite is presented. */

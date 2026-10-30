@@ -167,15 +167,14 @@ Set the `STORAGE_*` variables as `.env.example` describes.
 
 ## Configuring Secrets
 
-`.env.example` describes each setting, optional ones included (AI, sign-in
-providers, newsletters, limits). The secrets this guide sets:
+`.env.example` lists every setting the app, worker and Discord bot read, with
+its default.
+The two this guide sets as secrets are required:
 
-| Secret                          | Required | Description                                                                 | How to Get                                                                            |
-| ------------------------------- | -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                  | Yes      | Postgres connection string                                                  | Set by `fly postgres attach`                                                          |
-| `REDIS_URL`                     | Yes      | Redis/Upstash connection string                                             | From Upstash console or `fly redis create`                                            |
-| `ANDROID_APP_CERT_SHA256`       | No       | Android app signing-key SHA-256 fingerprints (comma-separated), for sign-in | `keytool -list -v -keystore <release keystore>`; add Play App Signing's key once used |
-| `ANDROID_DEBUG_APP_CERT_SHA256` | No       | Same, for the debug app (`com.lionreader.app.debug`)                        | The private dev keystore (see `docs/android-dev.md`)                                  |
+| Secret         | Description                     | How to Get                                 |
+| -------------- | ------------------------------- | ------------------------------------------ |
+| `DATABASE_URL` | Postgres connection string      | Set by `fly postgres attach`               |
+| `REDIS_URL`    | Redis/Upstash connection string | From Upstash console or `fly redis create` |
 
 ---
 
@@ -297,7 +296,7 @@ must be higher than the last.
    GitHub install accepts. Add its environment secrets:
    `ANDROID_RELEASE_KEYSTORE_BASE64` (`base64 -w0 lionreader-upload.jks`) and
    `ANDROID_RELEASE_KEYSTORE_PASSWORD`.
-3. Set `ANDROID_APP_CERT_SHA256` on the server (see the table above) to the
+3. Set `ANDROID_APP_CERT_SHA256` on the server (see `.env.example`) to the
    upload key's fingerprint, and, once Play App Signing is on, Play's key's
    (Play Console → Test and release → App integrity). The two builds are
    signed differently, so a GitHub install and a Play install can't update

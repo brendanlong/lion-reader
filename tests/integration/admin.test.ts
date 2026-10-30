@@ -1,5 +1,5 @@
-// Set ADMIN_SECRET before any imports so env.ts reads it at module init time
-process.env.ADMIN_SECRET = "test-admin-secret";
+// Set ALLOWLIST_SECRET before any imports so env.ts reads it at module init time
+process.env.ALLOWLIST_SECRET = "test-admin-secret";
 
 /**
  * Integration tests for the Admin tRPC router.
