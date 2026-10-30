@@ -20,6 +20,7 @@ import {
   jobs,
   websubSubscriptions,
   websubHubStats,
+  users,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
@@ -38,7 +39,11 @@ import {
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
 import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "../../src/server/feed/scheduling";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
-import { createTestFeed as insertTestFeed } from "./helpers";
+import {
+  createTestFeed as insertTestFeed,
+  createTestSubscription as insertTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 // Sample RSS feed content for testing content notifications
 const SAMPLE_RSS_FEED = `<?xml version="1.0" encoding="UTF-8"?>
@@ -88,6 +93,11 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
   return feed;
 }
 
+/** Gives the feed an active subscriber, which the renewal sweep requires. */
+async function addSubscriber(feedId: string): Promise<void> {
+  await insertTestSubscription(await createTestUser(), feedId);
+}
+
 // Helper to create a test WebSub subscription
 async function createTestSubscription(
   feedId: string,
@@ -134,6 +144,7 @@ describe("WebSub Integration", () => {
     await db.delete(websubHubStats);
     await db.delete(jobs);
     await db.delete(feeds);
+    await db.delete(users);
   }
 
   beforeEach(cleanup);
@@ -712,6 +723,7 @@ describe("WebSub Integration", () => {
       process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
       try {
         const feed = await createTestFeed({ websubActive: true });
+        await addSubscriber(feed.id);
         const { subscription } = await createTestSubscription(feed.id, {
           state: "active",
           expiresAt: new Date(Date.now() - RENEWAL_STALL_GRACE_MS - 60 * 1000),
@@ -749,6 +761,7 @@ describe("WebSub Integration", () => {
           hubUrl: failingHubUrl,
           selfUrl: "https://example.com/feed-sweep-downtime.xml",
         });
+        await addSubscriber(feed.id);
         // Expired well past the grace window, with the last write to the row
         // predating the expiry - i.e. no renewal was ever attempted for it.
         const expiresAt = new Date(Date.now() - RENEWAL_STALL_GRACE_MS - 2 * 60 * 60 * 1000);
@@ -811,6 +824,7 @@ describe("WebSub Integration", () => {
           hubUrl: failingHubUrl,
           selfUrl: "https://example.com/feed-post-fail.xml",
         });
+        await addSubscriber(feed.id);
         const workingSecret = generateCallbackSecret();
         const { subscription } = await createTestSubscription(feed.id, {
           hubUrl: failingHubUrl,
@@ -834,6 +848,35 @@ describe("WebSub Integration", () => {
 
         const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
         expect(updatedFeed.websubActive).toBe(true);
+      } finally {
+        process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
+      }
+    });
+
+    it("sweep drops an expiring lease to polling instead of renewing it once the feed has no subscribers", async () => {
+      const prevAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+      process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
+      try {
+        const feed = await createTestFeed({ websubActive: true, hubUrl: failingHubUrl });
+        await insertTestSubscription(await createTestUser(), feed.id, {
+          unsubscribedAt: new Date(),
+        });
+        const { subscription } = await createTestSubscription(feed.id, {
+          hubUrl: failingHubUrl,
+          state: "active",
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+
+        await renewExpiringSubscriptions(24);
+
+        const [afterSweep] = await db
+          .select()
+          .from(websubSubscriptions)
+          .where(eq(websubSubscriptions.id, subscription.id));
+        expect(afterSweep.state).toBe("unsubscribed");
+
+        const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
+        expect(updatedFeed.websubActive).toBe(false);
       } finally {
         process.env.NEXT_PUBLIC_APP_URL = prevAppUrl;
       }

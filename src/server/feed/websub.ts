@@ -8,11 +8,17 @@
  */
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, exists, isNull, sql } from "drizzle-orm";
 import { fetchWithSsrfProtection } from "../http/ssrf";
 import { readResponseBufferWithSizeLimit } from "../http/fetch";
 import { db } from "../db";
-import { feeds, websubSubscriptions, type Feed, type WebsubSubscription } from "../db/schema";
+import {
+  feeds,
+  subscriptions,
+  websubSubscriptions,
+  type Feed,
+  type WebsubSubscription,
+} from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { logger } from "@/lib/logger";
 
@@ -78,6 +84,8 @@ export const RENEWAL_STALL_GRACE_MS = 6 * 60 * 60 * 1000;
  * entry and the row's stored error can't drift apart.
  */
 const RENEWAL_STALL_ERROR = "Renewal not verified by hub within grace period";
+
+const NO_SUBSCRIBERS_ERROR = "Feed has no subscribers";
 
 /**
  * Private/local hostnames and IP ranges that can't receive WebSub callbacks.
@@ -861,6 +869,12 @@ export async function renewExpiringSubscriptions(
     .select({
       subscription: websubSubscriptions,
       feed: feeds,
+      hasSubscriber: exists(
+        db
+          .select({ one: sql`1` })
+          .from(subscriptions)
+          .where(and(eq(subscriptions.feedId, feeds.id), isNull(subscriptions.unsubscribedAt)))
+      ),
     })
     .from(websubSubscriptions)
     .innerJoin(feeds, eq(websubSubscriptions.feedId, feeds.id))
@@ -890,7 +904,14 @@ export async function renewExpiringSubscriptions(
   const staleCutoff = new Date(Date.now() - RENEWAL_STALL_GRACE_MS);
 
   // Renew each expiring subscription
-  for (const { subscription, feed } of expiringSubs) {
+  for (const { subscription, feed, hasSubscriber } of expiringSubs) {
+    // Nothing polls a feed nobody subscribes to, so nothing else would ever end
+    // its lease. A later subscriber's first fetch subscribes again.
+    if (!hasSubscriber) {
+      await deactivateWebsub(feed.id, NO_SUBSCRIBERS_ERROR);
+      continue;
+    }
+
     // A renewal stuck long past expiry: give up and revert the feed to polling
     // instead of retrying forever. The subscription stayed `active` throughout,
     // so this is the only place a wedged renewal is cut off. The teardown is a
@@ -1032,13 +1053,13 @@ async function revertStalledSubscription(
 }
 
 /**
- * Deactivates WebSub for a feed when the hub URL is removed.
- * Marks any active subscription as unsubscribed and sets websubActive to false.
+ * Drops a feed back from WebSub to polling: marks any active subscription as
+ * unsubscribed (recording `reason` as its last error) and clears websubActive.
+ * The hub's lease then lapses on its own.
  *
- * @param feedId - The feed ID
  * @returns true if WebSub was deactivated, false if it wasn't active
  */
-export async function deactivateWebsub(feedId: string): Promise<boolean> {
+export async function deactivateWebsub(feedId: string, reason: string): Promise<boolean> {
   // Find active subscription for this feed
   const [subscription] = await db
     .select()
@@ -1065,7 +1086,7 @@ export async function deactivateWebsub(feedId: string): Promise<boolean> {
     .update(websubSubscriptions)
     .set({
       state: "unsubscribed",
-      lastError: "Hub URL removed from feed",
+      lastError: reason,
       unsubscribeRequestedAt: now,
       updatedAt: now,
     })
@@ -1080,10 +1101,7 @@ export async function deactivateWebsub(feedId: string): Promise<boolean> {
     })
     .where(eq(feeds.id, feedId));
 
-  logger.info("WebSub deactivated - hub URL removed from feed", {
-    subscriptionId: subscription.id,
-    feedId,
-  });
+  logger.info("WebSub deactivated", { subscriptionId: subscription.id, feedId, reason });
 
   return true;
 }

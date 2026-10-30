@@ -379,7 +379,7 @@ async function processSuccessfulFetch(
     // deliver again. deactivateWebsub also clears websubActive, so it stays
     // false until the new hub verifies our subscription.
     if (websubAction === "resubscribe") {
-      await deactivateWebsub(feed.id);
+      await deactivateWebsub(feed.id, "Hub URL changed");
       websubMetadata.websubHubChanged = true;
       logger.info("WebSub hub URL changed - resubscribing to new hub", {
         feedId: feed.id,
@@ -409,7 +409,7 @@ async function processSuccessfulFetch(
     }
   } else if (websubAction === "deactivate") {
     // Feed had WebSub active but hub URL is now gone - deactivate
-    await deactivateWebsub(feed.id);
+    await deactivateWebsub(feed.id, "Hub URL removed from feed");
     websubMetadata.websubDeactivated = true;
     logger.info("Deactivated WebSub - hub URL removed from feed", {
       feedId: feed.id,
