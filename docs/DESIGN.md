@@ -47,13 +47,13 @@ Architecture and the decisions behind it. The rules for working inside each subs
    ▼           ▼                     ▼
    └──────────►┤                     │
                ▼                     ▼
-           ┌─────────────┐       ┌─────────────┐
-           │  Postgres   │       │    Redis    │
-           │             │       │  - pub/sub  │
-           │  - all data │       │  - cache    │
-           │  - job queue│       │  - sessions │
-           └─────────────┘       │  - rate lim │
-                                 └─────────────┘
+           ┌─────────────┐       ┌──────────────┐      ┌────────────────┐
+           │  Postgres   │       │    Redis     │      │ Object storage │
+           │             │       │  - pub/sub   │      │  (optional)    │
+           │  - all data │       │  - rate lim  │      │  - images      │
+           │  - job queue│       │  - site      │      │  - archived    │
+           └─────────────┘       │    status    │      │    pages       │
+                                 └──────────────┘      └────────────────┘
 ```
 
 The app, worker, and Discord bot are separate, independently scaled Fly process groups; the worker is not embedded in the app servers. Background jobs use a Postgres-based queue (`src/server/jobs/`).
@@ -101,7 +101,7 @@ Per-source behavior (YouTube, LessWrong, Bluesky, Google Docs, …) lives in cap
 
 Workers publish to Redis; each app process forwards events over SSE; the client writes them straight into its local store and caches without refetching ([sse-cache-updates.d2](diagrams/sse-cache-updates.d2), `src/FRONTEND_STATE.md`).
 
-- **Two channel patterns**, so servers receive only what they need: `feed:{feedId}:events` for a web feed's entries (one publish per fetch reaches every subscriber), and `user:{userId}:events` for everything with a single recipient — per-user state, and email and saved entries. Event types are in `src/server/redis/pubsub.ts`.
+- **Per-feed and per-user channels**, so servers receive only what they need: `feed:{feedId}:events` for a web feed's entries (one publish per fetch reaches every subscriber), and `user:{userId}:events` for everything with a single recipient — per-user state, and email and saved entries. The one global channel, `site-status:events`, carries announcement changes to everyone. Event types are in `src/server/redis/pubsub.ts`.
 - **One connection per tab** to `/api/v1/events`; if SSE is unavailable (a 503), the client polls the sync endpoint instead.
 - **One Redis subscriber per app process**, with channel subscriptions ref-counted across SSE connections, so Redis connections don't grow with users.
 
