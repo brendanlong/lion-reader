@@ -15,6 +15,7 @@ import java.io.File
 import java.io.IOException
 import java.time.Duration
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -35,6 +36,8 @@ class NarratorTest {
     private var unreached = 0
     /** Calls to fail as unreachable before the engine answers again; -1 for all of them. */
     private var unreachableFor = 0
+    /** How long a synthesis takes to fail as unreachable. */
+    private var unreachableAfterMillis = 0L
     /** Getting the engine fails as unreachable while this is set. */
     private var engineUnreachable = false
     /** Texts whose next synthesis streams half its audio and waits: see [streamed]. */
@@ -61,6 +64,7 @@ class NarratorTest {
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
                     unreached++
+                    delay(unreachableAfterMillis)
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
@@ -536,6 +540,19 @@ class NarratorTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
         assertEquals(listOf("One."), synthesized)
         assertNull(narrator.notice.value)
+    }
+
+    @Test
+    fun narrationPausesOnceDryForLongEvenWhileEachTryIsSlowToFail() {
+        unreachableFor = -1
+        unreachableAfterMillis = 50_000
+        narrator.narrate(article("a", "One."))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(55))
+        assertTrue(state!!.playing)
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
+        assertFalse(state!!.playing)
+        assertTrue(narrator.notice.value!!.startsWith("Narration paused"))
     }
 
     @Test

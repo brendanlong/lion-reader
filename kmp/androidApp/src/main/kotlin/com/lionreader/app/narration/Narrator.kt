@@ -3,7 +3,6 @@ package com.lionreader.app.narration
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
-import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -43,11 +42,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -94,7 +96,6 @@ class Narrator(
     },
     /** How long the player can run dry, the engine unreachable, before narration pauses. */
     private val pauseAfterMillis: Long = 60_000,
-    private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val dir = File(context.cacheDir, "narration")
@@ -119,6 +120,12 @@ class Narrator(
      */
     private val reached = MutableStateFlow(0L)
 
+    /**
+     * Why the engine can't be reached, from an attempt failing that way until one gets through:
+     * what pauses a player that has run dry (see `init`).
+     */
+    private val unreachable = MutableStateFlow<SpeechInterrupted?>(null)
+
     private val playerInstance = lazy { buildPlayer() }
     val player: ExoPlayer by playerInstance
 
@@ -128,6 +135,20 @@ class Narrator(
                 .map { it.narrationSpeed }
                 .distinctUntilChanged()
                 .collect { if (playerInstance.isInitialized()) player.setPlaybackSpeed(it) }
+        }
+        // Once the player has run dry for [pauseAfterMillis] with the engine unreachable,
+        // narration pauses, keeping its place, rather than spin; playing again tries again.
+        scope.launch {
+            _state
+                .map { it?.playing == true && it.waiting }
+                .distinctUntilChanged()
+                .collectLatest { dry ->
+                    if (!dry) return@collectLatest
+                    delay(pauseAfterMillis)
+                    val error = unreachable.filterNotNull().first()
+                    player.pause()
+                    _notice.value = "Narration paused: ${error.message}"
+                }
         }
     }
 
@@ -210,7 +231,6 @@ class Narrator(
     private class Feed(parent: Job) {
         /** Its synthesis and [replay]s, so stopping it stops them all. */
         val job = SupervisorJob(parent)
-        val starved = Starved()
         /** Whether it has queued and synthesized everything it's going to. */
         var fed = false
         /** Times each chunk has been said again after stopping partway (see [replay]). */
@@ -223,11 +243,6 @@ class Narrator(
 
     private val prepared: Prepared?
         get() = onArticle?.prepared
-
-    /** Since when the player has run dry with the engine unreachable. */
-    private class Starved {
-        var since: Long? = null
-    }
 
     /** Turns narration on, playing [article] from [fromParagraph]. */
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
@@ -297,7 +312,7 @@ class Narrator(
         audio.preparing = scope.launch {
             val engine =
                 try {
-                    reaching(Starved()) { engineFor(settings.value) }
+                    reaching { engineFor(settings.value) }
                 } catch (e: SpeechUnavailable) {
                     return@launch fail(e.message)
                 }
@@ -383,6 +398,7 @@ class Narrator(
         dir.deleteRecursively()
         publish(null)
         _notice.value = null
+        unreachable.value = null
         left = null
         session?.invoke()
         session = null
@@ -475,7 +491,7 @@ class Narrator(
                 if (itemOf(index) == null) player.addMediaItem(item(article, index))
                 // After an error with nothing queued past it.
                 if (player.playbackState == Player.STATE_IDLE) player.prepare()
-                inFlight.addLast(index to async { synthesizeOrSkip(feed, prepared, index) })
+                inFlight.addLast(index to async { synthesizeOrSkip(prepared, index) })
             }
         }
         while (next < chunks.size || inFlight.isNotEmpty()) {
@@ -515,9 +531,9 @@ class Narrator(
      * engine can't be reached, what's queued plays on and this tries again ([reaching]): a dropped
      * connection in the background doesn't end narration mid-word.
      */
-    private suspend fun synthesizeOrSkip(feed: Feed, prepared: Prepared, index: Int): Uri? {
+    private suspend fun synthesizeOrSkip(prepared: Prepared, index: Int): Uri? {
         return try {
-            reaching(feed.starved) {
+            reaching {
                 prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
             }
         } catch (e: CancellationException) {
@@ -534,17 +550,17 @@ class Narrator(
      * backs off and tries again; at once when another attempt gets through, and from the start when
      * narration is played again after a pause.
      */
-    private suspend fun <T : Any> reaching(starved: Starved, attempt: suspend () -> T): T {
+    private suspend fun <T : Any> reaching(attempt: suspend () -> T): T {
         var wait = RETRY_FIRST_MILLIS
         while (true) {
             val seen = reached.value
             try {
                 return attempt().also {
-                    starved.since = null
+                    unreachable.value = null
                     reached.update { it + 1 }
                 }
             } catch (e: SpeechInterrupted) {
-                interrupted(starved, e)
+                unreachable.value = e
             }
             val woke =
                 withTimeoutOrNull(wait) {
@@ -561,23 +577,6 @@ class Narrator(
                 wait = RETRY_FIRST_MILLIS
             }
         }
-    }
-
-    /**
-     * The engine couldn't be reached. Once the player has run dry for [pauseAfterMillis] that way,
-     * narration pauses, keeping its place, rather than spin; playing again tries again.
-     */
-    private fun interrupted(starved: Starved, error: SpeechInterrupted) {
-        val state = _state.value
-        if (state == null || !state.playing || !derived(state).waiting) {
-            starved.since = null
-            return
-        }
-        val since = starved.since ?: now().also { starved.since = it }
-        if (now() - since < pauseAfterMillis) return
-        starved.since = null
-        player.pause()
-        _notice.value = "Narration paused: ${error.message}"
     }
 
     /** Once the last chunk there'll ever be has played: on to the next article, or stops. */
@@ -724,7 +723,7 @@ class Narrator(
         scope.launch(feed.job) {
             val again =
                 try {
-                    if (replays > MAX_REPLAYS) null else synthesizeOrSkip(feed, prepared, chunk)
+                    if (replays > MAX_REPLAYS) null else synthesizeOrSkip(prepared, chunk)
                 } catch (e: SpeechUnavailable) {
                     // Not if a seek or another article replaced this feed meanwhile.
                     if (isActive) fail(e.message)
