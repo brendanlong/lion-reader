@@ -151,13 +151,9 @@ const JOB_DEFINITIONS = {
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
   // Deletes deleted users' or entries' objects in the public bucket (their
   // images); see src/server/services/stored-objects.ts. Each prefix must be
-  // one of those two shapes, so a bad payload can't empty the bucket. A single
-  // `prefix` is how the previous release queued them.
+  // one of those two shapes, so a bad payload can't empty the bucket.
   delete_stored_objects: {
-    payload: z.union([
-      z.object({ prefixes: z.array(storedObjectsPrefix) }),
-      z.object({ prefix: storedObjectsPrefix }).transform(({ prefix }) => ({ prefixes: [prefix] })),
-    ]),
+    payload: z.object({ prefixes: z.array(storedObjectsPrefix) }),
     lane: "one_time",
   },
   // Delete the archived full-content pages of hard-deleted entries. Queued in
