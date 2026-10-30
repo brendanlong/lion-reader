@@ -10,10 +10,9 @@
  */
 
 import { hashKey } from "@tanstack/react-query";
-import type { EntryRow } from "./entries";
+import type { CollectionMembershipChange, EntryRow } from "./entries";
 import type { SyncedCollection } from "./synced-collection";
 import type { EntryType } from "@/lib/entry-types";
-import type { TagLists } from "@/lib/events/schemas";
 import { ENTRY_SORT_DIRECTIONS, isRankedSort, type EntrySortOrder } from "@/lib/entry-sort";
 
 export type ListEntryRow = {
@@ -369,24 +368,17 @@ export function insertIntoMatchingLists(
   );
 }
 
-/** An entry joining or leaving a collection, and the tag lists holding it after. */
-interface CollectionChange {
-  collectionId: string;
-  added: boolean;
-  tagLists: TagLists;
-}
-
 /**
  * Hides an entry from (or shows it again in) the loaded lists an entry's
  * joining or leaving a collection changes, whatever their other filters
- * (they can only narrow these): the collection's, and by `tagLists`, the tag
- * and Uncategorized lists. Recorded even where the entry isn't loaded yet, so
+ * (they can only narrow these): the collection's, and by `tagLists` when
+ * known, the tag and Uncategorized lists. Recorded even where the entry isn't loaded yet, so
  * a page already in flight can't show it.
  */
 export function setCollectionChangeInLists(
   lists: EntryLists,
   entryId: string,
-  change: CollectionChange
+  change: CollectionMembershipChange
 ): void {
   const rows: ListEntryRow[] = [];
   for (const [listKey, meta] of lists.meta) {
@@ -411,11 +403,11 @@ export function setCollectionChangeInLists(
 /** Whether the entry is in a list after the change, or undefined if the change can't move it. */
 function memberAfterCollectionChange(
   input: EntryListFilters,
-  { collectionId, added, tagLists }: CollectionChange
+  { collectionId, added, tagLists }: CollectionMembershipChange
 ): boolean | undefined {
   if (input.subscriptionId) return input.subscriptionId === collectionId ? added : undefined;
-  if (input.tagId) return tagLists.tagIds.includes(input.tagId);
-  if (input.uncategorized) return tagLists.uncategorized;
+  if (input.tagId) return tagLists?.tagIds.includes(input.tagId);
+  if (input.uncategorized) return tagLists?.uncategorized;
   return undefined;
 }
 

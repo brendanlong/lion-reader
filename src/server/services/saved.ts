@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, notExists, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
@@ -478,13 +478,13 @@ const UPLOAD_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
 const UPLOAD_MEMBERSHIPS = entryMemberships(UPLOAD_ROW);
 
 /**
- * The upload saved earlier under `guid`, shaped like a fresh upload's result,
- * list item included (with the collections it has been filed into since).
+ * The user's saved article matching `match`, with its list item as it stands
+ * (memberships included).
  */
-export async function selectExistingUpload(
+async function selectInsertedSavedArticle(
   db: typeof dbType,
   userId: string,
-  guid: string
+  match: SQL
 ): Promise<InsertedSavedArticle | null> {
   const [row] = await db
     .select({
@@ -497,9 +497,7 @@ export async function selectExistingUpload(
     .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
     .leftJoinLateral(UPLOAD_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(UPLOAD_MEMBERSHIPS, UPLOAD_ROW))
-    .where(
-      and(eq(entries.ownerUserId, userId), eq(entries.guid, guid), eq(userEntries.userId, userId))
-    )
+    .where(and(eq(entries.ownerUserId, userId), match, eq(userEntries.userId, userId)))
     .limit(1);
   if (!row?.subscriptionId) return null;
   const { entry, userState } = row;
@@ -521,6 +519,18 @@ export async function selectExistingUpload(
       }),
     },
   };
+}
+
+/**
+ * The upload saved earlier under `guid`, shaped like a fresh upload's result,
+ * list item included (with the collections it has been filed into since).
+ */
+export function selectExistingUpload(
+  db: typeof dbType,
+  userId: string,
+  guid: string
+): Promise<InsertedSavedArticle | null> {
+  return selectInsertedSavedArticle(db, userId, eq(entries.guid, guid));
 }
 
 /**
@@ -1068,7 +1078,7 @@ export async function uploadFile(
   const file = Buffer.from(params.content, "base64");
   assertUploadSize("Uploaded file", file.length);
 
-  return withCollections(db, userId, params.collectionIds, async () => {
+  const uploaded = await withCollections(db, userId, params.collectionIds, async () => {
     const guid = params.idempotencyKey ? uploadGuid(params.idempotencyKey) : undefined;
     const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
     if (existing) return existing;
@@ -1091,6 +1101,12 @@ export async function uploadFile(
     );
     return insertUploadedArticle(db, userId, fields, guid, entryId);
   });
+  if (!params.collectionIds?.length) return uploaded;
+  // Filed into its collections after the insert: its list item names them,
+  // as fresh as filing it.
+  return (
+    (await selectInsertedSavedArticle(db, userId, eq(entries.id, uploaded.article.id))) ?? uploaded
+  );
 }
 
 /**

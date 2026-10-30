@@ -14,7 +14,7 @@ import { act, cleanup, waitFor } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { applyCollectionEntriesChange } from "@/lib/cache/operations";
+import { applyCollectionEntriesChange, applyNewEntry } from "@/lib/cache/operations";
 import { trpc } from "@/lib/trpc/client";
 import type { EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb } from "@/lib/local-db/local-db";
@@ -68,6 +68,9 @@ function seedList(queryClient: QueryClient, input: object, items: EntryRow[]): v
 /** In sub-1 alone, which is untagged. */
 const tagListsOf = (entryIds: string[]) =>
   entryIds.map((entryId) => ({ entryId, tagIds: [], uncategorized: true }));
+
+/** Later than every seeded entry's state. */
+const CHANGED_AT = new Date("2024-07-02T00:00:00Z");
 
 const COUNTS = createCounts({
   all: { unread: 3 },
@@ -148,12 +151,14 @@ describe("collection_entries_changed", () => {
       seedList(queryClient, UNCATEGORIZED, []);
     });
     // The client hasn't loaded the collection, so only the server knows its tags.
+    let changedAt = entry.updatedAt.getTime();
     const change = (added: boolean, tagIds: string[], uncategorized: boolean) =>
       act(() =>
         applyCollectionEntriesChange(utils, queryClient, {
           subscriptionId: COLLECTION,
           added,
           tagLists: [{ entryId: "a", tagIds, uncategorized }],
+          updatedAt: new Date(++changedAt),
         })
       );
     const ids = () =>
@@ -250,6 +255,7 @@ describe("collection_entries_changed", () => {
         subscriptionId: COLLECTION,
         added: false,
         tagLists: tagListsOf(["a"]),
+        updatedAt: CHANGED_AT,
       })
     );
     await act(async () => {
@@ -293,6 +299,7 @@ describe("collection_entries_changed", () => {
             subscriptionId: COLLECTION,
             added: false,
             tagLists: tagListsOf([entryId]),
+            updatedAt: CHANGED_AT,
           })
         );
       const ids = () => rendered.result.current.entries.map((e) => e.id);
@@ -375,5 +382,74 @@ describe("collection_entries_changed", () => {
     // Re-delivery (mutation response, then the SSE event) is a no-op.
     changeMembership(["a"], true);
     expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1", COLLECTION]);
+  });
+
+  it("keeps an upload's collection when the upload's response lands after the add's event", async () => {
+    const { utils, queryClient, ids, changeMembership } = setup({ feed: [], collection: [] });
+    // Read at insert, before the upload was filed into the collection.
+    const insertedListItem = {
+      entryId: "upload",
+      subscriptionId: "sub-1",
+      subscriptionIds: ["sub-1"],
+      tagLists: { tagIds: [], uncategorized: true },
+      updatedAt: "2024-07-01T00:00:00Z",
+      entry: {
+        type: "web" as const,
+        title: "Upload",
+        author: null,
+        summary: null,
+        url: null,
+        publishedAt: null,
+        fetchedAt: "2024-07-01T00:00:00Z",
+        siteName: null,
+        feedTitle: "Feed One",
+      },
+    };
+    act(() => applyNewEntry(utils, queryClient, insertedListItem, undefined));
+
+    changeMembership(["upload"], true);
+    act(() => applyNewEntry(utils, queryClient, insertedListItem, undefined));
+
+    expect(storedEntry(queryClient, "upload")?.subscriptionIds).toEqual(["sub-1", COLLECTION]);
+    await waitFor(() => expect(ids("collection")).toEqual(["upload"]));
+  });
+
+  it("ignores an add older than a removal it lost the race to", async () => {
+    const entry = makeEntry("a", "2024-06-01");
+    const { utils, queryClient, ids } = setup({ feed: [entry], collection: [entry] });
+    await waitFor(() => expect(ids("collection")).toEqual(["a"]));
+    const change = (added: boolean, updatedAt: Date) =>
+      act(() =>
+        applyCollectionEntriesChange(utils, queryClient, {
+          subscriptionId: COLLECTION,
+          added,
+          tagLists: tagListsOf(["a"]),
+          updatedAt,
+        })
+      );
+
+    change(false, CHANGED_AT);
+    change(true, new Date(CHANGED_AT.getTime() - 1));
+
+    expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1"]);
+    await waitFor(() => expect(ids("collection")).toEqual([]));
+  });
+
+  it("records the position an entry joined with even when its membership is already stored", () => {
+    // Fetched after the add, before its response or event.
+    const entry = makeEntry("a", "2024-06-01", { subscriptionIds: ["sub-1", COLLECTION] });
+    const { utils, queryClient } = setup({ feed: [entry], collection: [] });
+
+    act(() =>
+      applyCollectionEntriesChange(utils, queryClient, {
+        subscriptionId: COLLECTION,
+        added: true,
+        tagLists: tagListsOf(["a"]),
+        positions: { a: 7 },
+        updatedAt: CHANGED_AT,
+      })
+    );
+
+    expect(storedEntry(queryClient, "a")?.positions).toEqual({ [COLLECTION]: 7 });
   });
 });

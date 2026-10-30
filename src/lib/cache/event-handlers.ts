@@ -156,7 +156,10 @@ export function handleSyncEvent(
       break;
 
     case "collection_entries_changed":
-      applyCollectionEntriesChange(utils, queryClient, event);
+      applyCollectionEntriesChange(utils, queryClient, {
+        ...event,
+        updatedAt: new Date(event.updatedAt),
+      });
       break;
 
     case "tag_created":

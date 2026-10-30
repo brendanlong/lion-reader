@@ -213,7 +213,9 @@ export function applyTagDeleted(
  * picker shows them), and the loaded entry lists that changes: the
  * collection's, and the tag and Uncategorized lists `tagLists` says it joined
  * or left. Idempotent, so the acting tab can apply both its mutation response
- * and the SSE event.
+ * and the SSE event. Ordered by `updatedAt` like any state write: an entry
+ * whose stored state is newer keeps its memberships, and its lists follow
+ * those.
  */
 export function applyCollectionEntriesChange(
   utils: TRPCClientUtils,
@@ -224,22 +226,22 @@ export function applyCollectionEntriesChange(
     positions?: Record<string, number>;
     counts?: UnreadCounts;
     tagLists: EntryTagLists;
+    updatedAt: Date;
   }
 ): void {
-  const { subscriptionId, added, positions, counts } = change;
+  const { subscriptionId, added, positions, counts, updatedAt } = change;
   if (counts) applyUnreadCounts(utils, queryClient, counts);
   const db = getLocalDb(queryClient);
   // One per changed entry.
   for (const { entryId, ...tagLists } of change.tagLists) {
-    const membership = {
-      collectionId: subscriptionId,
-      added,
-      tagLists,
-      position: positions?.[entryId],
-    };
+    const membership = setStoredEntryCollection(
+      db.entries,
+      entryId,
+      { collectionId: subscriptionId, added, tagLists, position: positions?.[entryId] },
+      updatedAt
+    );
     setCollectionChangeInLists(db.lists, entryId, membership);
-    setStoredEntryCollection(db.entries, entryId, membership);
-    if (added) {
+    if (membership.added) {
       // Its new membership places it in the collection's lists and those of
       // the collection's tags.
       const stored = db.entries.getSynced(entryId);

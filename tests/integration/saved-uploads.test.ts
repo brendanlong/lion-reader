@@ -12,7 +12,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import Redis from "ioredis";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, entries } from "../../src/server/db/schema";
+import { users, entries, userEntries } from "../../src/server/db/schema";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { createCollection } from "../../src/server/services/collections";
@@ -100,6 +100,24 @@ describe("uploadFile's list item", () => {
     } finally {
       await subscriber.quit();
     }
+  });
+
+  it("names the collections it was filed into, as fresh as filing it", async () => {
+    const userId = await createUser();
+    const { subscription: collection } = await createCollection(db, userId, "Reading");
+
+    const { listItem } = await uploadFile(db, userId, {
+      content: Buffer.from("A note for the collection.").toString("base64"),
+      filename: "note.md",
+      collectionIds: [collection.id],
+    });
+
+    const [{ updatedAt }] = await db
+      .select({ updatedAt: userEntries.updatedAt })
+      .from(userEntries)
+      .where(eq(userEntries.entryId, listItem.entryId));
+    expect(listItem.subscriptionIds).toContain(collection.id);
+    expect(listItem.updatedAt).toBe(updatedAt.toISOString());
   });
 });
 

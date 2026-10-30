@@ -117,7 +117,7 @@ describe("MCP curation tools", () => {
 });
 
 describe("collection_entries_changed", () => {
-  it("publishes the change and its counts on the user's channel", async () => {
+  it("publishes the change and its counts on the user's channel, stamped like the response", async () => {
     const { userId, entryId } = await userWithEntry();
     const channel = getUserEventsChannel(userId);
     let collectionId = "";
@@ -126,14 +126,21 @@ describe("collection_entries_changed", () => {
     });
     const message = waitForMessage(subscriber, channel);
 
-    await addEntriesToCollection(db, userId, collectionId, [entryId]);
+    const result = await addEntriesToCollection(db, userId, collectionId, [entryId]);
 
+    // Clients order the response and the event against the entry's state by it.
+    const [{ updatedAt }] = await db
+      .select({ updatedAt: userEntries.updatedAt })
+      .from(userEntries)
+      .where(eq(userEntries.entryId, entryId));
+    expect(result.updatedAt).toEqual(updatedAt);
     expect(JSON.parse(await message)).toMatchObject({
       type: "collection_entries_changed",
       subscriptionId: collectionId,
       entryIds: [entryId],
       added: true,
       counts: { subscriptions: [{ id: collectionId, unread: 1 }] },
+      updatedAt: updatedAt.toISOString(),
     });
   });
 });
