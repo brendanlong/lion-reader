@@ -18,6 +18,8 @@ import {
 import { useNarrationHighlight } from "./useNarrationHighlight";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { seekTargetElement } from "@/lib/narration/seek-target";
+import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "@/lib/narration/paragraph-map";
+import { continueNarrationFrom, takeNarrationContinuation } from "./continuation";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 interface UseEntryNarrationOptions {
@@ -36,6 +38,8 @@ interface UseEntryNarrationOptions {
   showFullContent: boolean;
   showOriginal: boolean;
   prerecordedVoice?: PrerecordedVoice;
+  /** Opens the next article in the list; absent at its end. */
+  onNext?: () => void;
 }
 
 interface EntryNarration {
@@ -61,6 +65,7 @@ export function useEntryNarration({
   showFullContent,
   showOriginal,
   prerecordedVoice,
+  onNext,
 }: UseEntryNarrationOptions): EntryNarration {
   const [narrationSettings] = useNarrationSettings();
   const showNarration = narrationSettings.enabled;
@@ -71,6 +76,28 @@ export function useEntryNarration({
   const narration = showNarration ? narrationEngine : null;
   const narrationState = narration?.state ?? DEFAULT_NARRATION_STATE;
   const isNarrationActive = getNarrationPhase(narrationState).isActive;
+
+  const continuing = narrationSettings.continueToNextArticle;
+  const following = continuing ? (onNext ? NEXT_ARTICLE : NO_MORE_ARTICLES) : undefined;
+  const goOn = useCallback(() => {
+    if (!continuing || !onNext) return;
+    continueNarrationFrom(articleId);
+    onNext();
+  }, [continuing, onNext, articleId]);
+
+  // Narration that went on to this article plays once its engine is ready, and
+  // passes over it if there's nothing to say.
+  const play = narration?.play;
+  const isSupported = narration?.isSupported ?? false;
+  const continuedHereRef = useRef(false);
+  useEffect(() => {
+    if (!play || !isSupported || !takeNarrationContinuation(articleId)) return;
+    continuedHereRef.current = true;
+    play();
+  }, [play, isSupported, articleId]);
+  const onNothingToSay = useCallback(() => {
+    if (continuedHereRef.current) goOn();
+  }, [goOn]);
 
   const { highlightedParagraphIds } = useNarrationHighlight({
     currentParagraphIndex: narrationState.currentParagraph,
@@ -154,6 +181,9 @@ export function useEntryNarration({
         showFullContent={showFullContent}
         showOriginal={showOriginal}
         prerecordedVoice={prerecordedVoice}
+        following={following}
+        onFinished={goOn}
+        onNothingToSay={onNothingToSay}
         onChange={setNarrationEngine}
       />
     ),

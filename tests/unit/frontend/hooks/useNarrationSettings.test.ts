@@ -236,6 +236,7 @@ describe("useNarrationSettings", () => {
         pitch: 0.9,
         highlightEnabled: false,
         autoScrollEnabled: false,
+        continueToNextArticle: false,
         useLlmNormalization: true,
         sentenceGapSeconds: 0.5,
         cloudPauseSeconds: 1,

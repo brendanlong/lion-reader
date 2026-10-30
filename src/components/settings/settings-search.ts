@@ -211,6 +211,8 @@ export const SETTINGS_SEARCH_INDEX = [
       "audio",
       "listen",
       "read aloud",
+      "next article",
+      "continue",
       "voice",
       "voices",
       "enhanced voices",

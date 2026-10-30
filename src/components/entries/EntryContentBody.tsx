@@ -193,6 +193,7 @@ export function EntryContentBody({
     showFullContent,
     showOriginal,
     prerecordedVoice: prerecordedNarration,
+    onNext: onSwipeNext,
   });
 
   // Get text appearance settings

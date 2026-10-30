@@ -74,6 +74,12 @@ export interface NarrationSettings {
   autoScrollEnabled: boolean;
 
   /**
+   * Whether narration goes on to the next article in the list when one ends.
+   * Default: true
+   */
+  continueToNextArticle: boolean;
+
+  /**
    * Whether to use LLM preprocessing for narration.
    * When enabled, content is processed by an LLM to improve TTS quality
    * (expanding abbreviations, formatting URLs, etc.).
@@ -101,6 +107,7 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   pitch: DEFAULT_PITCH,
   highlightEnabled: true,
   autoScrollEnabled: true,
+  continueToNextArticle: true,
   useLlmNormalization: false,
   sentenceGapSeconds: 0.1,
   cloudPauseSeconds: DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS,
@@ -171,6 +178,10 @@ export function loadNarrationSettings(): NarrationSettings {
         typeof parsed.autoScrollEnabled === "boolean"
           ? parsed.autoScrollEnabled
           : DEFAULT_NARRATION_SETTINGS.autoScrollEnabled,
+      continueToNextArticle:
+        typeof parsed.continueToNextArticle === "boolean"
+          ? parsed.continueToNextArticle
+          : DEFAULT_NARRATION_SETTINGS.continueToNextArticle,
       useLlmNormalization:
         typeof parsed.useLlmNormalization === "boolean"
           ? parsed.useLlmNormalization

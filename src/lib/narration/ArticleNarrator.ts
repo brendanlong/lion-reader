@@ -78,6 +78,8 @@ export class ArticleNarrator {
   private pitch: number = DEFAULT_PITCH;
   private stateChangeListeners: Set<StateChangeCallback> = new Set();
 
+  private finishListeners: Set<() => void> = new Set();
+
   /**
    * Cached Firefox detection result.
    * Firefox has broken pause/resume, so we use a workaround.
@@ -276,6 +278,14 @@ export class ArticleNarrator {
     };
   }
 
+  /** Calls `callback` each time narration reaches the end of the article. */
+  onFinished(callback: () => void): () => void {
+    this.finishListeners.add(callback);
+    return () => {
+      this.finishListeners.delete(callback);
+    };
+  }
+
   /**
    * Sets the voice to use for narration.
    *
@@ -375,6 +385,7 @@ export class ArticleNarrator {
       // Reached end of article
       this.utterance = null;
       this.setStatus("idle");
+      this.finishListeners.forEach((callback) => callback());
     }
   }
 
