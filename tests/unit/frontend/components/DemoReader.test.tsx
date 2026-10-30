@@ -242,7 +242,7 @@ describe("demo reader tree", () => {
 
     const features = await screen.findByRole("link", { name: /^Features/ });
     expect(features).toHaveAttribute("aria-current", "page");
-    fireEvent.click(within(features.parentElement!).getByRole("button", { name: "Expand" }));
+    fireEvent.click(screen.getByRole("button", { name: "Features feeds", expanded: false }));
     await screen.findByRole("link", { name: /^Feed Types/ });
 
     press("K");

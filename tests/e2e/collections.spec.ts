@@ -51,8 +51,7 @@ test("adds an article to a new collection and lists it there", async ({ page, ba
   // Opening the article marked it read, so the unread-only sidebar hides the
   // collection. Unread again, it appears with its badge without a refetch of
   // its own, and lists the article in its (unread-only) view.
-  const uncategorized = page.getByRole("listitem").filter({ hasText: "Uncategorized" });
-  await uncategorized.getByRole("button", { name: "Expand" }).click();
+  await page.getByRole("button", { name: "Uncategorized feeds", expanded: false }).click();
   await expect(page.getByRole("link", { name: new RegExp(`^${feed.title}`) })).toBeVisible();
   const research = page.getByRole("link", { name: /^Research/ });
   await expect(research).toBeHidden();
@@ -91,8 +90,7 @@ test("uploads into the viewed collection and deletes the collection with it", as
   await dialog.getByRole("button", { name: "Upload", exact: true }).click();
   await expect(page.locator('[aria-label*="article: Chapter 1"]')).toBeVisible();
 
-  const uncategorized = page.getByRole("listitem").filter({ hasText: "Uncategorized" });
-  await uncategorized.getByRole("button", { name: "Expand" }).click();
+  await page.getByRole("button", { name: "Uncategorized feeds", expanded: false }).click();
   await page.getByRole("link", { name: /^Book/ }).hover();
   await page.getByRole("button", { name: "Delete Book" }).click();
   const confirm = page.getByRole("dialog");

@@ -130,11 +130,7 @@ async function seedAndOpenAll(
 
   // Expand the News tag so the subscription row (and its unread count) renders.
   if (options.expandTag !== false) {
-    await page
-      .getByRole("listitem")
-      .filter({ has: page.getByRole("link", { name: /News/ }) })
-      .getByRole("button", { name: "Expand" })
-      .click();
+    await page.getByRole("button", { name: "News feeds", expanded: false }).click();
     await expect(page.getByRole("link", { name: new RegExp(taggedFeed.title) })).toBeVisible();
   }
 

@@ -83,11 +83,8 @@ async function expandTechTag() {
   // its own toggle) and expand it if not already expanded. Idempotent because
   // useExpandedTags keeps its expanded set in a module-level cache that persists
   // across renders within the test file.
-  const techLink = await screen.findByRole("link", { name: /Tech/ });
-  const li = techLink.closest("li");
-  if (!li) throw new Error("Tech tag row not found");
-  const toggle = within(li).getByRole("button", { name: /Expand|Collapse/ });
-  if (toggle.getAttribute("aria-label") === "Expand") {
+  const toggle = await screen.findByRole("button", { name: "Tech feeds" });
+  if (toggle.getAttribute("aria-expanded") === "false") {
     fireEvent.click(toggle);
   }
 }
@@ -228,8 +225,7 @@ describe("Sidebar", () => {
         "subscriptions.get": () => twoTagFeed,
       }),
     });
-    const newsLink = await screen.findByRole("link", { name: /^News/ });
-    fireEvent.click(within(newsLink.closest("li")!).getByRole("button", { name: "Expand" }));
+    fireEvent.click(await screen.findByRole("button", { name: "News feeds", expanded: false }));
     await expandTechTag();
 
     // Sidebar order: News, Feed One (News), Tech, Feed One (Tech).
@@ -249,11 +245,7 @@ describe("Sidebar", () => {
     expect(window.location.pathname).toBe("/tag/tag-1");
 
     // With the chosen copy collapsed away, the remaining copy is current again.
-    fireEvent.click(
-      within(screen.getByRole("link", { name: /^Tech/ }).closest("li")!).getByRole("button", {
-        name: "Collapse",
-      })
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Tech feeds", expanded: true }));
     expect(screen.getByRole("link", { name: /Feed One/ })).toHaveAttribute("aria-current", "page");
     window.history.replaceState(null, "", "/");
   });
