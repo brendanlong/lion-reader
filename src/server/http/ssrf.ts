@@ -25,6 +25,7 @@ import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "nod
 import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from "undici";
 
 import { securityConfig } from "../config/env";
+import { USER_AGENT } from "./user-agent";
 
 /**
  * Private/reserved IPv4 ranges as [network, prefix] tuples. Each is also blocked in
@@ -388,7 +389,8 @@ export async function followRedirects(
 
 /**
  * Performs a fetch with SSRF protection. Use this instead of `fetch` for any
- * request whose URL is user-influenced.
+ * request whose URL is user-influenced. Sends our `USER_AGENT` unless the
+ * caller sets a User-Agent.
  *
  * Layers of protection, applied to the initial request and every redirect hop:
  * 0. Non-http(s) schemes (file:, ftp:, gopher:, data:, …) are rejected up front by
@@ -423,7 +425,13 @@ export async function followRedirects(
  * @example
  * const res = await fetchWithSsrfProtection(url, { headers, signal });
  */
-export async function fetchWithSsrfProtection(url: string, init: RequestInit): Promise<Response> {
+export async function fetchWithSsrfProtection(
+  url: string,
+  requestInit: RequestInit
+): Promise<Response> {
+  const headers = new Headers(requestInit.headers);
+  if (!headers.has("User-Agent")) headers.set("User-Agent", USER_AGENT);
+  const init = { ...requestInit, headers };
   const dispatcher = getSsrfDispatcher();
 
   // When private-network fetching is allowed (dev/test) there is no dispatcher, so

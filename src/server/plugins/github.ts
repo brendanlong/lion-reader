@@ -1,6 +1,5 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { logger } from "@/lib/logger";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { escapeHtml } from "@/server/http/html";
@@ -181,7 +180,6 @@ export function normalizeFilenameForFragment(filename: string): string {
 function getApiHeaders(authenticated = true): HeadersInit {
   const headers: HeadersInit = {
     Accept: "application/vnd.github+json",
-    "User-Agent": USER_AGENT,
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
@@ -312,9 +310,6 @@ const RAW_FETCH_TIMEOUT_MS = 30000;
 async function fetchRawContent(rawUrl: string): Promise<string | null> {
   try {
     const response = await fetchWithSsrfProtection(rawUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
       signal: AbortSignal.timeout(RAW_FETCH_TIMEOUT_MS),
     });
 
