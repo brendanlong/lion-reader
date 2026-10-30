@@ -367,8 +367,8 @@ data class SpeechRequest(
 @Serializable data class SaveArticleRequest(val url: String)
 
 /**
- * [content] is the file, Base64-encoded; the server picks the converter by [filename]. A repeat
- * with the same [idempotencyKey] returns the article the first one saved.
+ * [content] is the file, Base64-encoded (sent by [base64JsonBody]); the server picks the converter
+ * by [filename]. A repeat with the same [idempotencyKey] returns the article the first one saved.
  */
 @Serializable
 data class UploadFileRequest(
@@ -382,8 +382,8 @@ data class UploadFileRequest(
 @Serializable data class SaveArticleResponse(val article: SavedArticle)
 
 /**
- * [content] is the `.epub`, Base64-encoded; [filename] names the collection if the book has no
- * title.
+ * [content] is the `.epub`, Base64-encoded (sent by [base64JsonBody]); [filename] names the
+ * collection if the book has no title.
  */
 @Serializable data class ImportEbookRequest(val content: String, val filename: String)
 
