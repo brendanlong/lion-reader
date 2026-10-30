@@ -157,6 +157,8 @@ export interface ProcessedArticleContent {
  *
  * @param options.offload - Run the URL pass and Readability on the libuv
  *   thread pool (request paths); background jobs pass false.
+ * @param options.minContentLength - Passed to Readability (emails, being
+ *   often short, accept a shorter input than a web page).
  * @param options.minCleanedLength - Passed to Readability (uploads, being
  *   trusted user content, accept a shorter extraction than a web page).
  * @throws when storage refuses an image
@@ -164,7 +166,12 @@ export interface ProcessedArticleContent {
 export async function processArticleContent(
   bundle: ArticleContentBundle,
   baseUrl: string | null,
-  options: { offload: boolean; objectsPrefix: string | null; minCleanedLength?: number }
+  options: {
+    offload: boolean;
+    objectsPrefix: string | null;
+    minContentLength?: number;
+    minCleanedLength?: number;
+  }
 ): Promise<ProcessedArticleContent> {
   const { html, pluginContent, preCleanedContent } = bundle;
   const rewrite = options.offload ? rewriteContentUrlsAsync : rewriteContentUrls;
@@ -179,6 +186,7 @@ export async function processArticleContent(
 
   const cleanOptions = {
     url: baseUrl ?? undefined,
+    minContentLength: options.minContentLength,
     minCleanedLength: options.minCleanedLength,
     imageUrlPrefix,
   };

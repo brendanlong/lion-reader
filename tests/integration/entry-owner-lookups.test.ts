@@ -115,6 +115,22 @@ describe("email and saved lookups by owner (#1846)", () => {
     });
   });
 
+  it("takes one of two concurrent deliveries of a message and calls the other a duplicate", async () => {
+    const userId = await user();
+    await receiveEmail(userId);
+    const messageId = `<${generateUuidv7()}@example.com>`;
+
+    const results = await Promise.all([
+      receiveEmail(userId, { messageId }),
+      receiveEmail(userId, { messageId }),
+    ]);
+
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+    expect(results.filter((result) => !result.success)).toEqual([
+      { success: false, error: "Duplicate email" },
+    ]);
+  });
+
   it("clearing an email subscription's name shows its sender", async () => {
     const userId = await user();
     const { subscriptionId } = await receiveEmail(userId);
