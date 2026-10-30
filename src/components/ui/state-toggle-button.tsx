@@ -55,11 +55,13 @@ export function StateToggleButton({
       }
     : undefined;
 
+  // Pressed is a fill, or on e-paper (no fills) a black edge against the
+  // unpressed gray one.
   return (
     <button
       type="button"
       onClick={handleClick}
-      className={`control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2 transition-colors ${className}`}
+      className={`control-outline text-muted hover:bg-surface-muted hover:text-body aria-pressed:bg-surface-muted aria-pressed:text-body epaper:aria-[pressed=false]:border-fill-muted inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2 transition-colors ${className}`}
       title={name}
       aria-label={name}
       aria-pressed={isPressed}

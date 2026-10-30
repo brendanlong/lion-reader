@@ -151,7 +151,7 @@ export default function ApiTokensSettingsContent() {
                 className="ui-text-sm flex-1 font-mono"
                 onClick={(e) => e.currentTarget.select()}
               />
-              <CopyButton value={newlyCreatedToken} className="px-3" title="Copy token" />
+              <CopyButton value={newlyCreatedToken} variant="button" title="Copy token" />
             </div>
             <Button
               variant="ghost"

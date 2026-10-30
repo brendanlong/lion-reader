@@ -12,7 +12,7 @@ import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
-import { CopyButton } from "@/components/ui/copy-button";
+import { CodeBlock } from "@/components/ui/copy-button";
 import { BookmarkIcon, ChevronRightIcon, ChromeIcon, FirefoxIcon } from "@/components/ui/icons";
 
 export function BookmarkletSettings() {
@@ -120,12 +120,7 @@ export function BookmarkletSettings() {
             <p className="ui-text-sm text-muted mb-2">
               If you prefer, you can manually create a bookmark with this JavaScript code:
             </p>
-            <div className="relative">
-              <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body overflow-x-auto rounded-md border p-3 font-mono">
-                <code className="break-all whitespace-pre-wrap">{bookmarkletHref}</code>
-              </pre>
-              <CopyButton value={bookmarkletHref} className="absolute top-2 right-2 px-2 py-1" />
-            </div>
+            <CodeBlock code={bookmarkletHref} />
           </div>
         )}
       </CardSection>

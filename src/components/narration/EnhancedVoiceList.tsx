@@ -356,11 +356,14 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
                   Retry
                 </button>
               )}
-              <IconButton
-                icon={<CloseIcon className="h-4 w-4" />}
-                aria-label="Dismiss error"
+              <button
+                type="button"
                 onClick={clearError}
-              />
+                className="text-danger hover:text-danger-hover inline-flex min-h-11 min-w-11 items-center justify-center"
+                aria-label="Dismiss error"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>
