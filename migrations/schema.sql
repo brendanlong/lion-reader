@@ -329,37 +329,35 @@ $_$;
 
 CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $_$
 DECLARE
   v_sign integer := CASE WHEN TG_OP = 'INSERT' THEN 1 ELSE -1 END;
+  v_any boolean;
   v_user uuid[]; v_entry uuid[]; v_sub uuid[];
   v_collections uuid[];
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM changed_rows) THEN
+  EXECUTE 'SELECT EXISTS (SELECT 1 FROM changed_rows)' INTO v_any;
+  IF NOT v_any THEN
     RETURN NULL;
   END IF;
-  IF TG_OP = 'INSERT' THEN
-    SELECT array_agg(id) FILTER (WHERE type = 'collection') INTO v_collections
+  EXECUTE $q$
+    SELECT array_agg(id) FILTER (WHERE type = 'collection')
     FROM (
       SELECT id, type FROM subscriptions
       WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
       ORDER BY id FOR NO KEY UPDATE
-    ) s;
-  ELSE
-    SELECT array_agg(id) INTO v_collections
-    FROM subscriptions
-    WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows) AND type = 'collection';
-  END IF;
-  SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id)
-  INTO v_user, v_entry, v_sub
-  FROM changed_rows;
+    ) s
+  $q$ INTO v_collections;
+  EXECUTE $q$
+    SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id) FROM changed_rows
+  $q$ INTO v_user, v_entry, v_sub;
   PERFORM apply_membership_changes(v_sign, v_user, v_entry, v_sub);
   IF v_collections IS NOT NULL THEN
     UPDATE subscriptions SET memberships_changed_at = now() WHERE id = ANY(v_collections);
   END IF;
   RETURN NULL;
 END;
-$$;
+$_$;
 
 CREATE FUNCTION public.subscription_entries_drop_lists() RETURNS trigger
     LANGUAGE plpgsql
@@ -516,11 +514,21 @@ $_$;
 
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $_$
 DECLARE
   m_sign integer[]; m_user uuid[]; m_entry uuid[]; m_sub uuid[];
   c_user uuid[]; c_all integer[]; c_starred integer[];
 BEGIN
+  EXECUTE $q$
+    SELECT 1 FROM subscriptions
+    WHERE id IN (
+      SELECT se.subscription_id
+      FROM old_rows o
+      JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
+    )
+    ORDER BY id FOR NO KEY UPDATE
+  $q$;
+
   SELECT array_agg(-1), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
   INTO m_sign, m_user, m_entry, m_sub
   FROM old_rows o
@@ -545,7 +553,7 @@ BEGIN
   WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id;
   RETURN NULL;
 END;
-$$;
+$_$;
 
 CREATE FUNCTION public.user_entries_counters_insert() RETURNS trigger
     LANGUAGE plpgsql

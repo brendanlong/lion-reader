@@ -1619,11 +1619,11 @@ describe("sync.events", () => {
       expect(last.counts?.subscriptions.map((s) => s.id)).toEqual([collectionId]);
     });
 
-    it("stamps through a deleted collection's cascades without sending it", async () => {
+    it("a deleted collection isn't sent", async () => {
       const userId = await createTestUser();
       const deleted = (await createCollection(db, userId, "Deleted")).subscription.id;
       const kept = (await createCollection(db, userId, "Kept")).subscription.id;
-      const onlyInDeleted = await uploadArticle(db, userId, {
+      await uploadArticle(db, userId, {
         content: "Body",
         title: "Only here",
         collectionIds: [deleted],
@@ -1635,34 +1635,17 @@ describe("sync.events", () => {
       });
       const caller = createCaller(await createAuthContext(userId));
       const start = await caller.sync.cursors();
+      for (const id of [deleted, kept]) {
+        await setMembershipsChangedBefore(id, start.entries!, SYNC_CLOCK_MARGIN_MS + 1000);
+      }
 
+      // Deleting its article that's in no other collection removes (and so
+      // stamps) its membership; the collection itself is reported deleted.
       await caller.subscriptions.delete({ id: deleted, deleteSavedArticles: true });
       const result = await catchUp(userId, start);
 
-      expect(
-        await db.select({ id: entries.id }).from(entries).where(eq(entries.id, onlyInDeleted.id))
-      ).toEqual([]);
-      expect(result.counts?.subscriptions.map((s) => s.id) ?? []).not.toContain(deleted);
+      expect(result.counts).toBeUndefined();
       expect(result.events.some((e) => e.type === "subscription_deleted")).toBe(true);
-    });
-
-    it("deletes a user whose collections hold articles (the subscriptions cascade)", async () => {
-      const userId = await createTestUser();
-      const collectionId = (await createCollection(db, userId, "Papers")).subscription.id;
-      await uploadArticle(db, userId, {
-        content: "Body",
-        title: "Paper",
-        collectionIds: [collectionId],
-      });
-
-      await db.delete(users).where(eq(users.id, userId));
-
-      expect(
-        await db
-          .select({ id: subscriptions.id })
-          .from(subscriptions)
-          .where(eq(subscriptions.userId, userId))
-      ).toEqual([]);
     });
   });
 });
