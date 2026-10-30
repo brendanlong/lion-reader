@@ -804,6 +804,11 @@ export const subscriptions = pgTable(
     // counter triggers, also while it's unsubscribed.
     unreadCount: integer("unread_count").notNull().default(0),
 
+    // When a collection's memberships last changed (database clock), so a sync
+    // catch-up sends only the changed collections' counts (#2232). Stamped by
+    // the subscription_entries counters trigger; NULL until the first change.
+    membershipsChangedAt: temporalTimestamp("memberships_changed_at"),
+
     // An email subscription's (normalized) sender address, unique per user
     // (#1846 phase 6). Its emails are owned by the subscription
     // (entries.owner_subscription_id).
@@ -830,6 +835,10 @@ export const subscriptions = pgTable(
     // Active collections' names are unique per user ignoring case (#1846).
     uniqueIndex("uq_subscriptions_user_collection_name")
       .on(table.userId, sql`lower(${table.customTitle})`)
+      .where(sql`type = 'collection' AND unsubscribed_at IS NULL`),
+    // A catch-up's lookup of the collections changed since its start.
+    index("idx_subscriptions_user_memberships_changed")
+      .on(table.userId, table.membershipsChangedAt)
       .where(sql`type = 'collection' AND unsubscribed_at IS NULL`),
     // Only web subscriptions have a feed, and every other one has its own
     // name (#1846).

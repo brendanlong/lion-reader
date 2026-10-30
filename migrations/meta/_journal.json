@@ -1296,6 +1296,13 @@
       "when": 1792970954240,
       "tag": "0185_drop_entries_full_content_original",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1792970954241,
+      "tag": "0186_subscriptions_memberships_changed_at",
+      "breakpoints": true
     }
   ]
 }
