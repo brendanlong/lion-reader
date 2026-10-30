@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icons";
 import { isEbookFile } from "@/lib/upload-file-types";
+import { deleteSharedFile, getSharedFile, type SharedFileRecord } from "@/lib/share-store";
 
 export default function SavePage() {
   return (
@@ -29,56 +30,20 @@ export default function SavePage() {
   );
 }
 
-interface SharedFile {
-  content: string;
-  /** The MIME type the sharing app gave it. */
-  type?: string;
-  filename: string;
-  title?: string;
+interface SharedFile extends SharedFileRecord {
   /** Generated once per shared file, so a retry can't save it twice. */
   idempotencyKey: string;
 }
 
-const SHARE_DB_NAME = "lion-reader-share";
-const SHARE_STORE = "files";
-const SHARED_FILE_KEY = "pending";
-
-/** Runs one request against the store the share-target service worker leaves files in. */
-function shareStoreRequest<T>(
-  mode: IDBTransactionMode,
-  run: (store: IDBObjectStore) => IDBRequest<T>
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open(SHARE_DB_NAME, 1);
-    // Opening creates the database if it's missing; give it the store too, or
-    // the service worker's open at the same version would find none to fill.
-    open.onupgradeneeded = () => open.result.createObjectStore(SHARE_STORE);
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const db = open.result;
-      const request = run(db.transaction(SHARE_STORE, mode).objectStore(SHARE_STORE));
-      request.onsuccess = () => {
-        db.close();
-        resolve(request.result);
-      };
-      request.onerror = () => {
-        db.close();
-        reject(request.error);
-      };
-    };
-  });
-}
-
 /** The file the share-target service worker stashed, or null if there's none. */
 async function readSharedFile(): Promise<SharedFile | null> {
-  const record = (await shareStoreRequest("readonly", (store) => store.get(SHARED_FILE_KEY))) as
-    Omit<SharedFile, "idempotencyKey"> | undefined;
+  const record = await getSharedFile();
   return record ? { ...record, idempotencyKey: crypto.randomUUID() } : null;
 }
 
 /** Drop the shared file once it's saved; until then it survives a sign-in round-trip. */
-function deleteSharedFile(): void {
-  shareStoreRequest("readwrite", (store) => store.delete(SHARED_FILE_KEY)).catch((error: unknown) =>
+function dropSharedFile(): void {
+  deleteSharedFile().catch((error: unknown) =>
     console.error("Failed to delete the shared file:", error)
   );
 }
@@ -128,14 +93,14 @@ function SaveContent() {
 
   const uploadFileMutation = trpc.saved.uploadFile.useMutation({
     onSuccess: (data) => {
-      deleteSharedFile();
+      dropSharedFile();
       setArticleTitle(data.article.title);
     },
   });
 
   const importEbookMutation = trpc.collections.importEbook.useMutation({
     onSuccess: ({ subscription, entryIds }) => {
-      deleteSharedFile();
+      dropSharedFile();
       const chapters = `${entryIds.length} chapter${entryIds.length === 1 ? "" : "s"}`;
       setArticleTitle(subscription.title ? `${subscription.title} (${chapters})` : chapters);
     },
