@@ -15,7 +15,6 @@ import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  entrySummaries,
   oauthAuthorizationCodes,
   sessions,
   subscriptions,
@@ -26,7 +25,6 @@ import { createApiToken } from "../../src/server/auth/api-token";
 import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { BUILD_ID } from "../../src/lib/build-id";
-import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { HEARTBEAT_INTERVAL_MS } from "../../src/server/realtime/sse-connection";
@@ -49,6 +47,7 @@ import { GET as authorizeGet } from "../../src/app/(spa)/oauth/authorize/route";
 import { openSseStream } from "../utils/sse";
 import {
   createTestEntry,
+  createTestEntrySummary,
   createTestFeed,
   createTestOAuthClient,
   createTestSubscription,
@@ -751,17 +750,7 @@ describe("summaries", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
     const userId = await createUser();
     const [entryId] = await subscribedEntries(userId, 1);
-    await db.insert(entrySummaries).values({
-      id: generateUuidv7(),
-      userId,
-      // createTestEntry's content hash; the summary cache is keyed off it.
-      contentHash: `hash-${entryId}`,
-      summaryText: "<p>A short summary.</p>",
-      modelId: "claude-test",
-      promptVersion: CURRENT_PROMPT_VERSION,
-      generatedAt: new Date(),
-      createdAt: new Date(),
-    });
+    await createTestEntrySummary(userId, `hash-${entryId}`, "<p>A short summary.</p>");
 
     const res = await rest(await appToken(userId), "POST", "/summarization/generate", {
       entryId,

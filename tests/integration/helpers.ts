@@ -25,6 +25,7 @@ import {
   users,
   feeds,
   entries,
+  entrySummaries,
   subscriptions,
   subscriptionTags,
   tags,
@@ -42,6 +43,7 @@ import { generateToken, hashToken } from "../../src/server/oauth/utils";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { insertUserEntriesWithMemberships } from "../../src/server/services/subscription-entries";
 import { deleteUser } from "../../src/server/services/users";
+import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -327,6 +329,27 @@ export async function createTestEntryBatch(
     RETURNING id
   `);
   return result.rows.map((row) => row.id);
+}
+
+/**
+ * Caches `summaryText` as the user's current summary of the content with
+ * `contentHash` (`createTestEntry`'s is `hash-<entry id>`).
+ */
+export async function createTestEntrySummary(
+  userId: string,
+  contentHash: string,
+  summaryText: string,
+  { modelId = "claude-test" }: { modelId?: string } = {}
+): Promise<void> {
+  await db.insert(entrySummaries).values({
+    id: generateUuidv7(),
+    userId,
+    contentHash,
+    summaryText,
+    modelId,
+    promptVersion: CURRENT_PROMPT_VERSION,
+    generatedAt: new Date(),
+  });
 }
 
 /**
