@@ -104,6 +104,15 @@ export const SUGGESTED_CLOUD_VOICE_MODELS: string[] = [
 export const MAX_CLOUD_SPEECH_CHARS = 1000;
 
 /**
+ * Cloud speech requests one listener streams at once. Enough that a provider
+ * streaming slower than playback (at 2x, say) keeps up by generating several
+ * chunks at once, and that requests left running after a seek don't hold up
+ * the new position; but bounded, since providers limit concurrent requests per
+ * key, which several listeners share on the server's.
+ */
+export const MAX_CLOUD_SPEECH_STREAMS = 4;
+
+/**
  * The silence each chunk of cloud speech ends in. Models leave varying silence
  * at a clip's ends, some next to none, so the server evens each clip's out to
  * this (`ClipEdges`); without it chunks run together while the sentences

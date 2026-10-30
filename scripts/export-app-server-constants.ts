@@ -1,5 +1,5 @@
 /**
- * Writes the server's request limits, upload file types and cloud-speech pause settings the
+ * Writes the server's request limits, upload file types and cloud-speech settings the
  * native app must agree with, as Kotlin constants, so a server change reaches
  * the app instead of a stale copy. Regenerate with `pnpm app:server-constants`;
  * a unit test fails when the committed copy is stale.
@@ -12,6 +12,7 @@ import {
   DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS,
   MAX_CLOUD_SPEECH_CHARS,
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
+  MAX_CLOUD_SPEECH_STREAMS,
 } from "../src/lib/narration/constants";
 import { EBOOK_UPLOAD_EXTENSIONS, SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
 import {
@@ -81,6 +82,12 @@ object CloudSpeechPause {
     /** The settings slider's step. */
     const val STEP_SECONDS = ${float(CLOUD_SPEECH_PAUSE_STEP_SECONDS)}
 }
+
+/**
+ * Cloud speech requests one listener streams at once, as on the web: providers limit concurrent
+ * requests per key, which several listeners share on the server's.
+ */
+const val MAX_CLOUD_SPEECH_STREAMS = ${int(MAX_CLOUD_SPEECH_STREAMS)}
 `;
 }
 
