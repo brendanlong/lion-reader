@@ -37,7 +37,12 @@ import { EntryList, type ExternalQueryState } from "./EntryList";
 import { EntryListFallback } from "./EntryListFallback";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 
-const SELECTION_PREFETCH_DELAY_MS = 100;
+/**
+ * How long j/k selection rests on a row before it is prefetched.
+ *
+ * @testonly
+ */
+export const SELECTION_PREFETCH_DELAY_MS = 100;
 
 interface EntryListContainerProps {
   emptyMessage: string;

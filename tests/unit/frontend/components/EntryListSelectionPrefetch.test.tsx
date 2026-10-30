@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
+import { SELECTION_PREFETCH_DELAY_MS } from "@/components/entries/EntryListContainer";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
@@ -50,7 +51,7 @@ function renderList() {
     rendered
       .callsFor("entries.get")
       .map((c) => [(c.input as { id: string }).id, c.context.skipBatch]);
-  return { setOpenEntry, listed, fetched };
+  return { setOpenEntry, listed, fetched, queryClient: rendered.queryClient };
 }
 
 const pressJ = () => fireEvent.keyDown(document.body, { key: "j", code: "KeyJ" });
@@ -78,7 +79,7 @@ describe("entry list selection prefetch", () => {
   });
 
   it("doesn't refetch a cached entry, even a stale one, on selecting it again", async () => {
-    const { setOpenEntry, listed, fetched } = renderList();
+    const { setOpenEntry, listed, fetched, queryClient } = renderList();
     await vi.waitFor(() => expect(listed().length).toBeGreaterThan(1));
     const entryId = listed()[0]!;
     setOpenEntry(entryId);
@@ -86,11 +87,12 @@ describe("entry list selection prefetch", () => {
     const fetchesWhileOpen = fetched().length;
 
     // Long past the query's staleTime by the time the reader closes it.
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     vi.setSystemTime(Date.now() + 60 * 60 * 1000);
     setOpenEntry(null);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await vi.advanceTimersByTimeAsync(SELECTION_PREFETCH_DELAY_MS);
 
+    expect(queryClient.isFetching()).toBe(0);
     expect(fetched()).toHaveLength(fetchesWhileOpen);
   });
 });
