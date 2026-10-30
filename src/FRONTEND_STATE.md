@@ -103,16 +103,8 @@ which timestamp each write carries per group).
 
 ## Local Store (`src/lib/local-db/`)
 
-| File                   | Role                                                                                                                                                                                                                             |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes)                                                                            |
-| `entries.ts`           | Entry rows and their server writes, all through `mergeServerEntry` (per-group `updatedAt` guard): `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata`                                                       |
-| `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (pagination window), `entryListKey`, and `entryMatchesList` / `compareListEntries`, the one copy of a list's filters and order (the demo store uses them too) |
-| `subscriptions.ts`     | Subscription rows: live writes (`writeLiveSubscriptions`, `patchLiveSubscription`, `writeSubscriptionCount`), fetch ingestion, and `sidebarSectionRows`                                                                          |
-| `tags.ts`              | Tag rows: fetch ingestion (a `tags.list` is every tag, so it drops stored tags it lacks) and live writes                                                                                                                         |
-| `counts.ts`            | Unread counts by list (`countKey`), written only over an older stamp (`writeCounts`)                                                                                                                                             |
-| `versioned-store.ts`   | Local-clock versioning for subscriptions and tags (see below)                                                                                                                                                                    |
-| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion, `saved`), `insertEntryIntoLists` / `addServerEntryToLists` (placement by memberships)                                                                                |
+A list's filters and order have one copy, `entryMatchesList` /
+`compareListEntries` (`entry-lists.ts`), which the demo store uses too.
 
 Components read it through `src/lib/hooks/useLocalEntries.ts`:
 `useEntryListEntries(input)` (a list, in order), `useLocalEntry(id)`, and
@@ -156,25 +148,24 @@ placed by title among them.
 
 ## Cache Helpers (`src/lib/cache/`)
 
-| File                | Role                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operations.ts`     | High-level operations (primary API), one per state change, shared by the mutation response and its event: `applyNewEntry`, `applyEntryStateChanges`, `applySubscriptionUpdate`, `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `applyCollectionEntriesChange`, `handleMarkAllRead`, `applyTagChange`/`applyTagDeleted`; `applyUnreadCounts` (absolute counts) |
-| `event-handlers.ts` | `handleSyncEvent` — dispatches SSE/sync events to the local store and the operations above                                                                                                                                                                                                                                                                              |
+Each state change has one operation in `operations.ts`, shared by the mutation
+response and its event; `handleSyncEvent` (`event-handlers.ts`) dispatches
+SSE/sync events to the local store and those operations.
 
 ## Core Queries
 
 Speculative fetches (prefetches) pass `UNBATCHED` (`src/lib/trpc/client.ts`).
 
-| Query                           | Used In                                                         | Notes                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entries.list` (infinite)       | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent`      | `staleTime: Infinity`                                                                                                                                                                                                                                                                                                            |
-| `entries.get`                   | `EntryContent`                                                  | Single entry with full content. Its `fetchFullContent` is used only when the store doesn't hold the subscription                                                                                                                                                                                                                 |
-| `subscriptions.get`             | `UnifiedEntriesContent`, `useSidebarSelection`                  | Loads one subscription into the store (the route title and the open subscription render from the store); deleting the subscription resets it.                                                                                                                                                                                    |
-| `entries.countLists`            | `Sidebar`                                                       | The All, Starred and Saved badges (and Uncategorized's) from one read, rendered from the store                                                                                                                                                                                                                                   |
-| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)                                 | Loads a sidebar section's pages (`{ tagId }` or `{ uncategorized }`) into the store; the section renders from the store, limited to what these pages cover. Never written directly. `CollectionsButton` also searches collections with `{ type: "collection" }`; `useSavedSubscriptionId` reads `SAVED_SUBSCRIPTION_LIST_INPUT`. |
-| `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`, tag pages | All tags with their unread counts and Uncategorized's, rendered from the store                                                                                                                                                                                                                                                   |
+| Query                           | Notes                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries.list` (infinite)       | `staleTime: Infinity`                                                                                                                                                                                                                                                                                                            |
+| `entries.get`                   | Single entry with full content. Its `fetchFullContent` is used only when the store doesn't hold the subscription                                                                                                                                                                                                                 |
+| `subscriptions.get`             | Loads one subscription into the store (the route title and the open subscription render from the store); deleting the subscription resets it.                                                                                                                                                                                    |
+| `entries.countLists`            | The All, Starred and Saved badges (and Uncategorized's) from one read, rendered from the store                                                                                                                                                                                                                                   |
+| `subscriptions.list` (infinite) | Loads a sidebar section's pages (`{ tagId }` or `{ uncategorized }`) into the store; the section renders from the store, limited to what these pages cover. Never written directly. `CollectionsButton` also searches collections with `{ type: "collection" }`; `useSavedSubscriptionId` reads `SAVED_SUBSCRIPTION_LIST_INPUT`. |
+| `tags.list`                     | All tags with their unread counts and Uncategorized's, rendered from the store                                                                                                                                                                                                                                                   |
 
-`sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). It and search (`query`) lists get **no** live inserts: `insertIntoMatchingLists` (`src/lib/local-db/entry-lists.ts`) skips any list whose input has a `query` or a `sortBy` other than `"published"`, because their ordering (relevance rank / read-time) can't be derived from an entry's fields. Those views instead refresh on navigation like any other list.
+`sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). It and search (`query`) lists get **no** live inserts (`isServerOrdered` in `src/lib/local-db/entry-lists.ts`), because their ordering (relevance rank / read-time) can't be derived from an entry's fields. Those views instead refresh on navigation like any other list.
 
 Search (`?q=`) is an ordinary `entries.list` scoped to the current view's filters. With a query present, `unreadOnly` defaults to `false` and sort order is canonicalized in the input, since results are ranked by relevance and a stray `?sort=` must not fragment the cache key.
 
@@ -191,14 +182,14 @@ Search (`?q=`) is an ordinary `entries.list` scoped to the current view's filter
 
 ### Subscription Mutations
 
-| Mutation                | Used In                                    | Cache Updates                                                                                        |
-| ----------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `subscriptions.create`  | Subscribe page                             | `handleSubscriptionCreated`: add to the store + set absolute `counts` from response (`onSuccess`)    |
-| `subscriptions.update`  | `useFullContent`, `EditSubscriptionDialog` | `applySubscriptionUpdate` with the returned row                                                      |
-| `subscriptions.delete`  | `Sidebar`, Broken feeds                    | Optimistic remove (`onMutate`); `handleSubscriptionDeleted` with the response's counts (`onSuccess`) |
-| `subscriptions.setTags` | `EditSubscriptionDialog`                   | `applySubscriptionUpdate` with the returned row                                                      |
-| `subscriptions.import`  | `OpmlImportExport`                         | Toast + navigate; `import_progress`/`import_completed` SSE events invalidate `imports.*`             |
-| `imports.preview`       | `OpmlImportExport`                         | None (pure server-side OPML parse for the preview list; no cached data changes)                      |
+| Mutation                | Cache Updates                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `subscriptions.create`  | `handleSubscriptionCreated`: add to the store + set absolute `counts` from response (`onSuccess`)    |
+| `subscriptions.update`  | `applySubscriptionUpdate` with the returned row                                                      |
+| `subscriptions.delete`  | Optimistic remove (`onMutate`); `handleSubscriptionDeleted` with the response's counts (`onSuccess`) |
+| `subscriptions.setTags` | `applySubscriptionUpdate` with the returned row                                                      |
+| `subscriptions.import`  | Toast + navigate; `import_progress`/`import_completed` SSE events invalidate `imports.*`             |
+| `imports.preview`       | None (pure server-side OPML parse for the preview list; no cached data changes)                      |
 
 Collection mutations (`useCollectionMembership`): `collections.addEntries` / `removeEntries` apply the response through `applyCollectionEntriesChange`; `collections.create` goes through `handleSubscriptionCreated` when it created the collection; when it returned an existing one (`created: false`), the entry is added with `collections.addEntries` and applied through `applyCollectionEntriesChange` only. Deleting a collection is `subscriptions.delete`. An ebook import (`collections.importEbook`, in `FileUploadButton`) applies its collection like `collections.create` (`handleSubscriptionCreated` when created, else `applyUnreadCounts`) and navigates to it; its chapters reach loaded lists through their `new_entry` and `collection_entries_changed` events.
 
