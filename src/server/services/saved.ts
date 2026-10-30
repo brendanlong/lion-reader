@@ -512,7 +512,8 @@ async function selectInsertedSavedArticle(
       subscriptionId: row.subscriptionId,
       subscriptionIds: row.subscriptionIds,
       tagLists: tagLists.get(entry.id)!,
-      updatedAt: userState.updatedAt.toISOString(),
+      // What clients compare entries by (visible_entries.updated_at).
+      updatedAt: userState.changedAt.toString(),
       entry: toNewEntryListData(entry, SAVED_ARTICLES_TITLE, {
         read: userState.read,
         starred: userState.starred,

@@ -271,10 +271,10 @@ export async function addEntriesToCollection(
   entryIds: string[],
   positions?: ReadonlyMap<string, number>
 ): Promise<CollectionEntriesChangeResult> {
-  const { added, updatedAt } = await db.transaction(async (tx) => {
+  const { added, touched } = await db.transaction(async (tx) => {
     await lockUserEntryRows(tx, userId, entryIds);
     await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
-    if (entryIds.length === 0) return { added: [], updatedAt: new Date() };
+    if (entryIds.length === 0) return { added: [], touched: null };
     const [{ count }] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(subscriptionEntries)
@@ -310,12 +310,12 @@ export async function addEntriesToCollection(
       )
       .onConflictDoNothing()
       .returning({ entryId: subscriptionEntries.entryId, position: subscriptionEntries.position });
-    const updatedAt = await touchUserEntries(
+    const touched = await touchUserEntries(
       tx,
       userId,
       inserted.map((row) => row.entryId)
     );
-    return { added: inserted, updatedAt };
+    return { added: inserted, touched };
   });
 
   const placed = added.flatMap(({ entryId, position }) =>
@@ -325,9 +325,8 @@ export async function addEntriesToCollection(
     db,
     userId,
     subscriptionId,
-    added.map((row) => row.entryId),
+    touched,
     true,
-    updatedAt,
     placed.length > 0 ? Object.fromEntries(placed) : undefined
   );
 }
@@ -338,10 +337,10 @@ export async function removeEntriesFromCollection(
   subscriptionId: string,
   entryIds: string[]
 ): Promise<CollectionEntriesChangeResult> {
-  const { removed, updatedAt } = await db.transaction(async (tx) => {
+  const touched = await db.transaction(async (tx) => {
     await lockUserEntryRows(tx, userId, entryIds);
     await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
-    if (entryIds.length === 0) return { removed: [], updatedAt: new Date() };
+    if (entryIds.length === 0) return null;
     const deleted = await tx
       .delete(subscriptionEntries)
       .where(
@@ -352,11 +351,14 @@ export async function removeEntriesFromCollection(
         )
       )
       .returning({ entryId: subscriptionEntries.entryId });
-    const ids = deleted.map((row) => row.entryId);
-    return { removed: ids, updatedAt: await touchUserEntries(tx, userId, ids) };
+    return touchUserEntries(
+      tx,
+      userId,
+      deleted.map((row) => row.entryId)
+    );
   });
 
-  return finishMembershipChange(db, userId, subscriptionId, removed, false, updatedAt);
+  return finishMembershipChange(db, userId, subscriptionId, touched, false);
 }
 
 /** The collection's highest position, or 0 when none of its articles has one. */
@@ -494,25 +496,40 @@ async function lockUserEntryRows(tx: Transaction, userId: string, entryIds: stri
     .for("no key update");
 }
 
+/** Entries whose state a change moved, and the time it moved them to. */
+interface TouchedEntries {
+  entryIds: string[];
+  /** Every one's `changed_at` now, which clients order the change by. */
+  updatedAt: Date;
+}
+
 /**
  * Membership is part of an entry's per-user state: moving
  * `user_entries.updated_at` makes delta sync re-deliver the entry, or report
- * it hidden when leaving the collection took it out of view. Returns the time
- * it moved them to, which clients order the change by.
+ * it hidden when leaving the collection took it out of view. Null when there
+ * are none. Their rows must be locked.
+ *
+ * Clients compare the change with the rows' `changed_at`, which other
+ * machines' clocks (the worker's feed updates) may have set ahead of this
+ * one's, so the time is past every row's, by a millisecond (what clients
+ * compare): a page read before the change can't tie with it.
  */
 async function touchUserEntries(
   tx: Transaction,
   userId: string,
   entryIds: string[]
-): Promise<Date> {
-  const updatedAt = new Date();
-  if (entryIds.length > 0) {
-    await tx
-      .update(userEntries)
-      .set({ updatedAt })
-      .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
-  }
-  return updatedAt;
+): Promise<TouchedEntries | null> {
+  if (entryIds.length === 0) return null;
+  const where = and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds));
+  const [{ latestMs }] = await tx
+    .select({
+      latestMs: sql<string>`floor(extract(epoch from max(${userEntries.changedAt})) * 1000)::bigint`,
+    })
+    .from(userEntries)
+    .where(where);
+  const updatedAt = new Date(Math.max(Date.now(), Number(latestMs) + 1));
+  await tx.update(userEntries).set({ updatedAt }).where(where);
+  return { entryIds, updatedAt };
 }
 
 /**
@@ -545,14 +562,12 @@ async function finishMembershipChange(
   db: typeof dbType,
   userId: string,
   subscriptionId: string,
-  changedIds: string[],
+  touched: TouchedEntries | null,
   added: boolean,
-  updatedAt: Date,
   positions?: Record<string, number>
 ): Promise<CollectionEntriesChangeResult> {
-  if (changedIds.length === 0) {
-    return { entryIds: [], tagLists: [] };
-  }
+  if (!touched) return { entryIds: [], tagLists: [] };
+  const { entryIds: changedIds, updatedAt } = touched;
   // Source subscriptions' counts don't change; All (always included) can,
   // when an article's only route into view is a collection.
   const [counts, tagListsOf] = await Promise.all([

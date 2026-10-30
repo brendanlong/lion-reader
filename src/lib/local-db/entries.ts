@@ -247,18 +247,20 @@ export interface CollectionMembershipChange {
  * as of `updatedAt`, when the change moved the entry's state: like any state
  * write, it applies only over older state, and a page read before it can't
  * revert it. Returns the membership the entry has as far as the store knows:
- * the change, or what the newer stored state says.
+ * the change, or what the newer stored state says. A response from a server
+ * a release behind has no `updatedAt`: it applies over the stored state
+ * without moving its watermark.
  */
 export function setStoredEntryCollection(
   store: EntryStore,
   id: string,
   change: CollectionMembershipChange,
-  updatedAt: Date
+  updatedAt: Date | undefined
 ): CollectionMembershipChange {
   const { collectionId, added, tagLists, position } = change;
   const stored = store.getSynced(id);
   if (!stored) return change;
-  if (!isFresh(updatedAt, stored.stateUpdatedAt)) {
+  if (updatedAt && !isFresh(updatedAt, stored.stateUpdatedAt)) {
     return {
       collectionId,
       added: stored.subscriptionIds.includes(collectionId),
@@ -275,7 +277,7 @@ export function setStoredEntryCollection(
         ? { ...stored.positions, [collectionId]: position }
         : withoutKey(stored.positions, collectionId),
     ...(tagLists && { tagLists }),
-    updatedAt,
+    updatedAt: updatedAt ?? stored.stateUpdatedAt,
   });
   return change;
 }

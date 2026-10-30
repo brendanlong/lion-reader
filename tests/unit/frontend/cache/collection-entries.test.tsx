@@ -435,6 +435,24 @@ describe("collection_entries_changed", () => {
     await waitFor(() => expect(ids("collection")).toEqual([]));
   });
 
+  it("applies a change without a time (a server a release behind) without moving the state's", () => {
+    const entry = makeEntry("a", "2024-06-01");
+    const { utils, queryClient } = setup({ feed: [entry], collection: [] });
+
+    act(() =>
+      applyCollectionEntriesChange(utils, queryClient, {
+        subscriptionId: COLLECTION,
+        added: true,
+        tagLists: tagListsOf(["a"]),
+      })
+    );
+
+    expect(getLocalDb(queryClient).entries.getSynced("a")).toMatchObject({
+      subscriptionIds: ["sub-1", COLLECTION],
+      stateUpdatedAt: entry.updatedAt,
+    });
+  });
+
   it("records the position an entry joined with even when its membership is already stored", () => {
     // Fetched after the add, before its response or event.
     const entry = makeEntry("a", "2024-06-01", { subscriptionIds: ["sub-1", COLLECTION] });

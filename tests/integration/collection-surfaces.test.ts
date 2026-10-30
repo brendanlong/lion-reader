@@ -124,15 +124,21 @@ describe("collection_entries_changed", () => {
     await subscribeAndDrain(subscriber, channel, async () => {
       collectionId = (await createCollection(db, userId, "C")).subscription.id;
     });
+    // Another machine, its clock ahead of this one's, updated the entry.
+    const ahead = new Date(Date.now() + 60 * 60 * 1000);
+    await db.update(entries).set({ updatedAt: ahead }).where(eq(entries.id, entryId));
     const message = waitForMessage(subscriber, channel);
 
     const result = await addEntriesToCollection(db, userId, collectionId, [entryId]);
 
-    // Clients order the response and the event against the entry's state by it.
-    const [{ updatedAt }] = await db
-      .select({ updatedAt: userEntries.updatedAt })
+    // Clients order the response and the event against the entry by its
+    // changed_at, so the change is stamped with it, past the entry's.
+    const [{ changedAt }] = await db
+      .select({ changedAt: userEntries.changedAt })
       .from(userEntries)
       .where(eq(userEntries.entryId, entryId));
+    const updatedAt = new Date(changedAt.epochMilliseconds);
+    expect(updatedAt.getTime()).toBeGreaterThan(ahead.getTime());
     expect(result.updatedAt).toEqual(updatedAt);
     expect(JSON.parse(await message)).toMatchObject({
       type: "collection_entries_changed",

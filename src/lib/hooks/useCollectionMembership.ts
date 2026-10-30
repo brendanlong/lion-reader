@@ -60,9 +60,7 @@ export function useCollectionMembership(entryId: string) {
 
   const onError = () => toast.error("Failed to update collection");
 
-  const applyResult = (subscriptionId: string, added: boolean, result: MembershipResult) => {
-    // Absent when nothing changed.
-    if (!result.updatedAt) return;
+  const applyResult = (subscriptionId: string, added: boolean, result: MembershipResult) =>
     applyCollectionEntriesChange(utils, queryClient, {
       subscriptionId,
       added,
@@ -70,7 +68,6 @@ export function useCollectionMembership(entryId: string) {
       tagLists: result.tagLists,
       updatedAt: result.updatedAt,
     });
-  };
   const addMutation = trpc.collections.addEntries.useMutation({
     onSuccess: (result, variables) => applyResult(variables.id, true, result),
     onError,
