@@ -34,7 +34,9 @@ This creates the app on Fly.io and updates your `fly.toml` with the app name.
 - reports page counts to lionreader.com's GoatCounter (`NEXT_PUBLIC_GOATCOUNTER_URL`; delete it to send none);
 - loads its scripts from lionreader.com's CDN (`ASSET_PREFIX`; delete it to serve them yourself);
 - hands out newsletter addresses on lionreader.com's mail domain, so newsletters never reach you (`INGEST_EMAIL_DOMAIN`; delete it to turn newsletters off, or set up your own domain as in the README's "Email Newsletter Subscriptions");
-- asks every new user to certify they're outside the EU (`EU_RESTRICTED`; delete it).
+- asks every new user to certify they're outside the EU (`EU_RESTRICTED`; delete it);
+- names lionreader.com's operator as the contact in every outgoing request's User-Agent (`FETCHER_CONTACT_EMAIL`; set your own or delete it);
+- points Sign in with Apple and Discord, the Discord bot's emoji and invite, and object storage at lionreader.com's accounts and buckets (the `APPLE_*`, `DISCORD_*` and `STORAGE_*` values; set your own or delete them).
 
 ---
 
@@ -42,7 +44,7 @@ This creates the app on Fly.io and updates your `fly.toml` with the app name.
 
 Lion Reader uses PostgreSQL for all persistent data. Production runs **unmanaged
 Fly Postgres (flex), single node**: `lion-reader-pg`, database `lion_reader`,
-`shared-cpu-8x` / 2GB in `sjc`, 10GB volume, PostgreSQL 18. Unmanaged is chosen for
+`shared-cpu-8x` / 2GB in `sjc`, 40GB volume, PostgreSQL 18. Unmanaged is chosen for
 performance-per-dollar (shared-CPU pooling gives more burst headroom per dollar than
 Managed Postgres); the tradeoff is that Fly does **not** support or upgrade unmanaged
 clusters, so we own upgrades, backups, and monitoring (see "Operating unmanaged
@@ -58,7 +60,7 @@ flyctl postgres create \
   --vm-size shared-cpu-8x \
   --vm-memory 2048 \
   --initial-cluster-size 1 \
-  --volume-size 10 \
+  --volume-size 40 \
   --enable-backups
 ```
 
@@ -70,14 +72,16 @@ flyctl postgres create \
   `shared-cpu-8x` gives Postgres a 50%-of-a-core sustained floor (8 vCPUs × 6.25%
   baseline each) with burst to 8 cores — better burst behavior than a dedicated
   `performance-1x` core at similar
-  cost. Memory is deliberately modest: the DB is ~5GB on disk but the hot working
+  cost. Memory is deliberately modest: the hot working
   set is small (ran comfortably at 1GB / ~98% cache-hit), so 2GB leaves headroom
   for cache (incl. the search GIN index) and growth. flex sizes `shared_buffers`
   etc. from VM memory **at each boot**, so resizing RAM re-tunes automatically and
   scaling down is safe. Save the superuser password it prints.
 - `--initial-cluster-size`: 1 (deliberate — flex multi-node uses repmgr, which has a
   poor failure-mode track record; WAL backups + volume snapshots are the safety net)
-- `--volume-size`: 10GB is plenty
+- `--volume-size`: at least twice the database's size, since each daily base
+  backup needs free space about the size of the database
+  ([Volume headroom](fly-postgres-ops.md#volume-headroom-keep-data-under-45))
 - `--enable-backups`: creates a Tigris bucket and turns on continuous WAL-based
   backups (point-in-time recovery via `flyctl postgres backup restore`), on top
   of daily volume snapshots. Restore runbook: [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
@@ -98,7 +102,8 @@ This automatically:
 
 ## Redis Provisioning (Upstash)
 
-Lion Reader uses Redis for rate limiting, OAuth state, and pub/sub for real-time updates.
+Lion Reader uses Redis for short-lived state (rate limits, OAuth state), pub/sub for
+real-time updates, and the site status ("Site Status" in `src/server/CLAUDE.md`).
 
 ### Option A: Fly.io Upstash Redis (Recommended)
 
@@ -112,9 +117,9 @@ When prompted:
 
 - **Name**: `lion-reader-redis`
 - **Region**: Same as your app (e.g., `sjc`)
-- **Plan**: Free tier is fine for MVP (100 commands/day limit)
-  - For production, choose "Pay-as-you-go" (~$0.20/1M commands)
-- **Eviction**: Enable if you want auto-cleanup of old data
+- **Plan**: Pay-as-you-go
+- **Eviction**: Disabled. The announcement banner and maintenance mode are
+  stored in Redis with no expiry, so eviction could silently drop them.
 
 After creation, attach it to your app:
 
@@ -131,7 +136,7 @@ flyctl secrets set REDIS_URL="redis://default:password@fly-lion-reader-redis.ups
 ### Option B: Upstash Console (Alternative)
 
 1. Go to [console.upstash.com](https://console.upstash.com)
-2. Create a new Redis database
+2. Create a new Redis database, with eviction off (see above)
 3. Select a region close to your Fly.io region
 4. Copy the Redis URL (TLS format recommended)
 5. Set the secret:
@@ -144,11 +149,25 @@ flyctl secrets set REDIS_URL="rediss://default:password@your-endpoint.upstash.io
 
 ---
 
+## Object Storage
+
+Images in saved articles, uploads and newsletters live in S3-compatible object
+storage, and ebook import requires it (without it, images stay inline in the
+HTML). Create two buckets (lionreader.com's are Tigris, in
+`terraform/tigris.tf`):
+
+- a publicly readable one (`STORAGE_BUCKET`, served from `STORAGE_PUBLIC_URL_BASE`);
+- a private one (`STORAGE_ARCHIVE_BUCKET`) for article HTML we keep but never
+  serve. **It must not be publicly readable**: its keys are guessable.
+
+Set the `STORAGE_*` variables as `.env.example` describes.
+
+---
+
 ## Configuring Secrets
 
-Lion Reader requires several secrets for production.
-
-### Complete Secrets Reference
+`.env.example` describes each setting, optional ones included (AI, sign-in
+providers, newsletters, limits). The secrets this guide sets:
 
 | Secret                          | Required | Description                                                                 | How to Get                                                                            |
 | ------------------------------- | -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -325,8 +344,7 @@ turned on don't test it: debuggable builds skip R8's renaming.)
 
 Both scale commands take `--process-group`; **without it they apply to every
 process group**. The app runs three (`app`, `worker`, `discord` — see
-[DESIGN.md](DESIGN.md#system-architecture)), sized in `fly.toml` (`app`: 2 CPU / 512MB, `worker`: 1 CPU
-/ 512MB, `discord`: 1 CPU / 256MB).
+[DESIGN.md](DESIGN.md#system-architecture)), sized in `fly.toml`.
 
 **Increase VM resources** — pass a size at least as large as that group's current one:
 
@@ -334,7 +352,7 @@ process group**. The app runs three (`app`, `worker`, `discord` — see
 flyctl scale vm shared-cpu-2x --memory 1024 --process-group app
 ```
 
-**Add more instances** — keep `app` at 2 or more for zero-downtime deploys:
+**Add more instances** (never fewer than 2 `app` machines; see Slow Cold Starts):
 
 ```bash
 flyctl scale count 3 --process-group app
@@ -368,8 +386,12 @@ Fly does not manage this cluster, so these are ours:
 - **Minor version updates:** `flyctl image update -a lion-reader-pg` (restarts the node).
 - **Major version upgrades:** dump/restore into a fresh cluster — Fly does not
   upgrade unmanaged clusters.
-- **Disk:** 10GB volume; `flyctl volumes extend` when needed. A full volume is an
-  outage you have to notice — check the fly-metrics disk panel occasionally.
+- **Disk:** keep `/data` under ~45%
+  ([Volume headroom](fly-postgres-ops.md#volume-headroom-keep-data-under-45));
+  `flyctl volumes extend` when needed, then check with `df -h /data` that the
+  filesystem grew too: extending the volume doesn't always resize it. A full
+  volume is an outage you have to notice — check the fly-metrics disk panel
+  occasionally.
 - **Backups & restore drill:** WAL archiving to Tigris gives PITR; periodically
   restore into a scratch cluster to prove it works. Full procedure in
   [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
@@ -402,7 +424,7 @@ Certificates: Fly accepts **any one of** an `AAAA` record pointing at the app, a
 is dual-stack and carries no challenge records, so its `AAAA` is what keeps the
 certificate renewing.
 
-Two rules apply whatever the zone is hosted on:
+These rules apply whatever the zone is hosted on:
 
 - **Never put a proxy or CDN in front of a Fly hostname.** It replaces the `AAAA`
   record Fly uses as ownership proof, breaking certificate renewal, and hides the
@@ -430,9 +452,9 @@ Two rules apply whatever the zone is hosted on:
 | Worker VM       | shared-cpu-1x, 512MB    | ~$3.50/month      |
 | Discord VM      | shared-cpu-1x, 256MB    | ~$2/month         |
 | Postgres        | shared-cpu-8x, 2GB      | ~$15.55/month     |
-| Postgres volume | 10GB                    | ~$1.50/month      |
+| Postgres volume | 40GB                    | ~$6/month         |
 | PG WAL backups  | Tigris (base + WAL)     | ~$1/month         |
 | Redis (Upstash) | Pay-as-you-go           | ~$0-5/month       |
-| **Total**       |                         | **~$31-37/month** |
+| **Total**       |                         | **~$36-41/month** |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.
