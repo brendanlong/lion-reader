@@ -5,11 +5,12 @@
 /**
  * The share target's save page: a shared file the service worker stashed in
  * IndexedDB is uploaded as an article, or, for an ebook, imported as a
- * collection (#1805).
+ * collection (#1805), and kept until it's saved.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { TRPCClientError } from "@trpc/client";
 import SavePage from "@/app/(spa)/save/page";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import { createCounts } from "../../../utils/cache-test-helpers";
@@ -19,10 +20,12 @@ vi.mock("next/navigation", () => ({
 }));
 
 /**
- * The slice of IndexedDB `takeSharedFile` uses, holding the service worker's
- * `pending` record. Requests complete on a later task, as the browser's do.
+ * The slice of IndexedDB the page uses, holding the service worker's `pending`
+ * record (if any). Requests complete on a later task, as the browser's do.
+ * Returns a spy on the record's deletion.
  */
-function stubSharedFile(record: { content: string; filename: string; type?: string }) {
+function stubSharedFile(record?: { content: string; filename: string; type?: string }) {
+  const deleteRecord = vi.fn();
   const request = <T,>(result: T) => {
     const req: { result: T; onsuccess?: () => void } = { result };
     setTimeout(() => req.onsuccess?.());
@@ -31,7 +34,13 @@ function stubSharedFile(record: { content: string; filename: string; type?: stri
   const db = {
     transaction: () => {
       const tx: { objectStore: () => unknown; oncomplete?: () => void } = {
-        objectStore: () => ({ get: () => request(record), delete: () => request(undefined) }),
+        objectStore: () => ({
+          get: () => request(record),
+          delete: () => {
+            deleteRecord();
+            return request(undefined);
+          },
+        }),
       };
       setTimeout(() => tx.oncomplete?.());
       return tx;
@@ -39,6 +48,7 @@ function stubSharedFile(record: { content: string; filename: string; type?: stri
     close: () => {},
   };
   vi.stubGlobal("indexedDB", { open: () => request(db) });
+  return deleteRecord;
 }
 
 const handlers: ProcedureHandlers = {
@@ -76,12 +86,50 @@ describe("SavePage shared files", () => {
     expect(callsFor("saved.uploadFile")).toHaveLength(0);
   });
 
-  it("uploads any other shared file as an article", async () => {
-    stubSharedFile({ content: "IyBoaQ==", filename: "notes.md" });
+  it("uploads any other shared file as an article, then drops it", async () => {
+    const deleteRecord = stubSharedFile({ content: "IyBoaQ==", filename: "notes.md" });
     const { callsFor } = renderWithTrpc(<SavePage />, { handlers });
 
     expect(await screen.findByText("Notes")).toBeInTheDocument();
     await waitFor(() => expect(callsFor("saved.uploadFile")).toHaveLength(1));
     expect(callsFor("collections.importEbook")).toHaveLength(0);
+    await waitFor(() => expect(deleteRecord).toHaveBeenCalled());
+  });
+
+  it("says so when there's no shared file", async () => {
+    stubSharedFile(undefined);
+    renderWithTrpc(<SavePage />, { handlers });
+
+    expect(await screen.findByText(/shared file didn't reach/)).toBeInTheDocument();
+  });
+
+  describe("signed out", () => {
+    let originalLocation: Location;
+    beforeEach(() => {
+      originalLocation = window.location;
+      Object.defineProperty(window, "location", { configurable: true, value: { href: "" } });
+    });
+    afterEach(() => {
+      Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
+    });
+
+    it("keeps the file and comes back to it after signing in", async () => {
+      const deleteRecord = stubSharedFile({ content: "IyBoaQ==", filename: "notes.md" });
+      renderWithTrpc(<SavePage />, {
+        handlers: {
+          "saved.uploadFile": () => {
+            const error = new TRPCClientError<never>("signed out");
+            Object.assign(error, { data: { code: "UNAUTHORIZED", httpStatus: 401 } });
+            throw error;
+          },
+        },
+      });
+
+      fireEvent.click(await screen.findByRole("button", { name: "Sign In" }));
+
+      const redirect = new URL(window.location.href, "https://x").searchParams.get("redirect");
+      expect(redirect).toBe("/save?type=file");
+      expect(deleteRecord).not.toHaveBeenCalled();
+    });
   });
 });
