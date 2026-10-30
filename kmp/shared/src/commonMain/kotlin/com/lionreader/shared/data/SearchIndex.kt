@@ -68,7 +68,10 @@ object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Sche
  * (1.8 s on a Pixel 4), with the user waiting behind it to store an article's body. SQLite stores
  * the setting in the database. 8 is SQLite's suggestion, and overall the fastest of those measured.
  */
-private const val AUTOMERGE = "INSERT INTO entry_search(entry_search) VALUES('automerge=8')"
+internal const val AUTOMERGE_SEGMENTS = 8
+
+private const val AUTOMERGE =
+    "INSERT INTO entry_search(entry_search) VALUES('automerge=$AUTOMERGE_SEGMENTS')"
 
 /** The migrations (by the version they start from) that drop `entry`'s triggers. */
 private val ENTRY_REBUILDS = listOf(7L, 8L)

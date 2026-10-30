@@ -14,6 +14,9 @@ import com.lionreader.shared.data.parseMillis
 import com.lionreader.shared.data.searchText
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.db.Outbox_state
+import com.lionreader.shared.db.Ranked
+import com.lionreader.shared.db.SelectMissingContent
+import okio.utf8Size
 
 /** One `sync.changes` page with everything it needs already fetched. */
 internal class PulledPage(
@@ -39,9 +42,9 @@ internal class PulledPage(
  *
  * Table ownership: `entry` state and metadata, memberships, subscriptions, tags and cursors are
  * written here under the sync lock; bodies only by [storeBodies] and summaries only by
- * [storeSummary] and, when the body they summarized is replaced, [storeBodies] (outside the lock,
- * version-guarded, and deleted here with their entry); the outbox by `Reader` (and cleared here
- * once sent).
+ * [storeSummary] and, when the body they summarized is replaced, [storeBodies] (version-guarded, so
+ * safe outside the lock, and deleted here with their entry); the outbox by `Reader` (and cleared
+ * here once sent).
  */
 internal class SyncWriter(private val driver: SqlDriver) {
     private val db = LionReaderDatabase(driver)
@@ -141,12 +144,17 @@ internal class SyncWriter(private val driver: SqlDriver) {
 
     // ---- Pull ------------------------------------------------------------
 
+    /**
+     * Commits [page], then stores the bodies of its whole-fetched entries the way downloads do
+     * ([storeBodies]), a transaction each, so the page's transaction stays short.
+     */
     fun commitPage(page: PulledPage, now: Long) {
-        val texts = searchTexts(page.fetchedEntries)
-        db.transaction { commitPageInTransaction(page, texts, now) }
+        val versions = db.transactionWithResult { commitPageInTransaction(page) }
+        storeBodies(page.fetchedEntries, emptyList(), versions, now)
     }
 
-    private fun commitPageInTransaction(page: PulledPage, texts: Map<String, String>, now: Long) {
+    /** Commits [page], returning the body version to store each fetched entry's body at. */
+    private fun commitPageInTransaction(page: PulledPage): Map<String, Long> {
         page.deletedIds.forEach(store::deleteEntry)
         // Memberships before the events, as the server has them now: an unsubscribe in the same
         // page keeps what's still in another subscription.
@@ -179,10 +187,10 @@ internal class SyncWriter(private val driver: SqlDriver) {
             db.entryQueries.bumpBodyVersion(entry.id)
         }
         val versions = page.fetchedEntries.associate { it.id to (bodyVersion(it.id) ?: 0L) }
-        storeBodiesInTransaction(page.fetchedEntries, texts, emptyList(), versions, now)
         page.resubscribedEntries.forEach(store::upsertEntry)
         store.cursors = page.cursors
         store.catchUpStart = if (page.hasMore) page.catchUpStart else null
+        return versions
     }
 
     private fun apply(event: SyncEvent) {
@@ -368,8 +376,9 @@ internal class SyncWriter(private val driver: SqlDriver) {
             val version = versions[entry.id] ?: continue
             val content = entry.content ?: ""
             val text = texts.getValue(entry.id)
-            // The search index's copy of the text counts against the budget too.
-            val size = (content.length + text.length).toLong()
+            // The search index's copy of the text counts against the budget too. SQLite stores
+            // both as UTF-8.
+            val size = content.utf8Size() + text.utf8Size()
             putBody(entry.id, content, size, text, version, now)
         }
         missing.forEach { id -> versions[id]?.let { putBody(id, "", 0, "", it, now) } }
@@ -419,16 +428,10 @@ internal class SyncWriter(private val driver: SqlDriver) {
         return buildMap {
             for (entry in
                 db.entryQueries.selectMissingContent(openedSince, limit).executeAsList()) {
-                val rank =
-                    BodyRank(
-                        entry.kept,
-                        entry.opened == 1L,
-                        entry.effective_read == 1L,
-                        entry.sort_at,
-                        entry.id,
-                    )
+                val rank = entry.rank()
                 while (next < stored.size && stored[next].rank < rank) above += stored[next++].size
-                if (above >= budget) break
+                // Kept bodies are never evicted ([trimBodies]), and come first.
+                if (above >= budget && !rank.kept) break
                 put(entry.id, entry.body_version)
             }
         }
@@ -473,18 +476,7 @@ internal class SyncWriter(private val driver: SqlDriver) {
         db.bodyQueries
             .ranked(openedSince)
             .executeAsList()
-            .map {
-                RankedBody(
-                    BodyRank(
-                        it.kept,
-                        it.opened == 1L,
-                        it.effective_read == 1L,
-                        it.sort_at,
-                        it.entry_id,
-                    ),
-                    it.size,
-                )
-            }
+            .map { RankedBody(it.rank(), it.size) }
             .sortedBy { it.rank }
 
     /** Keeps a summary the user asked for, if its entry is still at [bodyVersion]. */
@@ -500,7 +492,7 @@ private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000
  * day, as opening one marks it read and it may still be on screen; unread before read; newest
  * first.
  */
-private data class BodyRank(
+internal data class BodyRank(
     val kept: Boolean,
     val opened: Boolean,
     val read: Boolean,
@@ -518,6 +510,11 @@ private data class BodyRank(
             { it.entryId },
         )
 }
+
+internal fun SelectMissingContent.rank() =
+    BodyRank(kept, opened == 1L, effective_read == 1L, sort_at, id)
+
+internal fun Ranked.rank() = BodyRank(kept, opened == 1L, effective_read == 1L, sort_at, entry_id)
 
 private class RankedBody(val rank: BodyRank, val size: Long)
 
