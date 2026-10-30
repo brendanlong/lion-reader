@@ -11,6 +11,6 @@ import type { OneTimeJobHandlerResult } from "./types";
 export async function handleDeleteStoredObjects(
   payload: JobPayloads["delete_stored_objects"]
 ): Promise<OneTimeJobHandlerResult> {
-  const deleted = await deleteStoredObjects(payload.prefix);
-  return { success: true, metadata: { prefix: payload.prefix, deleted } };
+  const deleted = await deleteStoredObjects(payload.prefixes);
+  return { success: true, metadata: { prefixes: payload.prefixes.length, deleted } };
 }

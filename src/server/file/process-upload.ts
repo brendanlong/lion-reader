@@ -127,7 +127,7 @@ async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedU
 }
 
 async function convertPdf(buffer: Buffer, filename: string): Promise<ConvertedUpload> {
-  const { html, title, summary, author } = await convertPdfToArticle(buffer);
+  const { html, title, summary, author } = await convertPdfToArticle(buffer, { images: true });
   return { html, preCleanedContent: { title, summary, author }, fileType: "pdf", filename };
 }
 

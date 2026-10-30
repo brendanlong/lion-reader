@@ -3,17 +3,18 @@
  * deletion with the entry or account they belong to.
  *
  * A user's entry keeps its objects under {@link entryObjectsPrefix}, inside its
- * owner's {@link userObjectsPrefix}, so deleting either is deleting a prefix.
- * A feed's entry has none: anyone can publish a feed, so its images stay
- * inline until per-feed limits exist (#2188). That deletion is a `delete_stored_objects` job enqueued in the transaction that
- * deletes the owner, so it can't be lost to a crash and is retried until
- * storage confirms it. Objects stored for an entry whose save then fails
- * stay until its owner's account is deleted; nobody has their URLs.
+ * owner's {@link userObjectsPrefix}, so deleting either is deleting a prefix:
+ * a `delete_stored_objects` job enqueued in the transaction that deletes the
+ * entry or user, so it can't be lost to a crash and is retried until storage
+ * confirms it. A feed's entry has none: anyone can publish a feed, so its
+ * images stay inline until per-feed limits exist (#2188). Objects stored for
+ * an entry whose save then fails stay until its owner's account is deleted;
+ * nobody has their URLs.
  */
 
 import { createHash } from "node:crypto";
 import type { DbOrTx } from "@/server/db";
-import { createJob } from "@/server/jobs/queue";
+import { createJobs, DELETION_JOB_ENTRIES } from "@/server/jobs/queue";
 import {
   deleteObjectsWithPrefix,
   getPublicObjectUrl,
@@ -48,34 +49,31 @@ export async function storeEntryImage(
   return url;
 }
 
-/** Queues the deletion of a prefix's objects, in `executor`'s transaction. */
+/**
+ * Queues the deletion of the prefixes' objects, in `executor`'s transaction:
+ * pass the one deleting their owners.
+ */
 export async function enqueueStoredObjectsDeletion(
   executor: DbOrTx,
-  prefix: string
+  prefixes: string[]
 ): Promise<void> {
   if (!isStorageAvailable()) return;
-  await createJob({ type: "delete_stored_objects", payload: { prefix } }, executor);
-}
-
-/**
- * Queues the deletion of the stored objects of `entryIds`, saved articles
- * `executor` is hard-deleting: pass the deleting transaction.
- */
-export async function enqueueEntriesObjectsDeletion(
-  executor: DbOrTx,
-  userId: string,
-  entryIds: string[]
-): Promise<void> {
-  for (const entryId of entryIds) {
-    await enqueueStoredObjectsDeletion(executor, entryObjectsPrefix(userId, entryId));
+  const payloads = [];
+  for (let i = 0; i < prefixes.length; i += DELETION_JOB_ENTRIES) {
+    payloads.push({ prefixes: prefixes.slice(i, i + DELETION_JOB_ENTRIES) });
   }
+  await createJobs("delete_stored_objects", payloads, executor);
 }
 
 /**
- * Deletes a prefix's objects (idempotent), returning how many. Throws when
+ * Deletes the prefixes' objects (idempotent), returning how many. Throws when
  * storage refuses or isn't configured (the job exists because it was), so the
  * job retries.
  */
-export function deleteStoredObjects(prefix: string): Promise<number> {
-  return deleteObjectsWithPrefix("public", prefix);
+export async function deleteStoredObjects(prefixes: string[]): Promise<number> {
+  let deleted = 0;
+  for (const prefix of prefixes) {
+    deleted += await deleteObjectsWithPrefix("public", prefix);
+  }
+  return deleted;
 }

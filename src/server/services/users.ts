@@ -127,7 +127,7 @@ async function deleteUserOnce(db: Database, userId: string): Promise<void> {
       deletedFeedIds = new Set(deletedFeeds.map((f) => f.id));
     }
 
-    await enqueueStoredObjectsDeletion(tx, userObjectsPrefix(userId));
+    await enqueueStoredObjectsDeletion(tx, [userObjectsPrefix(userId)]);
     await enqueueFullContentArchiveDeletion(tx, [
       ...ownedArchived.map((e) => e.id),
       ...feedArchived.filter((e) => e.feedId && deletedFeedIds.has(e.feedId)).map((e) => e.id),

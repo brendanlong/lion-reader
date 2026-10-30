@@ -13,6 +13,8 @@ import {
   rewriteContentUrlsAsync,
 } from "@/server/feed/content-cleaner";
 import type { CleanedContent } from "@/server/feed/content-cleaner";
+import { usageLimitsConfig } from "@/server/config/env";
+import { errors } from "@/server/errors";
 import { processMarkdown } from "@/server/markdown";
 import { convertPdfToArticle } from "@/server/file/pdf-to-markdown";
 import { titleFromFilename } from "@/server/file/process-upload";
@@ -57,10 +59,12 @@ export interface ArticleContentBundle {
  *
  * @param options.offload - Render Markdown on the libuv thread pool (request
  *   paths); background jobs pass false.
+ * @param options.pdfImages - Keep a PDF's images: only content with an objects
+ *   prefix (`processArticleContent`) has somewhere to store them.
  */
 export async function articleContentFromAcquired(
   acquired: AcquiredArticle,
-  options: { offload: boolean }
+  options: { offload: boolean; pdfImages: boolean }
 ): Promise<ArticleContentBundle & { contentUrl: string }> {
   if (acquired.kind === "plugin") {
     const { content } = acquired;
@@ -80,7 +84,7 @@ export async function articleContentFromAcquired(
   }
 
   if (acquired.kind === "pdf") {
-    const pdf = await convertPdfToArticle(acquired.pdf);
+    const pdf = await convertPdfToArticle(acquired.pdf, { images: options.pdfImages });
     return {
       html: pdf.html,
       contentUrl: acquired.finalUrl,
@@ -157,20 +161,34 @@ export interface ProcessedArticleContent {
  *
  * @param options.offload - Run the URL pass and Readability on the libuv
  *   thread pool (request paths); background jobs pass false.
+ * @param options.minContentLength - Passed to Readability (emails, being
+ *   often short, accept a shorter input than a web page).
  * @param options.minCleanedLength - Passed to Readability (uploads, being
  *   trusted user content, accept a shorter extraction than a web page).
- * @throws when storage refuses an image
+ * @throws `CONTENT_TOO_LARGE` when the stored HTML (images still inline
+ *   included) is over the saved-article limit, checked here since conversions
+ *   (PDF, Markdown, `.docx`) and inlined images can grow what was fetched
+ * @throws `STORAGE_FAILED` when storage refuses an image
  */
 export async function processArticleContent(
   bundle: ArticleContentBundle,
   baseUrl: string | null,
-  options: { offload: boolean; objectsPrefix: string | null; minCleanedLength?: number }
+  options: {
+    offload: boolean;
+    objectsPrefix: string | null;
+    minContentLength?: number;
+    minCleanedLength?: number;
+  }
 ): Promise<ProcessedArticleContent> {
   const { html, pluginContent, preCleanedContent } = bundle;
   const rewrite = options.offload ? rewriteContentUrlsAsync : rewriteContentUrls;
   const { objectsPrefix } = options;
   const imageUrlPrefix = (objectsPrefix && inlineImageUrlPrefix(objectsPrefix)) || undefined;
   const { html: contentOriginal, images } = await rewrite(html, baseUrl, { imageUrlPrefix });
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+  if (Buffer.byteLength(contentOriginal, "utf8") > maxSize) {
+    throw errors.contentTooLarge("Article", maxSize);
+  }
   if (objectsPrefix) await storeExtractedImages(objectsPrefix, images);
 
   if (preCleanedContent || pluginContent?.skipReadability) {
@@ -179,6 +197,7 @@ export async function processArticleContent(
 
   const cleanOptions = {
     url: baseUrl ?? undefined,
+    minContentLength: options.minContentLength,
     minCleanedLength: options.minCleanedLength,
     imageUrlPrefix,
   };

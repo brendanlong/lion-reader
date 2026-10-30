@@ -63,6 +63,9 @@ function firstJob(result: { rows: RawJobRow[] }): Job | null {
 
 const emptyPayload = z.object({});
 
+/** A user's or an entry's objects prefix (`services/stored-objects.ts`). */
+const storedObjectsPrefix = z.string().regex(/^uploads\/[0-9a-f-]{36}\/([0-9a-f-]{36}\/)?$/);
+
 /**
  * Where a job type is claimed (see `createWorkerClaimJob` in worker.ts):
  *
@@ -146,14 +149,15 @@ const JOB_DEFINITIONS = {
   backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
   // Process an OPML import in the background.
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
-  // Deletes a deleted user's or entry's objects in the public bucket (its
-  // images); see src/server/services/stored-objects.ts. The
-  // prefix must be one of those two shapes, so a bad payload can't empty the
-  // bucket.
+  // Deletes deleted users' or entries' objects in the public bucket (their
+  // images); see src/server/services/stored-objects.ts. Each prefix must be
+  // one of those two shapes, so a bad payload can't empty the bucket. A single
+  // `prefix` is how the previous release queued them.
   delete_stored_objects: {
-    payload: z.object({
-      prefix: z.string().regex(/^uploads\/[0-9a-f-]{36}\/([0-9a-f-]{36}\/)?$/),
-    }),
+    payload: z.union([
+      z.object({ prefixes: z.array(storedObjectsPrefix) }),
+      z.object({ prefix: storedObjectsPrefix }).transform(({ prefix }) => ({ prefixes: [prefix] })),
+    ]),
     lane: "one_time",
   },
   // Delete the archived full-content pages of hard-deleted entries. Queued in
@@ -333,6 +337,39 @@ export async function createJob<T extends JobType>(
     .returning();
 
   return job;
+}
+
+/**
+ * Entries (or prefixes) per storage deletion job (`delete_stored_objects`,
+ * `delete_full_content_archives`). Each costs a list request, so this keeps a
+ * job well inside {@link DEFAULT_JOB_TIMEOUT_MS} however many entries a delete
+ * removes.
+ */
+export const DELETION_JOB_ENTRIES = 200;
+
+/**
+ * Creates a due job of `type` per payload, in one insert.
+ *
+ * @param executor Where to insert them: a transaction makes the jobs commit
+ *   with the change they follow up
+ */
+export async function createJobs<T extends JobType>(
+  type: T,
+  payloads: JobPayloads[T][],
+  executor: DbOrTx = db
+): Promise<void> {
+  if (payloads.length === 0) return;
+  const now = new Date();
+  await executor.insert(jobs).values(
+    payloads.map((payload) => ({
+      id: generateUuidv7(),
+      type,
+      payload,
+      nextRunAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }))
+  );
 }
 
 /**

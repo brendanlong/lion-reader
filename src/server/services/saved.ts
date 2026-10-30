@@ -33,7 +33,7 @@ import {
 } from "./collections";
 import { recordEntryTombstones } from "./entry-tombstones";
 import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
-import { enqueueEntriesObjectsDeletion, entryObjectsPrefix } from "./stored-objects";
+import { enqueueStoredObjectsDeletion, entryObjectsPrefix } from "./stored-objects";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
 import { detectFileType, getSupportedTypesDescription } from "@/server/file/process-upload";
@@ -360,11 +360,6 @@ export async function insertUploadedArticle(
   guid: string = `uploaded:${generateUuidv7()}`,
   id?: string
 ): Promise<InsertedSavedArticle> {
-  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-  if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
-    throw errors.contentTooLarge("Uploaded article", maxSize);
-  }
-
   const saved = await insertSavedEntry(db, userId, {
     ...fields,
     id,
@@ -1011,10 +1006,9 @@ async function hardDeleteSavedArticles(
       tx,
       deleted.filter((row) => row.fullContentFetchedAt).map((row) => row.id)
     );
-    await enqueueEntriesObjectsDeletion(
+    await enqueueStoredObjectsDeletion(
       tx,
-      userId,
-      deleted.map((row) => row.id)
+      deleted.map((row) => entryObjectsPrefix(userId, row.id))
     );
   });
 }

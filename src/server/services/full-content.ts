@@ -15,7 +15,7 @@ import { getAppErrorCode } from "@/server/errors";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
-import { archiveFullContentOriginal } from "./full-content-archive";
+import { archiveFullContentOriginal, deleteFullContentArchives } from "./full-content-archive";
 import { entryObjectsPrefix } from "./stored-objects";
 import { type FullEntry, getFullEntry } from "./entry-reads";
 import { articleContentFromAcquired, processArticleContent } from "./article-content";
@@ -63,8 +63,12 @@ export async function fetchFullContent(
   const { objectsPrefix, offloadClean = true } = options;
 
   try {
-    const acquired = await acquireArticleContent(url);
-    const bundle = await articleContentFromAcquired(acquired, { offload: offloadClean });
+    const images = objectsPrefix !== null;
+    const acquired = await acquireArticleContent(url, { images });
+    const bundle = await articleContentFromAcquired(acquired, {
+      offload: offloadClean,
+      pdfImages: images,
+    });
     const { contentOriginal, contentCleaned } = await processArticleContent(
       bundle,
       bundle.contentUrl,
@@ -104,9 +108,11 @@ export async function fetchFullContent(
  * (fetchFullContentForNewEntries below).
  *
  * Stores only the raw cleaned content; the read path sanitizes per read (issue
- * #1282). The fetched page goes to the archive (`archiveFullContentOriginal`)
- * once the row is written, never the row itself (#2115); failing to archive it
- * doesn't fail the write.
+ * #1282). The fetched page goes to the archive (`archiveFullContentOriginal`),
+ * never the row itself (#2115); failing to archive it doesn't fail the write.
+ * It's archived before the row is written, so if the entry is gone by then,
+ * the page is deleted again: archived after, it could land after the
+ * entry's deletion job ran.
  *
  * Bumps `updated_at` only when the full content an entry view shows changes:
  * sync reports every bump as `entry_updated` to every subscriber, and clients
@@ -150,19 +156,32 @@ export async function persistFullContentResult(
     fullContentError: null,
   };
 
-  await db
+  const archived = result.contentOriginal
+    ? await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
+        // Error level: the article is stored, but every failure loses a page,
+        // so a lasting one (bad credentials, say) must surface in Sentry.
+        logger.error("Failed to archive full content original", {
+          entryId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      })
+    : false;
+
+  const updated = await db
     .update(entries)
     .set({
       ...fullContentUpdate,
       updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT DISTINCT FROM ${fullContentHash} THEN ${entries.updatedAt} ELSE ${now} END`,
     })
-    .where(eq(entries.id, entryId));
+    .where(eq(entries.id, entryId))
+    .returning({ id: entries.id });
 
-  if (result.contentOriginal) {
-    await archiveFullContentOriginal(entryId, result.contentOriginal).catch((error: unknown) => {
-      // Error level: the article is stored, but every failure loses a page, so
-      // a lasting one (bad credentials, say) must surface in Sentry.
-      logger.error("Failed to archive full content original", {
+  // Deleted while we fetched: its deletion may have queued no job (it had never
+  // been fetched), or run it before this page landed.
+  if (updated.length === 0 && archived) {
+    await deleteFullContentArchives([entryId]).catch((error: unknown) => {
+      logger.error("Failed to delete a deleted entry's archived page", {
         entryId,
         error: error instanceof Error ? error.message : String(error),
       });

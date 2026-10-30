@@ -16,7 +16,9 @@ import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { createEntry, generateContentHash } from "../../src/server/feed/entry-processor";
 import type { ParsedEntry } from "../../src/server/feed/types";
 import { getAppErrorCode } from "../../src/server/errors";
-import { fetchAndStoreFullContent } from "../../src/server/services/full-content";
+import { usageLimitsConfig } from "../../src/server/config/env";
+import { pluginRegistry } from "../../src/server/plugins";
+import { fetchAndStoreFullContent, fetchFullContent } from "../../src/server/services/full-content";
 import { saveArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { entryObjectsPrefix } from "../../src/server/services/stored-objects";
 import { getPublicObjectUrl } from "../../src/server/storage/s3";
@@ -45,6 +47,48 @@ ${Array.from({ length: 5 }, (_, i) => `<p>Paragraph ${i} of an article long enou
 <p><img src="${DATA_URI}" alt="figure"></p>
 </article></body></html>`;
 
+/** An image whose `data:` URI alone is over the saved-article limit. */
+const BIG_PNG = Buffer.concat([
+  PNG.subarray(0, 8),
+  Buffer.alloc(usageLimitsConfig.maxSavedArticleSizeBytes, 7),
+]);
+
+// Hands back the images it fetches inlined, when asked to, as the Google Docs
+// plugin does.
+pluginRegistry.register({
+  name: "fixture-inlined-images",
+  hosts: ["127.0.0.1"],
+  matchUrl: (url) => url.pathname === "/plugin-images",
+  capabilities: {
+    savedArticle: {
+      async fetchContent(_url, { images }) {
+        const src = `data:image/png;base64,${BIG_PNG.toString("base64")}`;
+        const img = images ? `<img src="${src}">` : "";
+        return { html: `<p>A document with a big picture.</p>${img}` };
+      },
+      skipReadability: true,
+    },
+  },
+});
+
+const FIGURE_PDF = buildPdf(
+  [
+    Buffer.concat([
+      textPage(["A PDF with a figure in it, long enough to be an article body."]),
+      Buffer.from("\n"),
+      drawImage(72, 450, 200, 200),
+    ]),
+  ],
+  {
+    image: {
+      width: 40,
+      height: 40,
+      // Noise, so the PNG is big enough to be worth moving.
+      rgb: Buffer.from(Array.from({ length: 40 * 40 * 3 }, (_, i) => (i * i * 31) % 251)),
+    },
+  }
+);
+
 let s3: FakeS3;
 let server: Server;
 let baseUrl: string;
@@ -53,7 +97,12 @@ const createdFeedIds: string[] = [];
 
 beforeAll(async () => {
   s3 = await useFakeS3({ bucket: BUCKET });
-  server = createServer((_req, res) => {
+  server = createServer((req, res) => {
+    if (req.url === "/figure.pdf") {
+      res.writeHead(200, { "Content-Type": "application/pdf" });
+      res.end(FIGURE_PDF);
+      return;
+    }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(ARTICLE_PAGE);
   });
@@ -121,17 +170,8 @@ describe("inlined images", () => {
 
   it("stores an uploaded PDF's images", async () => {
     const userId = await user();
-    const side = 40;
-    // Noise, so the PNG is big enough to be worth moving.
-    const rgb = Buffer.from(Array.from({ length: side * side * 3 }, (_, i) => (i * i * 31) % 251));
-    const page = Buffer.concat([
-      textPage(["A PDF with a figure in it, long enough to be an article body."]),
-      Buffer.from("\n"),
-      drawImage(72, 450, 200, 200),
-    ]);
-    const pdf = buildPdf([page], { image: { width: side, height: side, rgb } });
     const { article } = await uploadFile(db, userId, {
-      content: pdf.toString("base64"),
+      content: FIGURE_PDF.toString("base64"),
       filename: "figure.pdf",
     });
 
@@ -237,6 +277,38 @@ describe("inlined images", () => {
 
     expect(result.success).toBe(true);
     expect((await storedContent(entryId)).fullCleaned).toContain(DATA_URI);
+    expect(s3.objects.size).toBe(storedBefore);
+  });
+
+  it("drops a PDF's images from a feed entry's full content", async () => {
+    const storedBefore = s3.objects.size;
+
+    const result = await fetchFullContent(`${baseUrl}/figure.pdf`, { objectsPrefix: null });
+
+    expect(result.success).toBe(true);
+    expect(result.contentCleaned).toContain("A PDF with a figure in it");
+    expect(result.contentCleaned).not.toContain("<img");
+    expect(s3.objects.size).toBe(storedBefore);
+  });
+
+  it("stores a plugin's inlined images, however far over the limit they'd put it", async () => {
+    const userId = await user();
+    const article = await saveArticle(db, userId, { url: `${baseUrl}/plugin-images` });
+
+    const prefix = entryObjectsPrefix(userId, article.id);
+    const keys = [...s3.objects.keys()].filter((key) => key.startsWith(`${BUCKET}/${prefix}`));
+    expect(keys).toHaveLength(1);
+    expect((await storedContent(article.id)).original).not.toContain("data:image");
+  });
+
+  it("asks a plugin to leave its images out of a feed entry's full content", async () => {
+    const storedBefore = s3.objects.size;
+
+    const result = await fetchFullContent(`${baseUrl}/plugin-images`, { objectsPrefix: null });
+
+    expect(result.success).toBe(true);
+    expect(result.contentCleaned).toContain("A document with a big picture.");
+    expect(result.contentCleaned).not.toContain("<img");
     expect(s3.objects.size).toBe(storedBefore);
   });
 
