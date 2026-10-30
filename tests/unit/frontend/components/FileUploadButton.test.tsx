@@ -22,6 +22,7 @@ import type { NewEntryListItem } from "@/lib/events/schemas";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
+import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES, maxEbookUploadBytes } from "@/lib/upload-limits";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import {
   createCounts,
@@ -200,6 +201,32 @@ describe("FileUploadButton drop zone accessibility", () => {
 
     expect(await screen.findByText(/Unsupported file type/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
+  });
+
+  it("holds a document to the article limit and an ebook to the ebook limit", async () => {
+    renderWithTrpc(<FileUploadButton />, { handlers });
+    openDialog();
+    const sized = (name: string, size: number) => {
+      const file = new File([""], name);
+      Object.defineProperty(file, "size", { value: size });
+      return file;
+    };
+
+    const doc = sized("big.md", DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES + 1);
+    fireEvent.change(getFileInput(), { target: { files: [doc] } });
+    expect(await screen.findByText(/File is too large/)).toBeInTheDocument();
+
+    const ebook = sized("big.epub", DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES + 1);
+    fireEvent.change(getFileInput(), { target: { files: [ebook] } });
+    expect(await screen.findByText("big.epub")).toBeInTheDocument();
+    expect(screen.queryByText(/File is too large/)).not.toBeInTheDocument();
+
+    const tooBigEbook = sized(
+      "huge.epub",
+      maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES) + 1
+    );
+    fireEvent.change(getFileInput(), { target: { files: [tooBigEbook] } });
+    expect(await screen.findByText(/File is too large/)).toBeInTheDocument();
   });
 });
 
