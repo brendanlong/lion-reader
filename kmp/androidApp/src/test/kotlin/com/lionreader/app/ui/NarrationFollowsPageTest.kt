@@ -25,7 +25,7 @@ class NarrationFollowsPageTest {
     private var narration by mutableStateOf<NarrationState?>(null)
     private var entryId by mutableStateOf("a")
     private var paragraphs by mutableStateOf<List<String>?>(null)
-    private var started by mutableStateOf(true)
+    private var shown by mutableStateOf(true)
     private val followed = mutableListOf<String>()
     private val supplied = mutableListOf<String>()
 
@@ -40,7 +40,7 @@ class NarrationFollowsPageTest {
                 entryId,
                 paragraphs,
                 entry = entry(entryId),
-                started = started,
+                shown = shown,
                 // As the narrator does (NarratorTest): narration moves to the
                 // article, playing or paused as it was, with no place in it yet.
                 follow = { id, title ->
@@ -142,30 +142,30 @@ class NarrationFollowsPageTest {
     }
 
     @Test
-    fun waitsForTheAppToBeOnScreen() {
+    fun waitsForTheArticleScreenToBeShown() {
         narration = on("a")
         paragraphs = listOf("Hello.")
-        started = false
+        shown = false
         show()
         entryId = "b"
         after(2_000)
         assertTrue(followed.isEmpty())
 
-        started = true
+        shown = true
         after(1_500)
         assertEquals(listOf("b"), followed)
         assertEquals(listOf("b"), supplied)
     }
 
     @Test
-    fun suppliesTheTextAfterTheScreenGoesOff() {
-        // #2181: swipe, then the screen off before the page settles.
+    fun suppliesTheTextAfterTheArticleScreenIsHidden() {
+        // #2181: swipe, then the article screen hidden before the page settles.
         narration = on("a")
         paragraphs = listOf("Hello.")
         show()
         entryId = "b"
         after(300)
-        started = false
+        shown = false
         after(1_500)
 
         assertEquals(listOf("b"), followed)

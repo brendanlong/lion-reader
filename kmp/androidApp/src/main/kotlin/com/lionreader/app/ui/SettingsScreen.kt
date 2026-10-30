@@ -411,6 +411,9 @@ private fun NarrationSettings(
         ->
         update { it.copy(narrationAutoScroll = value) }
     }
+    SettingSwitch("Continue to the next article", settings.narrationContinue) { value ->
+        update { it.copy(narrationContinue = value) }
+    }
 }
 
 private const val STEPS_PER_SECOND = 1f / CloudSpeechPause.STEP_SECONDS

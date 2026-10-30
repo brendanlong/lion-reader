@@ -90,6 +90,8 @@ data class AppSettings(
     val narrationSpeed: Float = 1f,
     /** Keep the paragraph being read on screen. */
     val narrationAutoScroll: Boolean = true,
+    /** When an article ends, narration goes on to the next one in the list. */
+    val narrationContinue: Boolean = true,
     val narrationEngine: NarrationEngine = NarrationEngine.DEVICE,
     /** The cloud voice model (`provider:model`) and voice; null for the server's defaults. */
     val cloudVoiceModel: String? = null,
@@ -152,6 +154,9 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         },
         Stored(booleanPreferencesKey("narration_auto_scroll"), { narrationAutoScroll }) {
             copy(narrationAutoScroll = it)
+        },
+        Stored(booleanPreferencesKey("narration_continue"), { narrationContinue }) {
+            copy(narrationContinue = it)
         },
         enumStored("narration_engine", { narrationEngine }) { copy(narrationEngine = it) },
         Stored(stringPreferencesKey("cloud_voice_model"), { cloudVoiceModel }) {

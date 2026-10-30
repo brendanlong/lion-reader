@@ -5,7 +5,10 @@ import android.os.Looper
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.lionreader.shared.narration.NEXT_ARTICLE
+import com.lionreader.shared.narration.NO_MORE_ARTICLES
 import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.NarrationList
 import com.lionreader.shared.narration.SpeechInterrupted
 import com.lionreader.shared.settings.AppSettings
 import java.io.File
@@ -71,7 +74,19 @@ class NarratorTest {
             }
         }
 
-    private val settings = MutableStateFlow(AppSettings())
+    // Off but in the tests of going on through the list, so the others' articles end as they say.
+    private val settings = MutableStateFlow(AppSettings(narrationContinue = false))
+
+    /** A list of [ids], recording where narration goes on to. */
+    private class Listed(private val ids: List<String>) : NarrationList {
+        val opened = mutableListOf<String>()
+
+        override fun after(entryId: String): String? = ids.getOrNull(ids.indexOf(entryId) + 1)
+
+        override fun open(entryId: String) {
+            opened += entryId
+        }
+    }
 
     private val narrator =
         Narrator(
@@ -183,6 +198,54 @@ class NarratorTest {
         assertNull(state)
         assertEquals(listOf("One.", "Two.", "Three."), synthesized)
         assertEquals(0, narrator.player.mediaItemCount)
+    }
+
+    @Test
+    fun atTheEndNarrationSaysSoAndGoesOnToTheNextArticle() {
+        settings.value = AppSettings(narrationContinue = true)
+        brief = true
+        val list = Listed(listOf("a", "b")).also { narrator.list = it }
+        narrator.narrate(article("a", "One."))
+        idleUntil { list.opened.isNotEmpty() }
+
+        assertEquals(listOf("b"), list.opened)
+        assertEquals(listOf("One.", NEXT_ARTICLE), synthesized)
+        // On until the article screen turns to the next, and narration follows it there.
+        assertEquals("a", state?.entryId)
+        assertPlayerWaits()
+
+        synthesized.clear()
+        narrator.follow("b", "Title b")
+        narrator.supply(article("b", "Two."))
+        idleUntil { state == null }
+        assertEquals(listOf("Two.", NO_MORE_ARTICLES), synthesized)
+        assertEquals(listOf("b"), list.opened)
+    }
+
+    @Test
+    fun withoutGoingOnNarrationStopsAtTheEnd() {
+        brief = true
+        val list = Listed(listOf("a", "b")).also { narrator.list = it }
+        narrator.narrate(article("a", "One."))
+        idleUntil { state == null }
+
+        assertEquals(listOf("One."), synthesized)
+        assertTrue(list.opened.isEmpty())
+    }
+
+    @Test
+    fun anArticleWithNothingToSayIsPassedOverOnTheWayThroughTheList() {
+        settings.value = AppSettings(narrationContinue = true)
+        brief = true
+        val list = Listed(listOf("a", "b", "c")).also { narrator.list = it }
+        narrator.narrate(article("a", "One."))
+        idleUntil { list.opened.isNotEmpty() }
+        narrator.follow("b", "Title b")
+        narrator.supply(article("b", " ", "↩"))
+        idle()
+
+        assertEquals(listOf("b", "c"), list.opened)
+        assertPlayerWaits()
     }
 
     @Test
