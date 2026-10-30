@@ -9,17 +9,27 @@
  * counts.
  */
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, cleanup, waitFor } from "@testing-library/react";
-import type { QueryClient } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
-import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import { applyCatchUpPage, handleSyncEvent } from "@/lib/cache/event-handlers";
 import { applyCollectionEntriesChange } from "@/lib/cache/operations";
 import { trpc } from "@/lib/trpc/client";
-import type { EntryRow } from "@/lib/local-db/entries";
+import { upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
+import { writeCounts } from "@/lib/local-db/counts";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
-import { createCounts, createRealTrpcUtils, storedCount } from "../../../utils/cache-test-helpers";
+import {
+  createCounts,
+  createEntryStateChangedEvent,
+  createRealTrpcUtils,
+  createSubscriptionRow,
+  invalidatedProcedures,
+  spyOnInvalidate,
+  storedCount,
+} from "../../../utils/cache-test-helpers";
 
 function storedEntry(queryClient: QueryClient, id: string): EntryRow | undefined {
   return getLocalDb(queryClient).entries.getSynced(id);
@@ -394,5 +404,58 @@ describe("collection_entries_changed", () => {
     expect(getLocalDb(queryClient).entries.getSynced("a")?.positions).toEqual({
       [COLLECTION]: 7,
     });
+  });
+});
+
+describe("catch-up after a membership change made elsewhere", () => {
+  it("corrects the left collection's counts without refetching, though a page fetched during the gap already shows the change", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const utils = createRealTrpcUtils(queryClient);
+    const db = getLocalDb(queryClient);
+    const beforeGap = "2024-06-30T00:00:00.000000Z";
+    const tag = { id: "tag-1", name: "Research", color: null };
+    writeLiveSubscriptions(
+      db.subscriptions,
+      [
+        createSubscriptionRow({ id: "sub-1", unreadCount: 1 }),
+        createSubscriptionRow({
+          id: COLLECTION,
+          type: "collection",
+          url: null,
+          tags: [tag],
+          unreadCount: 1,
+        }),
+      ].map((row) => ({ ...row, unreadCountAsOf: beforeGap }))
+    );
+    writeCounts(db.counts, [{ list: { tagId: tag.id }, unread: 1 }], beforeGap);
+    // An entry list fetched while disconnected, after the article left the
+    // collection: the store already has its new memberships and newer state.
+    upsertServerEntries(db.entries, [
+      makeEntry("entry-1", "2024-06-01", { updatedAt: new Date("2024-07-01T12:00:00Z") }),
+    ]);
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery");
+    const invalidateSpy = spyOnInvalidate(queryClient);
+
+    applyCatchUpPage(utils, queryClient, {
+      // The replayed entry counts only the lists it's in now.
+      events: [
+        createEntryStateChangedEvent({
+          entryId: "entry-1",
+          read: false,
+          starred: false,
+          counts: createCounts({ all: { unread: 1 }, subscriptions: [{ id: "sub-1", unread: 1 }] }),
+        }),
+      ],
+      counts: createCounts({
+        all: { unread: 1 },
+        subscriptions: [{ id: COLLECTION, unread: 0, tagIds: [tag.id] }],
+        tags: [{ id: tag.id, unread: 0 }],
+      }),
+    });
+
+    expect(db.subscriptions.rows.getSynced(COLLECTION)?.unreadCount).toBe(0);
+    expect(storedCount(queryClient, { tagId: tag.id })).toEqual({ unread: 0 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(invalidatedProcedures(invalidateSpy)).toEqual([]);
   });
 });

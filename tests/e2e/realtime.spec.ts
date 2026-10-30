@@ -118,8 +118,8 @@ async function seedAndOpenAll(
     { timeout: 90_000 }
   );
   // Each SSE connect runs a sync.events catch-up. If its query lands after a
-  // test's write, it replays the change and (legitimately) refetches the
-  // sidebar lists, which the tests would count as stray refetches (#1831).
+  // test's write, it replays the change too, and the test no longer shows
+  // that the live event alone did the work (#1831).
   const catchUpResponse = page.waitForResponse(
     (response) => trpcProcedures(response.url()).includes("sync.events"),
     { timeout: 90_000 }

@@ -13,7 +13,7 @@ import {
   scopedProtectedProcedure,
 } from "../trpc";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { serverSyncEventSchema } from "@/lib/events/schemas";
+import { serverSyncEventSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import {
   collectSyncChanges,
   collectSyncEvents,
@@ -37,6 +37,8 @@ const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 const syncEventsOutputSchema = z.object({
   events: z.array(serverSyncEventSchema),
   hasMore: z.boolean(),
+  /** On the last page: every active collection's counts (see collectSyncEvents). */
+  counts: unreadCountsSchema.optional(),
 });
 
 // ============================================================================
@@ -74,12 +76,13 @@ export const syncRouter = createTRPCRouter({
     .input(z.object({ cursors: syncCursorsInputSchema.optional() }))
     .output(syncEventsOutputSchema)
     .query(async ({ ctx, input }) => {
-      const { events, hasMore } = await collectSyncEvents(
+      const { events, hasMore, counts } = await collectSyncEvents(
         ctx.db,
         ctx.session.user.id,
-        input.cursors ?? {}
+        input.cursors ?? {},
+        { collectionCounts: true }
       );
-      return { events, hasMore };
+      return { events, hasMore, counts };
     }),
   /**
    * The native app's delta sync (`sync.events` over REST, plus what an offline
