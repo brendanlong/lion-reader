@@ -20,6 +20,7 @@ import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getAppErrorCode } from "../../src/server/errors";
+import { maxEbookUploadBytes } from "../../src/lib/upload-limits";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   saveArticle,
@@ -1168,6 +1169,22 @@ describe("Saved Articles API", () => {
         .from(entries)
         .where(eq(entries.ownerUserId, userId));
       expect(savedEntries).toHaveLength(0);
+    });
+
+    it("reports the configured limit, not the default, as saved.uploadLimits", async () => {
+      const userId = await createTestUser();
+      const caller = createCaller(await createAuthContext(userId));
+      const { usageLimitsConfig } = await import("../../src/server/config/env");
+      const limit = usageLimitsConfig.maxSavedArticleSizeBytes;
+      usageLimitsConfig.maxSavedArticleSizeBytes = 100;
+      try {
+        expect(await caller.saved.uploadLimits()).toEqual({
+          maxFileBytes: 100,
+          maxEbookBytes: maxEbookUploadBytes(100),
+        });
+      } finally {
+        usageLimitsConfig.maxSavedArticleSizeBytes = limit;
+      }
     });
   });
 

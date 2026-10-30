@@ -16,6 +16,7 @@
  * - saved.save: Save a URL (content extraction in services/saved.ts)
  * - saved.delete: Hard delete a saved article (entries use soft delete)
  * - saved.uploadFile: Upload a file (.docx/.pdf/.html/.md) as a saved article
+ * - saved.uploadLimits: The largest file uploadFile and collections.importEbook take
  *
  * Business logic lives in the saved service (`@/server/services/saved`),
  * shared with the MCP save_article/delete_saved_article/upload_article tools.
@@ -36,6 +37,7 @@ import {
   uuidSchema,
 } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
+import { maxEbookUploadBytes } from "@/lib/upload-limits";
 import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
@@ -229,5 +231,17 @@ export const savedRouter = createTRPCRouter({
         listItem,
         counts: await savedArticleCounts(ctx.db, userId, article.id),
       };
+    }),
+
+  /**
+   * The largest file, in bytes, `saved.uploadFile` (`maxFileBytes`) and
+   * `collections.importEbook` (`maxEbookBytes`) take, as this server is
+   * configured, so a client can refuse a file before sending it.
+   */
+  uploadLimits: readerProcedure
+    .output(z.object({ maxFileBytes: z.number().int(), maxEbookBytes: z.number().int() }))
+    .query(() => {
+      const maxFileBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+      return { maxFileBytes, maxEbookBytes: maxEbookUploadBytes(maxFileBytes) };
     }),
 });
