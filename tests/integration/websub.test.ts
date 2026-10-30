@@ -867,7 +867,7 @@ describe("WebSub Integration", () => {
           expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         });
 
-        await renewExpiringSubscriptions(24);
+        expect(await renewExpiringSubscriptions(24)).toMatchObject({ checked: 0, deactivated: 1 });
 
         const [afterSweep] = await db
           .select()

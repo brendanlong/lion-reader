@@ -8,11 +8,17 @@
  */
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, exists, isNull, sql, type SQL } from "drizzle-orm";
 import { fetchWithSsrfProtection } from "../http/ssrf";
 import { readResponseBufferWithSizeLimit } from "../http/fetch";
 import { db } from "../db";
-import { feeds, websubSubscriptions, type Feed, type WebsubSubscription } from "../db/schema";
+import {
+  feeds,
+  subscriptions,
+  websubSubscriptions,
+  type Feed,
+  type WebsubSubscription,
+} from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { logger } from "@/lib/logger";
 
@@ -808,8 +814,10 @@ export async function verifyHmacSignature(
  * Result of renewing expiring WebSub subscriptions.
  */
 export interface RenewSubscriptionsResult {
-  /** Number of subscriptions that were checked */
+  /** Number of subscriptions that were checked for renewal */
   checked: number;
+  /** Number of expiring subscriptions dropped because their feed has no subscribers */
+  deactivated: number;
   /** Number of subscriptions successfully renewed */
   renewed: number;
   /** Number of subscriptions that failed to renew */
@@ -843,6 +851,7 @@ export async function renewExpiringSubscriptions(
 ): Promise<RenewSubscriptionsResult> {
   const result: RenewSubscriptionsResult = {
     checked: 0,
+    deactivated: 0,
     renewed: 0,
     failed: 0,
     errors: [],
@@ -857,6 +866,8 @@ export async function renewExpiringSubscriptions(
   // Find subscriptions expiring within the specified time
   const expiryThreshold = new Date(Date.now() + hoursBeforeExpiry * 60 * 60 * 1000);
 
+  result.deactivated = await deactivateUnsubscribedLeases(expiryThreshold);
+
   const expiringSubs = await db
     .select({
       subscription: websubSubscriptions,
@@ -867,7 +878,8 @@ export async function renewExpiringSubscriptions(
     .where(
       and(
         eq(websubSubscriptions.state, "active"),
-        lt(websubSubscriptions.expiresAt, expiryThreshold)
+        lt(websubSubscriptions.expiresAt, expiryThreshold),
+        hasActiveSubscriber()
       )
     );
 
@@ -975,6 +987,59 @@ export async function renewExpiringSubscriptions(
   });
 
   return result;
+}
+
+const hasActiveSubscriber = (): SQL =>
+  exists(
+    db
+      .select({ one: sql`1` })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.feedId, websubSubscriptions.feedId),
+          isNull(subscriptions.unsubscribedAt)
+        )
+      )
+  );
+
+/**
+ * Drops leases expiring before `expiryThreshold` on feeds nobody subscribes to
+ * back to polling instead of renewing them: nothing polls such a feed, so
+ * nothing else would ever end its lease. The hub's lease then lapses, and a
+ * later subscriber's first fetch subscribes again. Returns how many it dropped.
+ */
+async function deactivateUnsubscribedLeases(expiryThreshold: Date): Promise<number> {
+  const now = new Date();
+  const dropped = db.$with("dropped").as(
+    db
+      .update(websubSubscriptions)
+      .set({
+        state: "unsubscribed",
+        lastError: "Feed has no subscribers",
+        unsubscribeRequestedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(websubSubscriptions.state, "active"),
+          lt(websubSubscriptions.expiresAt, expiryThreshold),
+          sql`NOT ${hasActiveSubscriber()}`
+        )
+      )
+      .returning({ feedId: websubSubscriptions.feedId })
+  );
+  const feedsDropped = await db
+    .with(dropped)
+    .update(feeds)
+    .set({ websubActive: false, updatedAt: now })
+    .where(sql`${feeds.id} IN (SELECT ${dropped.feedId} FROM ${dropped})`)
+    .returning({ id: feeds.id });
+  if (feedsDropped.length > 0) {
+    logger.info("WebSub leases on feeds without subscribers dropped to polling", {
+      count: feedsDropped.length,
+    });
+  }
+  return feedsDropped.length;
 }
 
 /**
