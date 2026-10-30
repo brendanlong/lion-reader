@@ -19,6 +19,7 @@
 
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { PgInsertValue } from "drizzle-orm/pg-core";
+import type pg from "pg";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -582,6 +583,21 @@ export async function waitForLockWaiter(pattern: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("nothing ever waited on the lock");
+}
+
+/** Resolves once some backend is waiting on a lock `holder`'s connection holds. */
+export async function waitUntilBlockedBy(holder: pg.ClientBase): Promise<void> {
+  const {
+    rows: [{ pid }],
+  } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const result = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`
+    );
+    if (result.rows[0].n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`nothing waited on backend ${pid}`);
 }
 
 /**

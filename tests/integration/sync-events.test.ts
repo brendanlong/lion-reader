@@ -18,7 +18,7 @@ import {
   userEntries,
   tags,
 } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { MAX_SYNC_PAGE_ENTRIES } from "../../src/server/services/sync";
 import { createCaller } from "../../src/server/trpc/root";
 import { parseTimestamptz } from "../../src/server/db/temporal";
 import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
@@ -26,12 +26,14 @@ import type { SyncEvent } from "../../src/lib/events/schemas";
 import {
   createAuthContext,
   createTestEntry,
+  createTestEntryBatch,
   createTestFeed,
   createTestMembership,
   createTestSubscription,
   createTestTag,
   createTestUser,
   createTestUserEntries,
+  waitUntilBlockedBy,
 } from "./helpers";
 
 // ============================================================================
@@ -782,37 +784,14 @@ describe("sync.events", () => {
       const feedId = await createTestFeed({ url: "https://example.com/tied-large.xml" });
       await createTestSubscription(userId, feedId);
 
-      // More than MAX_ENTRIES (500) rows sharing ONE timestamp — the exact
+      // More than a page of rows sharing ONE timestamp — the exact
       // markAllEntriesRead-over-a-large-backlog shape that used to lose every
       // row past the first page.
       const tiedTime = new Date("2025-02-02T00:00:00.000Z");
-      const total = 550;
-      const entryValues = [];
-      const userEntryValues = [];
-      const allIds = new Set<string>();
-      for (let i = 0; i < total; i++) {
-        const entryId = generateUuidv7();
-        allIds.add(entryId);
-        entryValues.push({
-          id: entryId,
-          ownerFeedId: feedId,
-          type: "web" as const,
-          guid: `guid-tied-${i}`,
-          title: `Tied ${i}`,
-          contentHash: `hash-tied-${i}`,
-          fetchedAt: tiedTime,
-          publishedAt: tiedTime,
-          lastSeenAt: tiedTime,
-          createdAt: tiedTime,
-          updatedAt: tiedTime,
-        });
-        userEntryValues.push({ userId, entryId, read: false, starred: false, updatedAt: tiedTime });
-      }
-      const batchSize = 100;
-      for (let i = 0; i < entryValues.length; i += batchSize) {
-        await db.insert(entries).values(entryValues.slice(i, i + batchSize));
-        await createTestUserEntries(userEntryValues.slice(i, i + batchSize));
-      }
+      const total = MAX_SYNC_PAGE_ENTRIES + 50;
+      const ids = await createTestEntryBatch(feedId, total, { start: tiedTime, stepMs: 0 });
+      await createTestUserEntries(ids.map((entryId) => ({ userId, entryId, updatedAt: tiedTime })));
+      const allIds = new Set(ids);
 
       // Start just before the tied timestamp and drain to completion, exactly
       // as the client would (multiple pages, keyset-advanced between them).
@@ -1099,30 +1078,11 @@ describe("sync.events", () => {
       // full first page of fillers changed at t2, whose cursor passes t1.
       const straddlerId = await createTestEntry(feedId, { fetchedAt: t1 });
       await createUserEntry(userId, straddlerId, { read: true, updatedAt: t3 });
-      const entryValues = [];
-      const userEntryValues = [];
-      for (let i = 0; i < 500; i++) {
-        const entryId = generateUuidv7();
-        entryValues.push({
-          id: entryId,
-          ownerFeedId: feedId,
-          type: "web" as const,
-          guid: `guid-straddle-${i}`,
-          title: `Filler ${i}`,
-          contentHash: `hash-straddle-${i}`,
-          fetchedAt: t2,
-          publishedAt: t2,
-          lastSeenAt: t2,
-          createdAt: t2,
-          updatedAt: t2,
-        });
-        userEntryValues.push({ userId, entryId, read: false, starred: false, updatedAt: t2 });
-      }
-      const batchSize = 100;
-      for (let i = 0; i < entryValues.length; i += batchSize) {
-        await db.insert(entries).values(entryValues.slice(i, i + batchSize));
-        await createTestUserEntries(userEntryValues.slice(i, i + batchSize));
-      }
+      const fillerIds = await createTestEntryBatch(feedId, MAX_SYNC_PAGE_ENTRIES, {
+        start: t2,
+        stepMs: 0,
+      });
+      await createTestUserEntries(fillerIds.map((entryId) => ({ userId, entryId, updatedAt: t2 })));
 
       const events = await drainEntrySync(userId, {
         entries: t0.toISOString(),
@@ -1216,44 +1176,24 @@ describe("sync.events", () => {
         unsubscribedAt: new Date("2025-04-01T00:00:00.000Z"),
       });
 
-      // One unstar of more than a page of entries, from a feed the user left,
-      // stamps them all with one timestamp — shared with visible entries read
-      // in the same instant, so a page boundary lands inside the tie.
+      // One unstar of a page of entries, from a feed the user left, stamps
+      // them all with one timestamp — shared with visible entries read in the
+      // same instant (and sorting first), so the first page mixes both and its
+      // boundary lands inside the tie.
       const created = new Date("2025-04-02T00:00:00.000Z");
       const unstarredAt = "2025-04-03T00:00:00.123456Z";
-      const hiddenIds = new Set<string>();
-      const visibleIds = new Set<string>();
-      const entryValues = [];
-      const userEntryValues = [];
-      for (let i = 0; i < 560; i++) {
-        const entryId = generateUuidv7();
-        const hidden = i % 10 !== 0;
-        (hidden ? hiddenIds : visibleIds).add(entryId);
-        entryValues.push({
-          id: entryId,
-          ownerFeedId: hidden ? goneFeed : activeFeed,
-          type: "web" as const,
-          guid: `guid-hidden-${i}`,
-          title: `Hidden ${i}`,
-          contentHash: `hash-hidden-${i}`,
-          fetchedAt: created,
-          publishedAt: created,
-          lastSeenAt: created,
-          createdAt: created,
-          updatedAt: created,
-        });
-        userEntryValues.push({
-          userId,
-          entryId,
-          read: !hidden,
-          starred: false,
-          updatedAt: sql`${unstarredAt}::timestamptz`,
-        });
-      }
-      for (let i = 0; i < entryValues.length; i += 100) {
-        await db.insert(entries).values(entryValues.slice(i, i + 100));
-        await createTestUserEntries(userEntryValues.slice(i, i + 100));
-      }
+      const visible = await createTestEntryBatch(activeFeed, 60, { start: created, stepMs: 0 });
+      const hidden = await createTestEntryBatch(goneFeed, MAX_SYNC_PAGE_ENTRIES, {
+        start: created,
+        stepMs: 0,
+      });
+      const updatedAt = sql`${unstarredAt}::timestamptz`;
+      await createTestUserEntries([
+        ...visible.map((entryId) => ({ userId, entryId, read: true, updatedAt })),
+        ...hidden.map((entryId) => ({ userId, entryId, updatedAt })),
+      ]);
+      const visibleIds = new Set(visible);
+      const hiddenIds = new Set(hidden);
 
       const caller = createCaller(await createAuthContext(userId));
       const since = new Date("2025-04-02T12:00:00.000Z").toISOString();
@@ -1394,17 +1334,7 @@ describe("sync.events", () => {
           entryId,
         ]);
         const fanOut = createUserEntriesForFeed(db, feedId, [entryId], null);
-        await expect
-          .poll(
-            async () =>
-              (
-                await db.execute<{ n: number }>(sql`
-                  SELECT count(*)::int AS n FROM pg_stat_activity
-                  WHERE datname = current_database() AND wait_event_type = 'Lock'
-                `)
-              ).rows[0].n
-          )
-          .toBe(1);
+        await waitUntilBlockedBy(held);
         await held.query("COMMIT");
         await fanOut;
       } finally {

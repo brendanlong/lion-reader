@@ -42,6 +42,7 @@ import {
   createTestIngestAddress,
   createTestSubscription,
   createTestUser,
+  waitUntilBlockedBy,
 } from "./helpers";
 
 const NO_FIXES = {
@@ -256,17 +257,7 @@ describe("membership write paths (#1846)", () => {
       );
       // ...so the second waits on the saved subscription's unique index.
       const second = uploadArticle(db, userId, { content: "# Two\n\nBody", title: "" });
-      await expect
-        .poll(
-          async () =>
-            (
-              await db.execute<{ n: number }>(sql`
-                SELECT count(*)::int AS n FROM pg_stat_activity
-                WHERE datname = current_database() AND wait_event_type = 'Lock'
-              `)
-            ).rows[0].n
-        )
-        .toBe(1);
+      await waitUntilBlockedBy(held);
       await held.query("COMMIT");
       const { id: secondEntryId } = await second;
 

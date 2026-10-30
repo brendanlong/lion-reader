@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import pg from "pg";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   entries,
@@ -38,6 +38,7 @@ import {
   createWatchingSubscription,
   createTestTag,
   createTestUser,
+  waitUntilBlockedBy,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -59,18 +60,6 @@ async function expectNoDrift(): Promise<void> {
     usersFixed: 0,
     tagsFixed: 0,
   });
-}
-
-/** Waits until some backend is waiting on a lock `pid` holds. */
-async function waitUntilBlockedBy(pid: number): Promise<void> {
-  for (let i = 0; i < 500; i++) {
-    const result = await db.execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`
-    );
-    if (result.rows[0].n > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`nothing waited on backend ${pid}`);
 }
 
 async function expectAllFulfilled(promises: Array<Promise<unknown>>): Promise<void> {
@@ -210,11 +199,10 @@ describe("unread counters under concurrent writes", () => {
     await holder.connect();
     await probe.connect();
     try {
-      const { rows } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
       await holder.query("BEGIN");
       await holder.query("SELECT 1 FROM subscriptions WHERE id = $1 FOR NO KEY UPDATE", [lower]);
       const markRead = markEntriesRead(db, userId, [{ id: entryIds[0] }], true);
-      await waitUntilBlockedBy(rows[0].pid);
+      await waitUntilBlockedBy(holder);
       // Waiting for the lower row, the mark-read must not hold the higher one.
       await probe.query("BEGIN");
       await probe.query("SELECT 1 FROM subscriptions WHERE id = $1 FOR NO KEY UPDATE NOWAIT", [
@@ -274,14 +262,13 @@ describe("unread counters under concurrent writes", () => {
     const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await client.connect();
     try {
-      const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
       await client.query("BEGIN");
       await client.query(
         "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE",
         [userId, entryIds[0]]
       );
       const deletion = deleteUser(db, userId);
-      await waitUntilBlockedBy(rows[0].pid);
+      await waitUntilBlockedBy(client);
       const write = await client
         .query("UPDATE user_entries SET read = true WHERE user_id = $1 AND entry_id = $2", [
           userId,
@@ -356,7 +343,6 @@ describe("unread counters under concurrent writes", () => {
       const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
       await client.connect();
       try {
-        const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
         await client.query("BEGIN");
         await client.query("UPDATE subscriptions SET unsubscribed_at = now() WHERE id = $1", [
           subscriptionId,
@@ -364,7 +350,7 @@ describe("unread counters under concurrent writes", () => {
         const fanout = createUserEntriesForFeed(db, feedId, [entryId], read ? new Date() : null);
         // Commit only once the fan-out is waiting on the unsubscribe's lock,
         // so the race this test is about always happens.
-        await waitUntilBlockedBy(rows[0].pid);
+        await waitUntilBlockedBy(client);
         await client.query("COMMIT");
         await fanout;
       } finally {
@@ -405,7 +391,7 @@ describe("unread counters under concurrent writes", () => {
         [userId, [t1.entryIds[0], t2.entryIds[0]]]
       );
       const recompute = setSubscriptionTags(db, userId, subscription.id, [t1Tag]);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitUntilBlockedBy(client);
       await client.query("COMMIT");
       await recompute;
     } finally {
@@ -438,14 +424,13 @@ describe("a fan-out that loses a deadlock (#1846)", () => {
     const other = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await other.connect();
     try {
-      const { rows } = await other.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
       await other.query("BEGIN");
       await other.query("INSERT INTO user_entries (user_id, entry_id) VALUES ($1, $2)", [
         first,
         entryId,
       ]);
       const fanout = createUserEntriesForFeed(db, feedId, [entryId], null);
-      await waitUntilBlockedBy(rows[0].pid);
+      await waitUntilBlockedBy(other);
       await other.query(
         `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
          SELECT $1, user_id, entry_id, published_or_fetched_at FROM user_entries
