@@ -26,6 +26,8 @@ interface FullContent {
   fetchFullContent: boolean;
   isShowingFullContent: boolean;
   isFetching: boolean;
+  /** Full content is to show but hasn't been fetched yet: what shows is about to change. */
+  isAwaiting: boolean;
   /** Undefined when the entry has no subscription with the setting. */
   toggle: (() => void) | undefined;
 }
@@ -107,6 +109,8 @@ export function useFullContent(
     fetchFullContent,
     isShowingFullContent: !!entry && showsFullContent({ ...entry, fetchFullContent }),
     isFetching: fetchMutation.isPending,
+    isAwaiting:
+      fetchFullContent && needsFetch && !fetchMutation.isSuccess && !fetchMutation.isError,
     toggle: subscriptionId ? toggle : undefined,
   };
 }

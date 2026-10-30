@@ -19,7 +19,11 @@ import { useNarrationHighlight } from "./useNarrationHighlight";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { seekTargetElement } from "@/lib/narration/seek-target";
 import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "@/lib/narration/paragraph-map";
-import { continueNarrationTo, takeNarrationContinuation } from "./continuation";
+import {
+  clearNarrationContinuation,
+  continueNarrationTo,
+  narrationContinuesTo,
+} from "./continuation";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 interface UseEntryNarrationOptions {
@@ -38,6 +42,8 @@ interface UseEntryNarrationOptions {
   showFullContent: boolean;
   showOriginal: boolean;
   prerecordedVoice?: PrerecordedVoice;
+  /** Narration went on to this article and should play once it's ready. */
+  continued?: boolean;
   /** The next article in the list, and opening it; absent at its end. */
   next?: { id: string; open: () => void };
 }
@@ -56,6 +62,17 @@ interface EntryNarration {
   floatingControls: ReactNode;
 }
 
+/**
+ * Whether narration went on to `articleId` from the article before: for the
+ * entry view to call as it opens, before its content loads, so closing it
+ * first drops the continuation rather than leaving it for a later opening.
+ */
+export function useNarrationContinuedHere(articleId: string): boolean {
+  const [continued] = useState(() => narrationContinuesTo(articleId));
+  useEffect(() => clearNarrationContinuation(), []);
+  return continued;
+}
+
 export function useEntryNarration({
   contentRef,
   articleId,
@@ -65,6 +82,7 @@ export function useEntryNarration({
   showFullContent,
   showOriginal,
   prerecordedVoice,
+  continued = false,
   next,
 }: UseEntryNarrationOptions): EntryNarration {
   const [narrationSettings] = useNarrationSettings();
@@ -89,15 +107,15 @@ export function useEntryNarration({
   // passes over it if there's nothing to say.
   const play = narration?.play;
   const isSupported = narration?.isSupported ?? false;
-  const continuedHereRef = useRef(false);
+  const startedRef = useRef(false);
   useEffect(() => {
-    if (!play || !isSupported || !takeNarrationContinuation(articleId)) return;
-    continuedHereRef.current = true;
+    if (!continued || !play || !isSupported || startedRef.current) return;
+    startedRef.current = true;
     play();
-  }, [play, isSupported, articleId]);
+  }, [continued, play, isSupported]);
   const onNothingToSay = useCallback(() => {
-    if (continuedHereRef.current) goOn();
-  }, [goOn]);
+    if (continued) goOn();
+  }, [continued, goOn]);
 
   const { highlightedParagraphIds } = useNarrationHighlight({
     currentParagraphIndex: narrationState.currentParagraph,
