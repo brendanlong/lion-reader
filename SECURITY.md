@@ -269,7 +269,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - **The public bucket has no access control, so a user's object's key is its
   only secret**: it's keyed under its entry's id (`entryObjectsPrefix`), which
   only users who can see the entry learn. Never key a user's object by anything
-  guessable.
+  guessable. The exception is older Google Docs images under
+  `google-docs/{docId}/`, which stay until #2107 cleans them up.
 - **The archive bucket must be private and distinct from the public one**
   (`isArchiveAvailable`): its keys are derived from entry ids clients see.
 - **Upload endpoints bypass the proxy (`UPLOAD_PATHS`), so they make their
