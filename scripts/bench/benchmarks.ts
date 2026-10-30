@@ -467,7 +467,9 @@ WHERE subscription_id = ${q(readingList)} AND NOT read`
     prepare: async (db) => {
       const cursors = await syncCursors(db, 200);
       return {
-        statements: await recordStatements("sync", (app) => collectSyncEvents(app, U0, cursors)),
+        statements: await recordStatements("sync", (app) =>
+          collectSyncEvents(app, U0, cursors, { collectionCounts: true })
+        ),
       };
     },
   },
@@ -499,7 +501,9 @@ WHERE subscription_id = ${q(readingList)} AND NOT read`
     prepare: async (db) => {
       const cursors = await syncCursors(db, 5000);
       return {
-        statements: await recordStatements("sync", (app) => collectSyncEvents(app, U0, cursors)),
+        statements: await recordStatements("sync", (app) =>
+          collectSyncEvents(app, U0, cursors, { collectionCounts: true })
+        ),
       };
     },
   },
