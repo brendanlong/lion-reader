@@ -547,21 +547,31 @@ export class MediaSourcePlayer {
     if (this.stream) return true;
     const source = this.createMediaSource();
     if (!source) return false;
+    // Until it opens, or is detached first.
+    const opening = new AbortController();
     // The element errors instead when it refuses the source.
     const opened = new Promise<void>((resolve, reject) => {
-      const onError = () => reject(new Error("Failed to open the narration audio stream"));
-      this.audio.addEventListener("error", onError, { once: true });
+      const { signal } = opening;
+      this.audio.addEventListener(
+        "error",
+        () => reject(new Error("Failed to open the narration audio stream")),
+        { once: true, signal }
+      );
       source.addEventListener(
         "sourceopen",
         () => {
-          this.audio.removeEventListener("error", onError);
+          opening.abort();
           resolve();
         },
-        { once: true }
+        { once: true, signal }
       );
     });
     opened.catch(() => {});
-    const detach = this.attach(this.audio, source);
+    const detachSource = this.attach(this.audio, source);
+    const detach = () => {
+      opening.abort();
+      detachSource();
+    };
     // Attaching a new source resets playbackRate to the default.
     this.audio.defaultPlaybackRate = this.rate;
     this.audio.playbackRate = this.rate;
