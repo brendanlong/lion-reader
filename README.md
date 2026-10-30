@@ -87,11 +87,11 @@ The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid sign
 
 ## Development
 
-**Stack**: Next.js 16 (App Router) and React Query over tRPC, PostgreSQL 18 with Drizzle ORM, Redis 7 for caching and pub/sub, native Rust modules for feed parsing, sanitization, Markdown, and article extraction, and a Kotlin Multiplatform Android app. [DESIGN.md](docs/DESIGN.md) covers the architecture and the reasoning behind it; [SECURITY.md](SECURITY.md) maps the security-critical code.
+**Stack**: Next.js 16 (App Router) and React Query over tRPC, PostgreSQL 18 with Drizzle ORM, Redis 7 for pub/sub and short-lived state, native Rust modules for feed parsing, sanitization, Markdown, and article extraction, and a Kotlin Multiplatform Android app. [DESIGN.md](docs/DESIGN.md) covers the architecture and the reasoning behind it; [SECURITY.md](SECURITY.md) maps the security-critical code.
 
 ### Prerequisites
 
-- Node.js 26+ and pnpm
+- Node.js 24+ and pnpm (pnpm downloads the Node version the scripts run on)
 - Rust (`cargo`) and a C++ compiler, for the native modules
 - Docker and Docker Compose, for local Postgres, Redis and object storage (or run `pnpm services`, which starts them without Docker, and use the `*:local` script variants)
 
@@ -141,10 +141,10 @@ Build for production, then run with the flame profiler:
 NODE_ENV=production pnpm build:all
 
 # Profile the worker
-NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=dist/ dist/worker.js
+NODE_ENV=production pnpm dlx @platformatic/flame run --sourcemap-dirs=dist/ dist/worker.js
 
 # Profile the Next.js server
-NODE_ENV=production npx @platformatic/flame run --sourcemap-dirs=.next/ node_modules/next/dist/bin/next start
+NODE_ENV=production pnpm dlx @platformatic/flame run --sourcemap-dirs=.next/ node_modules/next/dist/bin/next start
 ```
 
 ## Background

@@ -51,7 +51,7 @@ fetches user-influenced URLs and must never be usable to reach internal services
   Allow-listed embeds run only in their sandboxed cross-origin frames. No file or
   content access; the one message channel is limited to the asset origin's main
   frame, the app reads only layout, narration text and taps from it, and calls
-  back only `lionNarration.highlight(number|null, boolean)`,
+  back only `lionNarration.highlight` with numbers, null and booleans of its own,
   `lionNarration.selectedParagraph()` (read as an integer or null),
   `lionNarration.replaceArticle` with the same article HTML a page load gets
   (`readerContent`, passed as a JSON-quoted string, so nothing in it is ever
@@ -255,3 +255,27 @@ fetches user-influenced URLs and must never be usable to reach internal services
   reach even if a dependency ships a server function. Adding one of our own
   means removing that check; a new POST route handler must be added to the
   proxy's list (the proxy tests enforce it).
+
+## 12. User files & object storage
+
+**Docs:** `src/server/CLAUDE.md` (Stored Objects) · **Code:**
+`src/server/services/stored-objects.ts`, `src/server/storage/s3.ts`,
+`src/server/trpc/http.ts`, `src/server/file/`
+
+- **An SVG never moves to the public bucket**: served from the bucket's origin it
+  would run its scripts, so it stays inline for the sanitizer to judge on every
+  read (`rewrite_urls` in `native/sanitizer/core/src/absolutize.rs`, which
+  judges the type by the image's bytes, never its declared type).
+- **The public bucket has no access control, so a user's object's key is its
+  only secret**: it's keyed under its entry's id (`entryObjectsPrefix`), which
+  only users who can see the entry learn. Never key a user's object by anything
+  guessable. The exception is older Google Docs images under
+  `google-docs/{docId}/`, which stay until #2107 cleans them up.
+- **The archive bucket must be private and distinct from the public one**
+  (`isArchiveAvailable`): its keys are derived from entry ids clients see.
+- **Upload endpoints bypass the proxy (`UPLOAD_PATHS`), so they make their
+  procedure's credential checks before reading the body** and bound its size
+  themselves (`serveUpload`).
+- **PDFs are converted only out of process** (`src/server/file/pdf-to-markdown.ts`),
+  since one hostile page can take gigabytes and only a separate process lets the
+  kernel cap that.

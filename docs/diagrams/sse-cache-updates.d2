@@ -43,6 +43,13 @@ event-sources: Event Sources {
     sub-deleted: publishUserEvent(subscription_deleted)
   }
 
+  other-services: Other Services {
+    style.fill: "#e0e7ff"
+    tooltip: "src/server/services/"
+
+    other-user-events: publishUserEvent(read/starred, tags, collections, mark-all-read, ...)
+  }
+
   job-handlers: Background Jobs {
     style.fill: "#e0e7ff"
     tooltip: "src/server/services/imports.ts"
@@ -67,11 +74,8 @@ redis: Redis Pub/Sub {
     channel-pattern: |
       Pattern: feed:{feedId}:events (web feeds only)
 
-      Events:
-      - new_entry (feedId, entryId, feedType,
-        entry list payload: type/title/author/summary/url/
-        publishedAt/fetchedAt/siteName/feedTitle)
-      - entry_updated (feedId, entryId, metadata)
+      A web feed's entry events; the event types
+      are feedEventSchema in src/server/redis/pubsub.ts
     |
   }
 
@@ -82,17 +86,21 @@ redis: Redis Pub/Sub {
     channel-pattern: |
       Pattern: user:{userId}:events
 
-      Events:
-      - new_entry for email and saved entries, entry_updated
-        for saved (subscriptionId; feedType, server-side
-        only; no feedId)
-      - subscription_created (the subscription row + counts)
-      - subscription_updated (the subscription row)
-      - subscription_deleted (subscriptionId + counts, live path only)
-      - entry_state_changed (read/starred + unread counts)
-      - tag_created / tag_updated / tag_deleted
-      - import_progress (per-feed progress)
-      - import_completed (final counts)
+      Everything with a single recipient: per-user
+      state, subscriptions, tags, collections, imports,
+      and email and saved entries; the event types are
+      userEventSchema in src/server/redis/pubsub.ts
+    |
+  }
+
+  site-status-channel: Site Status Channel {
+    style.fill: "#fde68a"
+    tooltip: "site-status:events"
+
+    channel-pattern: |
+      Pattern: site-status:events (one global channel)
+
+      Announcement changes, to every connection
     |
   }
 }
@@ -116,7 +124,8 @@ sse-endpoint: SSE Endpoint {
 
       On connection:
       1. Build feedId → subscriptionId map (web feeds)
-      2. Subscribe to user:{userId}:events
+      2. Subscribe to user:{userId}:events and
+         site-status:events
       3. Subscribe to feed:{feedId}:events for each web subscription
     |
   }
@@ -167,20 +176,14 @@ frontend: Frontend (useRealtimeUpdates) {
     style.fill: "#f5d0fe"
 
     listeners: |
-      Named event listeners:
-      - hello
-      - new_entry
-      - entry_updated
-      - subscription_created
-      - subscription_deleted
-      - import_progress
-      - import_completed
+      One named listener per SSE_EVENT_NAMES entry
+      (src/lib/hooks/useRealtimeUpdates.ts)
     |
   }
 
   handle-event: Event Handler {
     style.fill: "#f5d0fe"
-    tooltip: "handleEvent callback"
+    tooltip: "handleSyncEvent (src/lib/cache/event-handlers.ts)"
   }
 
   polling-fallback: Polling Fallback {
@@ -317,6 +320,9 @@ event-sources.subscriptions-service.sub-created -> redis.user-channels: subscrip
 event-sources.subscriptions-service.sub-deleted -> redis.user-channels: subscription_deleted {
   style.stroke: "#7c3aed"
 }
+event-sources.other-services.other-user-events -> redis.user-channels: other user events {
+  style.stroke: "#7c3aed"
+}
 event-sources.job-handlers.import-sub-created -> redis.user-channels: subscription_created {
   style.stroke: "#7c3aed"
 }
@@ -335,6 +341,9 @@ redis.feed-channels -> sse-endpoint.subscriber: Subscribe per-feed {
   style.stroke: "#16a34a"
 }
 redis.user-channels -> sse-endpoint.subscriber: Subscribe per-user {
+  style.stroke: "#16a34a"
+}
+redis.site-status-channel -> sse-endpoint.subscriber: Subscribe (global) {
   style.stroke: "#16a34a"
 }
 
@@ -382,33 +391,15 @@ frontend.handle-event -> cache-ops.import-handlers: import_* {
 entry-types: Entry Type Differences {
   style.fill: "#f1f5f9"
 
-  web: web (RSS/Atom) {
-    style.fill: "#e2e8f0"
-    description: |
-      - Published from entry-processor
-      - Has subscriptionId
-      - Updates subscription + tag unread counts
-    |
-  }
-
-  email: email (Newsletter) {
-    style.fill: "#e2e8f0"
-    description: |
-      - Published from email inbound processor
-      - Has subscriptionId
-      - Updates subscription + tag unread counts
-    |
-  }
-
-  saved: saved (Read-it-later) {
-    style.fill: "#e2e8f0"
-    description: |
-      - Published from saved service/router
-      - subscriptionId is NULL (no subscription row)
-      - Updates the Saved count
-      - Does NOT update subscription/tag counts
-    |
-  }
+  description: |
+    No type is special to the client: an entry's
+    subscriptionIds
+    are the active subscriptions holding it (a web
+    entry's mapped from feedId per connection; a
+    saved article's is the user's saved
+    subscription), and counts update for every list
+    those reach (Saved is the saved subscription's).
+  |
 }
 
 # ==============================================================================
@@ -434,7 +425,8 @@ strategy-notes: Cache Strategy {
     style.fill: "#d9f99d"
     description: |
       Force refetch when necessary:
-      - Entry lists on navigation (pathname change)
+      - Entry lists on navigation (pathname change),
+        mark_all_read and subscription_deleted
       - Import progress (complex state)
     |
   }

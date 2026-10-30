@@ -40,11 +40,18 @@ queue: {
     style.fill: "#90caf9"
 
     sql: |sql
-      SELECT * FROM jobs
-      WHERE next_run_at <= now()
-        AND running_since IS NULL
-      FOR UPDATE SKIP LOCKED
-      LIMIT 1
+      UPDATE jobs SET running_since = now()
+      WHERE id = (
+        SELECT id FROM jobs
+        WHERE next_run_at <= now()
+          -- a job running past STALE_JOB_THRESHOLD_MS
+          -- is claimed again
+          AND (running_since IS NULL
+               OR running_since < now() - threshold)
+        ORDER BY next_run_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
     |
   }
 }
@@ -64,9 +71,10 @@ worker: {
 
     description: |md
       **Event-driven execution**
-      - Up to 5 concurrent jobs
+      - Up to WORKER_CONCURRENCY jobs at once
+        (default DEFAULT_CONCURRENCY in worker.ts)
       - Promise.race() for slot filling
-      - 5s poll when queue empty
+      - Polls when the queue is empty
       - Graceful shutdown on SIGTERM
     |
   }
@@ -81,22 +89,10 @@ worker: {
       tooltip: "Fetch and process a feed"
     }
 
-    renew_websub: {
-      label: renew_websub
+    others: {
+      label: "...one per job type"
       shape: rectangle
-      tooltip: "Renew WebSub subscriptions"
-    }
-
-    process_import: {
-      label: process_opml_import
-      shape: rectangle
-      tooltip: "Import feeds from OPML"
-    }
-
-    fetch_full_content: {
-      label: fetch_full_content
-      shape: rectangle
-      tooltip: "Fetch full content for WebSub-pushed entries"
+      tooltip: "JOB_HANDLERS / FIXED_INTERVAL_JOB_HANDLERS in src/server/jobs/worker.ts"
     }
   }
 }
@@ -116,9 +112,8 @@ pipeline: {
 
     details: |md
       - Conditional GET (ETag, Last-Modified)
-      - 30s timeout
-      - User-Agent with feed ID
-      - Handle redirects (301, 302, 307)
+      - Through the SSRF guard, with our User-Agent
+      - Follow redirects, tracking permanent ones
     |
   }
 
@@ -128,9 +123,9 @@ pipeline: {
     style.fill: "#ba68c8"
 
     details: |md
-      - Streaming XML parser
-      - RSS, Atom, JSON Feed
-      - Custom parsers (LessWrong)
+      - RSS, Atom: native streaming parser
+      - JSON Feed: parsed in TypeScript
+      - Per-source plugins (src/server/plugins/)
     |
   }
 
@@ -176,7 +171,6 @@ results: {
 
     action: |md
       - next_run_at from Cache-Control
-      - Default: 1 hour
       - Reset consecutive_failures
     |
   }
@@ -220,8 +214,8 @@ notifications: {
     style.fill: "#29b6f6"
 
     events: |md
-      - new_entry
-      - entry_updated
+      Entry events (feedEventSchema in
+      src/server/redis/pubsub.ts)
     |
   }
 
@@ -253,17 +247,7 @@ worker.main_loop -> worker.handlers.fetch_feed: "Dispatch" {
   style.stroke: "#f57c00"
 }
 
-worker.main_loop -> worker.handlers.renew_websub {
-  style.stroke: "#f57c00"
-  style.stroke-dash: 3
-}
-
-worker.main_loop -> worker.handlers.process_import {
-  style.stroke: "#f57c00"
-  style.stroke-dash: 3
-}
-
-worker.main_loop -> worker.handlers.fetch_full_content {
+worker.main_loop -> worker.handlers.others {
   style.stroke: "#f57c00"
   style.stroke-dash: 3
 }
@@ -349,7 +333,7 @@ sequence: {
   style.fill: "#fafafa"
   style.stroke: "#e0e0e0"
 
-  steps: |md
+  flow: |md
     1. Worker polls for due jobs (SELECT FOR UPDATE SKIP LOCKED)
     2. Claims job by setting running_since
     3. Fetches feed URL with conditional GET

@@ -105,6 +105,11 @@ api: {
         label: admin
         tooltip: "Invite management"
       }
+
+      others: {
+        label: "..."
+        tooltip: "Every router: src/server/trpc/root.ts"
+      }
     }
   }
 
@@ -133,43 +138,21 @@ services: {
   entries_svc: {
     label: entries
     shape: hexagon
-
-    methods: |md
-      - listEntries
-      - searchEntries
-      - countEntries
-    |
   }
 
   entry_reads_svc: {
     label: entry-reads
     shape: hexagon
-
-    methods: |md
-      - getEntry
-      - getFullEntry
-    |
   }
 
   entry_state_svc: {
     label: entry-state
     shape: hexagon
-
-    methods: |md
-      - markEntriesRead
-      - updateEntryStarred
-    |
   }
 
   subscriptions_svc: {
     label: subscriptions
     shape: hexagon
-
-    methods: |md
-      - listSubscriptions
-      - searchSubscriptions
-      - getSubscription
-    |
   }
 
   narration_svc: {
@@ -198,14 +181,9 @@ data: {
     style.fill: "#4db6ac"
 
     tables: |md
-      **Core Tables**
-      - users, sessions
-      - feeds, entries
-      - subscriptions
-      - user_entries
-      - tags
+      Schema: migrations/schema.sql
 
-      **Views**
+      **Views** for frontend queries
       - user_feeds
       - visible_entries
     |
@@ -219,6 +197,7 @@ data: {
     uses: |md
       - Rate limiting
       - Pub/sub events
+      - Site status
     |
   }
 }

@@ -3,7 +3,7 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import vitest from "@vitest/eslint-plugin";
 
-// "One sanctioned next/link wrapper" (see src/CLAUDE.md): PageLink is the
+// "Internal links" in src/CLAUDE.md: PageLink is the
 // only place `next/link` may be imported (it wraps `<Link prefetch={false}>`).
 // Everywhere else uses PageLink for cross-SPA navigation or ClientLink for
 // in-SPA pushState nav — importing `next/link` directly would reintroduce the
