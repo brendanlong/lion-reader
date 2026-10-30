@@ -24,7 +24,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import { handleSyncEvent, mayChangeMemberships } from "@/lib/cache/event-handlers";
+import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import { refreshStoredCollections } from "@/lib/cache/operations";
 import {
   connectionStatusForPhase,
@@ -172,7 +172,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
             syncRetryTimeoutRef.current = null;
           }
           break;
-        case "refresh-memberships":
+        case "refresh-after-catch-up":
           void utils.subscriptions.list.invalidate();
           void utils.tags.list.invalidate();
           refreshStoredCollections(utils, queryClient);
@@ -186,16 +186,8 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         const { events, hasMore } = await utils.client.sync.events.query({
           cursors: action.cursors,
         });
-        const membershipsChanged = events.some((event) => mayChangeMemberships(queryClient, event));
         for (const event of events) handleSyncEvent(utils, queryClient, event);
-        result = {
-          type: "sync-result",
-          epoch: action.epoch,
-          ok: true,
-          events,
-          hasMore,
-          membershipsChanged,
-        };
+        result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
       } catch (error) {
         console.error("Sync failed:", error);
         result = { type: "sync-result", epoch: action.epoch, ok: false };

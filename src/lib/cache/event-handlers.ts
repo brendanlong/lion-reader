@@ -44,26 +44,6 @@ function fetchSubscription(utils: TRPCClientUtils, id: string): void {
   });
 }
 
-/**
- * Whether a replayed event may move an entry into or out of a collection: an
- * `entry_state_changed` whose memberships differ from the stored entry's, or
- * for an entry the store lacks. Its counts cover only the collections the
- * entry is in now, not one it left. Check it before applying the event. A page
- * fetched while disconnected that already shows the change hides it, and a
- * collection the entry left keeps its count until a count-bearing event or a
- * reload.
- */
-export function mayChangeMemberships(queryClient: QueryClient, event: SyncEvent): boolean {
-  if (event.type !== "entry_state_changed") return false;
-  const stored = getLocalDb(queryClient).entries.getSynced(event.entryId);
-  if (!stored) return true;
-  const before = new Set(stored.subscriptionIds);
-  return (
-    before.size !== event.subscriptionIds.length ||
-    event.subscriptionIds.some((id) => !before.has(id))
-  );
-}
-
 // ============================================================================
 // Event Handler
 // ============================================================================

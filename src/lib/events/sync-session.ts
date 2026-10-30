@@ -13,9 +13,10 @@
  * Syncs are serialized by `reduceSyncScheduler` (#897): at most one runs at a
  * time, and requests made meanwhile coalesce into one follow-up.
  *
- * Collection membership changes aren't replayed, so a catch-up that replayed
- * a change to an entry's memberships ends by refreshing the sidebar counts no
- * replayed event carries (`refresh-memberships`).
+ * Collection membership changes aren't replayed (the replayed entries carry
+ * their memberships, but no count for a collection one left), so a catch-up
+ * that replayed any events ends by refreshing the sidebar counts once
+ * (`refresh-after-catch-up`).
  */
 
 import { advanceCursors, type SyncCursors } from "./cursors";
@@ -64,8 +65,8 @@ export interface SyncSessionState {
   scheduler: SyncSchedulerState;
   /** The delay before the next retry of a failing catch-up. */
   retryDelayMs: number;
-  /** Whether the current catch-up has replayed a change to an entry's memberships. */
-  membershipsChanged: boolean;
+  /** Whether the current catch-up has replayed any events. */
+  replayedEvents: boolean;
 }
 
 /** The cursors a `sync.events` request sends. */
@@ -91,18 +92,8 @@ export type SyncSessionEvent =
   | { type: "sync-requested" }
   /** The retry timer fired. */
   | { type: "retry-fired" }
-  /**
-   * A sync started by `run-sync` settled, having replayed a change to an
-   * entry's memberships or not.
-   */
-  | {
-      type: "sync-result";
-      epoch: number;
-      ok: true;
-      events: SyncEvent[];
-      hasMore: boolean;
-      membershipsChanged: boolean;
-    }
+  /** A sync started by `run-sync` settled. */
+  | { type: "sync-result"; epoch: number; ok: true; events: SyncEvent[]; hasMore: boolean }
   | { type: "sync-result"; epoch: number; ok: false };
 
 export type SyncSessionAction =
@@ -110,7 +101,7 @@ export type SyncSessionAction =
   | { type: "schedule-retry"; delayMs: number }
   | { type: "cancel-retry" }
   /** Refetch the sidebar counts a replayed membership change may have moved. */
-  | { type: "refresh-memberships" };
+  | { type: "refresh-after-catch-up" };
 
 export interface SyncSessionResult {
   state: SyncSessionState;
@@ -126,7 +117,7 @@ export function initialSyncSession(cursors: SyncCursors): SyncSessionState {
     epoch: 0,
     scheduler: INITIAL_SYNC_SCHEDULER_STATE,
     retryDelayMs: INITIAL_SYNC_RETRY_DELAY_MS,
-    membershipsChanged: false,
+    replayedEvents: false,
   };
 }
 
@@ -179,17 +170,17 @@ function settleSync(
     // requested meanwhile, and no freeze happened since it started.
     const caughtUp =
       state.caughtUp || (!event.hasMore && !state.scheduler.pending && event.epoch === state.epoch);
-    const membershipsChanged = state.membershipsChanged || event.membershipsChanged;
+    const replayedEvents = state.replayedEvents || event.events.length > 0;
     next = {
       ...state,
       cursors,
       catchUpStart: event.hasMore ? state.catchUpStart : null,
       caughtUp,
       retryDelayMs: INITIAL_SYNC_RETRY_DELAY_MS,
-      membershipsChanged: event.hasMore && membershipsChanged,
+      replayedEvents: event.hasMore && replayedEvents,
     };
     actions.push({ type: "cancel-retry" });
-    if (!event.hasMore && membershipsChanged) actions.push({ type: "refresh-memberships" });
+    if (!event.hasMore && replayedEvents) actions.push({ type: "refresh-after-catch-up" });
   } else if (state.active) {
     // The cursors stay frozen, so the retry re-queries the same gap.
     next = {

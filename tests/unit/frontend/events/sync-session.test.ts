@@ -63,20 +63,8 @@ class Session {
     return run!;
   }
 
-  succeed(
-    run: { epoch: number },
-    events: SyncEvent[] = [],
-    hasMore = false,
-    membershipsChanged = false
-  ): SyncSessionAction[] {
-    return this.send({
-      type: "sync-result",
-      epoch: run.epoch,
-      ok: true,
-      events,
-      hasMore,
-      membershipsChanged,
-    });
+  succeed(run: { epoch: number }, events: SyncEvent[] = [], hasMore = false): SyncSessionAction[] {
+    return this.send({ type: "sync-result", epoch: run.epoch, ok: true, events, hasMore });
   }
 
   fail(run: { epoch: number }): SyncSessionAction[] {
@@ -132,23 +120,25 @@ describe("reduceSyncSession: starting syncs", () => {
   });
 });
 
-describe("reduceSyncSession: membership refresh", () => {
+describe("reduceSyncSession: refresh after catch-up", () => {
   const refreshes = (actions: SyncSessionAction[]) =>
-    actions.filter((action) => action.type === "refresh-memberships").length;
+    actions.filter((action) => action.type === "refresh-after-catch-up").length;
 
-  it("refreshes once when a catch-up that replayed a membership change finishes", () => {
+  it("refreshes once, when a multi-page catch-up that replayed events finishes", () => {
     const session = new Session();
     const run = session.connect();
-    const event = entryEvent("2026-01-02T00:00:00Z");
 
-    const firstPage = session.succeed(run, [event], true, true);
+    const firstPage = session.succeed(run, [entryEvent("2026-01-02T00:00:00Z")], true);
     expect(refreshes(firstPage)).toBe(0);
-    const nextPage = runSyncIn(firstPage)!;
-    expect(refreshes(session.succeed(nextPage, [], false, false))).toBe(1);
+    const secondPage = runSyncIn(firstPage)!;
+    const secondActions = session.succeed(secondPage, [entryEvent("2026-01-03T00:00:00Z")], true);
+    expect(refreshes(secondActions)).toBe(0);
+    expect(refreshes(session.succeed(runSyncIn(secondActions)!, [], false))).toBe(1);
+  });
 
-    // The next catch-up replays no membership change.
-    const again = runSyncIn(session.send({ type: "sync-requested" }))!;
-    expect(refreshes(session.succeed(again, [event]))).toBe(0);
+  it("doesn't refresh after a catch-up that replayed nothing", () => {
+    const session = new Session();
+    expect(refreshes(session.succeed(session.connect()))).toBe(0);
   });
 });
 
