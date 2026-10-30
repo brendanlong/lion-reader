@@ -13,27 +13,30 @@
  * stores the image under the entry's prefix exactly as a save today would (the
  * URL pass hash-names it; one that pass doesn't store stays inline), relinks it
  * in every column, and bumps `updated_at` so synced clients download the new
- * links. An entry changed since it was read is skipped, for a rerun. A feed
- * entry's full content is cleared instead, to be refetched on its next open:
- * feed entries have no prefix and keep no images we fetched
- * (`src/server/CLAUDE.md`, "Stored Objects"). A link to a missing object is
- * left alone. It's idempotent: rerun it, or resume with `--after` from the
- * last id it logged.
+ * links. An entry changed since it was read is skipped, for a rerun; one
+ * deleted meanwhile has its new copies deleted. A feed entry's full content
+ * has those images dropped instead, as a fetch today leaves them out: feed
+ * entries have no prefix and keep no images we fetched (`src/server/CLAUDE.md`,
+ * "Stored Objects"). A link to a missing object is left alone. It's
+ * idempotent: rerun it, or resume with `--after` from the last id it logged.
  *
- * `delete` scans every entry for links into `google-docs/`, then deletes each
- * object there that nothing links, so it never breaks an entry `rewrite` hasn't
- * reached. `delete --dry-run` reporting `kept: 0, deleted: 0` means it's done.
+ * `delete` scans every entry for any mention of a `google-docs/` key, then
+ * deletes each object there that nothing mentions, so it never breaks an entry
+ * `rewrite` hasn't reached. `delete --dry-run` reporting `kept: 0, deleted: 0`
+ * means it's done.
  */
 
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql, type SQL } from "drizzle-orm";
+import { parseHTML } from "linkedom";
 import type { db as dbType } from "../src/server/db";
 import { rewriteContentUrls } from "../src/server/feed/content-cleaner";
 import { inlineImageUrlPrefix, storeExtractedImages } from "../src/server/services/inline-images";
 import { entryObjectsPrefix } from "../src/server/services/stored-objects";
 import {
   deleteObject,
+  deleteObjectsWithPrefix,
   getPublicObject,
   isStorageAvailable,
   listKeys,
@@ -53,6 +56,16 @@ const LINK_PATTERN =
 
 /** Cheap SQL prefilter for {@link LINK_PATTERN}. */
 const LIKE_LINK = `%/${GOOGLE_DOCS_PREFIX}%`;
+
+/**
+ * Looser than {@link LINK_PATTERN}, for what `delete` keeps: a key in any
+ * case, percent-encoded or without a URL around it.
+ */
+const KEY_MENTION =
+  /google-docs(?:\/|%2f)([\w-]+)(?:\/|%2f)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([a-z]+)/gi;
+
+/** SQL prefilter for {@link KEY_MENTION}. */
+const ILIKE_MENTION = "%google-docs%";
 
 interface BatchOptions {
   batchSize?: number;
@@ -86,11 +99,20 @@ async function* idWindows(
   }
 }
 
-function anyLinks(columns: SQL[]): SQL {
+function anyLike(columns: SQL[], pattern: string): SQL {
   return sql.join(
-    columns.map((column) => sql`${column} LIKE ${LIKE_LINK}`),
+    columns.map((column) => sql`${column} ILIKE ${pattern}`),
     sql` OR `
   );
+}
+
+/** `html` without the `<img>`s linking `google-docs/` objects. */
+function withoutLinkedImages(html: string): string {
+  const { document } = parseHTML(`<!DOCTYPE html><html><body>${html}</body></html>`);
+  for (const img of document.querySelectorAll("img")) {
+    if (linkedKeys(img.getAttribute("src")).length > 0) img.remove();
+  }
+  return document.body.innerHTML;
 }
 
 interface LinkingRow extends Record<string, unknown> {
@@ -126,14 +148,12 @@ async function storeAsSaveWould(
 interface RewriteResult {
   /** Entries whose links now point under their own prefix. */
   rewritten: number;
-  /** Feed entries whose full content was cleared. */
-  cleared: number;
+  /** Feed entries whose full content had the images dropped. */
+  dropped: number;
   /** Entries changed between being read and written; rerun to pick them up. */
   skipped: number;
   /** Links to objects that don't exist, left as they were. */
   missingLinks: number;
-  /** Feed entries whose feed-supplied content links one, left as they were. */
-  feedContentLinks: number;
   /** The last entry id scanned, for `--after`. */
   through: string;
 }
@@ -155,10 +175,9 @@ export async function rewriteGoogleDocsLinks(
   if (!isStorageAvailable()) throw new Error("Object storage isn't configured");
   const result: RewriteResult = {
     rewritten: 0,
-    cleared: 0,
+    dropped: 0,
     skipped: 0,
     missingLinks: 0,
-    feedContentLinks: 0,
     through: after,
   };
 
@@ -169,30 +188,33 @@ export async function rewriteGoogleDocsLinks(
       FROM entries e
       LEFT JOIN subscriptions s ON s.id = e.owner_subscription_id
       WHERE e.id > ${window.after}::uuid AND e.id <= ${window.through}::uuid
-        AND (${anyLinks([sql`e.content_original`, sql`e.content_cleaned`, sql`e.full_content_cleaned`])})
+        AND (
+          e.full_content_cleaned LIKE ${LIKE_LINK}
+          -- A feed's own content is the publisher's, not ours to relink.
+          OR (e.type <> 'web' AND (e.content_original LIKE ${LIKE_LINK} OR e.content_cleaned LIKE ${LIKE_LINK}))
+        )
       ORDER BY e.id
     `);
 
     for (const row of rows) {
       if (row.user_id === null) {
-        if (linkedKeys(row.content_original).length + linkedKeys(row.content_cleaned).length > 0) {
-          result.feedContentLinks++;
-          log(`feed content of ${row.id} links google-docs/; left alone`);
-        }
-        if (linkedKeys(row.full_content_cleaned).length === 0) continue;
+        if (row.full_content_cleaned === null) continue;
+        const dropped = withoutLinkedImages(row.full_content_cleaned);
+        if (linkedKeys(dropped).length === linkedKeys(row.full_content_cleaned).length) continue;
         if (dryRun) {
-          result.cleared++;
+          result.dropped++;
           continue;
         }
         const updated = await db.execute(sql`
-          UPDATE entries
-          SET full_content_cleaned = NULL, full_content_hash = NULL,
-              full_content_fetched_at = NULL, full_content_error = NULL, updated_at = now()
+          UPDATE entries SET full_content_cleaned = ${dropped}, updated_at = now()
           WHERE id = ${row.id}::uuid
             AND full_content_cleaned IS NOT DISTINCT FROM ${row.full_content_cleaned}
         `);
-        if (updated.rowCount === 1) result.cleared++;
-        else result.skipped++;
+        if (updated.rowCount === 1) result.dropped++;
+        else {
+          result.skipped++;
+          log(`skipped ${row.id}: changed while being rewritten`);
+        }
         continue;
       }
 
@@ -206,7 +228,10 @@ export async function rewriteGoogleDocsLinks(
       for (const key of keys) {
         const image = await getPublicObject(key);
         if (image) srcs.set(key, await storeAsSaveWould(objectsPrefix, image, dryRun));
-        else result.missingLinks++;
+        else {
+          result.missingLinks++;
+          log(`${row.id} links missing ${key}; left alone`);
+        }
       }
       if (srcs.size === 0) continue;
       if (dryRun) {
@@ -227,8 +252,16 @@ export async function rewriteGoogleDocsLinks(
           AND content_cleaned IS NOT DISTINCT FROM ${row.content_cleaned}
           AND full_content_cleaned IS NOT DISTINCT FROM ${row.full_content_cleaned}
       `);
-      if (updated.rowCount === 1) result.rewritten++;
-      else result.skipped++;
+      if (updated.rowCount === 1) {
+        result.rewritten++;
+        continue;
+      }
+      result.skipped++;
+      log(`skipped ${row.id}: changed while being rewritten`);
+      // Deleted meanwhile, maybe after its deletion job ran: nothing else
+      // would delete the copies just stored.
+      const exists = await db.execute(sql`SELECT 1 FROM entries WHERE id = ${row.id}::uuid`);
+      if (exists.rows.length === 0) await deleteObjectsWithPrefix("public", objectsPrefix);
     }
 
     result.through = window.through;
@@ -253,18 +286,24 @@ export async function deleteUnlinkedGoogleDocsImages(
 ): Promise<DeleteResult> {
   if (!isStorageAvailable()) throw new Error("Object storage isn't configured");
 
-  // Every text column, not only those `rewrite` relinks: a link anywhere keeps
-  // its object.
+  // Every text column of every entry, not only what `rewrite` relinks: a
+  // mention anywhere keeps its object.
   const linked = new Set<string>();
   for await (const window of idWindows(db, { after: NIL_UUID, batchSize, pauseMs })) {
     const { rows } = await db.execute<Record<string, string | null>>(sql`
-      SELECT content_original, content_cleaned, full_content_cleaned, summary, image_url
+      SELECT content_original, content_cleaned, full_content_cleaned, summary, image_url, url
       FROM entries
       WHERE id > ${window.after}::uuid AND id <= ${window.through}::uuid
-        AND (${anyLinks([sql`content_original`, sql`content_cleaned`, sql`full_content_cleaned`, sql`summary`, sql`image_url`])})
+        AND (${anyLike([sql`content_original`, sql`content_cleaned`, sql`full_content_cleaned`, sql`summary`, sql`image_url`, sql`url`], ILIKE_MENTION)})
     `);
     for (const row of rows) {
-      for (const text of Object.values(row)) for (const key of linkedKeys(text)) linked.add(key);
+      for (const text of Object.values(row)) {
+        for (const [, docId, uuid, extension] of text?.matchAll(KEY_MENTION) ?? []) {
+          linked.add(
+            `${GOOGLE_DOCS_PREFIX}${docId}/${uuid.toLowerCase()}.${extension.toLowerCase()}`
+          );
+        }
+      }
     }
   }
   log(`entries link ${linked.size} google-docs/ keys`);
@@ -316,6 +355,11 @@ function parseArgs(argv: string[]): {
 async function main(): Promise<void> {
   const { command, options } = parseArgs(process.argv.slice(2));
   const { db, pool } = await import("../src/server/db");
+  const { storageConfig } = await import("../src/server/config/env");
+  const database = new URL(process.env.DATABASE_URL ?? "");
+  console.log(
+    `${command}${options.dryRun ? " (dry run)" : ""}: database ${database.host}${database.pathname}, bucket ${storageConfig.bucket} at ${storageConfig.endpoint ?? "AWS"}`
+  );
   try {
     const started = Date.now();
     const result =

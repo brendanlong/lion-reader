@@ -31,9 +31,13 @@ function png(filler: number): Buffer {
   return Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(300, filler)]);
 }
 
+function legacyKey(): string {
+  return `google-docs/doc_${generateUuidv7().slice(0, 8)}/${generateUuidv7()}.png`;
+}
+
 /** Stores `data` as an old Google Docs save did, returning its link. */
 async function storeLegacyImage(data: Buffer, contentType: string): Promise<string> {
-  const key = `google-docs/doc_${generateUuidv7().slice(0, 8)}/${generateUuidv7()}.png`;
+  const key = legacyKey();
   await uploadObject(key, data, contentType);
   return getPublicObjectUrl(key)!;
 }
@@ -66,7 +70,7 @@ describe("moving google-docs/ images", () => {
     await s3.close();
   });
 
-  it("relinks every entry to its own copy and deletes only what nothing links", async () => {
+  it("relinks every entry to its own copy and deletes only what nothing mentions", async () => {
     const userA = await createTestUser();
     const userB = await createTestUser();
     const SHARED = png(1);
@@ -80,6 +84,12 @@ describe("moving google-docs/ images", () => {
     const SVG = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${" ".repeat(200)}</svg>`);
     const svgLink = await storeLegacyImage(SVG, "image/svg+xml");
     const missingLink = getPublicObjectUrl(`google-docs/doc/${generateUuidv7()}.png`)!;
+    const publishersLink = await storeLegacyImage(png(6), "image/png");
+    const imageUrlLink = await storeLegacyImage(png(7), "image/png");
+    const encodedKey = legacyKey();
+    await uploadObject(encodedKey, png(8), "image/png");
+    // The same object as `sharedLink`, under a public URL base the bucket had before.
+    const oldBaseLink = sharedLink.replace(getPublicObjectUrl("")!, "https://old.example/b/");
 
     const savedA = await createTestEntry(userA, {
       type: "saved",
@@ -88,7 +98,7 @@ describe("moving google-docs/ images", () => {
     });
     const savedB = await createTestEntry(userB, {
       type: "saved",
-      contentCleaned: `<img src="${sharedLink}"><img src="${sharedLink}">`,
+      contentCleaned: `<img src="${sharedLink}"><img src="${oldBaseLink}">`,
     });
     const email = await createTestEntry(await createTestEmailSubscription(userA), {
       type: "email",
@@ -98,10 +108,16 @@ describe("moving google-docs/ images", () => {
       fullContentHash: "hash",
     });
     const feedEntry = await createTestEntry(await createTestFeed(), {
-      contentCleaned: "<p>A feed entry linking a Doc</p>",
-      fullContentCleaned: `<img src="${feedLink}">`,
+      contentCleaned: `<p>A feed entry hotlinking</p><img src="${publishersLink}">`,
+      fullContentCleaned: `<p>The Doc</p><figure><img src="${feedLink}" alt="chart"></figure>`,
       fullContentFetchedAt: new Date(),
       fullContentHash: "hash",
+    });
+    // Mentions `rewrite` doesn't relink, which `delete` must still respect.
+    await createTestEntry(userB, {
+      type: "saved",
+      imageUrl: imageUrlLink,
+      summary: `see ${encodeURIComponent(encodedKey)}`,
     });
     const before = new Map(
       await Promise.all(
@@ -109,19 +125,28 @@ describe("moving google-docs/ images", () => {
       )
     );
 
-    // Before the rewrite, only the image nothing links goes.
-    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 4, deleted: 1 });
+    // Before the rewrite, only the image nothing mentions goes.
+    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 7, deleted: 1 });
     expect(stored(s3, orphanLink)).toBeUndefined();
     expect(stored(s3, sharedLink)).toEqual(SHARED);
+
+    const objectCount = s3.objects.size;
+    expect(await rewriteGoogleDocsLinks(db, { dryRun: true })).toMatchObject({
+      rewritten: 3,
+      dropped: 1,
+      missingLinks: 1,
+    });
+    expect(s3.objects.size).toBe(objectCount);
+    expect(await readEntry(savedA)).toEqual(before.get(savedA));
 
     // Resuming after savedA leaves it for the full run below; one id per
     // batch crosses window boundaries.
     const resumed = await rewriteGoogleDocsLinks(db, { after: savedA, batchSize: 1 });
-    expect(resumed).toMatchObject({ rewritten: 2, cleared: 1, missingLinks: 0 });
+    expect(resumed).toMatchObject({ rewritten: 2, dropped: 1, missingLinks: 0 });
     expect((await readEntry(savedA)).contentOriginal).toBe(before.get(savedA)!.contentOriginal);
 
     const result = await rewriteGoogleDocsLinks(db, { batchSize: 1 });
-    expect(result).toMatchObject({ rewritten: 1, cleared: 0, skipped: 0, missingLinks: 1 });
+    expect(result).toMatchObject({ rewritten: 1, dropped: 0, skipped: 0, missingLinks: 1 });
 
     const a = await readEntry(savedA);
     const aUrl = storedUrl(userA, savedA, SHARED);
@@ -139,12 +164,10 @@ describe("moving google-docs/ images", () => {
     expect((await readEntry(email)).fullContentCleaned).toBe(`<img src="${emailUrl}">`);
     expect(stored(s3, emailUrl)).toEqual(NEWSLETTER);
 
-    const feedRow = await readEntry(feedEntry);
-    expect(feedRow).toMatchObject({
+    expect(await readEntry(feedEntry)).toMatchObject({
       contentCleaned: before.get(feedEntry)!.contentCleaned,
-      fullContentCleaned: null,
-      fullContentFetchedAt: null,
-      fullContentHash: null,
+      fullContentCleaned: "<p>The Doc</p><figure></figure>",
+      fullContentFetchedAt: before.get(feedEntry)!.fullContentFetchedAt,
     });
 
     for (const id of [savedA, savedB, email, feedEntry]) {
@@ -155,16 +178,20 @@ describe("moving google-docs/ images", () => {
 
     // Idempotent: nothing left to move, and nothing touched again.
     const updatedAt = (await readEntry(savedB)).updatedAt;
-    expect(await rewriteGoogleDocsLinks(db)).toMatchObject({ rewritten: 0, cleared: 0 });
+    expect(await rewriteGoogleDocsLinks(db)).toMatchObject({ rewritten: 0, dropped: 0 });
     expect((await readEntry(savedB)).updatedAt).toEqual(updatedAt);
 
     expect(await deleteUnlinkedGoogleDocsImages(db, { dryRun: true })).toMatchObject({
-      kept: 0,
+      kept: 3,
       deleted: 4,
     });
-    expect(googleDocsKeys(s3)).toHaveLength(4);
-    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 0, deleted: 4 });
-    expect(googleDocsKeys(s3)).toEqual([]);
+    expect(googleDocsKeys(s3)).toHaveLength(7);
+    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 3, deleted: 4 });
+    expect(googleDocsKeys(s3).sort()).toEqual(
+      [publishersLink, imageUrlLink, getPublicObjectUrl(encodedKey)!]
+        .map((link) => `${BUCKET}/${link.slice(getPublicObjectUrl("")!.length)}`)
+        .sort()
+    );
     expect(stored(s3, aUrl)).toEqual(SHARED);
   });
 
@@ -186,6 +213,26 @@ describe("moving google-docs/ images", () => {
     expect(await rewrite).toMatchObject({ rewritten: 0, skipped: 1 });
     expect((await readEntry(entryId)).contentCleaned).toBe("<p>Refetched</p>");
     // Nothing links it now, so it can go.
-    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 0, deleted: 1 });
+    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ deleted: 1 });
+  });
+
+  it("deletes the copies of an entry deleted while its images were being moved", async () => {
+    const userId = await createTestUser();
+    const link = await storeLegacyImage(png(9), "image/png");
+    const entryId = await createTestEntry(userId, {
+      type: "saved",
+      contentCleaned: `<img src="${link}">`,
+    });
+
+    const deletion = await holdTransaction((tx) =>
+      tx.delete(entries).where(eq(entries.id, entryId))
+    );
+    const rewrite = rewriteGoogleDocsLinks(db);
+    await waitForLockWaiter("%UPDATE entries%SET content_original%");
+    await deletion.commit();
+
+    expect(await rewrite).toMatchObject({ skipped: 1 });
+    const prefix = `${BUCKET}/${entryObjectsPrefix(userId, entryId)}`;
+    expect([...s3.objects.keys()].filter((key) => key.startsWith(prefix))).toEqual([]);
   });
 });
