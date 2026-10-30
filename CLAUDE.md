@@ -2,7 +2,7 @@
 
 ## Documentation Map
 
-Per-directory `CLAUDE.md` files hold each subsystem's rules and load automatically when you work there (`src/`, `src/components/`, `src/server/` and its `auth/`, `oauth/`, `html/`, `http/`, `feed/`, `jobs/`, `plugins/`, plus `tests/`, `migrations/`, `kmp/`). Read these on demand:
+Per-directory `CLAUDE.md` files hold each subsystem's rules and load automatically when you work there. Read these on demand:
 
 - `SECURITY.md` - the **security-critical** code (XSS/SSRF/auth/cross-user isolation) and the invariant each area must uphold. **Read it first when reviewing, or when touching auth, sanitization, outbound fetches, the compat/OAuth/MCP APIs, or cross-user data paths.**
 - `docs/DESIGN.md` - architecture and design decisions. Read it before design/architecture work.
@@ -40,7 +40,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Commands
 
-- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` (try `~/.cargo/bin`) and a C++ compiler. The SessionStart hook starts it in the background (log: `build-native.log` in the worktree); after that, git hooks rebuild them whenever a checkout, merge or rebase changes `native/`.
+- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` and a C++ compiler. The SessionStart hook starts it in the background (log: `build-native.log` in the worktree); after that, git hooks rebuild them whenever a checkout, merge or rebase changes `native/`.
 - `pnpm typecheck` - run before committing (no `any`, no `@ts-ignore`)
 - `pnpm test:unit` / `pnpm test:integration` / `pnpm test:e2e` - see `tests/CLAUDE.md`
 - `pnpm test:native` / `pnpm lint:native` / `pnpm format:native` - cargo test / clippy / fmt across the native crates
@@ -48,13 +48,12 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Local Services (no Docker)
 
-Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres, Redis and an in-memory S3 on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<random> pnpm dev:local` (web + worker, no Discord bot). This is a shared host — pick a random app port.
+Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres, Redis and an in-memory S3 on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<port> pnpm dev:local` (web + worker, no Discord bot).
 
 ## Code Quality
 
 - **Types**: Explicit types everywhere; use Zod for runtime validation
 - **Queries**: Avoid N+1 queries; use joins or batch fetching
-- **UI**: Use optimistic updates for responsive UX
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes. A value that must agree in several places (a lifetime, a length cap, a cookie-and-Redis TTL) is one named constant every use imports, not repeated literals like `30 * 24 * 60 * 60`; where the uses share a language, share the constant instead of testing that copies match.
 - Don't create barrel files, prefer direct imports within our code
 - **Eventual consistency is the default**: caches may be briefly stale if they converge, in-flight requests may finish after a revocation, and overlapping runs of idempotent jobs are fine. Never re-check under a lock that something you just verified is still true (e.g. the password hash before minting tokens): the state can change right after the second check too. Do guard against permanent wrong state, like a token that outlives its revocation.
@@ -81,19 +80,19 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 - **Timestamps**: `timestamptz` in UTC, read as JS `Date` (milliseconds). Keyset cursors need microseconds — see "Ordering & Pagination" in `src/server/CLAUDE.md`.
 - **Soft deletes**: `deleted_at`/`unsubscribed_at`
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
-- **Migrations** must be backward-compatible with the previous release — see `migrations/CLAUDE.md`. That includes app code: drop references to a column a release before dropping it.
+- **Migrations** must work with the previous release: rules in `migrations/CLAUDE.md`.
 - **Views**: use `user_feeds` / `visible_entries` for frontend queries instead of manual joins (`src/server/CLAUDE.md`)
 
 ## API Conventions
 
 - **Pagination**: Always cursor-based (never offset)
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
-- **IDs**: clients only ever see subscription IDs, never feed IDs (a feed is shared by every subscriber), in tRPC/REST inputs and outputs, SSE and sync events alike. Feed IDs stay server-side (Redis channels, jobs); admin pages are the only exception.
+- **IDs**: clients only ever see subscription IDs, never feed IDs, in any input, output or event; admin pages are the only exception (DESIGN.md "API Design").
 - **Authorization**: tRPC procedures are session-only by default; token access is explicit opt-in (`src/server/auth/CLAUDE.md`)
 
 ## Untrusted Content
 
-- **HTML**: entry HTML is sanitized server-side in the services layer on every read; never add a client-side sanitizer, and never render feed-controlled text as HTML. Rules: `src/server/html/CLAUDE.md`.
+- **HTML**: never add a client-side sanitizer (the services layer sanitizes on read), and never render feed-controlled text as HTML. Rules: `src/server/html/CLAUDE.md`.
 - **Outgoing HTTP**: send our User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`), and fetch user-influenced URLs only through `fetchWithSsrfProtection` (`src/server/http/CLAUDE.md`).
 
 ## Third-Party Providers
@@ -106,11 +105,11 @@ Prefer SAX-style parsing unless the algorithm requires a DOM. Parse once and pas
 
 - Feeds (RSS/Atom/OPML): the native `@lion-reader/feed-parser` behind `src/server/feed/streaming/`; request paths use the `*Async` forms, background jobs the sync ones.
 - XML generation (OPML export): `fast-xml-parser`
-- HTML extraction: htmlparser2 (streaming), always through `createSaxParser` (`src/server/html/sax.ts`)
+- HTML extraction: htmlparser2 (streaming)
 - DOM required: `linkedom`. Article extraction is the native `@lion-reader/readability`.
 - A DOM that must number elements exactly as the browser does: `src/lib/narration/parse-html.ts` (parse5 first; it says why). Nothing else needs it.
 - PDF: the `native/pdf` helper (pdf_oxide), spawned per file by `src/server/file/pdf-to-markdown.ts`. Never parse PDFs in-process: one hostile page can take gigabytes, and only a separate process lets the kernel cap that.
-- Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, so every source shares one dialect and the renderer's size budgets. A lint rule forbids importing `@lion-reader/markdown` directly.
+- Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, so every source shares one dialect and the renderer's size budgets.
 
 ## Module System (ESM)
 
