@@ -4,11 +4,13 @@
  */
 
 import { TRPCError } from "@trpc/server";
-import { isUploadPath, maxEbookUploadBytes, maxUploadBodyBytes } from "@/lib/upload-limits";
+import { maxUploadBodyBytes, UPLOAD_PATHS } from "@/lib/upload-limits";
+import { READER_SCOPES } from "@/server/auth/api-token";
 import { authenticateCredential, getBearerOrSessionCookie } from "@/server/auth/credential";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
 import { startHttpTimer } from "@/server/metrics/metrics";
+import { TRPC_CREDENTIAL_KINDS, type TrpcCredential } from "@/server/trpc/context";
 
 type TrpcErrorHandler = (opts: { error: TRPCError; path?: string }) => void;
 
@@ -45,28 +47,53 @@ export function withFailingBody(req: Request, error: TRPCError): Request {
 
 type Reject = (error: TRPCError, onError: TrpcErrorHandler) => Response | Promise<Response>;
 
+type Handle = (
+  req: Request,
+  onError: TrpcErrorHandler,
+  credential?: TrpcCredential
+) => Promise<Response>;
+
+/** Why an upload's credential is refused, as the procedure would refuse it. */
+function authError(reason: "unauthenticated" | "insufficient_scope" | "unconfirmed"): TRPCError {
+  switch (reason) {
+    case "unauthenticated":
+      return new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "You must be logged in to access this resource",
+      });
+    case "insufficient_scope":
+      return new TRPCError({
+        code: "FORBIDDEN",
+        message: "This operation requires a reader scope",
+      });
+    case "unconfirmed":
+      return errors.signupConfirmationRequired();
+  }
+}
+
 /**
- * Serves an upload, which bypasses the proxy (`isUploadPath`), so nothing
+ * Serves an upload, which bypasses the proxy (`UPLOAD_PATHS`), so nothing
  * else bounds what it sends, and whose body the REST adapter reads whole
  * before authenticating. So it's rejected without reading its body unless
- * it's authenticated and declares no more than the limit, and fails once it
- * passes the limit if it declares no length.
+ * its credential passes the checks its procedure makes (every upload
+ * procedure is `scopedProtectedProcedure(READER_SCOPES)`) and it declares no
+ * more than its endpoint's limit, and fails once it passes the limit if it
+ * declares no length.
  */
 async function serveUpload(
   req: Request,
+  maxFileBytes: number,
   reject: Reject,
-  handle: (req: Request, onError: TrpcErrorHandler) => Promise<Response>,
+  handle: Handle,
   onError: TrpcErrorHandler
 ): Promise<Response> {
   const auth = await authenticateCredential(getBearerOrSessionCookie(req.headers), {
-    accept: ["session", "api_token", "app_token"],
+    accept: TRPC_CREDENTIAL_KINDS,
+    requiredScopes: READER_SCOPES,
+    requireConfirmed: true,
   });
-  if (!auth.ok) {
-    const message = "You must be logged in to access this resource";
-    return reject(new TRPCError({ code: "UNAUTHORIZED", message }), onError);
-  }
+  if (!auth.ok) return reject(authError(auth.reason), onError);
 
-  const maxFileBytes = maxEbookUploadBytes(usageLimitsConfig.maxSavedArticleSizeBytes);
   const maxBodyBytes = maxUploadBodyBytes(maxFileBytes);
   const tooLarge = () => errors.contentTooLarge("The upload", maxFileBytes);
   if (Number(req.headers.get("content-length")) > maxBodyBytes) return reject(tooLarge(), onError);
@@ -81,15 +108,16 @@ async function serveUpload(
       },
     })
   );
-  const response = await handle(withBody(req, body), onError);
+  const response = await handle(withBody(req, body), onError, auth.credential);
   // The REST adapter reports any failure reading the body as a parse error.
   return bytes > maxBodyBytes ? reject(tooLarge(), onError) : response;
 }
 
 /**
- * Runs `handle` (the adapter call, given the request and the `onError` to
- * pass it), an upload's through {@link serveUpload}, whose `reject` answers
- * with an error in the adapter's format without reading the body. Records
+ * Runs `handle` (the adapter call, given the request, the `onError` to pass
+ * it and, for an upload, the credential it was authenticated with), an
+ * upload's through {@link serveUpload}, whose `reject` answers with an error
+ * in the adapter's format without reading the body. Records
  * its HTTP metrics under `metricsPath`, and returns its response with a
  * rejected request's rate-limit headers and `extraHeaders` added.
  *
@@ -106,7 +134,7 @@ export async function serveTrpcHttp(
     extraHeaders?: Record<string, string>;
     reject: Reject;
   },
-  handle: (req: Request, onError: TrpcErrorHandler) => Promise<Response>
+  handle: Handle
 ): Promise<Response> {
   const endTimer = startHttpTimer(req.method, options.metricsPath);
   let errorHeaders: Record<string, string> = {};
@@ -117,10 +145,16 @@ export async function serveTrpcHttp(
     }
     if (error.code === "TOO_MANY_REQUESTS") errorHeaders = rateLimitHeaders(error);
   };
-  const response =
-    req.body !== null && isUploadPath(new URL(req.url).pathname)
-      ? await serveUpload(req, options.reject, handle, onError)
-      : await handle(req, onError);
+  const fileLimit = req.body !== null ? UPLOAD_PATHS.get(new URL(req.url).pathname) : undefined;
+  const response = fileLimit
+    ? await serveUpload(
+        req,
+        fileLimit(usageLimitsConfig.maxSavedArticleSizeBytes),
+        options.reject,
+        handle,
+        onError
+      )
+    : await handle(req, onError);
 
   endTimer(response.status);
 

@@ -26,7 +26,7 @@ export function maxEbookUploadBytes(maxSavedArticleBytes: number): number {
 /**
  * The most of a request body Next's proxy passes on (`proxyClientMaxBodySize`,
  * Next's default): it buffers every body it sees, cutting off the rest. So the
- * upload endpoints ({@link isUploadPath}) bypass it, and the proxy rejects any
+ * upload endpoints ({@link UPLOAD_PATHS}) bypass it, and the proxy rejects any
  * other request declaring more.
  */
 export const PROXY_BODY_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -39,22 +39,29 @@ export function maxUploadBodyBytes(maxFileBytes: number): number {
   return Math.ceil(maxFileBytes / 3) * 4 + 64 * 1024;
 }
 
+type FileLimit = (maxSavedArticleBytes: number) => number;
+
+/** The largest file each procedure that takes one takes. */
+const UPLOAD_FILE_LIMITS = {
+  "collections.importEbook": maxEbookUploadBytes,
+  "saved.uploadFile": (maxSavedArticleBytes) => maxSavedArticleBytes,
+} satisfies Record<string, FileLimit>;
+
 /**
  * The procedures that take a file. The web client sends them unbatched, so
  * each has a path of its own for the proxy to skip.
  */
-export const UPLOAD_PROCEDURES: ReadonlySet<string> = new Set([
-  "collections.importEbook",
-  "saved.uploadFile",
-]);
+export const UPLOAD_PROCEDURES: ReadonlySet<string> = new Set(Object.keys(UPLOAD_FILE_LIMITS));
 
-export const UPLOAD_PATHS: ReadonlySet<string> = new Set([
-  ...[...UPLOAD_PROCEDURES].map((procedure) => `/api/trpc/${procedure}`),
-  "/api/v1/collections/import-ebook",
-  "/api/v1/saved/upload",
+/**
+ * The upload endpoints, which `src/proxy.ts`'s matcher skips, each with the
+ * largest file it takes given the saved-article limit.
+ */
+export const UPLOAD_PATHS: ReadonlyMap<string, FileLimit> = new Map<string, FileLimit>([
+  ...Object.entries(UPLOAD_FILE_LIMITS).map(([procedure, limit]): [string, FileLimit] => [
+    `/api/trpc/${procedure}`,
+    limit,
+  ]),
+  ["/api/v1/collections/import-ebook", UPLOAD_FILE_LIMITS["collections.importEbook"]],
+  ["/api/v1/saved/upload", UPLOAD_FILE_LIMITS["saved.uploadFile"]],
 ]);
-
-/** Whether a request path is an upload endpoint's, which `src/proxy.ts`'s matcher skips. */
-export function isUploadPath(pathname: string): boolean {
-  return UPLOAD_PATHS.has(pathname);
-}

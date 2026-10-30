@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users } from "../../src/server/db/schema";
 import { createSession } from "../../src/server/auth/session";
+import { API_TOKEN_SCOPES, createApiToken } from "../../src/server/auth/api-token";
 import { usageLimitsConfig } from "../../src/server/config/env";
 import { maxEbookUploadBytes, maxUploadBodyBytes } from "../../src/lib/upload-limits";
 import { GET as trpcGet, POST as trpcPost } from "../../src/app/api/trpc/[trpc]/route";
@@ -22,17 +23,24 @@ const MAX_BODY_BYTES = maxUploadBodyBytes(
 );
 const TRPC_URL = "http://localhost/api/trpc/collections.importEbook";
 const REST_URL = "http://localhost/api/v1/collections/import-ebook";
+const FILE_UPLOAD_URL = "http://localhost/api/v1/saved/upload";
 
 let userId: string;
+let unconfirmedUserId: string;
 let cookie: string;
 
 beforeAll(async () => {
   userId = await createTestUser({ emailPrefix: "body-limit" });
+  unconfirmedUserId = await createTestUser({
+    emailPrefix: "body-limit-unconfirmed",
+    tosAgreedAt: null,
+  });
   cookie = `session=${(await createSession(db, { userId })).token}`;
 });
 
 afterAll(async () => {
   await db.delete(users).where(eq(users.id, userId));
+  await db.delete(users).where(eq(users.id, unconfirmedUserId));
 });
 
 /** A request as Next hands route handlers one. */
@@ -125,5 +133,26 @@ describe("upload body limit", () => {
     const bogus = { cookie: "session=not-a-session" };
     expect((await restError(declaring(REST_URL, tooLarge, bogus))).status).toBe(401);
     expect((await trpcPost(declaring(TRPC_URL, tooLarge, {}))).status).toBe(401);
+  });
+
+  it("rejects a credential the upload procedure would refuse before reading its body", async () => {
+    const tooLarge = MAX_BODY_BYTES + 1;
+    const saveOnly = await createApiToken(userId, [API_TOKEN_SCOPES.SAVED_WRITE]);
+    const scopeError = await restError(
+      declaring(FILE_UPLOAD_URL, tooLarge, { authorization: `Bearer ${saveOnly.token}` })
+    );
+    expect(scopeError.status).toBe(403);
+
+    const unconfirmed = `session=${(await createSession(db, { userId: unconfirmedUserId })).token}`;
+    const confirmationError = await restError(
+      declaring(REST_URL, tooLarge, { cookie: unconfirmed })
+    );
+    expect(confirmationError.data.appErrorCode).toBe("SIGNUP_CONFIRMATION_REQUIRED");
+  });
+
+  it("holds a file upload to the saved-article limit, not the ebook one", async () => {
+    const maxFileUploadBody = maxUploadBodyBytes(usageLimitsConfig.maxSavedArticleSizeBytes);
+    const error = await restError(declaring(FILE_UPLOAD_URL, maxFileUploadBody + 1));
+    expect(error.data.appErrorCode).toBe("CONTENT_TOO_LARGE");
   });
 });
