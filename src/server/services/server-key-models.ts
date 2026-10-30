@@ -34,7 +34,7 @@ interface ServerKeyModelPolicy {
 }
 
 /** A price cap; an unparseable one allows nothing, since NaN compares false. */
-function priceCap(name: string): number | undefined {
+function priceCapFromEnv(name: string): number | undefined {
   const raw = process.env[name]?.trim();
   return raw ? Number(raw) : undefined;
 }
@@ -45,9 +45,9 @@ function serverKeyModelPolicy(): ServerKeyModelPolicy | null {
     .map((model) => model.trim())
     .filter(Boolean)
     .map(normalizeModelRef);
-  const maxInputPrice = priceCap("SERVER_KEY_MAX_INPUT_PRICE");
-  const maxOutputPrice = priceCap("SERVER_KEY_MAX_OUTPUT_PRICE");
-  const maxSpeechPrice = priceCap("SERVER_KEY_MAX_SPEECH_PRICE");
+  const maxInputPrice = priceCapFromEnv("SERVER_KEY_MAX_INPUT_PRICE");
+  const maxOutputPrice = priceCapFromEnv("SERVER_KEY_MAX_OUTPUT_PRICE");
+  const maxSpeechPrice = priceCapFromEnv("SERVER_KEY_MAX_SPEECH_PRICE");
   if (
     models.length === 0 &&
     maxInputPrice === undefined &&

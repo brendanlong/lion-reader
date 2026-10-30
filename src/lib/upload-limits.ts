@@ -1,7 +1,7 @@
 /**
- * How large an upload may be, shared by the server's checks, the clients'
- * checks before sending (the web's Upload dialog, the native app) and the
- * request-body limit, so they can't disagree.
+ * How large an upload may be, shared by the server's checks, what it tells
+ * the web's Upload dialog (`saved.uploadLimits`), the native app's default and
+ * the request-body limit, so they can't disagree.
  */
 
 /**
@@ -42,7 +42,7 @@ export function maxUploadBodyBytes(maxFileBytes: number): number {
 type FileLimit = (maxSavedArticleBytes: number) => number;
 
 /** The largest file each procedure that takes one takes. */
-const UPLOAD_FILE_LIMITS = {
+export const UPLOAD_FILE_LIMITS = {
   "collections.importEbook": maxEbookUploadBytes,
   "saved.uploadFile": (maxSavedArticleBytes) => maxSavedArticleBytes,
 } satisfies Record<string, FileLimit>;

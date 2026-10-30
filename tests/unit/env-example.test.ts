@@ -1,11 +1,12 @@
 /**
- * `.env.example` is where operators learn what they can set, so every variable
- * the app, worker, Discord bot and scripts read must be in it.
+ * `.env.example` is where operators learn what they can set, so it lists
+ * exactly the variables the app, worker, Discord bot and scripts read.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AI_PROVIDER_ENV_KEYS } from "@/server/services/ai-providers";
 
 const SCANNED = ["src", "scripts", "next.config.ts"];
 
@@ -32,10 +33,16 @@ const NOT_SETTINGS = new Set([
   "TOGETHER_BASE_URL",
 ]);
 
+/** Settings a library reads rather than our code. */
+const READ_BY_LIBRARIES = [
+  // @sentry/nextjs's build plugin, to upload source maps.
+  "SENTRY_AUTH_TOKEN",
+];
+
 const ENV_READ = [
   /process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g,
   /process\.env\["([A-Za-z_][A-Za-z0-9_]*)"\]/g,
-  // Helpers like `positiveIntegerFromEnv("NAME", ...)`.
+  // Helpers named `*FromEnv`, like `positiveIntegerFromEnv("NAME", ...)`.
   /FromEnv\("([A-Za-z_][A-Za-z0-9_]*)"/g,
 ];
 
@@ -49,7 +56,7 @@ function sourceFiles(path: string): string[] {
 }
 
 function variablesReadByCode(): Set<string> {
-  const names = new Set<string>();
+  const names = new Set<string>([...Object.values(AI_PROVIDER_ENV_KEYS), ...READ_BY_LIBRARIES]);
   for (const file of SCANNED.flatMap(sourceFiles)) {
     const source = readFileSync(file, "utf8");
     for (const pattern of ENV_READ) {
@@ -71,5 +78,10 @@ describe(".env.example", () => {
       (name) => !listed.has(name) && !NOT_SETTINGS.has(name)
     );
     expect(missing).toEqual([]);
+  });
+
+  it("lists nothing the code doesn't read", () => {
+    const read = variablesReadByCode();
+    expect([...variablesInEnvExample()].filter((name) => !read.has(name))).toEqual([]);
   });
 });

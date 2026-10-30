@@ -25,7 +25,12 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, scopedProtectedProcedure, uploadProcedure } from "../trpc";
+import {
+  confirmedProtectedProcedure,
+  createTRPCRouter,
+  scopedProtectedProcedure,
+  uploadProcedure,
+} from "../trpc";
 import { READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
@@ -37,7 +42,7 @@ import {
   uuidSchema,
 } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
-import { maxEbookUploadBytes } from "@/lib/upload-limits";
+import { UPLOAD_FILE_LIMITS } from "@/lib/upload-limits";
 import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
@@ -238,10 +243,13 @@ export const savedRouter = createTRPCRouter({
    * `collections.importEbook` (`maxEbookBytes`) take, as this server is
    * configured, so a client can refuse a file before sending it.
    */
-  uploadLimits: readerProcedure
+  uploadLimits: confirmedProtectedProcedure
     .output(z.object({ maxFileBytes: z.number().int(), maxEbookBytes: z.number().int() }))
     .query(() => {
-      const maxFileBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
-      return { maxFileBytes, maxEbookBytes: maxEbookUploadBytes(maxFileBytes) };
+      const maxSavedArticleBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+      return {
+        maxFileBytes: UPLOAD_FILE_LIMITS["saved.uploadFile"](maxSavedArticleBytes),
+        maxEbookBytes: UPLOAD_FILE_LIMITS["collections.importEbook"](maxSavedArticleBytes),
+      };
     }),
 });
