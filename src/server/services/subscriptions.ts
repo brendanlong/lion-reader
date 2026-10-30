@@ -191,7 +191,6 @@ export type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBa
  * Transforms a subscription query row into the output format.
  */
 function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { feedId, greaderStreamId, unreadCountAsOf, ...subscription } = row;
   return { ...subscription, unreadCountAsOf: formatCountsAsOf(unreadCountAsOf) };
 }

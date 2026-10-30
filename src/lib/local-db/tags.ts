@@ -41,7 +41,6 @@ export function ingestFetchedTags(
   storeFetchedRows(
     store,
     version,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     data.items.map(({ unreadCount, ...tag }) => tag)
   );
   return gone;

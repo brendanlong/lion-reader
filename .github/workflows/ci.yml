@@ -342,6 +342,14 @@ jobs:
       - name: Run integration tests
         run: pnpm test:integration
 
+      # test:integration regenerates the snapshot from the migrated database.
+      - name: Check migrations/schema.sql is up to date
+        run: |
+          if ! git diff --exit-code migrations/schema.sql; then
+            echo "::error file=migrations/schema.sql::migrations/schema.sql is stale. Run 'pnpm db:migrate && pnpm db:schema' (or 'pnpm test:integration') and commit the result."
+            exit 1
+          fi
+
   app-real-server-tests:
     # The native app's shared core (kmp/shared) against this revision's server
     # over real HTTP: catches API changes that break the app, which the

@@ -266,7 +266,6 @@ export async function getOwnedEntryRawContent(
  * content sanitized (the view can toggle back to feed content).
  */
 async function toFullEntry(row: EntryRow): Promise<FullEntry> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { contentHash, contentOriginal, contentCleaned, fullContentCleaned, ...rest } = row;
 
   const [content, sanitizedFullContent] = await Promise.all([

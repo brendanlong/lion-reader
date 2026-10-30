@@ -144,6 +144,12 @@ const API_SURFACES = [
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // `const { omitted, ...rest } = row` is how we drop fields from an object.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
+    },
+  },
   // Guard against accidentally committed focused tests (`it.only`/`describe.only`),
   // which silently skip every other test in a file. Playwright's `forbidOnly` covers
   // e2e; this covers the vitest unit/integration suites.

@@ -490,7 +490,6 @@ export async function collectSyncEvents(
     ...(tagResult?.events ?? []),
   ]
     .sort((a, b) => Temporal.Instant.compare(a._sortTime, b._sortTime))
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     .map(({ _sortTime, ...event }) => event as SyncEvent);
 
   return {
