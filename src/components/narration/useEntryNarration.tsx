@@ -19,7 +19,7 @@ import { useNarrationHighlight } from "./useNarrationHighlight";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { seekTargetElement } from "@/lib/narration/seek-target";
 import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "@/lib/narration/paragraph-map";
-import { continueNarrationFrom, takeNarrationContinuation } from "./continuation";
+import { continueNarrationTo, takeNarrationContinuation } from "./continuation";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 interface UseEntryNarrationOptions {
@@ -38,8 +38,8 @@ interface UseEntryNarrationOptions {
   showFullContent: boolean;
   showOriginal: boolean;
   prerecordedVoice?: PrerecordedVoice;
-  /** Opens the next article in the list; absent at its end. */
-  onNext?: () => void;
+  /** The next article in the list, and opening it; absent at its end. */
+  next?: { id: string; open: () => void };
 }
 
 interface EntryNarration {
@@ -65,7 +65,7 @@ export function useEntryNarration({
   showFullContent,
   showOriginal,
   prerecordedVoice,
-  onNext,
+  next,
 }: UseEntryNarrationOptions): EntryNarration {
   const [narrationSettings] = useNarrationSettings();
   const showNarration = narrationSettings.enabled;
@@ -78,12 +78,12 @@ export function useEntryNarration({
   const isNarrationActive = getNarrationPhase(narrationState).isActive;
 
   const continuing = narrationSettings.continueToNextArticle;
-  const following = continuing ? (onNext ? NEXT_ARTICLE : NO_MORE_ARTICLES) : undefined;
+  const following = continuing ? (next ? NEXT_ARTICLE : NO_MORE_ARTICLES) : undefined;
   const goOn = useCallback(() => {
-    if (!continuing || !onNext) return;
-    continueNarrationFrom(articleId);
-    onNext();
-  }, [continuing, onNext, articleId]);
+    if (!continuing || !next) return;
+    continueNarrationTo(next.id);
+    next.open();
+  }, [continuing, next]);
 
   // Narration that went on to this article plays once its engine is ready, and
   // passes over it if there's nothing to say.

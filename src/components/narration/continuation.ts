@@ -1,18 +1,19 @@
 /**
  * Hands narration from an article that finished to the next one, across the
- * entry view remounting for it: the finished article's narration notes it
- * here, then the next article's takes it as it mounts and plays.
+ * entry view remounting for it: the finished article's narration notes where
+ * it went on to, and the next article's narration to mount takes it, playing
+ * if it is that article.
  */
 
-let finishedArticleId: string | null = null;
+let nextArticleId: string | null = null;
 
-export function continueNarrationFrom(articleId: string): void {
-  finishedArticleId = articleId;
+export function continueNarrationTo(articleId: string): void {
+  nextArticleId = articleId;
 }
 
-/** Whether narration went on to `articleId`, from another article; asking clears it. */
+/** Whether narration went on to `articleId`; asking clears it. */
 export function takeNarrationContinuation(articleId: string): boolean {
-  const from = finishedArticleId;
-  finishedArticleId = null;
-  return from !== null && from !== articleId;
+  const next = nextArticleId;
+  nextArticleId = null;
+  return next === articleId;
 }

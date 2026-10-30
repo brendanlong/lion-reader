@@ -70,6 +70,8 @@ export interface EntryContentBodyProps {
   unsubscribeUrl?: string | null;
   /** Callback when swiping to next article */
   onSwipeNext?: () => void;
+  /** The article `onSwipeNext` opens */
+  nextEntryId?: string;
   /** Callback when swiping to previous article */
   onSwipePrevious?: () => void;
   // Full content fields
@@ -141,6 +143,7 @@ export function EntryContentBody({
   footerLinkDomain,
   unsubscribeUrl,
   onSwipeNext,
+  nextEntryId,
   onSwipePrevious,
   // Full content props
   fullContentCleaned,
@@ -193,7 +196,7 @@ export function EntryContentBody({
     showFullContent,
     showOriginal,
     prerecordedVoice: prerecordedNarration,
-    onNext: onSwipeNext,
+    next: onSwipeNext && nextEntryId ? { id: nextEntryId, open: onSwipeNext } : undefined,
   });
 
   // Get text appearance settings

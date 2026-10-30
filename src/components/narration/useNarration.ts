@@ -44,6 +44,7 @@ import {
   type ParagraphMapEntry,
 } from "@/lib/narration/client-paragraph-ids";
 import {
+  isSpeakable,
   narrationParagraphForElement,
   splitNarrationParagraphs,
   withEndOfArticle,
@@ -390,7 +391,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         }
 
         paragraphMapRef.current = paragraphMap;
-        if (narration) {
+        if (splitNarrationParagraphs(narration).some(isSpeakable)) {
           setNarrationText(narration);
           setProcessedHtml(processedHtmlResult);
           await start(narration);

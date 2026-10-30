@@ -159,7 +159,9 @@ class NarrationFollowsPageTest {
 
     @Test
     fun suppliesTheTextAfterTheArticleScreenIsHidden() {
-        // #2181: swipe, then the article screen hidden before the page settles.
+        // Swipe, then the article screen hidden before the page settles (as the screen going off
+        // was in
+        // #2181).
         narration = on("a")
         paragraphs = listOf("Hello.")
         show()

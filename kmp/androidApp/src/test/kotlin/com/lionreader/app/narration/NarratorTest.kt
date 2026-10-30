@@ -249,6 +249,52 @@ class NarratorTest {
     }
 
     @Test
+    fun aSilentArticleEndingTheListEndsNarration() {
+        settings.value = AppSettings(narrationContinue = true)
+        brief = true
+        val list = Listed(listOf("a", "b")).also { narrator.list = it }
+        narrator.narrate(article("a", "One."))
+        idleUntil { list.opened.isNotEmpty() }
+        narrator.follow("b", "Title b")
+        narrator.supply(article("b", " "))
+        idle()
+
+        assertNull(state)
+    }
+
+    @Test
+    fun anArticleWithNothingToSayFollowedToByHandIsNotPassedOver() {
+        settings.value = AppSettings(narrationContinue = true)
+        val list = Listed(listOf("a", "b", "c")).also { narrator.list = it }
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.follow("b", "Title b")
+        narrator.supply(article("b", " ", "↩"))
+        idle()
+
+        assertTrue(list.opened.isEmpty())
+        assertEquals("b", state?.entryId)
+    }
+
+    @Test
+    fun comingBackToAFinishedArticleStartsItAgain() {
+        settings.value = AppSettings(narrationContinue = true)
+        brief = true
+        val list = Listed(listOf("a", "b")).also { narrator.list = it }
+        narrator.narrate(article("a", "One.", "Two."))
+        idleUntil { list.opened.isNotEmpty() }
+        narrator.follow("b", "Title b")
+        narrator.follow("a", "Title a")
+
+        assertNull(state?.paragraph)
+        synthesized.clear()
+        narrator.supply(article("a", "One.", "Two."))
+        idle()
+        assertEquals(0, state?.paragraph)
+        assertEquals("One.", synthesized.first())
+    }
+
+    @Test
     fun followingMovesNarrationAndKeepsItPlaying() {
         narrator.narrate(article("a", "One."))
         idle()

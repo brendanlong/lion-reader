@@ -269,8 +269,9 @@ class Narrator(
         player.replaceMediaItem(0, item(article.title, article.source, chunk = null))
         if (article.paragraphs.none(::isSpeakable)) {
             // Passed over on the way through the list, keeping the player waiting for the next.
-            val next = nextInList(article.entryId)
-            if (continuedTo == article.entryId && next != null) return goOnTo(next)
+            if (continuedTo == article.entryId) {
+                return nextInList(article.entryId)?.let(::goOnTo) ?: stop()
+            }
             current = Current.Silent
             // Nothing to wait for (or for the media controls to play) until narration follows on.
             player.clearMediaItems()
@@ -585,7 +586,9 @@ class Narrator(
         val next = article?.let { nextInList(it.entryId) } ?: return stop()
         // Waiting, not ended, until narration follows the article screen there.
         reset(article.title, article.source)
-        publish(_state.value)
+        // Finished, so coming back to it starts it again.
+        if (left?.first == article.entryId) left = null
+        publish(_state.value?.copy(paragraph = null))
         goOnTo(next)
     }
 

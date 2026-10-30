@@ -13,6 +13,8 @@ import {
   createUnreadEntry,
   loginAs,
 } from "./helpers";
+import { eq } from "drizzle-orm";
+import * as schema from "../../src/server/db/schema";
 import {
   END_OF_ARTICLE,
   NEXT_ARTICLE,
@@ -69,42 +71,67 @@ async function fakeSpeech(page: Page): Promise<void> {
 const spoken = (page: Page) =>
   page.evaluate(() => (window as unknown as { spoken: string[] }).spoken);
 
-async function openFirstOfTwo(page: Page, baseURL: string) {
+/**
+ * Opens the first of `titles` listed (newest first), each an article saying
+ * "Content for <title>" unless `silent` says it has nothing to say.
+ */
+async function openFirst(page: Page, baseURL: string, titles: string[], silent: string[] = []) {
   const db = getDb();
   const user = await createConfirmedUser(db);
   const feed = await createSubscribedFeed(db, user.id);
-  await createUnreadEntry(db, { feedId: feed.feedId, userId: user.id, title: "Older" });
-  await createUnreadEntry(db, { feedId: feed.feedId, userId: user.id, title: "Newer" });
+  for (const title of [...titles].reverse()) {
+    const entry = await createUnreadEntry(db, { feedId: feed.feedId, userId: user.id, title });
+    if (silent.includes(title)) {
+      await db
+        .update(schema.entries)
+        .set({ contentOriginal: "<p>↩</p>" })
+        .where(eq(schema.entries.id, entry.id));
+    }
+  }
 
   await fakeSpeech(page);
   await loginAs(page.context(), user, baseURL);
   await page.goto("/all");
   const rows = page.locator("[data-entry-id]");
-  await expect(rows).toHaveCount(2);
-  const listed = await rows.evaluateAll((elements) =>
-    elements.map((el) => ({
-      id: el.getAttribute("data-entry-id"),
-      title: el.textContent?.includes("Newer") ? "Newer" : "Older",
-    }))
+  await expect(rows).toHaveCount(titles.length);
+  await expect(rows.first()).toContainText(titles[0]);
+  const ids = await rows.evaluateAll((elements) =>
+    elements.map((el) => el.getAttribute("data-entry-id"))
   );
   await rows.first().click();
-  return listed;
+  return ids;
 }
 
 test("narration goes on to the next article, and says when the list has ended", async ({
   page,
   baseURL,
 }) => {
-  const [first, second] = await openFirstOfTwo(page, baseURL!);
+  const [, second] = await openFirst(page, baseURL!, ["Alpha", "Beta"]);
   await page.getByRole("button", { name: "Listen" }).click();
 
-  await expect(page).toHaveURL(new RegExp(`entry=${second.id}$`));
+  await expect(page).toHaveURL(new RegExp(`entry=${second}$`));
   await expect.poll(() => spoken(page)).toContain(NO_MORE_ARTICLES);
   expect(await spoken(page)).toEqual([
-    `Content for ${first.title}`,
+    "Content for Alpha",
     END_OF_ARTICLE,
     NEXT_ARTICLE,
-    `Content for ${second.title}`,
+    "Content for Beta",
+    END_OF_ARTICLE,
+    NO_MORE_ARTICLES,
+  ]);
+});
+
+test("narration passes over an article with nothing to say", async ({ page, baseURL }) => {
+  const [, , third] = await openFirst(page, baseURL!, ["Alpha", "Beta", "Gamma"], ["Beta"]);
+  await page.getByRole("button", { name: "Listen" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`entry=${third}$`));
+  await expect.poll(() => spoken(page)).toContain(NO_MORE_ARTICLES);
+  expect(await spoken(page)).toEqual([
+    "Content for Alpha",
+    END_OF_ARTICLE,
+    NEXT_ARTICLE,
+    "Content for Gamma",
     END_OF_ARTICLE,
     NO_MORE_ARTICLES,
   ]);
@@ -120,12 +147,12 @@ test("narration stops at the end of the article with the setting off", async ({
       JSON.stringify({ continueToNextArticle: false })
     );
   });
-  const [first] = await openFirstOfTwo(page, baseURL!);
+  const [first] = await openFirst(page, baseURL!, ["Alpha", "Beta"]);
   await page.getByRole("button", { name: "Listen" }).click();
 
   await expect.poll(() => spoken(page)).toContain(END_OF_ARTICLE);
   // Long enough for a move to the next article to have shown.
   await page.waitForTimeout(500);
-  expect(await spoken(page)).toEqual([`Content for ${first.title}`, END_OF_ARTICLE]);
-  await expect(page).toHaveURL(new RegExp(`entry=${first.id}$`));
+  expect(await spoken(page)).toEqual(["Content for Alpha", END_OF_ARTICLE]);
+  await expect(page).toHaveURL(new RegExp(`entry=${first}$`));
 });
