@@ -28,7 +28,7 @@ import {
   migrateSubscriptionsToExistingFeed,
 } from "../../src/server/services/subscribe";
 import { setSubscriptionTags, unsubscribe } from "../../src/server/services/subscription-updates";
-import { deleteTag } from "../../src/server/services/tags";
+import { deleteTag, lockUserTagLinks } from "../../src/server/services/tags";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { deleteUser } from "../../src/server/services/users";
@@ -40,6 +40,8 @@ import {
   createTestTag,
   createTestUser,
   waitUntilBlockedBy,
+  holdTransaction,
+  waitForLockWaiter,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -268,14 +270,13 @@ describe("unread counters under concurrent writes", () => {
       await holder.connect();
       await probe.connect();
       try {
-        const { rows } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
         await holder.query("BEGIN");
         await holder.query(
           "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE",
           [userId, lower]
         );
         const pending = write(userId, [higher, lower]);
-        await waitUntilBlockedBy(rows[0].pid);
+        await waitUntilBlockedBy(holder);
         // Waiting for the lower row, the write must not hold the higher one.
         await probe.query("BEGIN");
         await probe.query(
@@ -294,30 +295,22 @@ describe("unread counters under concurrent writes", () => {
   );
 
   it("tagging a subscription with a tag being deleted doesn't link the deleted tag", async () => {
-    // deleteTag holds the user row from before it reads the tag's links until
-    // it commits the tombstone; a setTags reading the tag as live meanwhile
-    // would link it after the delete's sweep, hiding the subscription from
-    // Uncategorized behind a tag nobody can see.
+    // A setTags reading the tag as live while deleteTag runs would link it
+    // after the delete's sweep, hiding the subscription from Uncategorized
+    // behind a tag nobody can see.
     const userId = await createTestUser();
     const { subscriptionId } = await feedWithEntries(userId, 1);
     const tagId = await createTestTag(userId);
 
-    const deleter = new pg.Client({ connectionString: process.env.DATABASE_URL });
-    await deleter.connect();
-    try {
-      const { rows } = await deleter.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
-      await deleter.query("BEGIN");
-      await deleter.query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE", [userId]);
-      await deleter.query("UPDATE tags SET deleted_at = now(), updated_at = now() WHERE id = $1", [
-        tagId,
-      ]);
-      const tagging = setSubscriptionTags(db, userId, subscriptionId, [tagId]);
-      await waitUntilBlockedBy(rows[0].pid);
-      await deleter.query("COMMIT");
-      await expect(tagging).rejects.toThrow();
-    } finally {
-      await deleter.end();
-    }
+    // deleteTag, paused between taking its lock and committing the tombstone.
+    const deleting = await holdTransaction(async (tx) => {
+      await lockUserTagLinks(tx, userId);
+      await tx.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
+    });
+    const tagging = setSubscriptionTags(db, userId, subscriptionId, [tagId]);
+    await waitForLockWaiter("%pg_advisory_xact_lock%");
+    await deleting.commit();
+    await expect(tagging).rejects.toThrow();
 
     expect(
       await db

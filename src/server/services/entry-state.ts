@@ -174,6 +174,22 @@ export async function lockUserEntryRows(
     .for("no key update");
 }
 
+/**
+ * `locked`, a CTE locking the user's rows for these entries sorted by entry id,
+ * for a statement updating several of them to join first, so it takes its
+ * locks in that order (see {@link lockUserEntryRows}) without a separate
+ * round trip: the statement only ever locks a row this CTE has already
+ * emitted, and it emits them in id order.
+ */
+export function lockedUserEntriesCte(userId: string, entryIds: string[]): SQL {
+  return sql`locked AS MATERIALIZED (
+    SELECT entry_id FROM user_entries
+    WHERE user_id = ${userId}::uuid AND ${inArray(userEntries.entryId, entryIds)}
+    ORDER BY entry_id
+    FOR NO KEY UPDATE
+  )`;
+}
+
 /** The write half of `markEntriesRead`, safe inside a transaction. */
 export async function writeEntriesRead(
   db: DbOrTx,
@@ -213,14 +229,14 @@ export async function writeEntriesRead(
   // (`read_changed_at`) is a SEPARATE column and still advances on every
   // accepted write, so cross-device conflict resolution is unchanged.
   const ids = entriesToMark.map((e) => e.id);
-  const updated = await db.transaction(async (tx) => {
-    await lockUserEntryRows(tx, userId, ids);
-    return tx.execute<{ entry_id: string; old_read: boolean }>(sql`
+  const updated = await db.execute<{ entry_id: string; old_read: boolean }>(sql`
+    WITH ${lockedUserEntriesCte(userId, ids)}
     UPDATE user_entries AS ue
     SET read = ${read},
         updated_at = CASE WHEN prev.read <> ${read} THEN ${now} ELSE ue.updated_at END,
         read_changed_at = v.ts
-    FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    FROM locked
+    JOIN (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts) ON v.entry_id = locked.entry_id
     JOIN user_entries AS prev
       ON prev.user_id = ${userId}::uuid
       AND prev.entry_id = v.entry_id
@@ -229,7 +245,6 @@ export async function writeEntriesRead(
       AND (ue.read_changed_at IS NULL OR ue.read_changed_at <= v.ts)
     RETURNING ue.entry_id AS entry_id, prev.read AS old_read
   `);
-  });
   // Rows whose read value actually flipped — the only ones that warrant SSE
   // events and count recomputation. Same-value writes still advanced the
   // watermark above.
@@ -597,14 +612,14 @@ export async function updateEntriesStarred(
     (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
   );
   const ids = entriesToStar.map((entry) => entry.id);
-  const updated = await db.transaction(async (tx) => {
-    await lockUserEntryRows(tx, userId, ids);
-    return tx.execute<{ entry_id: string; old_starred: boolean }>(sql`
+  const updated = await db.execute<{ entry_id: string; old_starred: boolean }>(sql`
+    WITH ${lockedUserEntriesCte(userId, ids)}
     UPDATE user_entries AS ue
     SET starred = ${starred},
         starred_changed_at = v.ts,
         updated_at = CASE WHEN prev.starred <> ${starred} THEN ${now} ELSE ue.updated_at END
-    FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    FROM locked
+    JOIN (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts) ON v.entry_id = locked.entry_id
     JOIN user_entries AS prev
       ON prev.user_id = ${userId}::uuid
       AND prev.entry_id = v.entry_id
@@ -613,7 +628,6 @@ export async function updateEntriesStarred(
       AND ue.starred_changed_at <= v.ts
     RETURNING ue.entry_id AS entry_id, prev.starred AS old_starred
   `);
-  });
   const flippedIds = new Set(
     updated.rows.filter((row) => row.old_starred !== starred).map((row) => row.entry_id)
   );

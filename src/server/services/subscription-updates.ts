@@ -15,7 +15,6 @@ import {
   tags,
   subscriptionTags,
   userEntries,
-  users,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
@@ -33,6 +32,7 @@ import {
 import { errors } from "@/server/errors";
 import { deleteSavedArticlesOnlyInCollection } from "@/server/services/saved";
 import { isUniqueViolation } from "@/server/db/errors";
+import { lockUserTagLinks } from "@/server/services/tags";
 
 /**
  * Locks one of the user's subscription rows for the rest of the transaction,
@@ -209,16 +209,14 @@ async function changeSubscriptionTags(
   // One transaction, or a crash or concurrent call between the delete and the
   // insert could leave a partial tag set (#952).
   const after = await db.transaction(async (tx) => {
+    // A link to a tag deleteTag is tombstoning would silently drop the
+    // subscription from "Uncategorized" while the tag is invisible in listTags.
+    await lockUserTagLinks(tx, userId);
     // Members' rows, then the subscription row: retagging moves the members'
     // tag rows (tag_entries), and the counter triggers lock subscriptions,
     // then users, then tags. The row is read under the lock, so the event
     // can't revert a concurrent rename.
     await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
-    // The user row serializes this with deleteTag, so a tag it tombstones is
-    // either gone below or its delete sees the link this adds. A link to a
-    // tombstoned tag would silently drop the subscription from "Uncategorized"
-    // while the tag is invisible in listTags.
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
     if (addedTagIds.length > 0) {
       const liveTags = await tx
         .select({ id: tags.id })

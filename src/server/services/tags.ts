@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { eq, and, or, sql, isNull, inArray, type SQL } from "drizzle-orm";
 import { countsAsOfSchema } from "@/lib/events/schemas";
-import type { db as dbType } from "@/server/db";
+import type { db as dbType, DbOrTx } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
@@ -316,6 +316,17 @@ function toTag(tag: NonNullable<Awaited<ReturnType<typeof selectTagWithCounts>>>
 }
 
 /**
+ * Serializes, per user, changing which subscriptions their tags hold with
+ * deleting a tag (`setTags`, `deleteTag`), so a tag is never linked while it's
+ * being deleted. An advisory lock taken first rather than a row lock, so it
+ * stays out of the row lock order in `src/server/CLAUDE.md`; its two-key form
+ * keeps it apart from the subscription-cap lock's one-key space.
+ */
+export async function lockUserTagLinks(tx: DbOrTx, userId: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('tag_links'), hashtext(${userId}))`);
+}
+
+/**
  * Deletes a tag (soft delete).
  *
  * Sets deleted_at for sync tracking. Subscription-tag associations are removed
@@ -331,6 +342,8 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   // (which would silently drop subscriptions from "Uncategorized" while the tag
   // is invisible in listTags).
   const updatedAt = await db.transaction(async (tx) => {
+    // Before reading the tag's links, so none is added until the tombstone commits.
+    await lockUserTagLinks(tx, userId);
     // The tagged subscriptions' members, then the subscriptions, in the lock
     // order: dropping the associations moves the members' tag rows
     // (tag_entries), and a membership added meanwhile must wait for that.
@@ -348,10 +361,6 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
       .where(and(eq(subscriptions.userId, userId), tagged))
       .orderBy(subscriptions.id)
       .for("no key update");
-    // Then the user row, before reading the associations: setTags takes it
-    // before checking its tags are live, so a link it adds is either visible
-    // to the delete below or refused there.
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
     // Then the associations (scoped to the user's live tag): removing them
     // recomputes the user's counters, which locks the users row before the
     // tags rows, and tombstoning the tag first would invert that order.
