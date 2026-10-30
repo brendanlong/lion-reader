@@ -15,8 +15,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.lionreader.shared.api.NarrationCues
 import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.NarrationCourse
 import com.lionreader.shared.narration.NarrationList
 import com.lionreader.shared.narration.NarrationState
 import com.lionreader.shared.narration.PlaybackState
@@ -178,19 +178,10 @@ class Narrator(
      * flicker.
      */
     private var session: (() -> Unit)? = null
-    /**
-     * The article narration last followed away from, and where it was, to resume on coming back.
-     */
-    private var left: Pair<String, Int>? = null
+    private val course = NarrationCourse { settings.value.narrationContinue }
 
-    /**
-     * The list narration goes on through when an article ends ([AppSettings.narrationContinue]):
-     * the article screen's, while it's shown. Without one, narration stops at the end.
-     */
-    var list: NarrationList? = null
-
-    /** The article narration went on to from the end of the one before. */
-    private var continuedTo: String? = null
+    /** [NarrationCourse.list]. */
+    var list: NarrationList? by course::list
 
     private sealed interface Current {
         /** Followed to; its text isn't supplied yet. */
@@ -245,7 +236,7 @@ class Narrator(
 
     /** Turns narration on, playing [article] from [fromParagraph]. */
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
-        continuedTo = null
+        course.started()
         reset(article.title, article.source)
         _notice.value = null
         val audio = Current.Article(article).also { current = it }
@@ -265,10 +256,7 @@ class Narrator(
             if (current == Current.Awaiting) publish(state.copy(title = title))
             return
         }
-        if (entryId != continuedTo) continuedTo = null
-        val resume = left?.takeIf { it.first == entryId }?.second
-        // An article passed through without a place doesn't replace the one remembered.
-        state.paragraph?.let { left = state.entryId to it }
+        val resume = course.follow(state, entryId)
         reset(title, source = null)
         publish(NarrationState(entryId, title, resume, state.playing))
     }
@@ -284,9 +272,11 @@ class Narrator(
         // The placeholder, with what the notification shows now known.
         player.replaceMediaItem(0, item(article.title, article.source, chunk = null))
         if (article.paragraphs.none(::isSpeakable)) {
-            // Passed over on the way through the list, keeping the player waiting for the next.
-            if (continuedTo == article.entryId) {
-                return nextInList(article.entryId)?.let(::goOnTo) ?: stop()
+            when (course.silent(article.entryId)) {
+                // Keeping the player waiting for the next.
+                NarrationCourse.Silent.GoneOn -> return
+                NarrationCourse.Silent.Ended -> return stop()
+                NarrationCourse.Silent.Stays -> {}
             }
             current = Current.Silent
             // Nothing to wait for (or for the media controls to play) until narration follows on.
@@ -320,7 +310,10 @@ class Narrator(
             val prepared =
                 Prepared(
                     engine,
-                    speechChunks(audio.article.paragraphs + closing(audio), engine.maxChunkChars),
+                    speechChunks(
+                        audio.article.paragraphs + course.closing(audio.article.entryId),
+                        engine.maxChunkChars,
+                    ),
                 )
             if (prepared.chunks.isEmpty()) return@launch stop()
             audio.prepared = prepared
@@ -372,25 +365,8 @@ class Narrator(
         else onArticle?.let { startAt(it, chunk, play = player.playWhenReady) }
     }
 
-    /** What narration says after the article's own "End of article.", for what comes next. */
-    private fun closing(audio: Current.Article): List<String> =
-        when {
-            !settings.value.narrationContinue -> emptyList()
-            list?.after(audio.article.entryId) != null -> listOf(NarrationCues.NEXT_ARTICLE)
-            else -> listOf(NarrationCues.NO_MORE_ARTICLES)
-        }
-
-    /** Where narration goes on to from [entryId]'s end, if it does. */
-    private fun nextInList(entryId: String): String? =
-        list?.takeIf { settings.value.narrationContinue }?.after(entryId)
-
-    private fun goOnTo(next: String) {
-        continuedTo = next
-        list?.open(next)
-    }
-
     fun stop() {
-        continuedTo = null
+        course.stopped()
         forget()
         player.stop()
         player.clearMediaItems()
@@ -398,7 +374,6 @@ class Narrator(
         publish(null)
         _notice.value = null
         unreachable.value = null
-        left = null
         session?.invoke()
         session = null
     }
@@ -582,14 +557,11 @@ class Narrator(
     private fun stopIfFinished() {
         val feed = onArticle?.feed ?: return
         if (!finished(snapshot(), feed.fed)) return
-        val article = onArticle?.article
-        val next = article?.let { nextInList(it.entryId) } ?: return stop()
+        val article = onArticle?.article ?: return
+        if (!course.finished(article.entryId)) return stop()
         // Waiting, not ended, until narration follows the article screen there.
         reset(article.title, article.source)
-        // Finished, so coming back to it starts it again.
-        if (left?.first == article.entryId) left = null
         publish(_state.value?.copy(paragraph = null))
-        goOnTo(next)
     }
 
     private fun item(

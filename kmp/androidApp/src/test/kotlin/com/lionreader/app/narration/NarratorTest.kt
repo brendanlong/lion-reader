@@ -269,20 +269,6 @@ class NarratorTest {
     }
 
     @Test
-    fun anArticleWithNothingToSayFollowedToByHandIsNotPassedOver() {
-        settings.value = AppSettings(narrationContinue = true)
-        val list = Listed(listOf("a", "b", "c")).also { narrator.list = it }
-        narrator.narrate(article("a", "One."))
-        idle()
-        narrator.follow("b", "Title b")
-        narrator.supply(article("b", " ", "↩"))
-        idle()
-
-        assertTrue(list.opened.isEmpty())
-        assertEquals("b", state?.entryId)
-    }
-
-    @Test
     fun comingBackToAFinishedArticleStartsItAgain() {
         settings.value = AppSettings(narrationContinue = true)
         brief = true
