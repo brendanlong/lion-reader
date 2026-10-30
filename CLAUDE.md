@@ -93,7 +93,7 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 ## Untrusted Content
 
 - **HTML**: never add a client-side sanitizer (the services layer sanitizes on read), and never render feed-controlled text as HTML. Rules: `src/server/html/CLAUDE.md`.
-- **Outgoing HTTP**: send our User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`), and fetch user-influenced URLs only through `fetchWithSsrfProtection` (`src/server/http/CLAUDE.md`).
+- **Outgoing HTTP**: fetch user-influenced URLs only through `fetchWithSsrfProtection` (`src/server/http/CLAUDE.md`), which sends our `USER_AGENT` unless you pass another (`buildUserAgent`); any other fetch sets one from `@/server/http/user-agent` itself.
 
 ## Third-Party Providers
 

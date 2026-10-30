@@ -24,7 +24,6 @@
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { googleConfig, usageLimitsConfig } from "@/server/config/env";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import {
   ContentTooLargeError,
@@ -1101,7 +1100,7 @@ async function fetchImage(
   try {
     const response = await fetchWithSsrfProtection(url, {
       method: "GET",
-      headers: { "User-Agent": USER_AGENT, Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.any([signal, AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS)]),
     });
     if (!response.ok) {
@@ -1275,7 +1274,6 @@ async function fetchGoogleDocWithToken(
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
-        "User-Agent": USER_AGENT,
       },
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });

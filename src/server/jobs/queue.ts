@@ -206,8 +206,7 @@ export function isJobType(type: string): type is JobType {
   return Object.hasOwn(JOB_DEFINITIONS, type);
 }
 
-/** The one-time job types the generic {@link claimJob} handles. */
-export const GENERIC_CLAIM_JOB_TYPES = jobTypesInLanes("one_time");
+const ONE_TIME_JOB_TYPES = jobTypesInLanes("one_time");
 
 /**
  * How long the worker waits on a handler before freeing its slot. Prevents a
@@ -264,13 +263,6 @@ export interface CreateJobOptions<T extends JobType> {
   type: T;
   payload: JobPayloads[T];
   nextRunAt?: Date;
-}
-
-/**
- * Options for claiming a job.
- */
-export interface ClaimJobOptions {
-  types?: JobType[];
 }
 
 /**
@@ -369,24 +361,19 @@ export async function createJobs<T extends JobType>(
 }
 
 /**
- * Claims the earliest-due job of `types` (any type if omitted); see
- * {@link claimDueJob}. The worker passes
- * {@link GENERIC_CLAIM_JOB_TYPES}: feed, singleton and full-content jobs have
- * their own claims.
+ * Claims the earliest-due one-time job; see {@link claimDueJob}. Feed,
+ * singleton and full-content jobs have their own claims.
  *
  * @returns The claimed job, or null if no jobs are available
  */
-export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | null> {
-  const { types } = options;
-  const typeFilter =
-    types && types.length > 0
-      ? sql`j.type = ANY(ARRAY[${sql.join(
-          types.map((t) => sql`${t}`),
-          sql`, `
-        )}]::text[])`
-      : sql`TRUE`;
-
-  return claimDueJob(() => typeFilter);
+export async function claimJob(): Promise<Job | null> {
+  return claimDueJob(
+    () =>
+      sql`j.type = ANY(ARRAY[${sql.join(
+        ONE_TIME_JOB_TYPES.map((t) => sql`${t}`),
+        sql`, `
+      )}]::text[])`
+  );
 }
 
 /**

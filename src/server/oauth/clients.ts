@@ -10,7 +10,6 @@ import { oauthClients } from "@/server/db/schema";
 import { parseScopes } from "./utils";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { logger } from "@/lib/logger";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
 import {
@@ -178,7 +177,6 @@ async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
     response = await fetchWithSsrfProtection(url, {
       headers: {
         Accept: "application/json",
-        "User-Agent": USER_AGENT,
       },
       redirect: "manual",
       signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),

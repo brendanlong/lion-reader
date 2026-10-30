@@ -27,7 +27,7 @@ import { logger } from "@/lib/logger";
 import * as subscribeService from "@/server/services/subscribe";
 import * as subscriptionUpdatesService from "@/server/services/subscription-updates";
 import * as subscriptionsService from "@/server/services/subscriptions";
-import { importOpml } from "@/server/services/imports";
+import { importOpml, MAX_OPML_BYTES } from "@/server/services/imports";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 
 // Endpoints exposed via the MCP tool surface; the native app uses them too.
@@ -288,7 +288,7 @@ export const subscriptionsRouter = createTRPCRouter({
         opml: z
           .string()
           .min(1, "OPML content is required")
-          .max(5 * 1024 * 1024, "OPML file too large (max 5MB)"),
+          .max(MAX_OPML_BYTES, "OPML file too large (max 5MB)"),
       })
     )
     .output(

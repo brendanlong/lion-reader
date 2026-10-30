@@ -22,7 +22,6 @@ import {
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { usageLimitsConfig } from "@/server/config/env";
 import { stripHtml } from "@/server/html/strip-html";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { detectFeedType, parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
 import { type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
@@ -150,7 +149,6 @@ async function tryFetchAsFeed(
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
-        "User-Agent": USER_AGENT,
         Accept:
           "application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml, text/xml, */*",
         "Accept-Encoding": ACCEPT_ENCODING,

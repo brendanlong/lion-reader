@@ -9,7 +9,6 @@
 
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { HttpFetchError } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { formatAuthors } from "@/server/feed/authors";
@@ -175,7 +174,6 @@ export async function lessWrongGraphql<T extends z.ZodType>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
         Accept: "application/json",
       },
       body: JSON.stringify({ query, variables }),

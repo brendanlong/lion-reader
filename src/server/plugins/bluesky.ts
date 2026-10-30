@@ -3,7 +3,6 @@ import { socialPostTitle } from "./social-post";
 import { escapeHtml } from "@/server/http/html";
 import { readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
 
@@ -372,7 +371,7 @@ export function blueskyPostTitle(post: PostView): string {
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   const response = await fetchWithSsrfProtection(url, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+    headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(BLUESKY_API_TIMEOUT_MS),
   });
   if (!response.ok) {

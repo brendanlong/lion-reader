@@ -3,7 +3,6 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { HttpFetchError, readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { USER_AGENT } from "@/server/http/user-agent";
 
 /**
  * The Notion web app's own page-loading endpoint. It serves any published
@@ -111,7 +110,6 @@ export async function fetchNotionPageBlocks(pageId: string): Promise<NotionBlock
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        "User-Agent": USER_AGENT,
       },
       body: JSON.stringify({
         pageId,

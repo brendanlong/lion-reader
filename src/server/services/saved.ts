@@ -407,19 +407,8 @@ export async function savedArticleExistsByUrl(
   userId: string,
   url: string
 ): Promise<string | null> {
-  const [existing] = await db
-    .select({ id: entries.id })
-    .from(entries)
-    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
-    .where(
-      and(
-        eq(entries.ownerUserId, userId),
-        eq(entries.guid, normalizeSavedUrl(url)),
-        eq(userEntries.userId, userId)
-      )
-    )
-    .limit(1);
-  return existing?.id ?? null;
+  const row = await selectExistingSavedRow(db, userId, normalizeSavedUrl(url));
+  return row?.entry.id ?? null;
 }
 
 /**

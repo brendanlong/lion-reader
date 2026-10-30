@@ -154,6 +154,42 @@ export async function finishEntriesRead(
   return counts;
 }
 
+/**
+ * Locks the user's rows for these entries sorted by entry id, as the lock order
+ * in `src/server/CLAUDE.md` requires before a statement updates several: an
+ * `UPDATE` locks rows in plan order, so two batches naming the same entries in
+ * different orders would otherwise deadlock.
+ */
+export async function lockUserEntryRows(
+  tx: DbOrTx,
+  userId: string,
+  entryIds: string[]
+): Promise<void> {
+  if (entryIds.length === 0) return;
+  await tx
+    .select({ entryId: userEntries.entryId })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)))
+    .orderBy(userEntries.entryId)
+    .for("no key update");
+}
+
+/**
+ * `locked`, a CTE locking the user's rows for these entries sorted by entry id,
+ * for a statement updating several of them to join first, so it takes its
+ * locks in that order (see {@link lockUserEntryRows}) without a separate
+ * round trip: the statement only ever locks a row this CTE has already
+ * emitted, and it emits them in id order.
+ */
+export function lockedUserEntriesCte(userId: string, entryIds: string[]): SQL {
+  return sql`locked AS MATERIALIZED (
+    SELECT entry_id FROM user_entries
+    WHERE user_id = ${userId}::uuid AND ${inArray(userEntries.entryId, entryIds)}
+    ORDER BY entry_id
+    FOR NO KEY UPDATE
+  )`;
+}
+
 /** The write half of `markEntriesRead`, safe inside a transaction. */
 export async function writeEntriesRead(
   db: DbOrTx,
@@ -192,12 +228,15 @@ export async function writeEntriesRead(
   // clients (issue #1118 Part 2). The last-writer-wins watermark
   // (`read_changed_at`) is a SEPARATE column and still advances on every
   // accepted write, so cross-device conflict resolution is unchanged.
+  const ids = entriesToMark.map((e) => e.id);
   const updated = await db.execute<{ entry_id: string; old_read: boolean }>(sql`
+    WITH ${lockedUserEntriesCte(userId, ids)}
     UPDATE user_entries AS ue
     SET read = ${read},
         updated_at = CASE WHEN prev.read <> ${read} THEN ${now} ELSE ue.updated_at END,
         read_changed_at = v.ts
-    FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    FROM locked
+    JOIN (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts) ON v.entry_id = locked.entry_id
     JOIN user_entries AS prev
       ON prev.user_id = ${userId}::uuid
       AND prev.entry_id = v.entry_id
@@ -215,11 +254,7 @@ export async function writeEntriesRead(
 
   // Always resolve final state for all requested entries, including the context
   // fields callers need for cache updates and count queries.
-  const entries = await selectEntryStates(
-    db,
-    userId,
-    entriesToMark.map((e) => e.id)
-  );
+  const entries = await selectEntryStates(db, userId, ids);
 
   return { entries, changed: entries.filter((entry) => flippedIds.has(entry.id)) };
 }
@@ -576,12 +611,15 @@ export async function updateEntriesStarred(
   const rows = entriesToStar.map(
     (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
   );
+  const ids = entriesToStar.map((entry) => entry.id);
   const updated = await db.execute<{ entry_id: string; old_starred: boolean }>(sql`
+    WITH ${lockedUserEntriesCte(userId, ids)}
     UPDATE user_entries AS ue
     SET starred = ${starred},
         starred_changed_at = v.ts,
         updated_at = CASE WHEN prev.starred <> ${starred} THEN ${now} ELSE ue.updated_at END
-    FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts)
+    FROM locked
+    JOIN (VALUES ${sql.join(rows, sql`, `)}) AS v(entry_id, ts) ON v.entry_id = locked.entry_id
     JOIN user_entries AS prev
       ON prev.user_id = ${userId}::uuid
       AND prev.entry_id = v.entry_id
@@ -597,11 +635,7 @@ export async function updateEntriesStarred(
   // Resolved from `user_entries`, not `visible_entries`: unstarring an orphan
   // drops it out of the view, and a silently empty read-back here would skip
   // the counts and the SSE publish (see selectStarredEntryStates).
-  const entriesState = await selectStarredEntryStates(
-    db,
-    userId,
-    entriesToStar.map((entry) => entry.id)
-  );
+  const entriesState = await selectStarredEntryStates(db, userId, ids);
 
   // Only entries whose starred value actually flipped warrant SSE events and
   // count recomputation (issue #1118); a batch of pure re-asserts still

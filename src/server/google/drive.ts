@@ -13,7 +13,6 @@
 import { GoogleAuth } from "google-auth-library";
 import { logger } from "@/lib/logger";
 import { googleConfig, usageLimitsConfig } from "@/server/config/env";
-import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import {
   ContentTooLargeError,
@@ -169,7 +168,6 @@ async function getFileMetadata(
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
-        "User-Agent": USER_AGENT,
       },
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
@@ -235,7 +233,6 @@ async function downloadFile(fileId: string, accessToken: string): Promise<Buffer
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "User-Agent": USER_AGENT,
       },
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });

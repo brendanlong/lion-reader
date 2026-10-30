@@ -37,6 +37,7 @@ export async function handleRenewWebsub(): Promise<JobMetadata> {
 
   return {
     checked: result.checked,
+    deactivated: result.deactivated,
     renewed: result.renewed,
     failed: result.failed,
     errors: result.errors.length > 0 ? result.errors : undefined,

@@ -219,7 +219,10 @@ export async function getBulkEntryRelatedCounts(
             tagId: subscriptionTags.tagId,
           })
           .from(subscriptionTags)
-          .where(inArray(subscriptionTags.subscriptionId, subscriptionIds))
+          .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
+          .where(
+            and(eq(tags.userId, userId), inArray(subscriptionTags.subscriptionId, subscriptionIds))
+          )
       : Promise.resolve([]),
   ]);
 

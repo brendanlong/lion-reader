@@ -5,9 +5,9 @@
  */
 
 import { z } from "zod";
-import { eq, and, ne, sql, isNull, inArray, type SQL } from "drizzle-orm";
+import { eq, and, or, sql, isNull, inArray, type SQL } from "drizzle-orm";
 import { countsAsOfSchema } from "@/lib/events/schemas";
-import type { db as dbType } from "@/server/db";
+import type { db as dbType, DbOrTx } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
@@ -244,74 +244,43 @@ export async function updateTag(
   params: UpdateTagParams
 ): Promise<Tag> {
   const name = params.name === undefined ? undefined : validTagName(params.name);
-  // Verify the tag exists and belongs to the user (and is not deleted)
-  const existingTag = await db
-    .select()
-    .from(tags)
-    .where(and(eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
-    .limit(1);
+  const live = [eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)];
+  const changes = [
+    name === undefined ? undefined : sql`${tags.name} IS DISTINCT FROM ${name}`,
+    params.color === undefined ? undefined : sql`${tags.color} IS DISTINCT FROM ${params.color}`,
+  ].filter((change) => change !== undefined);
 
-  if (existingTag.length === 0) {
-    throw errors.tagNotFound();
-  }
-
-  // Check for duplicates among *live* tags only, so this fails with a clear
-  // error up front; the unique index decides races (caught below). A tag may
-  // be renamed to a different capitalization of its own name.
-  if (name !== undefined && name !== existingTag[0].name) {
-    const duplicateName = await db
-      .select({ id: tags.id })
-      .from(tags)
-      .where(
-        and(
-          eq(tags.userId, userId),
-          tagNameMatches(name),
-          isNull(tags.deletedAt),
-          ne(tags.id, tagId)
-        )
-      )
-      .limit(1);
-
-    if (duplicateName.length > 0) {
-      throw errors.tagNameTaken();
+  let changed = false;
+  if (changes.length > 0) {
+    try {
+      // The unique index decides a name clash, ignoring case, among live tags.
+      const updated = await db
+        .update(tags)
+        .set({ name, color: params.color, updatedAt: new Date() })
+        .where(and(...live, or(...changes)))
+        .returning({ id: tags.id });
+      changed = updated.length > 0;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw errors.tagNameTaken();
+      }
+      throw err;
     }
   }
 
-  // Build the update object - always set updatedAt on changes
-  const updateData: { name?: string; color?: string | null; updatedAt: Date } = {
-    updatedAt: new Date(),
-  };
-
-  if (name !== undefined) {
-    updateData.name = name;
-  }
-
-  if (params.color !== undefined) {
-    updateData.color = params.color;
-  }
-
-  try {
-    // Scope the UPDATE by userId too — the ownership SELECT above already
-    // guarantees it, but keeping the predicate here makes the mutation
-    // self-evidently user-scoped in isolation (defense-in-depth).
-    await db
-      .update(tags)
-      .set(updateData)
-      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)));
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      throw errors.tagNameTaken();
-    }
-    throw err;
-  }
-
-  const tag = await selectTagWithCounts(db, eq(tags.id, tagId), eq(tags.userId, userId));
+  const tag = await selectTagWithCounts(db, ...live);
   if (!tag) {
     throw errors.tagNotFound();
   }
 
-  // Publish tag updated event for multi-tab/device sync (fire and forget)
-  publishUserEvent({ type: "tag_updated", userId, tag: toSyncTag(tag), updatedAt: tag.updatedAt });
+  if (changed) {
+    publishUserEvent({
+      type: "tag_updated",
+      userId,
+      tag: toSyncTag(tag),
+      updatedAt: tag.updatedAt,
+    });
+  }
 
   return toTag(tag);
 }
@@ -347,6 +316,17 @@ function toTag(tag: NonNullable<Awaited<ReturnType<typeof selectTagWithCounts>>>
 }
 
 /**
+ * Serializes, per user, changing which subscriptions their tags hold with
+ * deleting a tag (`setTags`, `deleteTag`), so a tag is never linked while it's
+ * being deleted. An advisory lock taken first rather than a row lock, so it
+ * stays out of the row lock order in `src/server/CLAUDE.md`; its two-key form
+ * keeps it apart from the subscription-cap lock's one-key space.
+ */
+export async function lockUserTagLinks(tx: DbOrTx, userId: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('tag_links'), hashtext(${userId}))`);
+}
+
+/**
  * Deletes a tag (soft delete).
  *
  * Sets deleted_at for sync tracking. Subscription-tag associations are removed
@@ -362,6 +342,8 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   // (which would silently drop subscriptions from "Uncategorized" while the tag
   // is invisible in listTags).
   const updatedAt = await db.transaction(async (tx) => {
+    // Before reading the tag's links, so none is added until the tombstone commits.
+    await lockUserTagLinks(tx, userId);
     // The tagged subscriptions' members, then the subscriptions, in the lock
     // order: dropping the associations moves the members' tag rows
     // (tag_entries), and a membership added meanwhile must wait for that.
