@@ -18,7 +18,7 @@ import {
   userEntries,
   tags,
 } from "../../src/server/db/schema";
-import { MAX_SYNC_PAGE_ENTRIES } from "../../src/server/services/sync";
+import { MAX_SYNC_PAGE_ENTRIES, SYNC_CLOCK_MARGIN_MS } from "../../src/server/services/sync";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   addEntriesToCollection,
@@ -26,6 +26,7 @@ import {
   removeEntriesFromCollection,
 } from "../../src/server/services/collections";
 import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
+import { markEntriesRead } from "../../src/server/services/entry-state";
 import { parseTimestamptz } from "../../src/server/db/temporal";
 import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
 import type { SyncEvent } from "../../src/lib/events/schemas";
@@ -1455,20 +1456,86 @@ describe("sync.events", () => {
   //
   // Membership changes aren't replayed as events, and a replayed entry carries
   // counts only for the collections it's in now, so a catch-up's last page
-  // carries every collection's counts.
+  // carries the counts of the collections whose memberships changed since it
+  // started.
   // ==========================================================================
 
   describe("collection counts", () => {
-    async function catchUp(userId: string, start: SyncCursors) {
+    /** One catch-up page from `cursors`, of the catch-up that started at `start`. */
+    async function catchUp(userId: string, start: SyncCursors, cursors: SyncCursors = start) {
       return createCaller(await createAuthContext(userId)).sync.events({
         cursors: {
-          entries: start.entries ?? undefined,
-          entriesAfterId: start.entriesAfterId ?? undefined,
-          subscriptions: start.subscriptions ?? undefined,
-          tags: start.tags ?? undefined,
+          entries: cursors.entries ?? undefined,
+          entriesAfterId: cursors.entriesAfterId ?? undefined,
+          entriesSince: start.entries ?? undefined,
+          entriesSinceAfterId: start.entriesAfterId ?? undefined,
+          subscriptions: cursors.subscriptions ?? undefined,
+          tags: cursors.tags ?? undefined,
         },
       });
     }
+
+    /** Stamps `collectionId`'s last membership change `msBefore` the cursor `at`. */
+    async function setMembershipsChangedBefore(
+      collectionId: string,
+      at: string,
+      msBefore: number
+    ): Promise<void> {
+      await db.execute(sql`
+        UPDATE subscriptions
+        SET memberships_changed_at = ${at}::timestamptz - make_interval(secs => ${msBefore / 1000})
+        WHERE id = ${collectionId}
+      `);
+    }
+
+    it("sends only the collections whose memberships changed", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
+      const changed = (await createCollection(db, userId, "Changed")).subscription.id;
+      const untouched = (await createCollection(db, userId, "Untouched")).subscription.id;
+      await addEntriesToCollection(db, userId, untouched, [entryId]);
+      const start = await createCaller(await createAuthContext(userId)).sync.cursors();
+      // Untouched's change is older than the catch-up (and its clock margin).
+      await setMembershipsChangedBefore(untouched, start.entries!, SYNC_CLOCK_MARGIN_MS + 1000);
+
+      await addEntriesToCollection(db, userId, changed, [entryId]);
+      const result = await catchUp(userId, start);
+
+      expect(result.counts?.subscriptions.map((s) => s.id)).toEqual([changed]);
+    });
+
+    it("sends a collection changed within the clock margin before the catch-up's start", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
+      const collectionId = (await createCollection(db, userId, "Picks")).subscription.id;
+      await addEntriesToCollection(db, userId, collectionId, [entryId]);
+      const start = await createCaller(await createAuthContext(userId)).sync.cursors();
+      // Stamped by a clock behind the one that wrote the cursor.
+      await setMembershipsChangedBefore(collectionId, start.entries!, SYNC_CLOCK_MARGIN_MS - 1000);
+
+      const result = await catchUp(userId, start);
+
+      expect(result.counts?.subscriptions.map((s) => s.id)).toEqual([collectionId]);
+    });
+
+    it("sends no counts when no collection changed", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { userIds: [userId] });
+      await createCollection(db, userId, "Never touched");
+      const start = await createCaller(await createAuthContext(userId)).sync.cursors();
+
+      await markEntriesRead(db, userId, [{ id: entryId }], true);
+      const result = await catchUp(userId, start);
+
+      expect(result.events.length).toBeGreaterThan(0);
+      expect(result.counts).toBeUndefined();
+    });
 
     it("counts the collections an entry left elsewhere, their tags and Uncategorized", async () => {
       const userId = await createTestUser();
@@ -1526,7 +1593,7 @@ describe("sync.events", () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed();
       await createTestSubscription(userId, feedId);
-      await createCollection(db, userId, "Reading");
+      const collectionId = (await createCollection(db, userId, "Reading")).subscription.id;
       const changedAt = new Date("2025-03-01T00:00:00.000Z");
       const entryIds = await createTestEntryBatch(feedId, MAX_SYNC_PAGE_ENTRIES + 1, {
         start: changedAt,
@@ -1535,6 +1602,7 @@ describe("sync.events", () => {
       await createTestUserEntries(
         entryIds.map((entryId) => ({ userId, entryId, updatedAt: changedAt }))
       );
+      await addEntriesToCollection(db, userId, collectionId, [entryIds[0]]);
       const start: SyncCursors = {
         entries: new Date("2025-02-01T00:00:00.000Z").toISOString(),
         entriesAfterId: null,
@@ -1546,9 +1614,55 @@ describe("sync.events", () => {
       expect(first.hasMore).toBe(true);
       expect(first.counts).toBeUndefined();
 
-      const last = await catchUp(userId, first.events.reduce(advanceCursors, start));
+      const last = await catchUp(userId, start, first.events.reduce(advanceCursors, start));
       expect(last.hasMore).toBe(false);
-      expect(last.counts).toBeDefined();
+      expect(last.counts?.subscriptions.map((s) => s.id)).toEqual([collectionId]);
+    });
+
+    it("stamps through a deleted collection's cascades without sending it", async () => {
+      const userId = await createTestUser();
+      const deleted = (await createCollection(db, userId, "Deleted")).subscription.id;
+      const kept = (await createCollection(db, userId, "Kept")).subscription.id;
+      const onlyInDeleted = await uploadArticle(db, userId, {
+        content: "Body",
+        title: "Only here",
+        collectionIds: [deleted],
+      });
+      await uploadArticle(db, userId, {
+        content: "Body",
+        title: "In both",
+        collectionIds: [deleted, kept],
+      });
+      const caller = createCaller(await createAuthContext(userId));
+      const start = await caller.sync.cursors();
+
+      await caller.subscriptions.delete({ id: deleted, deleteSavedArticles: true });
+      const result = await catchUp(userId, start);
+
+      expect(
+        await db.select({ id: entries.id }).from(entries).where(eq(entries.id, onlyInDeleted.id))
+      ).toEqual([]);
+      expect(result.counts?.subscriptions.map((s) => s.id) ?? []).not.toContain(deleted);
+      expect(result.events.some((e) => e.type === "subscription_deleted")).toBe(true);
+    });
+
+    it("deletes a user whose collections hold articles (the subscriptions cascade)", async () => {
+      const userId = await createTestUser();
+      const collectionId = (await createCollection(db, userId, "Papers")).subscription.id;
+      await uploadArticle(db, userId, {
+        content: "Body",
+        title: "Paper",
+        collectionIds: [collectionId],
+      });
+
+      await db.delete(users).where(eq(users.id, userId));
+
+      expect(
+        await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.userId, userId))
+      ).toEqual([]);
     });
   });
 });

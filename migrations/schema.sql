@@ -333,19 +333,30 @@ CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
 DECLARE
   v_sign integer := CASE WHEN TG_OP = 'INSERT' THEN 1 ELSE -1 END;
   v_user uuid[]; v_entry uuid[]; v_sub uuid[];
+  v_collections uuid[];
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM changed_rows) THEN
     RETURN NULL;
   END IF;
   IF TG_OP = 'INSERT' THEN
-    PERFORM 1 FROM subscriptions
-    WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
-    ORDER BY id FOR NO KEY UPDATE;
+    SELECT array_agg(id) FILTER (WHERE type = 'collection') INTO v_collections
+    FROM (
+      SELECT id, type FROM subscriptions
+      WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
+      ORDER BY id FOR NO KEY UPDATE
+    ) s;
+  ELSE
+    SELECT array_agg(id) INTO v_collections
+    FROM subscriptions
+    WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows) AND type = 'collection';
   END IF;
   SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id)
   INTO v_user, v_entry, v_sub
   FROM changed_rows;
   PERFORM apply_membership_changes(v_sign, v_user, v_entry, v_sub);
+  IF v_collections IS NOT NULL THEN
+    UPDATE subscriptions SET memberships_changed_at = now() WHERE id = ANY(v_collections);
+  END IF;
   RETURN NULL;
 END;
 $$;
@@ -949,6 +960,7 @@ CREATE TABLE public.subscriptions (
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     type public.feed_type NOT NULL,
     email_sender text,
+    memberships_changed_at timestamp with time zone,
     CONSTRAINT subscriptions_feed_iff_web CHECK (((type = 'web'::public.feed_type) = (feed_id IS NOT NULL))),
     CONSTRAINT subscriptions_named_unless_web CHECK (((type = 'web'::public.feed_type) OR (custom_title IS NOT NULL)))
 );
@@ -1352,6 +1364,8 @@ CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (
 CREATE UNIQUE INDEX idx_subscriptions_greader_stream_id ON public.subscriptions USING btree (greader_stream_id);
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
+
+CREATE INDEX idx_subscriptions_user_memberships_changed ON public.subscriptions USING btree (user_id, memberships_changed_at) WHERE ((type = 'collection'::public.feed_type) AND (unsubscribed_at IS NULL));
 
 CREATE INDEX idx_tag_entries_read_score ON public.tag_entries USING btree (list_id, read, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC);
 

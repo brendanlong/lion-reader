@@ -37,7 +37,7 @@ const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 const syncEventsOutputSchema = z.object({
   events: z.array(serverSyncEventSchema),
   hasMore: z.boolean(),
-  /** On the last page: every active collection's counts (see collectSyncEvents). */
+  /** On the last page: the counts of the collections changed since the catch-up's start. */
   counts: unreadCountsSchema.optional(),
 });
 
