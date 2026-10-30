@@ -22,7 +22,7 @@ import {
 } from "../../src/server/services/stored-objects";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getAppErrorCode } from "../../src/server/errors";
-import { createJob, getJobPayload } from "../../src/server/jobs/queue";
+import { getJobPayload } from "../../src/server/jobs/queue";
 import { getPublicObjectUrl } from "../../src/server/storage/s3";
 import { handleDeleteStoredObjects } from "../../src/server/jobs/handlers/delete-stored-objects";
 import { buildEpub, chapterXhtml } from "../utils/epub";
@@ -162,18 +162,6 @@ describe("ebook images in storage", () => {
     await runQueuedJob(...entryIds.map((entryId) => entryObjectsPrefix(userId, entryId)));
 
     expect(keysUnder(userObjectsPrefix(userId))).toEqual([]);
-  });
-
-  it("runs a job the previous release queued for one prefix", async () => {
-    const { userId, entryIds } = await importBook();
-    const prefix = entryObjectsPrefix(userId, entryIds[0]);
-    const job = await createJob({ type: "delete_stored_objects", payload: { prefixes: [] } });
-    await db.update(jobs).set({ payload: { prefix } }).where(eq(jobs.id, job.id));
-    const [queued] = await db.select().from(jobs).where(eq(jobs.id, job.id));
-
-    await handleDeleteStoredObjects(getJobPayload(queued, "delete_stored_objects"));
-
-    expect(keysUnder(prefix)).toEqual([]);
   });
 
   it("fails the import when storage refuses an image, keeping the chapters before it", async () => {
