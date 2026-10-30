@@ -30,7 +30,7 @@ android {
     }
 
     // A private dev keystore, so debug builds from every machine share a key
-    // the server can list in ANDROID_DEBUG_APP_CERT_SHA256 (see kmp/CLAUDE.md).
+    // the server can list in ANDROID_DEBUG_APP_CERT_SHA256 (see docs/android-dev.md).
     // Without it, debug builds use the default debug key and can only sign in
     // to dev servers.
     val devSigning = keystoreSigning("dev", "lionReaderDevKeystore")
