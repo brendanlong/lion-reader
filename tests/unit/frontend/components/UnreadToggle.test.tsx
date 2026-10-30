@@ -14,17 +14,15 @@ import { UnreadToggle } from "@/components/entries/UnreadToggle";
 
 describe("UnreadToggle", () => {
   it.each([
-    [true, "Unread only", "Show read items", "false"],
-    [false, "Show all", "Hide read items", "true"],
-  ] as const)(
-    "with showUnreadOnly=%s, names the %s state in its tooltip and offers to %s",
-    (showUnreadOnly, title, ariaLabel, pressed) => {
-      render(<UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={vi.fn()} />);
-      const button = screen.getByRole("button", { name: ariaLabel });
-      expect(button).toHaveAttribute("title", title);
-      expect(button).toHaveAttribute("aria-pressed", pressed);
-    }
-  );
+    [true, "true"],
+    [false, "false"],
+  ] as const)("with showUnreadOnly=%s, is pressed=%s", (showUnreadOnly, pressed) => {
+    render(<UnreadToggle showUnreadOnly={showUnreadOnly} onToggle={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Unread only" })).toHaveAttribute(
+      "aria-pressed",
+      pressed
+    );
+  });
 
   describe("toggle callback", () => {
     it("calls onToggle when clicked", () => {

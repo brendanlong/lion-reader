@@ -8,9 +8,9 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { SHORTCUTS } from "./shortcuts";
+import { useShortcutHotkeys } from "./useShortcutHotkeys";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 
 /**
@@ -58,20 +58,15 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
     setIsModalOpen(false);
   }, []);
 
-  useHotkeys(
+  // The modal is a Dialog, so this is already off while it's open.
+  useShortcutHotkeys(
     SHORTCUTS.showShortcuts.hotkey,
     (e) => {
       e.preventDefault();
       openShortcutsModal();
     },
-    // useKey matches the produced character (event.key): without it the "?"
-    // would be compared to the physical key code ("slash"), which never matches.
-    {
-      enabled: enabled && !isModalOpen,
-      enableOnFormTags: false,
-      useKey: true,
-    },
-    [enabled, isModalOpen, openShortcutsModal]
+    { enabled, useKey: true },
+    [enabled, openShortcutsModal]
   );
 
   const contextValue = useMemo<KeyboardShortcutsContextValue>(

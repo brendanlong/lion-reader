@@ -13,30 +13,26 @@ import { SortToggle, shownSortOrder } from "@/components/entries/SortToggle";
 
 describe("SortToggle", () => {
   it.each([
-    ["newest", "Newest", "Sort oldest first", "false", "oldest"],
-    ["oldest", "Oldest", "Sort newest first", "true", "newest"],
-    ["highest", "Highest", "Sort lowest first", "false", "lowest"],
-    ["lowest", "Lowest", "Sort highest first", "true", "highest"],
-    ["first", "First", "Sort last first", "false", "last"],
-    ["last", "Last", "Sort first first", "true", "first"],
-  ] as const)(
-    "shows %s and toggles to its other direction",
-    (order, label, aria, pressed, next) => {
-      const onChange = vi.fn();
-      render(
-        <SortToggle
-          sortOrder={order}
-          sortable={{ score: true, position: true }}
-          onChange={onChange}
-        />
-      );
-      const button = screen.getByRole("button", { name: aria });
-      expect(button).toHaveAttribute("title", label);
-      expect(button).toHaveAttribute("aria-pressed", pressed);
-      fireEvent.click(button);
-      expect(onChange).toHaveBeenCalledWith(next);
-    }
-  );
+    ["newest", "Oldest first", "false", "oldest"],
+    ["oldest", "Oldest first", "true", "newest"],
+    ["highest", "Lowest first", "false", "lowest"],
+    ["lowest", "Lowest first", "true", "highest"],
+    ["first", "Last first", "false", "last"],
+    ["last", "Last first", "true", "first"],
+  ] as const)("shows %s and toggles to its other direction", (order, name, pressed, next) => {
+    const onChange = vi.fn();
+    render(
+      <SortToggle
+        sortOrder={order}
+        sortable={{ score: true, position: true }}
+        onChange={onChange}
+      />
+    );
+    const button = screen.getByRole("button", { name });
+    expect(button).toHaveAttribute("aria-pressed", pressed);
+    fireEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith(next);
+  });
 
   it("offers no sort picker when the list has only dates", () => {
     render(

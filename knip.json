@@ -4,16 +4,11 @@
     ".": {
       "entry": [
         "scripts/fixup-standalone.mjs",
+        "service-worker/index.ts",
         "src/lib/narration/app-reader.ts",
         "terraform/backup-health/index.ts"
       ],
-      "ignore": [
-        "extension/**",
-        "kmp/**",
-        "src/lib/stubs/**",
-        "service-worker/index.ts",
-        "terraform/build/**"
-      ],
+      "ignore": ["extension/**", "kmp/**", "src/lib/stubs/**", "terraform/build/**"],
       "ignoreDependencies": ["mammoth"]
     },
     "native/sanitizer": {},

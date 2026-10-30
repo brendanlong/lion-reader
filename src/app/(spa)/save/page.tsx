@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SpinnerIcon, CheckIcon, LockIcon, CloseIcon } from "@/components/ui/icons";
 import { isEbookFile } from "@/lib/upload-file-types";
+import { deleteSharedFile, getSharedFile, type SharedFileRecord } from "@/lib/share-store";
 
 export default function SavePage() {
   return (
@@ -29,59 +30,22 @@ export default function SavePage() {
   );
 }
 
-interface SharedFile {
-  content: string;
-  /** The MIME type the sharing app gave it. */
-  type?: string;
-  filename: string;
-  title?: string;
+interface SharedFile extends SharedFileRecord {
   /** Generated once per shared file, so a retry can't save it twice. */
   idempotencyKey: string;
 }
 
-/**
- * Read and delete the file the share-target service worker stashed in IndexedDB.
- * The record is gone after this, so callers must keep the file to retry with it.
- */
-function takeSharedFile(onFile: (file: SharedFile) => void) {
-  const dbRequest = indexedDB.open("lion-reader-share", 1);
+/** The file the share-target service worker stashed, or null if there's none. */
+async function readSharedFile(): Promise<SharedFile | null> {
+  const record = await getSharedFile();
+  return record ? { ...record, idempotencyKey: crypto.randomUUID() } : null;
+}
 
-  dbRequest.onsuccess = () => {
-    const db = dbRequest.result;
-    const transaction = db.transaction("files", "readonly");
-    const store = transaction.objectStore("files");
-    const getRequest = store.get("pending");
-
-    getRequest.onsuccess = () => {
-      const fileData = getRequest.result;
-      if (fileData) {
-        onFile({
-          content: fileData.content,
-          type: fileData.type,
-          filename: fileData.filename,
-          title: fileData.title,
-          idempotencyKey: crypto.randomUUID(),
-        });
-
-        const deleteTransaction = db.transaction("files", "readwrite");
-        deleteTransaction.objectStore("files").delete("pending");
-      } else {
-        console.error("No file found in IndexedDB");
-      }
-    };
-
-    getRequest.onerror = () => {
-      console.error("Failed to read file from IndexedDB:", getRequest.error);
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  };
-
-  dbRequest.onerror = () => {
-    console.error("Failed to open IndexedDB:", dbRequest.error);
-  };
+/** Drop the shared file once it's saved; until then it survives a sign-in round-trip. */
+function dropSharedFile(): void {
+  deleteSharedFile().catch((error: unknown) =>
+    console.error("Failed to delete the shared file:", error)
+  );
 }
 
 function SaveCard({ children }: { children: ReactNode }) {
@@ -106,6 +70,7 @@ function SaveContent() {
   const [articleTitle, setArticleTitle] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [sharedFileMissing, setSharedFileMissing] = useState(false);
 
   // Track if we've already initiated the save to prevent re-triggering
   const saveInitiatedRef = useRef(false);
@@ -128,12 +93,14 @@ function SaveContent() {
 
   const uploadFileMutation = trpc.saved.uploadFile.useMutation({
     onSuccess: (data) => {
+      dropSharedFile();
       setArticleTitle(data.article.title);
     },
   });
 
   const importEbookMutation = trpc.collections.importEbook.useMutation({
     onSuccess: ({ subscription, entryIds }) => {
+      dropSharedFile();
       const chapters = `${entryIds.length} chapter${entryIds.length === 1 ? "" : "s"}`;
       setArticleTitle(subscription.title ? `${subscription.title} (${chapters})` : chapters);
     },
@@ -190,10 +157,20 @@ function SaveContent() {
     if (shareType === "file" && !saveInitiatedRef.current) {
       saveInitiatedRef.current = true;
 
-      takeSharedFile((file) => {
-        sharedFileRef.current = file;
-        uploadSharedFile(file);
-      });
+      readSharedFile().then(
+        (file) => {
+          if (!file) {
+            setSharedFileMissing(true);
+            return;
+          }
+          sharedFileRef.current = file;
+          uploadSharedFile(file);
+        },
+        (error: unknown) => {
+          console.error("Failed to read the shared file:", error);
+          setSharedFileMissing(true);
+        }
+      );
     }
   }, [shareType, uploadSharedFile]);
 
@@ -264,24 +241,27 @@ function SaveContent() {
     if (urlToSave) {
       sessionStorage.setItem("pendingSaveUrl", urlToSave);
     }
-    // Redirect to login, which will redirect back to /save after auth
+    // A shared file waits in IndexedDB, so coming back to it is enough.
+    const returnTo = shareType === "file" ? "/save?type=file" : "/save";
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate hard nav across an auth boundary (see src/CLAUDE.md)
-    window.location.href = `/login?redirect=${encodeURIComponent("/save")}`;
+    window.location.href = `/login?redirect=${encodeURIComponent(returnTo)}`;
   };
 
-  // Share error or no URL/file provided
-  if (!urlToSave && shareType !== "file") {
+  // Share error, no URL/file provided, or the shared file never arrived
+  if ((!urlToSave && shareType !== "file") || sharedFileMissing) {
     const errorMessages: Record<string, string> = {
       no_url: "No URL was found in the shared content.",
       no_url_or_file: "No URL or file was found in the shared content.",
       share_failed: "Failed to process the shared content.",
+      file_missing: "The shared file didn't reach Lion Reader. Try sharing it again.",
     };
+    const error = sharedFileMissing ? "file_missing" : shareError;
 
     return (
       <SaveCard>
         <Alert variant="error" className="mt-4">
-          {shareError
-            ? errorMessages[shareError] || "An error occurred."
+          {error
+            ? errorMessages[error] || "An error occurred."
             : "No URL or file provided. Use the bookmarklet or share from another app."}
         </Alert>
         <Button variant="secondary" className="mt-4 w-full" onClick={handleClose}>

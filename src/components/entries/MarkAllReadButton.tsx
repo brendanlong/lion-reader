@@ -8,10 +8,9 @@
 "use client";
 
 import { useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { CheckCircleIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { isDialogOpen } from "@/components/ui/dialog";
+import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { formatHotkey, SHORTCUTS } from "@/components/keyboard/shortcuts";
 
 interface MarkAllReadButtonProps {
@@ -33,14 +32,13 @@ export function MarkAllReadButton({
 }: MarkAllReadButtonProps) {
   const [showDialog, setShowDialog] = useState(false);
 
-  useHotkeys(
+  useShortcutHotkeys(
     SHORTCUTS.markAllRead.hotkey,
     (e) => {
-      if (isDialogOpen()) return;
       e.preventDefault();
       setShowDialog(true);
     },
-    { enabled: shortcutEnabled, enableOnFormTags: false },
+    { enabled: shortcutEnabled },
     [shortcutEnabled]
   );
 

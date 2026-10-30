@@ -77,13 +77,18 @@ function TagSection({
   return (
     <li>
       <div className="flex min-h-[44px] items-center">
+        {/* The ::before stretches the 24px chevron to a 44px touch target
+            without moving the row: left into the sidebar's p-3, right into the
+            link's px-3. */}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onToggleExpanded();
           }}
-          className="text-muted hover:text-body flex h-6 w-6 shrink-0 items-center justify-center"
-          aria-label={expanded ? "Collapse" : "Expand"}
+          className="text-muted hover:text-body relative flex h-11 w-6 shrink-0 items-center justify-center before:absolute before:inset-y-0 before:-right-2 before:-left-3"
+          aria-label={`${label} feeds`}
+          aria-expanded={expanded}
         >
           {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         </button>

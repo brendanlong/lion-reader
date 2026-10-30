@@ -62,7 +62,8 @@ export function Dialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const generatedTitleId = titleId ?? `dialog-title-${title.toLowerCase().replace(/\s+/g, "-")}`;
 
-  // Escape key handling
+  // Escape closes the dialog. Capture phase, so it runs and stops the event
+  // before any page-level listener (shortcuts) can see it.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -74,8 +75,8 @@ export function Dialog({
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [isOpen, onClose]);
 
   // Focus trap: keep focus within the dialog, restore focus on close

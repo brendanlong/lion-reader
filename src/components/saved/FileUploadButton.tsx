@@ -18,7 +18,7 @@ import {
   handleSubscriptionCreated,
 } from "@/lib/cache/operations";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonClassName } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
@@ -47,6 +47,9 @@ import {
 const COLLECTIONS_PAGE_SIZE = 100;
 
 const ACCEPTED_EXTENSIONS = [...SUPPORTED_UPLOAD_EXTENSIONS, ...EBOOK_UPLOAD_EXTENSIONS];
+
+const MAX_DOCUMENT_BYTES = DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES;
+const MAX_EBOOK_BYTES = maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES);
 
 // ============================================================================
 // Types
@@ -100,8 +103,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       handleClose();
     },
     onError: (err) => {
-      setError(err.message);
-      toast.error("Failed to upload file");
+      toast.error("Failed to upload file", { description: err.message });
     },
   });
   const appHref = useAppHref();
@@ -126,8 +128,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       clientPush(appHref(`/subscription/${subscription.id}`));
     },
     onError: (err) => {
-      setError(err.message);
-      toast.error("Failed to import ebook");
+      toast.error("Failed to import ebook", { description: err.message });
     },
   });
   const isPending = uploadMutation.isPending || importEbookMutation.isPending;
@@ -150,9 +151,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     if (!isValidFileType(file.name)) {
       return `Unsupported file type. Please upload ${ACCEPTED_EXTENSIONS.join(", ")} files.`;
     }
-    const maxSize = isEbookFile(file.name, file.type)
-      ? maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES)
-      : DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES;
+    const maxSize = isEbookFile(file.name, file.type) ? MAX_EBOOK_BYTES : MAX_DOCUMENT_BYTES;
     if (file.size > maxSize) {
       return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(maxSize)}.`;
     }
@@ -236,7 +235,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       }
     };
     reader.onerror = () => {
-      setError("Failed to read file");
+      toast.error("Failed to read file", { description: reader.error?.message });
     };
     reader.readAsDataURL(selectedFile);
   };
@@ -247,7 +246,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors ${className}`}
+        className={`${buttonClassName({ variant: "secondary" })} gap-1.5 ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >
@@ -307,7 +306,9 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
                 <UploadIcon className="text-faint h-10 w-10" />
                 <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
                 <p className="ui-text-sm text-muted">
-                  .docx, .pdf, .html, .md, .txt, .epub up to 10MB
+                  {SUPPORTED_UPLOAD_EXTENSIONS.join(", ")} up to{" "}
+                  {formatFileSize(MAX_DOCUMENT_BYTES)}; {EBOOK_UPLOAD_EXTENSIONS.join(", ")} up to{" "}
+                  {formatFileSize(MAX_EBOOK_BYTES)}
                 </p>
               </div>
             )}

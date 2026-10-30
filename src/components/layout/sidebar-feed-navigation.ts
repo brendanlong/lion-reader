@@ -3,8 +3,6 @@
  * sidebar, in the order it shows them.
  */
 
-import { isDialogOpen } from "@/components/ui/dialog";
-
 /** Marks the sidebar list whose links Shift+J/Shift+K step through. */
 export const SIDEBAR_FEEDS_ATTRIBUTE = "data-sidebar-feeds";
 
@@ -22,7 +20,6 @@ const isCurrent = (link: HTMLAnchorElement) => link.getAttribute("aria-current")
  * from where the reader is, unless its tag is collapsed.
  */
 export function goToSidebarFeed(direction: 1 | -1): void {
-  if (isDialogOpen()) return;
   const links = Array.from(
     document.querySelectorAll<HTMLAnchorElement>(`[${SIDEBAR_FEEDS_ATTRIBUTE}] a[href]`)
   );

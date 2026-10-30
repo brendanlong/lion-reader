@@ -13,6 +13,8 @@
  * Workbox configuration in next.config.ts. This file only adds custom handlers.
  */
 
+import { putSharedFile } from "../src/lib/share-store";
+
 // Service worker global scope - 'self' refers to the service worker context
 // Use 'any' to bypass strict type checking for service worker-specific APIs
 // that aren't fully typed in the standard lib.webworker
@@ -55,44 +57,11 @@ sw.addEventListener("fetch", ((event: SWFetchEvent) => {
             // File was shared - store in IndexedDB for the /save page to process
             const base64Content = await fileToBase64(sharedFile);
 
-            // Open IndexedDB to store the file
-            const dbRequest = indexedDB.open("lion-reader-share", 1);
-
-            dbRequest.onupgradeneeded = () => {
-              const db = dbRequest.result;
-              if (!db.objectStoreNames.contains("files")) {
-                db.createObjectStore("files");
-              }
-            };
-
-            await new Promise<void>((resolve, reject) => {
-              dbRequest.onsuccess = () => {
-                const db = dbRequest.result;
-                const transaction = db.transaction("files", "readwrite");
-                const store = transaction.objectStore("files");
-
-                // Store file data with a key
-                store.put(
-                  {
-                    content: base64Content,
-                    filename: sharedFile.name,
-                    type: sharedFile.type,
-                    title: sharedTitle || null,
-                    timestamp: Date.now(),
-                  },
-                  "pending"
-                );
-
-                transaction.oncomplete = () => {
-                  db.close();
-                  resolve();
-                };
-                transaction.onerror = () => {
-                  db.close();
-                  reject(transaction.error);
-                };
-              };
-              dbRequest.onerror = () => reject(dbRequest.error);
+            await putSharedFile({
+              content: base64Content,
+              filename: sharedFile.name,
+              type: sharedFile.type,
+              title: sharedTitle || undefined,
             });
 
             // Redirect to save page with file indicator

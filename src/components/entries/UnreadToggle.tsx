@@ -28,26 +28,14 @@ interface UnreadToggleProps {
   className?: string;
 }
 
-/**
- * Toggle button for showing/hiding read entries.
- *
- * The icon and tooltip show the current state (like sorting buttons):
- * - When `showUnreadOnly` is true: "Unread only" with eye-slash icon
- * - When `showUnreadOnly` is false: "Show all" with open eye icon
- *
- * The aria-label describes the action (what clicking will do).
- */
 export function UnreadToggle({ showUnreadOnly, onToggle, className = "" }: UnreadToggleProps) {
-  const label = showUnreadOnly ? "Unread only" : "Show all";
-  const ariaLabel = showUnreadOnly ? "Show read items" : "Hide read items";
   const Icon = showUnreadOnly ? EyeSlashIcon : EyeIcon;
 
   return (
     <StateToggleButton
       icon={<Icon className="h-5 w-5" />}
-      label={label}
-      ariaLabel={ariaLabel}
-      isPressed={!showUnreadOnly}
+      name="Unread only"
+      isPressed={showUnreadOnly}
       onToggle={onToggle}
       className={className}
     />

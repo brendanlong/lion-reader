@@ -19,6 +19,7 @@
 
 import type { Metadata } from "next";
 import { rootFontClassName } from "./root-document";
+import { buttonClassName } from "@/components/ui/button";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -38,10 +39,7 @@ export default function GlobalNotFound() {
               document never hydrates (its scripts are blocked by the strict
               CSP), so a client-side <Link> would be dead weight; a plain
               anchor works without JS. */}
-          <a
-            href="/"
-            className="btn-primary ui-text-sm mt-6 inline-flex min-h-[40px] items-center rounded-md px-4 font-medium"
-          >
+          <a href="/" className={`${buttonClassName()} mt-6`}>
             Back to Lion Reader
           </a>
         </div>

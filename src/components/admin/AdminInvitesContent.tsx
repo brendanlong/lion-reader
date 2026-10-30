@@ -7,6 +7,7 @@
 
 "use client";
 
+import { CopyButton } from "@/components/ui/copy-button";
 import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -14,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, StatusCard } from "@/components/ui/card";
 import { ClientLink } from "@/components/ui/client-link";
-import { CopyIcon } from "@/components/ui/icons";
 import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
 import { AdminQueryFallback } from "@/components/admin/AdminQueryFallback";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
@@ -79,19 +79,6 @@ interface CreatedInviteProps {
 }
 
 function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      toast.success("Invite URL copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Failed to copy to clipboard");
-    }
-  };
-
   return (
     <StatusCard variant="info" className="mb-6">
       <div className="flex flex-col gap-2">
@@ -100,10 +87,7 @@ function CreatedInviteDisplay({ inviteUrl, onDismiss }: CreatedInviteProps) {
           <code className="ui-text-sm bg-surface/60 flex-1 truncate rounded px-2 py-1">
             {inviteUrl}
           </code>
-          <Button variant="secondary" size="sm" onClick={handleCopy} className="shrink-0">
-            <CopyIcon className="mr-1 h-3.5 w-3.5" />
-            {copied ? "Copied" : "Copy"}
-          </Button>
+          <CopyButton value={inviteUrl} className="shrink-0 px-2 py-1" title="Copy invite URL" />
         </div>
         <button
           onClick={onDismiss}

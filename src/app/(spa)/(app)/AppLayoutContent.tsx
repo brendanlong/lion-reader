@@ -10,6 +10,7 @@
 
 import { useRef, useState } from "react";
 import { ClientLink } from "@/components/ui/client-link";
+import { buttonClassName } from "@/components/ui/button";
 import { PlusIcon, UserIcon, ChevronDownIcon } from "@/components/ui/icons";
 import { Toaster, toast } from "sonner";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
@@ -83,26 +84,27 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   {/* Subscribe button */}
                   <ClientLink
                     href="/subscribe"
-                    className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
+                    className={`${buttonClassName({ variant: "primary" })} gap-1.5`}
                   >
                     <PlusIcon className="h-4 w-4" />
-                    <span className="hidden sm:inline">Subscribe</span>
+                    <span className="sr-only sm:not-sr-only">Subscribe</span>
                   </ClientLink>
 
                   {/* User menu */}
                   <div className="relative">
                     <button
                       ref={userMenuButtonRef}
+                      type="button"
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors"
+                      className={`${buttonClassName({ variant: "secondary" })} gap-2`}
                       aria-expanded={userMenuOpen}
-                      aria-haspopup="true"
                     >
                       <span className="hidden max-w-[150px] truncate sm:inline">
                         <UserEmail />
                       </span>
-                      <span className="sm:hidden" aria-label="Account menu">
+                      <span className="sm:hidden">
                         <UserIcon className="h-5 w-5" />
+                        <span className="sr-only">Account</span>
                       </span>
                       <ChevronDownIcon
                         className={`h-4 w-4 transition-transform ${userMenuOpen ? "rotate-180" : ""}`}
@@ -146,10 +148,9 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                               setUserMenuOpen(false);
                               handleLogout();
                             }}
-                            disabled={logoutMutation.isPending}
-                            className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] w-full items-center px-4 text-left disabled:opacity-50"
+                            className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] w-full items-center px-4 text-left"
                           >
-                            {logoutMutation.isPending ? "Signing out..." : "Sign out"}
+                            Sign out
                           </button>
                         </div>
                       </>

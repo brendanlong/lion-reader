@@ -904,36 +904,3 @@ img.content-img-loading {
 .prose a:hover {
   color: var(--accent-hover);
 }
-
-/* =================================
-   Narration Highlighting Styles
-   ================================= */
-
-/* Highlight the currently-read paragraph during narration */
-[data-para-id].narration-highlight {
-  background-color: rgba(253, 230, 138, 0.3); /* yellow-200/30 for light mode */
-  border-radius: 0.25rem;
-  transition: background-color 0.3s ease;
-}
-
-/* Dark mode highlight - supports both class-based and media query */
-.dark [data-para-id].narration-highlight {
-  background-color: rgba(113, 63, 18, 0.3); /* yellow-900/30 for dark mode */
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light):not(.epaper) [data-para-id].narration-highlight {
-    background-color: rgba(113, 63, 18, 0.3); /* yellow-900/30 for dark mode */
-  }
-}
-
-/* E-paper highlight: a 30% yellow tint grays to near-invisible on e-ink, so use
-   a flat fill from the theme's gray ramp (an off-ramp gray would dither) */
-.epaper [data-para-id].narration-highlight {
-  background-color: var(--fill-muted);
-}
-
-/* Smooth scroll to highlighted paragraph - account for sticky header */
-[data-para-id].narration-highlight {
-  scroll-margin-top: 100px;
-}

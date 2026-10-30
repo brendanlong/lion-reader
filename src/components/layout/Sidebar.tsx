@@ -23,7 +23,8 @@ import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialo
 import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
 import { SidebarNav } from "./SidebarNav";
 import { TagList } from "./TagList";
-import { SidebarUnreadToggle } from "./SidebarUnreadToggle";
+import { StateToggleButton } from "@/components/ui/state-toggle-button";
+import { EyeIcon, EyeSlashIcon } from "@/components/ui/icons";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -112,7 +113,18 @@ export function Sidebar({ onClose }: SidebarProps) {
         {/* Divider with unread toggle */}
         <div className="border-edge-strong mx-3 flex items-center gap-2 border-t pt-2">
           <span className="ui-text-xs text-muted flex-1 font-medium">Feeds</span>
-          <SidebarUnreadToggle unreadOnly={sidebarUnreadOnly} onToggle={toggleSidebarUnreadOnly} />
+          <StateToggleButton
+            icon={
+              sidebarUnreadOnly ? (
+                <EyeSlashIcon className="h-5 w-5" />
+              ) : (
+                <EyeIcon className="h-5 w-5" />
+              )
+            }
+            name="Unread feeds only"
+            isPressed={sidebarUnreadOnly}
+            onToggle={toggleSidebarUnreadOnly}
+          />
         </div>
 
         {/* Scrollable area with tags and feeds */}

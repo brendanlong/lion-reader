@@ -10,14 +10,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { buttonClassName } from "@/components/ui/button";
 
-const BUTTON_CLASSES =
-  "ui-text-xs rounded border border-edge-input bg-surface-raised font-medium text-muted transition-colors hover:border-edge-emphasis hover:text-body";
+const CHIP_CLASSES =
+  "ui-text-xs inline-flex items-center justify-center rounded border border-edge-input bg-surface-raised font-medium text-muted transition-colors hover:border-edge-emphasis hover:text-body hover-none:min-h-11 hover-none:min-w-11";
 
 interface CopyButtonProps {
   /** Text to copy to the clipboard. */
   value: string;
-  /** Extra classes for positioning/padding (e.g. "absolute top-2 right-2 px-2 py-1"). */
+  /**
+   * `chip` (default) sits beside or on top of the value it copies; `button` is
+   * a regular secondary Button, for a row of full-size buttons.
+   */
+  variant?: "chip" | "button";
+  /** Extra classes for positioning, and for a chip its padding (e.g. "absolute top-2 right-2 px-2 py-1"). */
   className?: string;
   /** Label shown when idle. */
   label?: string;
@@ -29,7 +36,8 @@ interface CopyButtonProps {
 
 export function CopyButton({
   value,
-  className = "px-2 py-1",
+  variant = "chip",
+  className = variant === "chip" ? "px-2 py-1" : "",
   label = "Copy",
   copiedLabel = "Copied!",
   title,
@@ -43,8 +51,15 @@ export function CopyButton({
     };
   }, []);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(value);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (error) {
+      toast.error("Failed to copy", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+      return;
+    }
     setCopied(true);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setCopied(false), 2000);
@@ -55,7 +70,7 @@ export function CopyButton({
       type="button"
       onClick={handleCopy}
       title={title}
-      className={`${BUTTON_CLASSES} ${className}`}
+      className={`${variant === "chip" ? CHIP_CLASSES : buttonClassName({ variant: "secondary" })} ${className}`}
     >
       {copied ? copiedLabel : label}
     </button>
@@ -72,7 +87,8 @@ interface CodeBlockProps {
 export function CodeBlock({ code, className = "" }: CodeBlockProps) {
   return (
     <div className={`relative ${className}`}>
-      <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body overflow-x-auto rounded-md border p-3 pr-20 font-mono">
+      {/* On touch the copy button is 44px; keep a one-line block tall enough to hold it. */}
+      <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body hover-none:min-h-15 overflow-x-auto rounded-md border p-3 pr-20 font-mono">
         <code>{code}</code>
       </pre>
       <CopyButton value={code} className="absolute top-2 right-2 px-2 py-1" />

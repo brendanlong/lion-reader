@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { CopyButton } from "@/components/ui/copy-button";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
@@ -29,17 +29,7 @@ function EmojiText({ emoji }: { emoji: string }) {
 }
 
 export function DiscordBotSettings() {
-  const [copied, setCopied] = useState(false);
-
   const { data: botConfig, isLoading } = trpc.auth.discordBotConfig.useQuery();
-
-  const copyInviteUrl = () => {
-    if (botConfig?.inviteUrl) {
-      navigator.clipboard.writeText(botConfig.inviteUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   // Don't render if bot is not enabled
   if (isLoading) {
@@ -68,19 +58,15 @@ export function DiscordBotSettings() {
             href={botConfig.inviteUrl ?? "#"}
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 font-medium text-indigo-800 shadow-sm transition hover:border-indigo-400 hover:bg-indigo-100 hover:shadow dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:border-indigo-600 dark:hover:bg-indigo-900"
+            className="ui-text-sm inline-flex min-h-11 items-center gap-2 rounded-md border border-indigo-300 bg-indigo-50 px-4 font-medium text-indigo-800 transition-colors hover:border-indigo-400 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:border-indigo-600 dark:hover:bg-indigo-900"
           >
             <DiscordIcon className="h-4 w-4" />
             Invite Bot
             <ExternalLinkIcon className="h-3.5 w-3.5" />
           </a>
-          <button
-            type="button"
-            onClick={copyInviteUrl}
-            className="ui-text-sm text-body border-edge-input bg-surface hover:border-edge-emphasis hover:bg-surface-muted inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition hover:shadow"
-          >
-            {copied ? "Copied!" : "Copy Link"}
-          </button>
+          {botConfig.inviteUrl && (
+            <CopyButton value={botConfig.inviteUrl} label="Copy Link" variant="button" />
+          )}
         </div>
       </div>
 
