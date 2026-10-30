@@ -52,7 +52,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const utils = trpc.useUtils();
 
   // Close the dialog immediately on mutate; the shared hook owns the cache
-  // choreography (optimistic remove, counts, entries.list invalidate, rollback).
+  // choreography (optimistic remove, counts, list refresh, rollback).
   const unsubscribeMutation = useUnsubscribeMutation({
     onMutate: () => setUnsubscribeTarget(null),
   });
