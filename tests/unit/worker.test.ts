@@ -5,7 +5,7 @@
  * without requiring a real database.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createWorkerCore, type WorkerLogger } from "../../src/server/jobs/worker-core";
 import type { Job } from "../../src/server/db/schema";
 
@@ -47,11 +47,21 @@ function createDeferred(): {
   return { promise, resolve, reject };
 }
 
-/**
- * Wait for a short time to allow async operations to complete.
- */
-function tick(ms: number = 10): Promise<void> {
+/** Advances the fake clock, running the timers and promises it lets go. */
+async function tick(ms: number = 10): Promise<void> {
+  await vi.advanceTimersByTimeAsync(ms);
+}
+
+/** What a job does while it takes `ms` of the fake clock. */
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Stops the worker, letting its last poll's sleep run out. */
+async function stop(worker: ReturnType<typeof createWorker>): Promise<void> {
+  const stopped = worker.stop();
+  await vi.runAllTimersAsync();
+  await stopped;
 }
 
 /**
@@ -64,6 +74,14 @@ const silentLogger: WorkerLogger = {
 };
 
 describe("Worker", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   describe("concurrency limit", () => {
     it("never runs more than concurrency limit jobs at once", async () => {
       const concurrency = 3;
@@ -130,7 +148,7 @@ describe("Worker", () => {
         if (jobDeferreds.length === unresolvedCount) break;
       }
 
-      await worker.stop();
+      await stop(worker);
 
       // Should never have exceeded concurrency limit
       expect(maxConcurrentJobs).toBe(3);
@@ -234,7 +252,8 @@ describe("Worker", () => {
 
       const worker = createWorker({
         concurrency: 2,
-        pollIntervalMs: 10, // Use short interval - test verifies immediate claiming via job completion
+        // Longer than the test advances the clock, so only a finished job can trigger a claim.
+        pollIntervalMs: 1000,
         logger: silentLogger,
         claimJob: async () => {
           if (jobIndex < jobs.length) {
@@ -257,17 +276,15 @@ describe("Worker", () => {
 
       // Complete first job - worker should claim next job immediately
       // (not waiting for poll interval since Promise.race resolves)
-      const claimTimeBeforeResolve = Date.now();
       jobDeferreds[0].resolve();
-      await tick(10);
+      await tick(0);
 
       // Should have claimed a 3rd job immediately
       expect(jobIndex).toBe(3);
-      expect(Date.now() - claimTimeBeforeResolve).toBeLessThan(100); // Verify it was fast
 
       // Complete second job
       jobDeferreds[1].resolve();
-      await tick(10);
+      await tick(0);
 
       // Should have claimed a 4th job immediately
       expect(jobIndex).toBe(4);
@@ -281,7 +298,7 @@ describe("Worker", () => {
         await tick(50);
         if (jobDeferreds.length === unresolvedCount) break;
       }
-      await worker.stop();
+      await stop(worker);
     });
   });
 
@@ -314,7 +331,7 @@ describe("Worker", () => {
       await tick(60);
       expect(claimCount).toBe(3);
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("polls after delay when jobs complete and queue becomes empty", async () => {
@@ -360,7 +377,7 @@ describe("Worker", () => {
       await tick(100);
       expect(claimCount).toBeGreaterThan(countAfterCompletion); // Polled again
 
-      await worker.stop();
+      await stop(worker);
     });
   });
 
@@ -409,7 +426,7 @@ describe("Worker", () => {
 
       expect(worker.getStats().activeJobs).toBe(0);
 
-      await worker.stop();
+      await stop(worker);
       expect(worker.getStats().running).toBe(false);
     });
   });
@@ -433,7 +450,7 @@ describe("Worker", () => {
       await worker.start();
       expect(worker.isRunning()).toBe(true);
       await tick(30);
-      await worker.stop();
+      await stop(worker);
       expect(worker.isRunning()).toBe(false);
 
       const countAfterFirstCycle = claimCount;
@@ -442,7 +459,7 @@ describe("Worker", () => {
       await worker.start();
       expect(worker.isRunning()).toBe(true);
       await tick(30);
-      await worker.stop();
+      await stop(worker);
       expect(worker.isRunning()).toBe(false);
 
       // Should have claimed more jobs in second cycle
@@ -470,7 +487,7 @@ describe("Worker", () => {
 
       expect(warnCalls).toContain("Worker is already running");
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("warns but does not error when stopping a non-running worker", async () => {
@@ -489,7 +506,7 @@ describe("Worker", () => {
         processJob: async () => {},
       });
 
-      await worker.stop(); // Should warn, not error
+      await stop(worker); // Should warn, not error
 
       expect(warnCalls).toContain("Worker is not running");
     });
@@ -512,7 +529,7 @@ describe("Worker", () => {
           return null;
         },
         processJob: async () => {
-          await tick(10); // Quick job
+          await sleep(10); // Quick job
         },
       });
 
@@ -522,7 +539,7 @@ describe("Worker", () => {
       expect(worker.getStats().totalSucceeded).toBe(1);
       expect(worker.getStats().totalFailed).toBe(0);
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("continues processing after a timed-out job", async () => {
@@ -558,7 +575,7 @@ describe("Worker", () => {
       expect(worker.getStats().totalFailed).toBe(1);
       expect(worker.getStats().totalSucceeded).toBe(1);
 
-      await worker.stop();
+      await stop(worker);
     });
   });
 
@@ -600,7 +617,7 @@ describe("Worker", () => {
       expect(reported[0].job.payload).toEqual({ feedId: "feed-failing-job" });
       expect(worker.getStats().totalFailed).toBe(1);
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("reports a timed-out job to onJobError exactly once", async () => {
@@ -633,7 +650,7 @@ describe("Worker", () => {
       expect(reported[0].error).toBeInstanceOf(Error);
       expect((reported[0].error as Error).message).toMatch(/timed out/);
 
-      await worker.stop();
+      await stop(worker);
     });
   });
 
@@ -654,7 +671,7 @@ describe("Worker", () => {
       const stats = worker.getStats();
       expect(stats.lastActivityAt.getTime()).toBeGreaterThanOrEqual(beforeStart.getTime());
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("updates lastActivityAt when jobs complete", async () => {
@@ -672,7 +689,7 @@ describe("Worker", () => {
           return null;
         },
         processJob: async () => {
-          await tick(20);
+          await sleep(20);
         },
       });
 
@@ -683,7 +700,7 @@ describe("Worker", () => {
       // lastActivityAt should be very recent (after job completed)
       expect(Date.now() - stats.lastActivityAt.getTime()).toBeLessThan(200);
 
-      await worker.stop();
+      await stop(worker);
     });
   });
 
@@ -727,7 +744,7 @@ describe("Worker", () => {
       expect(processed).toContain("after-recovery");
       expect(worker.isRunning()).toBe(true);
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("keeps polling (without busy-spinning) while claims fail persistently", async () => {
@@ -774,7 +791,7 @@ describe("Worker", () => {
       // per poll — otherwise a multi-minute outage floods Sentry.
       expect(claimErrors).toHaveLength(1);
 
-      await worker.stop();
+      await stop(worker);
     });
 
     it("re-reports a new outage after claiming has recovered in between", async () => {
@@ -813,7 +830,7 @@ describe("Worker", () => {
       expect(claimErrors).toHaveLength(2);
       expect(recoveryLogs).toContain("Job claiming recovered after earlier failures");
 
-      await worker.stop();
+      await stop(worker);
     });
   });
 });
