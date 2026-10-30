@@ -4,6 +4,7 @@
 - **No mocks of internal code** — structure logic to be pure, or refactor until it is.
 - **Test the live path, not a lookalike.** A test is not a reason for code in `src/` to exist (`pnpm knip:production` fails on it): assert against what production calls and delete the stray helper. Query helpers that only read rows back for assertions belong in the test file.
 - Don't assert pure-styling classes, snapshot static tables, check prop pass-through on native inputs, or bare `instanceof Error`; use `it.each` for trivial variants.
+- A unit test with a wall-clock budget goes in a `*.timing.test.ts` file, which runs serially after the parallel batch; move just those tests there, not their whole file.
 - Seed integration rows with the factories in `tests/integration/helpers.ts`; extend one rather than writing a local `db.insert`.
 - Integration files run in parallel, each worker on its own copy of the test database and its own Redis logical DB (`tests/integration/global-setup.ts`), but pub/sub channels are shared by all workers. Publish only to channels named by a user or feed the test created: an event on a fixed channel such as site-status (e.g. `admin.setAnnouncement`) reaches every other file's SSE connections.
 - Assert on Redis pub/sub with `tests/utils/pubsub.ts`. A test whose **setup** mutates through a service or tRPC caller must use `subscribeAndDrain`, never subscribe afterwards — the setup's own event can land inside the window under test (#1427).
