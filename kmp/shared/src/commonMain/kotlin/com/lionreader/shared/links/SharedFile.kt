@@ -16,7 +16,7 @@ private val EXTENSION_BY_MIME_TYPE =
     )
 
 /** What the server takes: a file it converts to an article, or an ebook it imports. */
-private val ACCEPTED_EXTENSIONS = UPLOAD_EXTENSIONS + EBOOK_UPLOAD_EXTENSIONS
+val ACCEPTED_UPLOAD_EXTENSIONS: List<String> = UPLOAD_EXTENSIONS + EBOOK_UPLOAD_EXTENSIONS
 
 /** Whether [filename] is an ebook, which imports as a collection rather than one article. */
 fun isEbookFilename(filename: String): Boolean = EBOOK_UPLOAD_EXTENSIONS.any {
@@ -37,13 +37,14 @@ const val MAX_UPLOAD_FILENAME_CHARS = 200
  */
 fun uploadFilename(displayName: String?, mimeType: String?): String? {
     val name = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: "Shared file"
-    val own = ACCEPTED_EXTENSIONS.firstOrNull { name.endsWith(it, ignoreCase = true) }
+    val own = ACCEPTED_UPLOAD_EXTENSIONS.firstOrNull { name.endsWith(it, ignoreCase = true) }
     val stem = if (own != null) name.dropLast(own.length) else name
     val extension =
         if (own != null) name.takeLast(own.length)
         else {
             val mediaType = mimeType?.substringBefore(';')?.trim()?.lowercase()
-            EXTENSION_BY_MIME_TYPE[mediaType]?.takeIf { it in ACCEPTED_EXTENSIONS } ?: return null
+            EXTENSION_BY_MIME_TYPE[mediaType]?.takeIf { it in ACCEPTED_UPLOAD_EXTENSIONS }
+                ?: return null
         }
     return stem.take(MAX_UPLOAD_FILENAME_CHARS - extension.length) + extension
 }

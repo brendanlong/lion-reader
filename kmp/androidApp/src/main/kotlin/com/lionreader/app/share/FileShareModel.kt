@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 sealed interface FileShareState {
+    /** Not open yet: closing the dialog now would end the read grant, losing the file. */
+    data object Opening : FileShareState
+
     data object Copying : FileShareState
 
     /** Queued as [SaveWorker] work named [workName]. */
@@ -19,12 +22,13 @@ sealed interface FileShareState {
 }
 
 /**
- * Copies a shared file ([copySharedFile]) and queues its save, once per dialog: a view model, so a
- * rotation mid-copy neither loses the file nor copies it twice. The copy runs in the app's scope,
- * so closing the dialog mid-copy (a slow cloud provider) still saves the file.
+ * Opens a shared file ([openSharedFile]), copies it ([copySharedFile]) and queues its save, once
+ * per dialog: a view model, so a rotation mid-copy neither loses the file nor copies it twice. The
+ * copy runs in the app's scope, so closing the dialog once the file is open (a slow cloud provider)
+ * still saves the file.
  */
 class FileShareModel(application: Application) : AndroidViewModel(application) {
-    private val _state = MutableStateFlow<FileShareState>(FileShareState.Copying)
+    private val _state = MutableStateFlow<FileShareState>(FileShareState.Opening)
     val state: StateFlow<FileShareState> = _state
     private var started = false
 
@@ -33,11 +37,17 @@ class FileShareModel(application: Application) : AndroidViewModel(application) {
         started = true
         val app = getApplication<Application>()
         app.graph.appScope.launch(Dispatchers.IO) {
+            val opened = openSharedFile(app, uri, sharedType)
             _state.value =
-                when (val result = copySharedFile(app, uri, sharedType)) {
-                    is CopyResult.Copied ->
-                        FileShareState.Saving(SaveWorker.enqueue(app, result.file))
-                    is CopyResult.Failed -> FileShareState.Failed(result.message)
+                when (opened) {
+                    is ShareFailed -> FileShareState.Failed(opened.message)
+                    is SharedStream -> {
+                        _state.value = FileShareState.Copying
+                        when (val copied = copySharedFile(app, opened)) {
+                            is CopiedFile -> FileShareState.Saving(SaveWorker.enqueue(app, copied))
+                            is ShareFailed -> FileShareState.Failed(copied.message)
+                        }
+                    }
                 }
         }
     }

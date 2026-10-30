@@ -42,8 +42,8 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                             ?: return Result.failure(
                                 workDataOf(ERROR to "The shared file is no longer available.")
                             )
-                    // The copy is named for the share (sharedFileCopy), so its name makes every
-                    // upload of this share one save.
+                    // The copy is named for its bytes (CopiedFile), so every upload of the same
+                    // file is one save.
                     val filename = inputData.getString(FILENAME) ?: file.name
                     connection.saveFile(filename, bytes, idempotencyKey = file.name).also {
                         if (it != SaveOutcome.Retry) withContext(Dispatchers.IO) { file.delete() }
@@ -82,7 +82,7 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         /**
          * Queues the upload of [file] and returns its work name, which is the copy's: sharing the
          * same file again replaces a pending save, like a link's, and the server keeps it to one
-         * article (see `saveFile`).
+         * article (see `saveFile`). A different file is a different save, wherever it came from.
          */
         fun enqueue(context: Context, file: CopiedFile): String {
             val name = "save-file:${file.path}"

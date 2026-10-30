@@ -5,10 +5,12 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.lionreader.shared.api.ServerLimits
+import com.lionreader.shared.links.ACCEPTED_UPLOAD_EXTENSIONS
 import com.lionreader.shared.links.isEbookFilename
 import com.lionreader.shared.links.uploadFilename
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -18,44 +20,42 @@ import java.util.concurrent.TimeUnit
  */
 private val ABANDONED_AFTER_MILLIS = TimeUnit.DAYS.toMillis(30)
 
-private fun sharedFilesDir(context: Context) = File(context.filesDir, "shared-files")
+internal fun sharedFilesDir(context: Context) = File(context.filesDir, "shared-files")
 
 /** Deletes every copy, when their saves are cancelled (signing out). */
 fun deleteSharedFileCopies(context: Context) {
     sharedFilesDir(context).deleteRecursively()
 }
 
-/** A shared file copied into app storage, so a background save can read it later. */
-data class CopiedFile(val path: String, val filename: String)
+sealed interface OpenResult
 
-sealed interface CopyResult {
-    data class Copied(val file: CopiedFile) : CopyResult
+sealed interface CopyResult
 
-    data class Failed(val message: String) : CopyResult
-}
+data class ShareFailed(val message: String) : OpenResult, CopyResult
+
+/** A shared file, opened while the share's read grant lasted, for [copySharedFile] to read. */
+class SharedStream(val input: InputStream, val filename: String) : OpenResult
 
 /**
- * Where a shared file is copied: named after its URI, so the same share delivered again (the dialog
- * recreated after process death) is the same save. The name is its upload's idempotency key.
+ * A shared file copied into app storage, so a background save can read it later. Its name is a hash
+ * of its bytes, which is also its upload's idempotency key: the same file shared again (or the
+ * dialog recreated after process death) is the same save, and a different file is a different save
+ * even when the sending app shares every file from the same URI.
  */
-fun sharedFileCopy(context: Context, uri: Uri): File {
-    val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray())
-    val name = digest.take(16).joinToString("") { "%02x".format(it) }
-    return File(sharedFilesDir(context).apply { mkdirs() }, name)
-}
+data class CopiedFile(val path: String, val filename: String) : CopyResult
 
 /**
- * Copies a file another app shared to [sharedFileCopy]. The read grant on [uri] lasts only as long
- * as the share dialog, and a save can wait days for a network, so the save job reads the copy
- * instead. Blocking IO: call it off the main thread.
+ * Opens a file another app shared, and decides the name to upload it under. The read grant on [uri]
+ * lasts only as long as the share dialog, so the dialog stays until this returns; once open, the
+ * stream can be read after the dialog is gone. Blocking IO: call it off the main thread.
  *
  * Only another app's `content://` URI is read: the share target is exported, and a `file://` or our
  * own provider's URI would read the app's private files (its tokens) with its own permissions and
  * upload them.
  */
-fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult {
+fun openSharedFile(context: Context, uri: Uri, sharedType: String?): OpenResult {
     if (!isAnotherAppsContent(context, uri)) {
-        return CopyResult.Failed("Lion Reader can only save files shared by another app.")
+        return ShareFailed("Lion Reader can only save files shared by another app.")
     }
     val resolver = context.contentResolver
     // A provider can fail or have its grant revoked at any call; only the stream matters.
@@ -78,23 +78,39 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
         }
     val filename =
         uploadFilename(displayName, providerType ?: sharedType)
-            ?: return CopyResult.Failed(
-                "Lion Reader can save PDFs, Word documents, and HTML, Markdown, and text files."
+            ?: return ShareFailed(
+                "Lion Reader can save only these kinds of file: " +
+                    ACCEPTED_UPLOAD_EXTENSIONS.joinToString(", ") +
+                    "."
             )
+    val input =
+        try {
+            resolver.openInputStream(uri)
+        } catch (_: Exception) {
+            null
+        } ?: return ShareFailed(COULD_NOT_READ)
+    return SharedStream(input, filename)
+}
 
+/**
+ * Copies [shared] into app storage ([CopiedFile]), closing it: a save can wait days for a network,
+ * so the save job reads the copy. Blocking IO: call it off the main thread.
+ */
+fun copySharedFile(context: Context, shared: SharedStream): CopyResult {
     val maxBytes =
-        if (isEbookFilename(filename)) ServerLimits.EBOOK_UPLOAD_BYTES
+        if (isEbookFilename(shared.filename)) ServerLimits.EBOOK_UPLOAD_BYTES
         else ServerLimits.UPLOAD_BYTES
-    val copy = sharedFileCopy(context, uri)
+    val dir = sharedFilesDir(context).apply { mkdirs() }
     deleteAbandoned(context)
-    // Written beside the copy and renamed over it, so an upload reading an earlier copy of the
-    // same share never sees it half rewritten.
-    val partial = File(copy.path + ".partial")
+    // Written aside and renamed into place, so an upload reading an earlier copy of the same file
+    // never sees it half written.
+    var partial: File? = null
     return try {
-        val input = resolver.openInputStream(uri) ?: throw IOException("No stream")
+        val written = File.createTempFile("copy", ".partial", dir).also { partial = it }
+        val digest = MessageDigest.getInstance("SHA-256")
         var tooLarge = false
-        input.use { source ->
-            partial.outputStream().use { sink ->
+        shared.input.use { source ->
+            written.outputStream().use { sink ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
                 while (true) {
@@ -105,23 +121,28 @@ fun copySharedFile(context: Context, uri: Uri, sharedType: String?): CopyResult 
                         tooLarge = true
                         break
                     }
+                    digest.update(buffer, 0, read)
                     sink.write(buffer, 0, read)
                 }
             }
         }
+        val copy = File(dir, digest.digest().joinToString("") { "%02x".format(it) })
         if (tooLarge) {
-            partial.delete()
-            CopyResult.Failed("That file is too large to save.")
-        } else if (!partial.renameTo(copy)) {
+            written.delete()
+            ShareFailed("That file is too large to save.")
+        } else if (!written.renameTo(copy)) {
             throw IOException("Couldn't rename the copy")
         } else {
-            CopyResult.Copied(CopiedFile(copy.path, filename))
+            CopiedFile(copy.path, shared.filename)
         }
     } catch (_: Exception) {
-        partial.delete()
-        CopyResult.Failed("Lion Reader couldn't read the shared file.")
+        shared.input.close()
+        partial?.delete()
+        ShareFailed(COULD_NOT_READ)
     }
 }
+
+private const val COULD_NOT_READ = "Lion Reader couldn't read the shared file."
 
 private fun isAnotherAppsContent(context: Context, uri: Uri): Boolean {
     if (uri.scheme != ContentResolver.SCHEME_CONTENT) return false
