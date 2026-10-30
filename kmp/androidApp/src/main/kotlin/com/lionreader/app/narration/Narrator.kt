@@ -694,7 +694,17 @@ class Narrator(
 
             override fun onPlayerError(error: PlaybackException) {
                 val chunk = player.currentMediaItem?.mediaId?.toIntOrNull()
-                if (chunk != null && error.causes().any { it is SpeechStreamBroken }) {
+                if (chunk == null) {
+                    // The placeholder, given up on: what it waits for hasn't come. Paused but
+                    // prepared, so playing again waits for it again.
+                    player.pause()
+                    player.prepare()
+                    _notice.value =
+                        if (onArticle == null) "Narration paused: this article didn't load."
+                        else "Narration paused: the voice didn't get ready."
+                    return
+                }
+                if (error.causes().any { it is SpeechStreamBroken }) {
                     replay(chunk)
                     return
                 }

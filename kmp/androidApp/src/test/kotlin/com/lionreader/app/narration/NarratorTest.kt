@@ -556,6 +556,20 @@ class NarratorTest {
     }
 
     @Test
+    fun anArticleWhoseTextNeverComesPausesNarration() {
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.follow("b", "Title b")
+        // Past the player's stuck-buffering timeout (ExoPlayer.Builder's default).
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(11))
+        idleUntil { narrator.notice.value != null }
+
+        assertEquals("b", state?.entryId)
+        assertFalse(state!!.playing)
+        assertTrue(narrator.notice.value!!.startsWith("Narration paused"))
+    }
+
+    @Test
     fun listeningFromASelectionStartsThere() {
         narrator.listenFrom(article("a", "One.", "Two.", "Three."), 1)
         idle()
