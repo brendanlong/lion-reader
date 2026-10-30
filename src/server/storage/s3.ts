@@ -211,8 +211,31 @@ export async function putArchiveObject(
   await ensureOk(response, "PUT");
 }
 
+/**
+ * `key`'s bytes and content type from the public bucket, or null if there's no
+ * such object.
+ */
+export async function getPublicObject(
+  key: string
+): Promise<{ data: Buffer; contentType: string | null } | null> {
+  const { client, bucket } = requireBucket("public");
+  const response = await client.fetch(getObjectRequestUrl(bucket, key), {
+    method: "GET",
+    signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
+  });
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
+  await ensureOk(response, "GET");
+  return {
+    data: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type"),
+  };
+}
+
 /** Deletes `key`; deleting a missing key succeeds. */
-async function deleteObject(which: BucketName, key: string): Promise<void> {
+export async function deleteObject(which: BucketName, key: string): Promise<void> {
   const { client, bucket } = requireBucket(which);
   const response = await client.fetch(getObjectRequestUrl(bucket, key), {
     method: "DELETE",
@@ -257,7 +280,7 @@ function parseListObjectsV2(xml: string): ListObjectsPage {
 }
 
 /** Every key under `prefix`, a page (up to 1000) at a time. */
-async function* listKeys(which: BucketName, prefix: string): AsyncGenerator<string[]> {
+export async function* listKeys(which: BucketName, prefix: string): AsyncGenerator<string[]> {
   const { client, bucket } = requireBucket(which);
   let continuationToken: string | null = null;
   do {
