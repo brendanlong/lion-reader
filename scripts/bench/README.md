@@ -16,7 +16,7 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
   comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.
-- `baseline.json` is a run from 2026-10-26 (#2171), for seeing which
+- `baseline.json` is a run from 2026-10-30 (#2214), for seeing which
   benchmarks are heavy and how they plan, not the "before" of a comparison.
   Re-record it when an index it names is dropped or a benchmark's statements
   change.
