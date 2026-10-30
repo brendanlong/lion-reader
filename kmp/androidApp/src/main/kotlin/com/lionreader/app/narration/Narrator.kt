@@ -15,8 +15,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.lionreader.shared.narration.NEXT_ARTICLE
-import com.lionreader.shared.narration.NO_MORE_ARTICLES
+import com.lionreader.shared.api.NarrationCues
 import com.lionreader.shared.narration.NarratedArticle
 import com.lionreader.shared.narration.NarrationList
 import com.lionreader.shared.narration.NarrationState
@@ -377,8 +376,8 @@ class Narrator(
     private fun closing(audio: Current.Article): List<String> =
         when {
             !settings.value.narrationContinue -> emptyList()
-            list?.after(audio.article.entryId) != null -> listOf(NEXT_ARTICLE)
-            else -> listOf(NO_MORE_ARTICLES)
+            list?.after(audio.article.entryId) != null -> listOf(NarrationCues.NEXT_ARTICLE)
+            else -> listOf(NarrationCues.NO_MORE_ARTICLES)
         }
 
     /** Where narration goes on to from [entryId]'s end, if it does. */

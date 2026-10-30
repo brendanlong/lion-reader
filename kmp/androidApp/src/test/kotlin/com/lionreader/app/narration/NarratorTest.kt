@@ -5,8 +5,7 @@ import android.os.Looper
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.lionreader.shared.narration.NEXT_ARTICLE
-import com.lionreader.shared.narration.NO_MORE_ARTICLES
+import com.lionreader.shared.api.NarrationCues
 import com.lionreader.shared.narration.NarratedArticle
 import com.lionreader.shared.narration.NarrationList
 import com.lionreader.shared.narration.SpeechInterrupted
@@ -216,7 +215,7 @@ class NarratorTest {
         idleUntil { list.opened.isNotEmpty() }
 
         assertEquals(listOf("b"), list.opened)
-        assertEquals(listOf("One.", NEXT_ARTICLE), synthesized)
+        assertEquals(listOf("One.", NarrationCues.NEXT_ARTICLE), synthesized)
         // On until the article screen turns to the next, and narration follows it there.
         assertEquals("a", state?.entryId)
         assertPlayerWaits()
@@ -225,7 +224,7 @@ class NarratorTest {
         narrator.follow("b", "Title b")
         narrator.supply(article("b", "Two."))
         idleUntil { state == null }
-        assertEquals(listOf("Two.", NO_MORE_ARTICLES), synthesized)
+        assertEquals(listOf("Two.", NarrationCues.NO_MORE_ARTICLES), synthesized)
         assertEquals(listOf("b"), list.opened)
     }
 
