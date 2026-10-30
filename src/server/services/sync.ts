@@ -512,7 +512,7 @@ export async function collectSyncEvents(
   // one has nothing to diff against (sync.cursors establishes them).
   const { entries: entriesCursor, subscriptions: subscriptionsCursor, tags: tagsCursor } = cursors;
   const catchUpStart = cursors.entriesSince ?? entriesCursor;
-  const [entryResult, subscriptionResult, tagResult, collectionCounts] = await Promise.all([
+  const [entryResult, subscriptionResult, tagResult] = await Promise.all([
     entriesCursor
       ? collectEntryEvents(
           db,
@@ -523,11 +523,12 @@ export async function collectSyncEvents(
       : null,
     subscriptionsCursor ? collectSubscriptionEvents(db, userId, subscriptionsCursor) : null,
     tagsCursor ? collectTagEvents(db, userId, tagsCursor) : null,
-    options.collectionCounts && catchUpStart
-      ? collectChangedCollectionCounts(db, userId, catchUpStart)
-      : undefined,
   ]);
   const hasMore = entryResult?.hasMore ?? false;
+  const collectionCounts =
+    options.collectionCounts && catchUpStart && !hasMore
+      ? await collectChangedCollectionCounts(db, userId, catchUpStart)
+      : undefined;
 
   const events = [
     ...(entryResult?.events ?? []),
@@ -540,7 +541,7 @@ export async function collectSyncEvents(
   return {
     events,
     hasMore,
-    ...(!hasMore && collectionCounts && { counts: collectionCounts }),
+    ...(collectionCounts && { counts: collectionCounts }),
     next: {
       entries: entryResult?.next?.entries ?? cursors.entries,
       entriesAfterId: entryResult?.next?.entriesAfterId ?? cursors.entriesAfterId,
