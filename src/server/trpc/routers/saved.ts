@@ -24,7 +24,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
+import { createTRPCRouter, scopedProtectedProcedure, uploadProcedure } from "../trpc";
 import { READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
@@ -195,7 +195,7 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title override
    * @returns The saved article
    */
-  uploadFile: readerProcedure
+  uploadFile: uploadProcedure
     .meta({
       openapi: {
         method: "POST",

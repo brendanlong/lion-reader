@@ -28,6 +28,7 @@ import {
 } from "@/server/auth/admin-session";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
+import { READER_SCOPES } from "@/server/auth/api-token";
 import { logger } from "@/lib/logger";
 import { trackTrpcProcedure } from "@/server/metrics/metrics";
 import * as Sentry from "@sentry/nextjs";
@@ -119,16 +120,28 @@ function reportUnexpectedError(
  */
 export const publicProcedure = t.procedure.use(timingMiddleware);
 
+export function unauthenticatedError(): TRPCError {
+  return new TRPCError({
+    code: "UNAUTHORIZED",
+    message: "You must be logged in to access this resource",
+  });
+}
+
+export function insufficientScopeError(requiredScopes: readonly OAuthScope[]): TRPCError {
+  const list = requiredScopes.map((s) => `'${s}'`).join(" or ");
+  return new TRPCError({
+    code: "FORBIDDEN",
+    message: `This operation requires the ${list} scope`,
+  });
+}
+
 /**
  * Middleware that enforces authentication.
  * Throws UNAUTHORIZED if no valid session exists.
  */
 const authMiddleware = t.middleware(({ ctx, next }) => {
   if (!ctx.session || !ctx.sessionToken) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "You must be logged in to access this resource",
-    });
+    throw unauthenticatedError();
   }
 
   return next({
@@ -236,13 +249,7 @@ function createScopeMiddleware(requiredScopes: OAuthScope[]) {
     // Session auth (browser) has full access - no scope restrictions.
     if (ctx.authType !== "session") {
       const hasScope = requiredScopes.some((scope) => ctx.scopes.includes(scope));
-      if (!hasScope) {
-        const list = requiredScopes.map((s) => `'${s}'`).join(" or ");
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `This operation requires the ${list} scope`,
-        });
-      }
+      if (!hasScope) throw insufficientScopeError(requiredScopes);
     }
 
     // Pass through the narrowed types from authMiddleware
@@ -271,6 +278,16 @@ export function scopedProtectedProcedure(scopes: OAuthScope | OAuthScope[]) {
     .use(confirmedMiddleware)
     .use(createScopeMiddleware(requiredScopes));
 }
+
+/**
+ * The scopes a token needs for the procedures that take a file
+ * (`UPLOAD_PATHS`), which `serveUpload` (`http.ts`) checks before reading the
+ * body.
+ */
+export const UPLOAD_SCOPES = READER_SCOPES;
+
+/** For the procedures that take a file. */
+export const uploadProcedure = scopedProtectedProcedure(UPLOAD_SCOPES);
 
 /**
  * Like {@link scopedProtectedProcedure} but without the signup-confirmation

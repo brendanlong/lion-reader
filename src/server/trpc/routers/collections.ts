@@ -9,7 +9,7 @@
 
 import { z } from "zod";
 
-import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
+import { createTRPCRouter, scopedProtectedProcedure, uploadProcedure } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import {
   booleanQueryParam,
@@ -87,7 +87,7 @@ export const collectionsRouter = createTRPCRouter({
    * as an article positioned in reading order. Like `create`, an existing
    * collection with the book's name is reused (`created: false`).
    */
-  importEbook: protectedProcedure
+  importEbook: uploadProcedure
     .meta({
       openapi: {
         method: "POST",

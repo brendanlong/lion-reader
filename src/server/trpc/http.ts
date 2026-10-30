@@ -5,12 +5,12 @@
 
 import { TRPCError } from "@trpc/server";
 import { maxUploadBodyBytes, UPLOAD_PATHS } from "@/lib/upload-limits";
-import { READER_SCOPES } from "@/server/auth/api-token";
 import { authenticateCredential, getBearerOrSessionCookie } from "@/server/auth/credential";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
 import { startHttpTimer } from "@/server/metrics/metrics";
 import { TRPC_CREDENTIAL_KINDS, type TrpcCredential } from "@/server/trpc/context";
+import { insufficientScopeError, unauthenticatedError, UPLOAD_SCOPES } from "@/server/trpc/trpc";
 
 type TrpcErrorHandler = (opts: { error: TRPCError; path?: string }) => void;
 
@@ -57,15 +57,9 @@ type Handle = (
 function authError(reason: "unauthenticated" | "insufficient_scope" | "unconfirmed"): TRPCError {
   switch (reason) {
     case "unauthenticated":
-      return new TRPCError({
-        code: "UNAUTHORIZED",
-        message: "You must be logged in to access this resource",
-      });
+      return unauthenticatedError();
     case "insufficient_scope":
-      return new TRPCError({
-        code: "FORBIDDEN",
-        message: "This operation requires a reader scope",
-      });
+      return insufficientScopeError(UPLOAD_SCOPES);
     case "unconfirmed":
       return errors.signupConfirmationRequired();
   }
@@ -75,8 +69,8 @@ function authError(reason: "unauthenticated" | "insufficient_scope" | "unconfirm
  * Serves an upload, which bypasses the proxy (`UPLOAD_PATHS`), so nothing
  * else bounds what it sends, and whose body the REST adapter reads whole
  * before authenticating. So it's rejected without reading its body unless
- * its credential passes the checks its procedure makes (every upload
- * procedure is `scopedProtectedProcedure(READER_SCOPES)`) and it declares no
+ * its credential passes the checks its procedure (`uploadProcedure`) makes
+ * and it declares no
  * more than its endpoint's limit, and fails once it passes the limit if it
  * declares no length.
  */
@@ -89,7 +83,7 @@ async function serveUpload(
 ): Promise<Response> {
   const auth = await authenticateCredential(getBearerOrSessionCookie(req.headers), {
     accept: TRPC_CREDENTIAL_KINDS,
-    requiredScopes: READER_SCOPES,
+    requiredScopes: UPLOAD_SCOPES,
     requireConfirmed: true,
   });
   if (!auth.ok) return reject(authError(auth.reason), onError);
