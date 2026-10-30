@@ -1,6 +1,6 @@
-# Frontend Data Flow - React Query as the network layer, a local entry store for entries
-# Entries render from a TanStack DB store fed by fetches, mutations and SSE; counts,
-# subscriptions and tags stay in React Query with direct cache updates
+# Frontend Data Flow - React Query as the network layer, a local store for rendering
+# Entries, subscriptions, tags and unread counts render from a TanStack DB store fed
+# by fetches, mutations and SSE (src/FRONTEND_STATE.md)
 
 direction: down
 
@@ -45,12 +45,9 @@ client: {
     style.fill: "#ffcc80"
 
     description: |md
-      **Network layer** (results ingested into the local store)
-      - entries.list (infinite)
-      - entries.get (content stays here)
-      - entries.countLists
-      - subscriptions.list / get
-      - tags.list
+      **Network layer**: results are ingested into the
+      local store; only entry content and pagination
+      and loading state are read from here
     |
   }
 
@@ -76,9 +73,8 @@ client: {
 
     description: |md
       **src/lib/cache/**
-      - applyUnreadCounts (absolute counts)
-      - handleSubscriptionCreated/Deleted
-      - applyTagChange / applyTagDeleted
+      One operation per state change, shared by the
+      mutation response and its event
     |
   }
 }
@@ -162,16 +158,12 @@ server.api -> client.react_query: "Initial fetch" {
 # Connections - Real-time Updates
 # ==============================================================================
 
-server.sse -> hooks.useRealtimeUpdates: "SSE events\n(new_entry, subscription_*)" {
+server.sse -> hooks.useRealtimeUpdates: "SSE events" {
   style.stroke: "#388e3c"
   style.stroke-width: 2
 }
 
-hooks.useRealtimeUpdates -> client.cache_helpers: "subscription_created\nsubscription_deleted" {
-  style.stroke: "#388e3c"
-}
-
-hooks.useRealtimeUpdates -> client.cache_helpers: "set counts\n(new_entry, entry_state_changed)" {
+hooks.useRealtimeUpdates -> client.cache_helpers: "handleSyncEvent" {
   style.stroke: "#388e3c"
 }
 
@@ -180,16 +172,21 @@ hooks.useRealtimeUpdates -> client.local_db: "entry state/metadata,\nlive list i
   style.stroke-width: 2
 }
 
-client.cache_helpers -> client.react_query: "Direct cache updates" {
+client.cache_helpers -> client.local_db: "Direct store updates" {
   style.stroke: "#00796b"
   style.stroke-width: 2
+}
+
+client.cache_helpers -> client.react_query: "Invalidations" {
+  style.stroke: "#00796b"
+  style.stroke-dash: 3
 }
 
 # ==============================================================================
 # Connections - Query Data Flow
 # ==============================================================================
 
-client.react_query -> client.local_db: "Ingest entries.list /\nentries.get results" {
+client.react_query -> client.local_db: "Ingest query results" {
   style.stroke: "#00796b"
   style.stroke-width: 2
 }
@@ -207,7 +204,7 @@ ui.suspending_list -> ui.entry_list: "Entries with\nread/starred state" {
   style.stroke-width: 2
 }
 
-client.react_query -> ui.sidebar: "Subscriptions/tags\nwith counts" {
+client.local_db -> ui.sidebar: "Subscriptions/tags\nwith counts" {
   style.stroke: "#7b1fa2"
 }
 
