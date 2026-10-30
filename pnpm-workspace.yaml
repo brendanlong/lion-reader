@@ -26,10 +26,6 @@ engineStrict: true
 # version is past the cooldown.
 minimumReleaseAge: 10080
 
-minimumReleaseAgeExclude:
-  # Remove once past the cooldown: 2026-10-29 21:25 UTC.
-  - serialize-javascript@7.1.3
-
 allowBuilds:
   "@sentry/cli": true
   argon2: true
