@@ -28,6 +28,7 @@ import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
 import { EntryArticleSkeleton } from "./EntryArticle";
 import { useEntryContentOptions } from "./EntryContentOptions";
+import { useNarrationContinuedHere } from "@/components/narration/useEntryNarration";
 
 /**
  * Props for the EntryContent component.
@@ -87,6 +88,8 @@ function EntryContentInner({
   // Track whether we've sent the auto-mark-read mutation
   const hasSentMarkReadMutation = useRef(false);
 
+  const narrationContinued = useNarrationContinuedHere(entryId);
+
   // Fetch the entry with a non-suspending query so the loading state is
   // rendered inline (see the `!entry` branch below) instead of via a Suspense
   // fallback. A committed Suspense fallback is pinned on screen for React's
@@ -138,6 +141,7 @@ function EntryContentInner({
     fetchFullContent,
     isShowingFullContent,
     isFetching: isFullContentFetching,
+    isAwaiting: isAwaitingFullContent,
     toggle: toggleFetchFullContent,
   } = useFullContent(entryId, entry, fullContentSubscriptionId);
 
@@ -303,6 +307,7 @@ function EntryContentInner({
         footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
         unsubscribeUrl={entry.unsubscribeUrl}
         onSwipeNext={onSwipeNext}
+        nextEntryId={nextEntryId}
         onSwipePrevious={onSwipePrevious}
         // Full content props - only available if entry has a subscription
         fullContentCleaned={entry.fullContentCleaned}
@@ -310,6 +315,8 @@ function EntryContentInner({
         fullContentError={entry.fullContentError}
         fetchFullContent={fetchFullContent}
         isFullContentFetching={isFullContentFetching}
+        isAwaitingFullContent={isAwaitingFullContent}
+        narrationContinued={narrationContinued}
         onToggleFetchFullContent={toggleFetchFullContent}
         // Summarization props
         isSummarizationAvailable={isSummarizationAvailable}

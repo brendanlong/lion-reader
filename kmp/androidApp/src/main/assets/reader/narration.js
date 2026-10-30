@@ -96,12 +96,16 @@
     return /[\p{L}\p{N}]/u.test(text);
   }
   var END_OF_ARTICLE = "End of article.";
-  function withEndOfArticle(narration) {
+  function withEndOfArticle(narration, following) {
     const paragraphs = splitNarrationParagraphs(narration.narrationText);
     if (!paragraphs.some(isSpeakable)) return narration;
+    const closing = following ? [END_OF_ARTICLE, following] : [END_OF_ARTICLE];
     return {
-      narrationText: [...paragraphs, END_OF_ARTICLE].join("\n\n"),
-      paragraphMap: [...narration.paragraphMap, { n: paragraphs.length, o: -1 }]
+      narrationText: [...paragraphs, ...closing].join("\n\n"),
+      paragraphMap: [
+        ...narration.paragraphMap,
+        ...closing.map((_, i) => ({ n: paragraphs.length + i, o: -1 }))
+      ]
     };
   }
   function narrationParagraphForElement(paragraphMap2, elementIndex) {

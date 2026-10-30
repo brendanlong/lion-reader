@@ -44,6 +44,7 @@ import {
   type ParagraphMapEntry,
 } from "@/lib/narration/client-paragraph-ids";
 import {
+  isSpeakable,
   narrationParagraphForElement,
   splitNarrationParagraphs,
   withEndOfArticle,
@@ -116,6 +117,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     showFullContent,
     showOriginal,
     prerecordedVoice,
+    following,
   } = config;
 
   // State
@@ -185,6 +187,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     settings.cloudPauseSeconds,
   ]);
 
+  // The players outlive renders, so they call the current callbacks through here.
+  const endingsRef = useRef(config);
+  useEffect(() => {
+    endingsRef.current = config;
+  });
+
   // Initialize narrator instance (for browser voices)
   useEffect(() => {
     if (!isSupported) return;
@@ -206,8 +214,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       }
     });
 
+    const unsubscribeFinished = narratorRef.current.onFinished(() => {
+      if (!usesBufferedPlayer) endingsRef.current.onFinished?.();
+    });
+
     return () => {
       unsubscribe();
+      unsubscribeFinished();
       narratorRef.current?.stop();
       narratorRef.current = null;
     };
@@ -275,6 +288,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           currentParagraph: 0,
           currentNarrationParagraph: 0,
         }));
+        endingsRef.current.onFinished?.();
       },
     }),
     []
@@ -369,7 +383,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
           });
           generated = { narrationText: result.narration, paragraphMap: result.paragraphMap };
         }
-        const { narrationText: narration, paragraphMap } = withEndOfArticle(generated);
+        const { narrationText: narration, paragraphMap } = withEndOfArticle(generated, following);
 
         if (isStale()) {
           releasePrimedAudio();
@@ -377,13 +391,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         }
 
         paragraphMapRef.current = paragraphMap;
-        if (narration) {
+        if (splitNarrationParagraphs(narration).some(isSpeakable)) {
           setNarrationText(narration);
           setProcessedHtml(processedHtmlResult);
           await start(narration);
         } else {
           // Nothing to narrate — release the primed media-session audio.
           releasePrimedAudio();
+          endingsRef.current.onNothingToSay?.();
         }
       } catch (error) {
         console.error("Failed to generate narration:", error);
@@ -456,6 +471,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     generateMutation,
     id,
     content,
+    following,
     showFullContent,
     showOriginal,
     getOrCreatePiperPlayer,

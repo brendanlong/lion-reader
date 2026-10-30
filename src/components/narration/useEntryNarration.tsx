@@ -18,6 +18,12 @@ import {
 import { useNarrationHighlight } from "./useNarrationHighlight";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { seekTargetElement } from "@/lib/narration/seek-target";
+import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "@/lib/narration/paragraph-map";
+import {
+  clearNarrationContinuation,
+  continueNarrationTo,
+  narrationContinuesTo,
+} from "./continuation";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 interface UseEntryNarrationOptions {
@@ -36,6 +42,10 @@ interface UseEntryNarrationOptions {
   showFullContent: boolean;
   showOriginal: boolean;
   prerecordedVoice?: PrerecordedVoice;
+  /** Narration went on to this article and should play once it's ready. */
+  continued?: boolean;
+  /** The next article in the list, and opening it; absent at its end. */
+  next?: { id: string; open: () => void };
 }
 
 interface EntryNarration {
@@ -52,6 +62,17 @@ interface EntryNarration {
   floatingControls: ReactNode;
 }
 
+/**
+ * Whether narration went on to `articleId` from the article before: for the
+ * entry view to call as it opens, before its content loads, so closing it
+ * first drops the continuation rather than leaving it for a later opening.
+ */
+export function useNarrationContinuedHere(articleId: string): boolean {
+  const [continued] = useState(() => narrationContinuesTo(articleId));
+  useEffect(() => clearNarrationContinuation(), []);
+  return continued;
+}
+
 export function useEntryNarration({
   contentRef,
   articleId,
@@ -61,6 +82,8 @@ export function useEntryNarration({
   showFullContent,
   showOriginal,
   prerecordedVoice,
+  continued = false,
+  next,
 }: UseEntryNarrationOptions): EntryNarration {
   const [narrationSettings] = useNarrationSettings();
   const showNarration = narrationSettings.enabled;
@@ -71,6 +94,28 @@ export function useEntryNarration({
   const narration = showNarration ? narrationEngine : null;
   const narrationState = narration?.state ?? DEFAULT_NARRATION_STATE;
   const isNarrationActive = getNarrationPhase(narrationState).isActive;
+
+  const continuing = narrationSettings.continueToNextArticle;
+  const following = continuing ? (next ? NEXT_ARTICLE : NO_MORE_ARTICLES) : undefined;
+  const goOn = useCallback(() => {
+    if (!continuing || !next) return;
+    continueNarrationTo(next.id);
+    next.open();
+  }, [continuing, next]);
+
+  // Narration that went on to this article plays once its engine is ready, and
+  // passes over it if there's nothing to say.
+  const play = narration?.play;
+  const isSupported = narration?.isSupported ?? false;
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (!continued || !play || !isSupported || startedRef.current) return;
+    startedRef.current = true;
+    play();
+  }, [continued, play, isSupported]);
+  const onNothingToSay = useCallback(() => {
+    if (continued) goOn();
+  }, [continued, goOn]);
 
   const { highlightedParagraphIds } = useNarrationHighlight({
     currentParagraphIndex: narrationState.currentParagraph,
@@ -154,6 +199,9 @@ export function useEntryNarration({
         showFullContent={showFullContent}
         showOriginal={showOriginal}
         prerecordedVoice={prerecordedVoice}
+        following={following}
+        onFinished={goOn}
+        onNothingToSay={onNothingToSay}
         onChange={setNarrationEngine}
       />
     ),

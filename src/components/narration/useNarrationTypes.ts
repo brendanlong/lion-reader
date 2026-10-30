@@ -39,6 +39,12 @@ export interface UseNarrationConfig {
   showOriginal?: boolean;
   /** Narrate only with recordings in this voice (see `EntryContentOptions`). */
   prerecordedVoice?: PrerecordedVoice;
+  /** Said after "End of article." (`withEndOfArticle`), as narration starts. */
+  following?: string;
+  /** Narration reached the end of the article. */
+  onFinished?: () => void;
+  /** Play found nothing in the article to say. */
+  onNothingToSay?: () => void;
 }
 
 /**

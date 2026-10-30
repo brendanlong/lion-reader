@@ -38,6 +38,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -85,6 +86,7 @@ import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.links.webUrl
 import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.NarrationList
 import com.lionreader.shared.narration.NarrationState
 import com.lionreader.shared.reader.AppearanceTokens
 import com.lionreader.shared.reader.ReaderColors
@@ -140,7 +142,9 @@ internal fun EntryScreen(
     val entryId = window.idAt(pager.settledPage)
     // Each opening starts afresh: as if the screen were new, as it is beside the list.
     val articles = rememberArticlePages(opened?.opening)
-    val narration by graph.narrator.state.collectAsStateWithLifecycle()
+    // Not just while started: narration goes on through the list with the screen off, and the
+    // pages follow it.
+    val narration by graph.narrator.state.collectAsState()
     // Only while on screen, so a notice from the background (or behind the list) waits to be seen.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, shown) {
@@ -163,7 +167,7 @@ internal fun EntryScreen(
             entryId,
             articles.paragraphs(entryId),
             articles.entry(entryId),
-            started = started && shown,
+            shown = shown,
             follow = graph.narrator::follow,
             supply = graph.narrator::supply,
         )
@@ -171,6 +175,27 @@ internal fun EntryScreen(
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = window.idAt(pager.targetPage)?.let(articles::entry)
     val coroutines = rememberCoroutineScope()
+    val listed by rememberUpdatedState(window)
+    val animate by rememberUpdatedState(settings.animations && started)
+    DisposableEffect(shown) {
+        if (!shown) return@DisposableEffect onDispose {}
+        val list =
+            object : NarrationList {
+                override fun after(entryId: String): String? {
+                    val at = listed.ids.indexOf(entryId)
+                    return if (at < 0) null else listed.ids.getOrNull(at + 1)
+                }
+
+                override fun open(entryId: String) {
+                    val page = listed.first + listed.ids.indexOf(entryId)
+                    coroutines.launch {
+                        if (animate) pager.animateScrollToPage(page) else pager.scrollToPage(page)
+                    }
+                }
+            }
+        graph.narrator.list = list
+        onDispose { if (graph.narrator.list === list) graph.narrator.list = null }
+    }
     val tokens = remember { appearanceTokens(context) }
     val stillShown by rememberUpdatedState(shown)
     // Null while unknown (e.g. offline): only summaries already on the device show then. Asked
@@ -429,10 +454,9 @@ private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String,
  * Narration, while on, is of the article on screen: when the pager moves to another, what's playing
  * stops at once and narration follows it, playing or paused as it was. Its text is supplied once
  * the page has it and has stayed for [settle] (so swiping past articles doesn't synthesize, and
- * with cloud voices pay for, each). It follows only while the app is on screen: a switch empties
- * the player, and media3 can't bring its foreground service back from the background. A follow
- * already made gets its text even if the app leaves the screen meanwhile: the service waiting for
- * it stays in the foreground.
+ * with cloud voices pay for, each). It follows only while the article screen is [shown], but with
+ * the screen off too, as when narration goes on through the list: the player waits on a placeholder
+ * meanwhile, so its service stays in the foreground.
  */
 @Composable
 internal fun NarrationFollowsPage(
@@ -440,14 +464,14 @@ internal fun NarrationFollowsPage(
     entryId: String,
     paragraphs: List<String>?,
     entry: EntryDetail?,
-    started: Boolean,
+    shown: Boolean,
     follow: (entryId: String, title: String) -> Unit,
     supply: (NarratedArticle) -> Unit,
     settle: Long = 1_000,
 ) {
     val on = narration != null
-    LaunchedEffect(on, entryId, entry?.title, started) {
-        if (on && started) follow(entryId, entry?.title ?: "")
+    LaunchedEffect(on, entryId, entry?.title, shown) {
+        if (on && shown) follow(entryId, entry?.title ?: "")
     }
     val current by rememberUpdatedState(entry)
     val following = narration?.entryId == entryId
@@ -509,7 +533,9 @@ private fun EntryPage(
             if (entryId == null || !load) null
             else
                 remember { account.reader.article(entryId) }
-                    .collectAsStateWithLifecycle(remember { prefetched(entryId) })
+                    // Not just while started: a page narration turns to with the screen off needs
+                    // its article.
+                    .collectAsState(remember { prefetched(entryId) })
                     .value
         }
     val entry = rememberShownArticle(visit, (article as? ArticleState.Shown)?.entry)

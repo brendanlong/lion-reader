@@ -180,6 +180,7 @@ describe("saveNarrationSettings", () => {
       pitch: 0.9,
       highlightEnabled: true,
       autoScrollEnabled: false,
+      continueToNextArticle: false,
       useLlmNormalization: false,
       sentenceGapSeconds: 0.5,
       cloudPauseSeconds: 0.75,

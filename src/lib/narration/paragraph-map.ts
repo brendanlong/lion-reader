@@ -106,23 +106,37 @@ export function isSpeakable(text: string): boolean {
 /** Spoken after an article's last paragraph, so the listener hears it end rather than stop. */
 export const END_OF_ARTICLE = "End of article.";
 
+/** Spoken after {@link END_OF_ARTICLE} when narration goes on to the next article. */
+export const NEXT_ARTICLE = "Loading next article.";
+
+/** Spoken after {@link END_OF_ARTICLE} when narration would go on, but the list has ended. */
+export const NO_MORE_ARTICLES = "No more articles.";
+
 /**
- * `narration` with {@link END_OF_ARTICLE} as its final paragraph, which
- * highlights nothing (`o: -1`) but is otherwise a paragraph like any other, to
- * skip to and back from. An article with nothing speakable stays silent.
+ * `narration` with {@link END_OF_ARTICLE} as its final paragraph (and
+ * `following` it, if given, as its own after that), which highlights nothing
+ * (`o: -1`) but is otherwise a paragraph like any other, to skip to and back
+ * from. An article with nothing speakable stays silent.
  *
  * Added where a player is handed the narration, not where it is generated, so
  * the LLM never sees it and narration cached before it existed still ends with it.
  */
-export function withEndOfArticle(narration: {
-  narrationText: string;
-  paragraphMap: ParagraphMapEntry[];
-}): { narrationText: string; paragraphMap: ParagraphMapEntry[] } {
+export function withEndOfArticle(
+  narration: {
+    narrationText: string;
+    paragraphMap: ParagraphMapEntry[];
+  },
+  following?: string
+): { narrationText: string; paragraphMap: ParagraphMapEntry[] } {
   const paragraphs = splitNarrationParagraphs(narration.narrationText);
   if (!paragraphs.some(isSpeakable)) return narration;
+  const closing = following ? [END_OF_ARTICLE, following] : [END_OF_ARTICLE];
   return {
-    narrationText: [...paragraphs, END_OF_ARTICLE].join("\n\n"),
-    paragraphMap: [...narration.paragraphMap, { n: paragraphs.length, o: -1 }],
+    narrationText: [...paragraphs, ...closing].join("\n\n"),
+    paragraphMap: [
+      ...narration.paragraphMap,
+      ...closing.map((_, i) => ({ n: paragraphs.length + i, o: -1 })),
+    ],
   };
 }
 
@@ -132,7 +146,7 @@ export function withEndOfArticle(narration: {
  * starts at the next one that does. Null when nothing after it is narrated.
  *
  * Relies on `buildAlignedNarration` emitting entries in element order, and on
- * `withEndOfArticle`'s `o: -1` entry coming last (it never matches).
+ * `withEndOfArticle`'s `o: -1` entries coming last (it never matches).
  */
 export function narrationParagraphForElement(
   paragraphMap: ParagraphMapEntry[],

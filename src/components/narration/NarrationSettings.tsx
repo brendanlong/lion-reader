@@ -423,6 +423,27 @@ export function NarrationSettings() {
             </div>
           )}
 
+          <div className="flex items-center justify-between">
+            <div>
+              <p id="narration-continue-label" className="ui-text-sm text-body">
+                Continue to the next article
+              </p>
+              <p className="ui-text-xs text-muted">
+                When an article ends, open the next one in the list and keep listening
+              </p>
+            </div>
+            <Switch
+              checked={settings.continueToNextArticle}
+              onChange={() =>
+                setSettings((prev) => ({
+                  ...prev,
+                  continueToNextArticle: !prev.continueToNextArticle,
+                }))
+              }
+              labelledBy="narration-continue-label"
+            />
+          </div>
+
           {/* Highlighting Settings */}
           <div className="space-y-4">
             <h3 className="ui-text-sm text-body font-medium">Highlighting</h3>

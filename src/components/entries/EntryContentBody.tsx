@@ -70,6 +70,8 @@ export interface EntryContentBodyProps {
   unsubscribeUrl?: string | null;
   /** Callback when swiping to next article */
   onSwipeNext?: () => void;
+  /** The article `onSwipeNext` opens */
+  nextEntryId?: string;
   /** Callback when swiping to previous article */
   onSwipePrevious?: () => void;
   // Full content fields
@@ -83,6 +85,10 @@ export interface EntryContentBodyProps {
   fetchFullContent?: boolean;
   /** Whether full content is currently being fetched */
   isFullContentFetching?: boolean;
+  /** Full content is on its way, to replace what shows */
+  isAwaitingFullContent?: boolean;
+  /** Narration went on to this article from the one before */
+  narrationContinued?: boolean;
   /** Callback to toggle full content setting for subscription */
   onToggleFetchFullContent?: () => void;
   // Summarization fields
@@ -141,6 +147,7 @@ export function EntryContentBody({
   footerLinkDomain,
   unsubscribeUrl,
   onSwipeNext,
+  nextEntryId,
   onSwipePrevious,
   // Full content props
   fullContentCleaned,
@@ -148,6 +155,8 @@ export function EntryContentBody({
   fullContentError,
   fetchFullContent,
   isFullContentFetching,
+  isAwaitingFullContent,
+  narrationContinued,
   onToggleFetchFullContent,
   // Summarization props
   isSummarizationAvailable,
@@ -193,6 +202,9 @@ export function EntryContentBody({
     showFullContent,
     showOriginal,
     prerecordedVoice: prerecordedNarration,
+    // Narrating the content that will show, not what it's about to replace.
+    continued: Boolean(narrationContinued && !isAwaitingFullContent),
+    next: onSwipeNext && nextEntryId ? { id: nextEntryId, open: onSwipeNext } : undefined,
   });
 
   // Get text appearance settings

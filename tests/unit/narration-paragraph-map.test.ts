@@ -16,6 +16,7 @@ import {
   splitNarrationParagraphs,
   withEndOfArticle,
   END_OF_ARTICLE,
+  NEXT_ARTICLE,
   type NarrationElement,
 } from "../../src/lib/narration/paragraph-map";
 
@@ -145,6 +146,21 @@ describe("withEndOfArticle", () => {
       END_OF_ARTICLE,
     ]);
     expect(ended.paragraphMap).toEqual([...narration.paragraphMap, { n: 3, o: -1 }]);
+  });
+
+  it("says what follows the article after it ends, also highlighting nothing", () => {
+    const narration = buildAlignedNarration([{ o: 0, text: "Only." }]);
+    const ended = withEndOfArticle(narration, NEXT_ARTICLE);
+    expect(splitNarrationParagraphs(ended.narrationText)).toEqual([
+      "Only.",
+      END_OF_ARTICLE,
+      NEXT_ARTICLE,
+    ]);
+    expect(ended.paragraphMap).toEqual([
+      ...narration.paragraphMap,
+      { n: 1, o: -1 },
+      { n: 2, o: -1 },
+    ]);
   });
 
   it("can't be chosen from an element", () => {

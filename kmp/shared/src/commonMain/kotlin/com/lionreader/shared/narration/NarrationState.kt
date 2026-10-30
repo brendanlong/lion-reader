@@ -15,6 +15,23 @@ data class NarratedArticle(
     }
 }
 
+/** Spoken after an article's "End of article." when narration goes on to the next one. */
+const val NEXT_ARTICLE = "Loading next article."
+
+/**
+ * Spoken after an article's "End of article." when narration would go on, but the list has ended.
+ */
+const val NO_MORE_ARTICLES = "No more articles."
+
+/** The articles narration goes on through, one after another. */
+interface NarrationList {
+    /** The article after [entryId], if there is one. */
+    fun after(entryId: String): String?
+
+    /** Moves the reader to [entryId], for narration to follow. */
+    fun open(entryId: String)
+}
+
 /**
  * Narration is on while there is a state: the article it's on, the paragraph being spoken (null
  * when narration has just followed to an article and has no place in it yet), and whether it's
