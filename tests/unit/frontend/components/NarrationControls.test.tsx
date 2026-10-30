@@ -308,6 +308,43 @@ describe("playFromElement", () => {
   });
 });
 
+describe("playback-started telemetry", () => {
+  function StopHarness() {
+    const narration = useNarration({
+      id: "entry-1",
+      title: "Test article",
+      feedTitle: "Test feed",
+      content: SPARSE_HTML,
+    });
+    return (
+      <>
+        <NarrationControlsImpl narration={narration} />
+        <button onClick={() => narration.stop()}>Stop</button>
+      </>
+    );
+  }
+
+  it("counts an article once, however often it's started again", async () => {
+    const telemetry = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(new Response(null, { status: 204 }))
+    );
+    vi.stubGlobal("fetch", telemetry);
+    renderWithTrpc(<StopHarness />, {
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+
+    await startNarration();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument());
+    await startNarration();
+
+    const started = telemetry.mock.calls.filter(([, init]) =>
+      String(init?.body).includes("narration_playback_started")
+    );
+    expect(started).toHaveLength(1);
+  });
+});
+
 describe("ArticleNarrator at the ends of the article", () => {
   it("does nothing on previous at the first paragraph, or next at the last", async () => {
     const { ArticleNarrator } = await import("@/lib/narration/ArticleNarrator");
