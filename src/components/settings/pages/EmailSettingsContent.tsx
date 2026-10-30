@@ -8,6 +8,7 @@
 
 "use client";
 
+import { CopyButton } from "@/components/ui/copy-button";
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -23,7 +24,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
-import { PlusIcon, CheckIcon, CopyIcon, EditIcon } from "@/components/ui/icons";
+import { PlusIcon, EditIcon } from "@/components/ui/icons";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
 import { Switch } from "@/components/ui/switch";
 
@@ -196,7 +197,6 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editLabel, setEditLabel] = useState(address.label ?? "");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -221,17 +221,6 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
       toast.error("Failed to delete address", { description: error.message });
     },
   });
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(address.email);
-      setCopied(true);
-      toast.success("Email address copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Failed to copy to clipboard");
-    }
-  };
 
   const handleSaveLabel = () => {
     updateMutation.mutate({
@@ -288,18 +277,11 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
             <code className="control-outline ui-text-sm bg-surface-muted text-body rounded px-2 py-1 break-all">
               {address.email}
             </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="control-outline text-muted hover:bg-surface-muted hover:text-body flex-shrink-0 rounded p-1 transition-colors"
+            <CopyButton
+              value={address.email}
+              className="shrink-0 px-2 py-1"
               title="Copy email address"
-            >
-              {copied ? (
-                <CheckIcon className="text-success h-4 w-4" />
-              ) : (
-                <CopyIcon className="h-4 w-4" />
-              )}
-            </button>
+            />
           </div>
 
           {/* Label */}

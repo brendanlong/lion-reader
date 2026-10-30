@@ -10,9 +10,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const BUTTON_CLASSES =
-  "ui-text-xs rounded border border-edge-input bg-surface-raised font-medium text-muted transition-colors hover:border-edge-emphasis hover:text-body";
+  "ui-text-xs inline-flex items-center justify-center rounded border border-edge-input bg-surface-raised font-medium text-muted transition-colors hover:border-edge-emphasis hover:text-body hover-none:min-h-11 hover-none:min-w-11";
 
 interface CopyButtonProps {
   /** Text to copy to the clipboard. */
@@ -43,8 +44,15 @@ export function CopyButton({
     };
   }, []);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(value);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (error) {
+      toast.error("Failed to copy", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+      return;
+    }
     setCopied(true);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setCopied(false), 2000);

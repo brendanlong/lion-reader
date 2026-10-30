@@ -7,6 +7,7 @@
 
 "use client";
 
+import { CopyButton } from "@/components/ui/copy-button";
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
@@ -95,13 +96,6 @@ export default function ApiTokensSettingsContent() {
     });
   };
 
-  const handleCopyToken = () => {
-    if (newlyCreatedToken) {
-      navigator.clipboard.writeText(newlyCreatedToken);
-      toast.success("Token copied to clipboard");
-    }
-  };
-
   const handleRevokeToken = (tokenId: string) => {
     if (confirm("Are you sure you want to revoke this token? This action cannot be undone.")) {
       revokeTokenMutation.mutate({ tokenId });
@@ -157,9 +151,7 @@ export default function ApiTokensSettingsContent() {
                 className="ui-text-sm flex-1 font-mono"
                 onClick={(e) => e.currentTarget.select()}
               />
-              <Button onClick={handleCopyToken} size="sm">
-                Copy
-              </Button>
+              <CopyButton value={newlyCreatedToken} className="px-3" title="Copy token" />
             </div>
             <Button
               variant="ghost"
