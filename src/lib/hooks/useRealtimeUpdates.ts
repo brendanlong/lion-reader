@@ -24,7 +24,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
-import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import { handleSyncEvent, mayChangeMemberships } from "@/lib/cache/event-handlers";
 import { refreshStoredCollections } from "@/lib/cache/operations";
 import {
   connectionStatusForPhase,
@@ -172,6 +172,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
             syncRetryTimeoutRef.current = null;
           }
           break;
+        case "refresh-memberships":
+          void utils.subscriptions.list.invalidate();
+          void utils.tags.list.invalidate();
+          refreshStoredCollections(utils, queryClient);
+          break;
       }
     }
 
@@ -181,17 +186,16 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         const { events, hasMore } = await utils.client.sync.events.query({
           cursors: action.cursors,
         });
+        const membershipsChanged = events.some((event) => mayChangeMemberships(queryClient, event));
         for (const event of events) handleSyncEvent(utils, queryClient, event);
-        // Membership changes are SSE-only (collection_entries_changed isn't
-        // replayed; the replayed entries carry their memberships): refetch the
-        // sidebar counts of a collection an article joined or left while
-        // disconnected, which no replayed event carries.
-        if (events.length > 0) {
-          void utils.subscriptions.list.invalidate();
-          void utils.tags.list.invalidate();
-          refreshStoredCollections(utils, queryClient);
-        }
-        result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
+        result = {
+          type: "sync-result",
+          epoch: action.epoch,
+          ok: true,
+          events,
+          hasMore,
+          membershipsChanged,
+        };
       } catch (error) {
         console.error("Sync failed:", error);
         result = { type: "sync-result", epoch: action.epoch, ok: false };

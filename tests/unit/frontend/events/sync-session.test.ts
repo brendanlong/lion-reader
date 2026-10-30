@@ -63,8 +63,20 @@ class Session {
     return run!;
   }
 
-  succeed(run: { epoch: number }, events: SyncEvent[] = [], hasMore = false): SyncSessionAction[] {
-    return this.send({ type: "sync-result", epoch: run.epoch, ok: true, events, hasMore });
+  succeed(
+    run: { epoch: number },
+    events: SyncEvent[] = [],
+    hasMore = false,
+    membershipsChanged = false
+  ): SyncSessionAction[] {
+    return this.send({
+      type: "sync-result",
+      epoch: run.epoch,
+      ok: true,
+      events,
+      hasMore,
+      membershipsChanged,
+    });
   }
 
   fail(run: { epoch: number }): SyncSessionAction[] {
@@ -117,6 +129,26 @@ describe("reduceSyncSession: starting syncs", () => {
     const followUp = runSyncIn(session.succeed(run));
     expect(followUp).toBeDefined();
     expect(runSyncIn(session.succeed(followUp!))).toBeUndefined();
+  });
+});
+
+describe("reduceSyncSession: membership refresh", () => {
+  const refreshes = (actions: SyncSessionAction[]) =>
+    actions.filter((action) => action.type === "refresh-memberships").length;
+
+  it("refreshes once when a catch-up that replayed a membership change finishes", () => {
+    const session = new Session();
+    const run = session.connect();
+    const event = entryEvent("2026-01-02T00:00:00Z");
+
+    const firstPage = session.succeed(run, [event], true, true);
+    expect(refreshes(firstPage)).toBe(0);
+    const nextPage = runSyncIn(firstPage)!;
+    expect(refreshes(session.succeed(nextPage, [], false, false))).toBe(1);
+
+    // The next catch-up replays no membership change.
+    const again = runSyncIn(session.send({ type: "sync-requested" }))!;
+    expect(refreshes(session.succeed(again, [event]))).toBe(0);
   });
 });
 

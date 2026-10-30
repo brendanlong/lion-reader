@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, type MockInstance } from "vitest";
-import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import { handleSyncEvent, mayChangeMemberships } from "@/lib/cache/event-handlers";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   createSeededQueryClient,
@@ -793,6 +793,25 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(getSidebarUnreadCount("sub-1")).toBe(5); // unchanged
     expect(getEntriesCount({ all: true })?.unread).toBe(18); // unchanged
     expect(getEntriesCount({ starred: true })?.unread).toBe(2); // unchanged
+  });
+});
+
+describe("mayChangeMemberships", () => {
+  it.each([
+    ["a read flip of a stored entry", createEntryStateChangedEvent(), false],
+    [
+      "a stored entry joining a collection",
+      createEntryStateChangedEvent({ subscriptionIds: ["sub-1", "col-1"] }),
+      true,
+    ],
+    [
+      "an entry the store lacks, which may have left one",
+      createEntryStateChangedEvent({ entryId: "unknown" }),
+      true,
+    ],
+    ["a new entry, whose counts cover all its memberships", createNewEntryEvent(), false],
+  ])("%s", (_name, event, expected) => {
+    expect(mayChangeMemberships(queryClient, event)).toBe(expected);
   });
 });
 
