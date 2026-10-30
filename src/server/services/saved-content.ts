@@ -394,7 +394,7 @@ export async function acquireSavedArticleContent(
     );
   }
 
-  return articleContentFromAcquired(acquired, { offload: true });
+  return articleContentFromAcquired(acquired, { offload: true, pdfImages: true });
 }
 
 /**

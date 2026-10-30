@@ -63,6 +63,9 @@ const RUST_PANIC_EXIT_CODE = 101;
  */
 const IMAGE_PLACEHOLDER = /src="pdf-image:(\d+)"/g;
 
+/** An `<img>` the renderer made from a placeholder (PDF text is escaped). */
+const IMAGE_ELEMENT = /<img [^>]*src="pdf-image:\d+"[^>]*>/g;
+
 const helperOutputSchema = z.union([
   z.object({
     markdown: z.string(),
@@ -314,9 +317,11 @@ export interface PdfArticle {
  * from the document, so the first heading is only dropped when it repeats that
  * title.
  *
- * The images are inlined as `data:` URIs after rendering, since they'd count
- * against the renderer's Markdown budget; saving the article moves them to
- * storage like any other inlined image.
+ * With `images`, they're inlined as `data:` URIs after rendering, since they'd
+ * count against the renderer's Markdown budget; saving the article moves them
+ * to storage like any other inlined image. Without, they're dropped: content
+ * with nowhere to store them (a feed entry's) would otherwise keep up to the
+ * helper's image budget inline.
  *
  * @throws `CONTENT_TOO_LARGE` if the result or its images are too large to
  *   save, or the conversion exhausts its memory, CPU, output or deadline
@@ -326,19 +331,23 @@ export interface PdfArticle {
  * @throws `VALIDATION_ERROR` for a file that isn't a usable PDF: unreadable,
  *   password-protected, scanned, or over the page limit
  */
-export async function convertPdfToArticle(buffer: Buffer): Promise<PdfArticle> {
+export async function convertPdfToArticle(
+  buffer: Buffer,
+  options: { images: boolean }
+): Promise<PdfArticle> {
   const { markdown, images, title, author, summary } = await defaultConverter.convert(buffer);
   const rendered = await markdownToHtmlAsync(markdown);
+  const withoutTitle = title ? stripTitleHeader(rendered, title) : rendered;
+  if (!options.images) {
+    return { html: withoutTitle.replace(IMAGE_ELEMENT, ""), title, author, summary };
+  }
   const inlined = new Set<number>();
-  const html = (title ? stripTitleHeader(rendered, title) : rendered).replace(
-    IMAGE_PLACEHOLDER,
-    (placeholder, i: string) => {
-      const index = Number(i);
-      const image = images[index];
-      if (!image || inlined.has(index)) return placeholder;
-      inlined.add(index);
-      return `src="data:${image.contentType};base64,${image.data}"`;
-    }
-  );
+  const html = withoutTitle.replace(IMAGE_PLACEHOLDER, (placeholder, i: string) => {
+    const index = Number(i);
+    const image = images[index];
+    if (!image || inlined.has(index)) return placeholder;
+    inlined.add(index);
+    return `src="data:${image.contentType};base64,${image.data}"`;
+  });
   return { html, title, author, summary };
 }

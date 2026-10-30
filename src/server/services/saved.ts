@@ -360,11 +360,6 @@ export async function insertUploadedArticle(
   guid: string = `uploaded:${generateUuidv7()}`,
   id?: string
 ): Promise<InsertedSavedArticle> {
-  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-  if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
-    throw errors.contentTooLarge("Uploaded article", maxSize);
-  }
-
   const saved = await insertSavedEntry(db, userId, {
     ...fields,
     id,

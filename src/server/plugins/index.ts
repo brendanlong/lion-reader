@@ -113,7 +113,10 @@ export class UserFetchError extends Error {
  * Fetches an article for a save or a full-content fetch: the hostname-matched
  * plugin, then (given `asUser`) its `fetchContentAsUser`, then the generic page
  * fetch, whose result is offered to {@link claimFetchedPage} unless it is
- * Markdown or a PDF. Content is capped at `maxSavedArticleSizeBytes` on every path.
+ * Markdown or a PDF. Fetched pages are capped at `maxSavedArticleSizeBytes`;
+ * what's stored is checked against it after conversion and image extraction
+ * (`processArticleContent`), since a plugin's images (Google Docs) arrive
+ * inlined.
  *
  * A plugin failure falls back to the generic fetch, except a rate limit (the
  * same site would rate limit that too) and a size-limit breach, which are
@@ -126,13 +129,6 @@ export async function acquireArticleContent(
   options: AcquireArticleOptions = {}
 ): Promise<AcquiredArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-  const assertWithinLimit = (article: PluginArticle): PluginArticle => {
-    if (article.content.html.length > maxSize) {
-      throw new ContentTooLargeError(url, maxSize, article.content.html.length);
-    }
-    return article;
-  };
-
   const parsed = toUrl(url);
   const plugin = parsed ? pluginRegistry.findWithCapability(parsed, "savedArticle") : null;
   if (plugin && parsed) {
@@ -141,7 +137,7 @@ export async function acquireArticleContent(
       const content = await capability.fetchContent(parsed);
       if (content) {
         logger.debug("Plugin fetched the article", { url, plugin: plugin.name });
-        return assertWithinLimit(pluginArticle(plugin, content, url));
+        return pluginArticle(plugin, content, url);
       }
     } catch (error) {
       if (
@@ -165,7 +161,7 @@ export async function acquireArticleContent(
       } catch (error) {
         throw new UserFetchError(error);
       }
-      if (content) return assertWithinLimit(pluginArticle(plugin, content, url));
+      if (content) return pluginArticle(plugin, content, url);
     }
   }
 

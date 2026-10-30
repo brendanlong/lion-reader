@@ -1,8 +1,7 @@
 /**
  * Integration tests for `acquireArticleContent`, the one article-fetch path
- * behind saves and full-content fetches: plugin precedence and fallback, the
- * size cap on every path, and when a fetched page is offered to
- * `fetchContentFromPage` plugins.
+ * behind saves and full-content fetches: plugin precedence and fallback, and
+ * when a fetched page is offered to `fetchContentFromPage` plugins.
  *
  * Fixture plugins claim the loopback host, and the generic fetch hits a real
  * loopback server (`.env.test` sets ALLOW_PRIVATE_NETWORK_FETCH).
@@ -12,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { acquireArticleContent, pluginRegistry, UserFetchError } from "../../src/server/plugins";
-import { ContentTooLargeError, HttpFetchError } from "../../src/server/http/fetch";
+import { HttpFetchError } from "../../src/server/http/fetch";
 import { usageLimitsConfig } from "../../src/server/config/env";
 
 const PAGE_HTML = "<html><head><title>Page</title></head><body><p>Page body</p></body></html>";
@@ -34,8 +33,6 @@ pluginRegistry.register({
         switch (url.pathname) {
           case "/plugin/ok":
             return { html: "<p>From plugin</p>" };
-          case "/plugin/huge":
-            return { html: tooLarge() };
           case "/plugin/rate-limited":
             throw new HttpFetchError(429, "Too Many Requests", url.href);
           case "/plugin/broken":
@@ -48,8 +45,6 @@ pluginRegistry.register({
         switch (url.pathname) {
           case "/plugin/as-user":
             return { html: `<p>For ${user.userId}</p>` };
-          case "/plugin/as-user-huge":
-            return { html: tooLarge() };
           case "/plugin/as-user-broken":
             throw new Error("needs consent");
           default:
@@ -123,12 +118,6 @@ describe("acquireArticleContent: hostname plugin", () => {
     expect(pageRequests).toEqual([]);
   });
 
-  it("rejects plugin content over the size cap", async () => {
-    await expect(acquireArticleContent(`${baseUrl}/plugin/huge`)).rejects.toThrow(
-      ContentTooLargeError
-    );
-  });
-
   it("rethrows a plugin rate limit instead of fetching the same host", async () => {
     await expect(acquireArticleContent(`${baseUrl}/plugin/rate-limited`)).rejects.toThrow(
       HttpFetchError
@@ -165,13 +154,6 @@ describe("acquireArticleContent: fetchContentAsUser", () => {
   it("is not tried without a user", async () => {
     const acquired = await acquireArticleContent(`${baseUrl}/plugin/as-user`);
     expect(acquired).toMatchObject({ kind: "page", content: PAGE_HTML });
-  });
-
-  it("is subject to the size cap", async () => {
-    await expect(
-      acquireArticleContent(`${baseUrl}/plugin/as-user-huge`, { asUser })
-    ).rejects.toThrow(ContentTooLargeError);
-    expect(pageRequests).toEqual([]);
   });
 
   it("throws its failure as a UserFetchError instead of fetching the page", async () => {
