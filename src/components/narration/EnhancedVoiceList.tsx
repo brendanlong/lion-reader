@@ -11,6 +11,7 @@
 
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   CheckIcon,
   AlertCircleIcon,
@@ -224,17 +225,16 @@ function VoiceItem({
               </Button>
 
               {/* Delete button */}
-              <button
-                type="button"
+              <IconButton
+                icon={<TrashIcon className="h-4 w-4" />}
+                aria-label={`Delete ${voice.displayName}`}
+                title="Delete voice"
+                variant="subtle"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="control-outline text-faint hover:bg-surface-muted hover:text-muted rounded-md p-2 transition-colors"
-                title="Delete voice"
-              >
-                <TrashIcon className="h-4 w-4" />
-              </button>
+              />
             </>
           ) : hasError && errorInfo.retryable ? (
             /* Retry button for retryable errors */
@@ -356,13 +356,11 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
                   Retry
                 </button>
               )}
-              <button
-                type="button"
+              <IconButton
+                icon={<CloseIcon className="h-4 w-4" />}
+                aria-label="Dismiss error"
                 onClick={clearError}
-                className="text-danger hover:text-danger-hover"
-              >
-                <CloseIcon className="h-4 w-4" />
-              </button>
+              />
             </div>
           </div>
         </div>
