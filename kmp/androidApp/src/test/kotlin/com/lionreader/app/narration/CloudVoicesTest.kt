@@ -5,6 +5,7 @@ import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.LionReaderApi
+import com.lionreader.shared.api.MAX_CLOUD_SPEECH_STREAMS
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -25,9 +26,11 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -74,6 +77,12 @@ class CloudVoicesTest {
         cacheBytes: Long = 5,
         pauseSeconds: Float = 0.25f,
         shared: CloudSpeechRequests = CloudSpeechRequests(),
+        // Like the app's scope: a failed request fails only its caller.
+        scope: CoroutineScope =
+            CoroutineScope(
+                backgroundScope.coroutineContext +
+                    SupervisorJob(backgroundScope.coroutineContext.job)
+            ),
     ): CloudVoices {
         val http =
             HttpClient(
@@ -110,11 +119,7 @@ class CloudVoicesTest {
             "af_heart",
             pauseSeconds,
             cache,
-            // Like the app's scope: a failed request fails only its caller.
-            CoroutineScope(
-                backgroundScope.coroutineContext +
-                    SupervisorJob(backgroundScope.coroutineContext.job)
-            ),
+            scope,
             shared,
             // Retries wait on the test's clock.
             io = StandardTestDispatcher(testScheduler),
@@ -260,20 +265,20 @@ class CloudVoicesTest {
     fun theLimitOnRequestsAtOnceHoldsAcrossEngines() = runTest {
         // An engine per article: requests the narrator left behind run on beside the new ones.
         val shared = CloudSpeechRequests()
-        val held = List(MAX_CLOUD_STREAMS) { ByteChannel(autoFlush = true) }
+        val held = List(MAX_CLOUD_SPEECH_STREAMS) { ByteChannel(autoFlush = true) }
         responses.addAll(held.map { Answer.Stream(it) })
         val engines = List(2) { engine(cacheBytes = 1_000_000, shared = shared) }
         // Each answers once its first audio is in; every stream stays open.
         withContext(Dispatchers.IO) { held.forEach { it.writeFully(speech, 0, 100) } }
-        repeat(MAX_CLOUD_STREAMS) { engines[it % 2].synthesize("Chunk $it.", dir, "$it") }
+        repeat(MAX_CLOUD_SPEECH_STREAMS) { engines[it % 2].synthesize("Chunk $it.", dir, "$it") }
 
         val next = async { engines[1].synthesize("Next.", dir, "next") }
         withContext(Dispatchers.IO) { delay(200) }
-        assertEquals(MAX_CLOUD_STREAMS, requests)
+        assertEquals(MAX_CLOUD_SPEECH_STREAMS, requests)
 
         held[0].flushAndClose()
         assertArrayEquals(audio, played(next.await()))
-        assertEquals(MAX_CLOUD_STREAMS + 1, requests)
+        assertEquals(MAX_CLOUD_SPEECH_STREAMS + 1, requests)
         held.drop(1).forEach { it.flushAndClose() }
     }
 
@@ -350,6 +355,17 @@ class CloudVoicesTest {
                 )
                 .awaitAll()
         assertEquals(a, b)
+        assertEquals(1, requests)
+    }
+
+    @Test
+    fun aRequestWhoseScopeEndedBeforeItRanIsNeitherWaitedOnNorShared() = runTest {
+        val shared = CloudSpeechRequests()
+        val ended = engine(shared = shared, scope = CoroutineScope(Job().apply { cancel() }))
+
+        val failure = runCatching { ended.synthesize("Hi.", dir, "0") }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        played(engine(shared = shared).synthesize("Hi.", dir, "1"))
         assertEquals(1, requests)
     }
 

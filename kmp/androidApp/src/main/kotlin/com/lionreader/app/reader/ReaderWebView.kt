@@ -95,6 +95,9 @@ fun ReaderWebView(
 ) {
     val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
+    // Keys the page's WebView: a new one each renderer loss. Not per visit, which would replace
+    // the WebView, and its page, on the next article after any loss.
+    var generation by remember { mutableIntStateOf(0) }
     // Giving up is on the article: the next visit, or article, in this page tries again.
     val losses = remember(visit) { RendererLosses() }
     val currentLosses by rememberUpdatedState(losses)
@@ -114,7 +117,7 @@ fun ReaderWebView(
     var linkPress by remember(content) { mutableStateOf<LinkPress?>(null) }
     var scrolled by remember { mutableStateOf<ScrollIndicatorState?>(null) }
     Box(modifier.scrollbar { scrolled }) {
-        key(losses.generation) {
+        key(generation) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
@@ -160,7 +163,10 @@ fun ReaderWebView(
                                             WebViewAssetLoader.AssetsPathHandler(context),
                                         )
                                         .build(),
-                                    onRendererLost = { currentLosses.lost(it) },
+                                    onRendererLost = {
+                                        currentLosses.lost(it)
+                                        generation++
+                                    },
                                 )
                         }
                 },
@@ -255,10 +261,6 @@ internal fun LinkMenu(press: LinkPress, onDismiss: () -> Unit) {
  * crashes just after loading doesn't reload for ever.
  */
 internal class RendererLosses(private val now: () -> Long = SystemClock::elapsedRealtime) {
-    /** Keys the page's WebView: a new one each loss. */
-    var generation by mutableIntStateOf(0)
-        private set
-
     private val crashes = ArrayDeque<Long>()
     var gaveUp by mutableStateOf(false)
         private set
@@ -270,7 +272,6 @@ internal class RendererLosses(private val now: () -> Long = SystemClock::elapsed
             while (at - crashes.first() > CRASH_WINDOW_MILLIS) crashes.removeFirst()
             if (crashes.size >= MAX_RENDERER_CRASHES) gaveUp = true
         }
-        generation++
     }
 }
 

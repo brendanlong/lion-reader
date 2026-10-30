@@ -77,6 +77,14 @@ class ShareActivity : ComponentActivity() {
     private fun FileProgress() {
         val state by fileShare.state.collectAsStateWithLifecycle()
         when (val current = state) {
+            FileShareState.Opening ->
+                Message(
+                    "Opening the file… Closing this now cancels saving it.",
+                    onClose = {
+                        fileShare.cancelOpening()
+                        finish()
+                    },
+                )
             FileShareState.Copying -> Message("Saving…")
             is FileShareState.Failed -> Message(current.message)
             is FileShareState.Saving -> Progress(current.workName, "file")
@@ -118,14 +126,18 @@ class ShareActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Message(text: String, action: Pair<String, () -> Unit>? = null) {
+    private fun Message(
+        text: String,
+        action: Pair<String, () -> Unit>? = null,
+        onClose: () -> Unit = ::finish,
+    ) {
         AlertDialog(
-            onDismissRequest = ::finish,
+            onDismissRequest = onClose,
             title = { Text("Save to Lion Reader") },
             text = { Text(text) },
             confirmButton = {
-                action?.let { (label, onClick) -> TextButton(onClick = onClick) { Text(label) } }
-                    ?: TextButton(onClick = ::finish) { Text("Close") }
+                if (action != null) TextButton(onClick = action.second) { Text(action.first) }
+                else TextButton(onClick = onClose) { Text("Close") }
             },
             dismissButton = action?.let { { TextButton(onClick = ::finish) { Text("Close") } } },
         )

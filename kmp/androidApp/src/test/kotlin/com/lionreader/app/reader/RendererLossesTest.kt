@@ -14,7 +14,6 @@ class RendererLossesTest {
         repeat(10) { losses.lost(crashed = false) }
 
         assertFalse(losses.gaveUp)
-        assertEquals(10, losses.generation)
     }
 
     @Test

@@ -62,7 +62,7 @@ jobs:
         run: ./gradlew check assembleRelease
 
       # Apart from the checks, so tests never run with the key. Signed with the
-      # shared dev key (see "Debug app and signing" in kmp/CLAUDE.md), so the
+      # shared dev key (see "Debug app and signing" in docs/android-dev.md), so the
       # APK installs over any other debug build and can sign in to production.
       # Pull requests from forks get no secrets: theirs uses the default debug
       # key and isn't uploaded.

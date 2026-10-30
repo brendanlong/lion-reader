@@ -15,7 +15,7 @@ import com.lionreader.shared.api.ServerLimits
 import java.io.File
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,16 +85,43 @@ class SharedFilesTest {
 
     private val otherApp = "com.example.files"
 
+    /** Opens and copies the file at [uri], as the share dialog does. */
+    private fun share(uri: Uri, sharedType: String?): Any =
+        when (val opened = openSharedFile(context, uri, sharedType)) {
+            is SharedStream -> copySharedFile(context, opened)
+            is ShareFailed -> opened
+        }
+
     @Test
     fun copiesAnotherAppsFileNamedForItsType() {
         val uri = provider("com.example.files.provider", otherApp)
         val pdf = "%PDF-1.7 a document".toByteArray()
         serve("Paper", "application/pdf", pdf)
 
-        val result = copySharedFile(context, uri, sharedType = null) as CopyResult.Copied
+        val result = share(uri, sharedType = null) as CopiedFile
 
-        assertEquals("Paper.pdf", result.file.filename)
-        assertArrayEquals(pdf, File(result.file.path).readBytes())
+        assertEquals("Paper.pdf", result.filename)
+        assertArrayEquals(pdf, File(result.path).readBytes())
+    }
+
+    @Test
+    fun aCopyIsTheSameSaveExactlyWhenItsBytesAreTheSame() {
+        // Some apps share every file from the same URI.
+        val uri = provider("com.example.files.provider", otherApp)
+        serve("a.md", "text/markdown", "# One".toByteArray())
+        val first = share(uri, sharedType = null) as CopiedFile
+        serve("b.md", "text/markdown", "# Two".toByteArray())
+        val second = share(uri, sharedType = null) as CopiedFile
+        serve("a.md", "text/markdown", "# One".toByteArray())
+        val again = share(uri, sharedType = null) as CopiedFile
+        // The name picks the converter, so the same bytes under another type are another save.
+        serve("a.txt", "text/plain", "# One".toByteArray())
+        val asText = share(uri, sharedType = null) as CopiedFile
+
+        assertNotEquals(first.path, second.path)
+        assertEquals(first.path, again.path)
+        assertNotEquals(first.path, asText.path)
+        assertArrayEquals("# Two".toByteArray(), File(second.path).readBytes())
     }
 
     @Test
@@ -102,9 +129,9 @@ class SharedFilesTest {
         val uri = provider("com.example.files.provider", otherApp)
         serve("preview", "image/jpeg", byteArrayOf(1, 2, 3))
 
-        val result = copySharedFile(context, uri, sharedType = "text/plain")
+        val result = share(uri, sharedType = "text/plain")
 
-        assertTrue(result is CopyResult.Failed)
+        assertTrue(result is ShareFailed)
     }
 
     @Test
@@ -114,9 +141,9 @@ class SharedFilesTest {
         val file = Uri.fromFile(File(context.filesDir, "secret.md").apply { writeText("x") })
 
         for (uri in listOf(own, file)) {
-            val result = copySharedFile(context, uri, "text/markdown")
+            val result = share(uri, "text/markdown")
             assertEquals(
-                CopyResult.Failed("Lion Reader can only save files shared by another app."),
+                ShareFailed("Lion Reader can only save files shared by another app."),
                 result,
             )
         }
@@ -127,10 +154,10 @@ class SharedFilesTest {
         val uri = provider("com.example.files.provider", otherApp)
         serve("big.pdf", "application/pdf", ByteArray(ServerLimits.UPLOAD_BYTES + 1))
 
-        val result = copySharedFile(context, uri, sharedType = null)
+        val result = share(uri, sharedType = null)
 
-        assertEquals(CopyResult.Failed("That file is too large to save."), result)
-        assertFalse(sharedFileCopy(context, uri).exists())
+        assertEquals(ShareFailed("That file is too large to save."), result)
+        assertEquals(emptyList<File>(), sharedFilesDir(context).listFiles()?.toList().orEmpty())
     }
 
     @Test
@@ -138,19 +165,16 @@ class SharedFilesTest {
         val uri = provider("com.example.files.provider", otherApp)
         serve("big.pdf", "application/pdf", ByteArray(ServerLimits.UPLOAD_BYTES))
 
-        assertTrue(copySharedFile(context, uri, sharedType = null) is CopyResult.Copied)
+        assertTrue(share(uri, sharedType = null) is CopiedFile)
     }
 
     @Test
     fun holdsAnEbookToTheEbookLimit() {
         val uri = provider("com.example.files.provider", otherApp)
         serve("book.epub", "application/epub+zip", ByteArray(ServerLimits.EBOOK_UPLOAD_BYTES))
-        assertTrue(copySharedFile(context, uri, sharedType = null) is CopyResult.Copied)
+        assertTrue(share(uri, sharedType = null) is CopiedFile)
 
         serve("book.epub", "application/epub+zip", ByteArray(ServerLimits.EBOOK_UPLOAD_BYTES + 1))
-        assertEquals(
-            CopyResult.Failed("That file is too large to save."),
-            copySharedFile(context, uri, sharedType = null),
-        )
+        assertEquals(ShareFailed("That file is too large to save."), share(uri, sharedType = null))
     }
 }

@@ -10,7 +10,11 @@ data class RetentionPolicy(
     val windowDays: Int = 30,
     /** At most this many read entries are kept, newest first. */
     val maxReadEntries: Int = 2000,
-    /** How much article bodies may take, the most important kept (`SyncWriter.trimBodies`). */
+    /**
+     * How much article bodies may take, the most important kept (`SyncWriter.trimBodies`). Starred,
+     * saved and collections' articles' bodies are always downloaded and kept, even past it; they
+     * take its room first, leaving the rest for other articles.
+     */
     val contentBudgetBytes: Long = 100L * 1024 * 1024,
     /** Caps each list the first download pulls (all, starred, saved). */
     val bootstrapMaxEntries: Int = 1000,

@@ -1,7 +1,10 @@
 package com.lionreader.shared.api
 
 import com.lionreader.shared.sync.FakeServer
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpStatusCode
+import kotlin.io.encoding.Base64
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -28,6 +31,21 @@ class LionReaderApiTest {
             listOf(UploadFileRequest("JVBERi0A/w==", "Paper.pdf", "share-1")),
             server.uploads,
         )
+    }
+
+    @Test
+    fun uploadsAFileOfManyPiecesWhole() = runTest {
+        // Not a multiple of 3, so only the last piece is padded.
+        val bytes = Random(1).nextBytes(PIECE_BYTES * 2 + 1)
+
+        api.importEbook("Tale.epub", bytes)
+
+        assertEquals(
+            listOf(ImportEbookRequest(Base64.encode(bytes), "Tale.epub")),
+            server.ebookImports,
+        )
+        val body = server.requests.single { it.url.encodedPath.endsWith("/import-ebook") }.body
+        assertEquals(body.contentLength, body.toByteArray().size.toLong())
     }
 
     @Test

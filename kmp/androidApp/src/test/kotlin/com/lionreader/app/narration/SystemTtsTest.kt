@@ -31,6 +31,15 @@ class SystemTtsTest {
     }
 
     @Test
+    fun anEngineThatNeverStartsFailsTheChunkRatherThanHanging() = runTest {
+        val tts = SystemTts(ApplicationProvider.getApplicationContext())
+        val file = Files.createTempFile("tts", ".wav").toFile()
+
+        val error = runCatching { tts.synthesize("Hello.", null, file) }.exceptionOrNull()
+        assertEquals(IOException::class, error?.let { it::class })
+    }
+
+    @Test
     fun aVoiceInstalledSinceTheVoicesWereLookedUpIsUsed() = runTest {
         val tts = SystemTts(ApplicationProvider.getApplicationContext())
         val engine = shadowOf(ShadowTextToSpeech.getLastTextToSpeechInstance())

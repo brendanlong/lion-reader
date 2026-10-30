@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 import { jittered } from "@/lib/jitter";
-import { MAX_CLOUD_SPEECH_CHARS } from "./constants";
+import { MAX_CLOUD_SPEECH_CHARS, MAX_CLOUD_SPEECH_STREAMS } from "./constants";
 import {
   AAC_MIME_TYPE,
   getMediaSourceClass,
@@ -187,11 +187,7 @@ function createPlayer(
     synthesize,
     loadMimeType: loadCloudMimeType,
     chunkParagraphs: chunkCloudSpeech,
-    // Enough that a provider streaming slower than playback (at 2x, say) can
-    // keep up by generating several chunks at once, but bounded: providers
-    // limit concurrent requests per key, which several listeners share on the
-    // server's.
-    maxConcurrentSyntheses: 4,
+    maxConcurrentSyntheses: MAX_CLOUD_SPEECH_STREAMS,
   });
 }
 

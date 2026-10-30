@@ -2,6 +2,7 @@ package com.lionreader.app.narration
 
 import android.net.Uri
 import com.lionreader.shared.api.LionReaderApi
+import com.lionreader.shared.api.MAX_CLOUD_SPEECH_STREAMS
 import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.narration.CloudSpeechAnswers
 import com.lionreader.shared.narration.cloudSpeechCacheKey
@@ -14,33 +15,23 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
- * Requests streaming at once, as many as on the web: enough that a slow provider's chunks overlap,
- * and that requests left running after a seek or a new article don't hold up the new position, but
- * bounded, since providers limit concurrent requests per key and several listeners share the
- * server's.
- */
-internal const val MAX_CLOUD_STREAMS = 4
-
-/**
  * What every [CloudVoices] shares, however many there have been: the cloud voices' requests run on,
  * filling the cache, after the narrator has moved to another article (and another engine).
  */
 class CloudSpeechRequests {
-    internal val streams = Semaphore(MAX_CLOUD_STREAMS)
+    internal val streams = Semaphore(MAX_CLOUD_SPEECH_STREAMS)
 
     /**
-     * Streams by cache key, from the request until the audio is all in, so the same text twice is
-     * one request. Each completes once its audio starts.
+     * Streams by cache file (so by account and text), from the request until the audio is all in,
+     * so the same text twice is one request. Each completes once its audio starts.
      */
     internal val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
 
@@ -77,52 +68,57 @@ class CloudVoices(
     override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {
-        val key = key(text)
-        val cached = File(cacheDir, "$key.$EXTENSION")
+        val cached = File(cacheDir, "${key(text)}.$EXTENSION")
         if (cached.exists()) {
             withContext(io) { cached.setLastModified(System.currentTimeMillis()) }
             return Uri.fromFile(cached)
         }
+        val key = cached.path
         val started = CompletableDeferred<StreamedAudio>()
-        val stream = stream(key, text, cached, started)
         val running = requests.inFlight.putIfAbsent(key, started)
-        if (running == null) stream.start() else stream.cancel()
+        if (running == null) stream(key, text, cached, started)
         return (running ?: started).await().uri
     }
 
     /**
      * Requests [text] and writes it into [cached] as it arrives, completing [started] once there's
-     * audio to play (or with why there won't be). Lazy: started once it's in
-     * [CloudSpeechRequests.inFlight], which it leaves when done.
+     * audio to play (or with why there won't be). [started] is [key]'s in
+     * [CloudSpeechRequests.inFlight], which it leaves when done, or when [scope] has ended before
+     * the request could run.
      */
     private fun stream(
         key: String,
         text: String,
         cached: File,
         started: CompletableDeferred<StreamedAudio>,
-    ): Job =
-        scope.launch(io, CoroutineStart.LAZY) {
-            var writer: CacheWriter? = null
-            try {
-                requests.streams.withPermit {
-                    request(text) { bytes ->
-                        val into = writer ?: CacheWriter(cached).also { writer = it }
-                        into.write(bytes)
-                        started.complete(into.audio)
+    ) {
+        scope
+            .launch(io) {
+                var writer: CacheWriter? = null
+                try {
+                    requests.streams.withPermit {
+                        request(text) { bytes ->
+                            val into = writer ?: CacheWriter(cached).also { writer = it }
+                            into.write(bytes)
+                            started.complete(into.audio)
+                        }
                     }
+                    val done = writer ?: throw IOException("The cloud voice sent no audio")
+                    started.complete(done.finish())
+                    trim()
+                } catch (e: Throwable) {
+                    // First, so the narrator's retry makes a new request rather than get this one.
+                    requests.inFlight.remove(key, started)
+                    writer?.fail(e)
+                    started.completeExceptionally(e)
+                    if (e is CancellationException) throw e
                 }
-                val done = writer ?: throw IOException("The cloud voice sent no audio")
-                started.complete(done.finish())
-                requests.inFlight.remove(key, started)
-                trim()
-            } catch (e: Throwable) {
-                // First, so the narrator's retry makes a new request rather than get this one.
-                requests.inFlight.remove(key, started)
-                writer?.fail(e)
-                started.completeExceptionally(e)
-                if (e is CancellationException) throw e
             }
-        }
+            .invokeOnCompletion { cause ->
+                requests.inFlight.remove(key, started)
+                if (cause != null) started.completeExceptionally(cause)
+            }
+    }
 
     /** Writes a stream into the cache, handing each part to the player as it comes. */
     private inner class CacheWriter(private val cached: File) {

@@ -44,3 +44,9 @@ object CloudSpeechPause {
     /** The settings slider's step. */
     const val STEP_SECONDS = 0.05f
 }
+
+/**
+ * Cloud speech requests one listener streams at once, as on the web: providers limit concurrent
+ * requests per key, which several listeners share on the server's.
+ */
+const val MAX_CLOUD_SPEECH_STREAMS = 4

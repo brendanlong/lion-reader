@@ -40,10 +40,10 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.serialization.KSerializer
@@ -408,8 +408,8 @@ class FakeServer {
     private fun served(entry: FullEntry): FullEntry =
         entry.copy(subscriptionIds = memberships(entry))
 
-    private fun <T> body(request: HttpRequestData, serializer: KSerializer<T>): T =
-        ApiJson.decodeFromString(serializer, (request.body as TextContent).text)
+    private suspend fun <T> body(request: HttpRequestData, serializer: KSerializer<T>): T =
+        ApiJson.decodeFromString(serializer, request.body.toByteArray().decodeToString())
 
     private fun <T> MockRequestHandleScope.json(serializer: KSerializer<T>, value: T) =
         respond(ApiJson.encodeToString(serializer, value), HttpStatusCode.OK, jsonHeaders)

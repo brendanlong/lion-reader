@@ -986,6 +986,18 @@ class SyncEngineTest {
     }
 
     @Test
+    fun keptArticlesBodiesAreDownloadedPastTheBudget() = runTest {
+        policy = RetentionPolicy(contentBudgetBytes = bodySize("a"))
+        serve(saved("a"))
+        engine.sync()
+
+        arrive(saved("b", ageDays = 2))
+        engine.sync()
+
+        assertEquals(listOf("a", "b"), withBodies(listOf("a", "b")))
+    }
+
+    @Test
     fun theBudgetEvictsReadBodiesBeforeOlderUnreadOnes() = runTest {
         server.subscriptions += subscription("sub-1")
         serve(entry("a", ageDays = 1), entry("b", ageDays = 2))

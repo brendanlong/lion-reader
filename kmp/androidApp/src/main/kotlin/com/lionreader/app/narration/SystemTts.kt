@@ -83,15 +83,15 @@ class SystemTts(context: Context) {
 
     /**
      * Speaks [text] into [file] (WAV) with the voice named [voice], or the engine's default. Fails
-     * (so the narrator skips the chunk) if the engine doesn't finish in time: one whose service
-     * died may never call back.
+     * (so the narrator skips the chunk) if the engine doesn't start and finish in time: one whose
+     * service died may never call back.
      */
     suspend fun synthesize(text: String, voice: String?, file: File) {
-        val tts = ready.await()
-        // A voice that's gone (uninstalled) falls back to the default too.
-        val wanted = voice?.let { voiceNamed(tts, it) } ?: tts.defaultVoice
-        if (wanted != null && tts.voice?.name != wanted.name) tts.voice = wanted
         withTimeoutOrNull(TIMEOUT_MILLIS + text.length * TIMEOUT_MILLIS_PER_CHAR) {
+            val tts = ready.await()
+            // A voice that's gone (uninstalled) falls back to the default too.
+            val wanted = voice?.let { voiceNamed(tts, it) } ?: tts.defaultVoice
+            if (wanted != null && tts.voice?.name != wanted.name) tts.voice = wanted
             synthesizeToFile(tts, text, file)
         } ?: throw IOException("Speech synthesis timed out")
     }
