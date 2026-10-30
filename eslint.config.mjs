@@ -90,6 +90,9 @@ const DRIZZLE_JSONB = {
   message: "Use nulSafeJsonb (src/server/db/schema.ts), which replaces NUL before stringifying.",
 };
 
+const WALL_CLOCK_MESSAGE =
+  "Wall-clock budgets go in a *.timing.test.ts file, which runs alone (vitest.config.ts).";
+
 function restrictImports(paths, patterns = []) {
   return { "no-restricted-imports": ["error", { paths, patterns }] };
 }
@@ -144,6 +147,12 @@ const API_SURFACES = [
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // `const { omitted, ...rest } = row` is how we drop fields from an object.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
+    },
+  },
   // Guard against accidentally committed focused tests (`it.only`/`describe.only`),
   // which silently skip every other test in a file. Playwright's `forbidOnly` covers
   // e2e; this covers the vitest unit/integration suites.
@@ -160,11 +169,18 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-properties": [
         "error",
+        ...[
+          ["performance", "now"],
+          ["process", "hrtime"],
+        ].map(([object, property]) => ({ object, property, message: WALL_CLOCK_MESSAGE })),
+      ],
+      "no-restricted-syntax": [
+        "error",
         {
-          object: "performance",
-          property: "now",
-          message:
-            "Wall-clock budgets go in a *.timing.test.ts file, which runs alone (vitest.config.ts).",
+          // `Date.now() - start`; backdating by a literal or a SCREAMING_CASE constant is fine.
+          selector:
+            'BinaryExpression[operator="-"][left.callee.object.name="Date"][left.callee.property.name="now"][right.type="Identifier"][right.name=/^[a-z]/]',
+          message: WALL_CLOCK_MESSAGE,
         },
       ],
     },

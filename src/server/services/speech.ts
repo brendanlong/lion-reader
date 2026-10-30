@@ -694,7 +694,9 @@ const BUSY_MAX_WAIT_MS = 5_000;
 export async function speakWhenFree<T>(
   speak: () => Promise<T>,
   signal: AbortSignal,
-  budgetMs = BUSY_RETRY_MS
+  budgetMs = BUSY_RETRY_MS,
+  sleep: (ms: number, signal: AbortSignal) => Promise<unknown> = (ms, abort) =>
+    setTimeout(ms, undefined, { signal: abort })
 ): Promise<T> {
   const deadline = Date.now() + budgetMs;
   let wait = BUSY_FIRST_WAIT_MS;
@@ -707,7 +709,7 @@ export async function speakWhenFree<T>(
       const asked = askedSeconds === null ? wait : askedSeconds * 1000;
       const delay = jittered(Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS));
       if (Date.now() + delay > deadline) throw error;
-      await setTimeout(delay, undefined, { signal });
+      await sleep(delay, signal);
       wait = Math.min(wait * 2, BUSY_MAX_WAIT_MS);
     }
   }

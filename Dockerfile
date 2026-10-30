@@ -19,9 +19,10 @@ ARG ASSET_PREFIX
 # suffix, Dependabot goes quiet and Node updates stop until Alpine is bumped.
 FROM node:26.12.1-alpine3.24 AS base
 
-# Install the exact pnpm version from package.json
-# (Node 26 no longer bundles corepack, so install pnpm directly via npm)
-RUN npm install -g pnpm@11.28.6
+# Install the exact pnpm version package.json's packageManager names (Node 26
+# no longer bundles corepack, so install it with npm).
+RUN --mount=type=bind,source=package.json,target=/tmp/package.json \
+    npm install -g "$(node -p 'require("/tmp/package.json").packageManager.split("+")[0]')"
 
 # Scripts run on this image's Node, not a second copy from devEngines.runtime
 # (pnpm would pick the glibc build, which can't start on this musl image). The

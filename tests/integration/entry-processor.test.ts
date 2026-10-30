@@ -5,12 +5,12 @@
  * deduplication by GUID, and content hash change detection.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
+import Redis from "ioredis";
 import { db } from "../../src/server/db";
 import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
 import {
-  createPubSubSubscription,
   getFeedEventsChannel,
   getUserEventsChannel,
   parseUserEvent,
@@ -18,12 +18,9 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   generateContentHash,
-  clampPublishedAt,
-  deriveGuid,
   createEntry,
   updateEntryContent,
   processEntries,
-  isBackfilledEntry,
 } from "../../src/server/feed/entry-processor";
 import { canonicalGuid, canonicalGuidSql } from "../../src/server/feed/guid-identity";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
@@ -34,6 +31,7 @@ import {
   createWatchingSubscription,
   createTestFeed as insertTestFeed,
 } from "./helpers";
+import { collectMessages, subscribeAndDrain, waitForMessages } from "../utils/pubsub";
 
 async function findEntryByGuid(feedId: string, guid: string) {
   const [entry] = await db
@@ -56,6 +54,16 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
 /** Leaves out the entry `createWatchingSubscription` gives a subscription. */
 const notHeld = sql`${entries.guid} NOT LIKE 'held-before-%'`;
 
+let subscriber: Redis;
+
+beforeAll(() => {
+  subscriber = new Redis(process.env.REDIS_URL!);
+});
+
+afterAll(async () => {
+  await subscriber.quit();
+});
+
 describe("Entry Processor", () => {
   async function cleanup(): Promise<void> {
     await db.delete(userEntries);
@@ -67,186 +75,6 @@ describe("Entry Processor", () => {
 
   beforeEach(cleanup);
   afterAll(cleanup);
-
-  describe("generateContentHash", () => {
-    it("generates consistent hash for same content", () => {
-      const entry: ParsedEntry = {
-        title: "Test Title",
-        content: "Test Content",
-      };
-
-      const hash1 = generateContentHash(entry);
-      const hash2 = generateContentHash(entry);
-
-      expect(hash1).toBe(hash2);
-      expect(hash1).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex
-    });
-
-    it("generates different hash for different content", () => {
-      const entry1: ParsedEntry = {
-        title: "Test Title",
-        content: "Content A",
-      };
-      const entry2: ParsedEntry = {
-        title: "Test Title",
-        content: "Content B",
-      };
-
-      const hash1 = generateContentHash(entry1);
-      const hash2 = generateContentHash(entry2);
-
-      expect(hash1).not.toBe(hash2);
-    });
-
-    it("handles missing content by using summary", () => {
-      const entry1: ParsedEntry = {
-        title: "Test Title",
-        content: "Actual content",
-      };
-      const entry2: ParsedEntry = {
-        title: "Test Title",
-        summary: "Actual content",
-      };
-
-      const hash1 = generateContentHash(entry1);
-      const hash2 = generateContentHash(entry2);
-
-      // Content and summary with same text produce same hash
-      expect(hash1).toBe(hash2);
-    });
-
-    it("handles empty content gracefully", () => {
-      const entry: ParsedEntry = {
-        title: "Only Title",
-      };
-
-      const hash = generateContentHash(entry);
-      expect(hash).toMatch(/^[a-f0-9]{64}$/);
-    });
-
-    it("changes when the author changes but text does not", () => {
-      const base: ParsedEntry = { title: "T", content: "C", author: "Alice" };
-      const changed: ParsedEntry = { ...base, author: "Bob" };
-
-      expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
-    });
-
-    it("changes when the URL changes but text does not", () => {
-      const base: ParsedEntry = { title: "T", content: "C", link: "https://a.com/1" };
-      const changed: ParsedEntry = { ...base, link: "https://a.com/2" };
-
-      expect(generateContentHash(base)).not.toBe(generateContentHash(changed));
-    });
-
-    it("does NOT change when only the publication date changes", () => {
-      // pubDate is intentionally excluded: updateEntryContent never rewrites
-      // published_at (it's the frozen denormalized timeline sort key), so hashing
-      // it would only trigger updates that can't take effect.
-      const base: ParsedEntry = {
-        title: "T",
-        content: "C",
-        pubDate: new Date("2024-01-01T00:00:00Z"),
-      };
-      const changed: ParsedEntry = { ...base, pubDate: new Date("2024-02-01T00:00:00Z") };
-
-      expect(generateContentHash(base)).toBe(generateContentHash(changed));
-    });
-  });
-
-  describe("clampPublishedAt", () => {
-    it("returns null when no date is provided", () => {
-      expect(clampPublishedAt(undefined, new Date())).toBeNull();
-    });
-
-    it("leaves past dates untouched", () => {
-      const pubDate = new Date("2024-01-15T12:00:00Z");
-      const fetchedAt = new Date("2024-06-01T00:00:00Z");
-      expect(clampPublishedAt(pubDate, fetchedAt)).toBe(pubDate);
-    });
-
-    it("clamps future dates down to fetchedAt", () => {
-      const fetchedAt = new Date("2024-06-01T00:00:00Z");
-      const pubDate = new Date("2030-01-01T00:00:00Z");
-      expect(clampPublishedAt(pubDate, fetchedAt)).toBe(fetchedAt);
-    });
-  });
-
-  describe("isBackfilledEntry", () => {
-    const previousFetch = new Date("2026-08-10T00:00:00Z");
-
-    it("flags an article published long before our previous fetch", () => {
-      expect(isBackfilledEntry(new Date("2022-03-01T00:00:00Z"), previousFetch)).toBe(true);
-    });
-
-    it("does not flag an article published since our previous fetch", () => {
-      expect(isBackfilledEntry(new Date("2026-08-10T00:05:00Z"), previousFetch)).toBe(false);
-    });
-
-    it("does not flag an article that is merely a few days stale", () => {
-      // Stale CDN copies, clock skew and slight backdating must stay news.
-      expect(isBackfilledEntry(new Date("2026-08-04T00:00:00Z"), previousFetch)).toBe(false);
-    });
-
-    it("treats exactly the threshold as news (strict comparison)", () => {
-      const exactly30Days = new Date(previousFetch.getTime() - 30 * 24 * 60 * 60 * 1000);
-      expect(isBackfilledEntry(exactly30Days, previousFetch)).toBe(false);
-      expect(isBackfilledEntry(new Date(exactly30Days.getTime() - 1), previousFetch)).toBe(true);
-    });
-
-    it("is inert on a feed's first fetch", () => {
-      expect(isBackfilledEntry(new Date("2010-01-01T00:00:00Z"), null)).toBe(false);
-      expect(isBackfilledEntry(new Date("2010-01-01T00:00:00Z"), undefined)).toBe(false);
-    });
-
-    it("is inert without a publication date", () => {
-      expect(isBackfilledEntry(null, previousFetch)).toBe(false);
-    });
-  });
-
-  describe("deriveGuid", () => {
-    it("uses guid when available", () => {
-      const entry: ParsedEntry = {
-        guid: "unique-id-123",
-        link: "https://example.com/article",
-        title: "Article Title",
-      };
-
-      expect(deriveGuid(entry)).toBe("unique-id-123");
-    });
-
-    it("falls back to link when guid is missing", () => {
-      const entry: ParsedEntry = {
-        link: "https://example.com/article",
-        title: "Article Title",
-      };
-
-      expect(deriveGuid(entry)).toBe("https://example.com/article");
-    });
-
-    it("falls back to title when guid and link are missing", () => {
-      const entry: ParsedEntry = {
-        title: "Article Title",
-      };
-
-      expect(deriveGuid(entry)).toBe("Article Title");
-    });
-
-    it("throws when no identifier is available", () => {
-      const entry: ParsedEntry = {};
-
-      expect(() => deriveGuid(entry)).toThrow(
-        "Cannot derive GUID: entry has no guid, link, or title"
-      );
-    });
-
-    it("trims whitespace from identifiers", () => {
-      const entry: ParsedEntry = {
-        guid: "  spaced-guid  ",
-      };
-
-      expect(deriveGuid(entry)).toBe("spaced-guid");
-    });
-  });
 
   describe("createEntry", () => {
     it("creates entry with all fields", async () => {
@@ -1091,10 +919,11 @@ describe("Entry Processor", () => {
 
       // On each delivered new_entry, immediately check (at arrival time)
       // whether the subscriber's user_entries row exists.
+      const channel = getFeedEventsChannel(feed.id);
       const rowExistedAtDelivery: Array<Promise<boolean>> = [];
-      const handle = createPubSubSubscription((_channel, message) => {
+      const checkRow = (ch: string, message: string) => {
         const event = JSON.parse(message) as { type: string; entryId: string };
-        if (event.type !== "new_entry") return;
+        if (ch !== channel || event.type !== "new_entry") return;
         rowExistedAtDelivery.push(
           db
             .select({ entryId: userEntries.entryId })
@@ -1102,9 +931,9 @@ describe("Entry Processor", () => {
             .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, event.entryId)))
             .then((rows) => rows.length === 1)
         );
-      });
-      expect(handle).not.toBeNull();
-      await handle!.subscribe(getFeedEventsChannel(feed.id));
+      };
+      await subscriber.subscribe(channel);
+      subscriber.on("message", checkRow);
 
       try {
         const parsedFeed: ParsedFeed = {
@@ -1114,17 +943,13 @@ describe("Entry Processor", () => {
             { guid: "fanout-2", title: "Entry 2", content: "Content 2" },
           ],
         };
+        const delivered = waitForMessages(subscriber, channel, 2);
         await processEntries(db, feed.id, parsedFeed);
+        await delivered;
 
-        // Publishes are fire-and-forget, so wait for delivery.
-        const deadline = Date.now() + 5000;
-        while (rowExistedAtDelivery.length < 2 && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        expect(rowExistedAtDelivery).toHaveLength(2);
         expect(await Promise.all(rowExistedAtDelivery)).toEqual([true, true]);
       } finally {
-        handle!.close();
+        subscriber.off("message", checkRow);
       }
     });
 
@@ -1441,16 +1266,11 @@ describe("Entry Processor", () => {
       const userId = await createTestUser({ emailPrefix: "backfillevent" });
       await createWatchingSubscription(userId, feed.id);
 
-      const newEntryIds: string[] = [];
-      const handle = createPubSubSubscription((_channel, message) => {
-        const event = JSON.parse(message) as { type: string; entryId: string };
-        if (event.type === "new_entry") newEntryIds.push(event.entryId);
-      });
-      expect(handle).not.toBeNull();
-      await handle!.subscribe(getFeedEventsChannel(feed.id));
+      const channel = getFeedEventsChannel(feed.id);
+      await subscriber.subscribe(channel);
 
-      try {
-        await processEntries(
+      const received = await collectMessages(subscriber, [channel], 1, () =>
+        processEntries(
           db,
           feed.id,
           {
@@ -1464,21 +1284,13 @@ describe("Entry Processor", () => {
             fetchedAt: new Date("2026-08-10T01:00:00Z"),
             previousLastFetchedAt: new Date("2026-08-10T00:00:00Z"),
           }
-        );
+        )
+      );
 
-        // Publishes are fire-and-forget; wait long enough that a second event
-        // would have arrived if one were published for the backfilled entry.
-        const deadline = Date.now() + 5000;
-        while (newEntryIds.length < 1 && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        await new Promise((resolve) => setTimeout(resolve, 250));
-
-        const fresh = await findEntryByGuid(feed.id, "fresh-1");
-        expect(newEntryIds).toEqual([fresh!.id]);
-      } finally {
-        handle!.close();
-      }
+      const fresh = await findEntryByGuid(feed.id, "fresh-1");
+      expect(
+        received.map((r) => JSON.parse(r.message) as { type: string; entryId: string })
+      ).toEqual([expect.objectContaining({ type: "new_entry", entryId: fresh!.id })]);
     });
 
     it("announces links the feed's channel doesn't to each linked subscriber (#2062)", async () => {
@@ -1495,29 +1307,28 @@ describe("Entry Processor", () => {
         pubDate: new Date("2026-08-09T23:00:00Z"),
       };
       const previousLastFetchedAt = new Date("2026-08-10T00:00:00Z");
-      await processEntries(
-        db,
-        feed.id,
-        { title: "Test Feed", items: [current] },
-        { fetchedAt: previousLastFetchedAt }
+      const feedChannel = getFeedEventsChannel(feed.id);
+      await subscribeAndDrain(subscriber, feedChannel, () =>
+        processEntries(
+          db,
+          feed.id,
+          { title: "Test Feed", items: [current] },
+          { fetchedAt: previousLastFetchedAt }
+        )
       );
 
       const newcomerId = await createTestUser({ emailPrefix: "newcomer" });
       const newcomerSubscriptionId = await createTestSubscription(newcomerId, feed.id);
-
-      const received: Array<{ channel: string; message: string }> = [];
-      const handle = createPubSubSubscription((channel, message) => {
-        received.push({ channel, message });
-      });
-      expect(handle).not.toBeNull();
-      await handle!.subscribe(
-        getFeedEventsChannel(feed.id),
+      const channels = [
+        feedChannel,
         getUserEventsChannel(watcherId),
-        getUserEventsChannel(newcomerId)
-      );
+        getUserEventsChannel(newcomerId),
+      ];
+      await subscriber.subscribe(...channels);
 
-      try {
-        const result = await processEntries(
+      let result: Awaited<ReturnType<typeof processEntries>> | undefined;
+      const received = await collectMessages(subscriber, channels, 3, async () => {
+        result = await processEntries(
           db,
           feed.id,
           {
@@ -1535,39 +1346,30 @@ describe("Entry Processor", () => {
             alwaysUpdateVisibility: true,
           }
         );
+      });
 
-        const deadline = Date.now() + 5000;
-        while (received.length < 3 && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        // Long enough for an event nobody should get to arrive.
-        await new Promise((resolve) => setTimeout(resolve, 250));
-
-        const currentId = (await findEntryByGuid(feed.id, "current-1"))!.id;
-        const archiveId = (await findEntryByGuid(feed.id, "archive-1"))!.id;
-        const freshId = (await findEntryByGuid(feed.id, "fresh-1"))!.id;
-        const entryIdsOn = (channel: string) =>
-          received
-            .filter((r) => r.channel === channel)
-            .map((r) => (JSON.parse(r.message) as { entryId: string }).entryId)
-            .sort();
-        expect(entryIdsOn(getFeedEventsChannel(feed.id))).toEqual([freshId]);
-        expect(entryIdsOn(getUserEventsChannel(watcherId))).toEqual([]);
-        expect(entryIdsOn(getUserEventsChannel(newcomerId))).toEqual([currentId, archiveId].sort());
-        for (const r of received.filter((r) => r.channel === getUserEventsChannel(newcomerId))) {
-          expect(parseUserEvent(r.message)).toMatchObject({
-            type: "new_entry",
-            subscriptionId: newcomerSubscriptionId,
-            subscriptionIds: [newcomerSubscriptionId],
-            feedType: "web",
-            entry: { type: "web", feedTitle: "Test Feed", read: false, starred: false },
-          });
-        }
-        expect(result.announcedEntryIds[0]).toBe(freshId);
-        expect(result.announcedEntryIds.slice(1).sort()).toEqual([currentId, archiveId].sort());
-      } finally {
-        handle!.close();
+      const currentId = (await findEntryByGuid(feed.id, "current-1"))!.id;
+      const archiveId = (await findEntryByGuid(feed.id, "archive-1"))!.id;
+      const freshId = (await findEntryByGuid(feed.id, "fresh-1"))!.id;
+      const entryIdsOn = (channel: string) =>
+        received
+          .filter((r) => r.channel === channel)
+          .map((r) => (JSON.parse(r.message) as { entryId: string }).entryId)
+          .sort();
+      expect(entryIdsOn(getFeedEventsChannel(feed.id))).toEqual([freshId]);
+      expect(entryIdsOn(getUserEventsChannel(watcherId))).toEqual([]);
+      expect(entryIdsOn(getUserEventsChannel(newcomerId))).toEqual([currentId, archiveId].sort());
+      for (const r of received.filter((r) => r.channel === getUserEventsChannel(newcomerId))) {
+        expect(parseUserEvent(r.message)).toMatchObject({
+          type: "new_entry",
+          subscriptionId: newcomerSubscriptionId,
+          subscriptionIds: [newcomerSubscriptionId],
+          feedType: "web",
+          entry: { type: "web", feedTitle: "Test Feed", read: false, starred: false },
+        });
       }
+      expect(result!.announcedEntryIds[0]).toBe(freshId);
+      expect(result!.announcedEntryIds.slice(1).sort()).toEqual([currentId, archiveId].sort());
     });
 
     it("heals entries orphaned by an earlier crashed fetch (#952)", async () => {

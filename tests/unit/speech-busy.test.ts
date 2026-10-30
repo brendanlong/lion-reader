@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   BUSY_FIRST_WAIT_MS,
   BUSY_RETRY_AFTER_SECONDS,
@@ -21,22 +21,45 @@ import {
 const signal = () => new AbortController().signal;
 
 describe("speakWhenFree", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Waits by moving the clock the deadline is measured on. */
+  const advance = async (ms: number) => {
+    vi.setSystemTime(Date.now() + ms);
+  };
+
   it("asks a busy provider again until it answers", async () => {
     let calls = 0;
-    const result = await speakWhenFree(async () => {
-      if (++calls < 3) throw new ProviderBusyError("busy", 0);
-      return "speech";
-    }, signal());
+    const result = await speakWhenFree(
+      async () => {
+        if (++calls < 3) throw new ProviderBusyError("busy", 0);
+        return "speech";
+      },
+      signal(),
+      undefined,
+      advance
+    );
     expect(result).toBe("speech");
     expect(calls).toBe(3);
   });
 
   it("asks again when the provider couldn't be reached", async () => {
     let calls = 0;
-    const result = await speakWhenFree(async () => {
-      if (++calls < 2) throw new TypeError("fetch failed");
-      return "speech";
-    }, signal());
+    const result = await speakWhenFree(
+      async () => {
+        if (++calls < 2) throw new TypeError("fetch failed");
+        return "speech";
+      },
+      signal(),
+      undefined,
+      advance
+    );
     expect(result).toBe("speech");
     expect(calls).toBe(2);
   });
@@ -49,7 +72,8 @@ describe("speakWhenFree", () => {
           throw busy;
         },
         signal(),
-        1_000
+        1_000,
+        advance
       )
     ).rejects.toBe(busy);
   });
@@ -64,7 +88,8 @@ describe("speakWhenFree", () => {
           throw unreachable;
         },
         signal(),
-        2 * BUSY_FIRST_WAIT_MS
+        2 * BUSY_FIRST_WAIT_MS,
+        advance
       )
     ).rejects.toBe(unreachable);
     // The first wait (jittered, at most 1.2x) fits in the budget; the doubled

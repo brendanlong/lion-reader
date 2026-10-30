@@ -19,11 +19,13 @@
 
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { PgInsertValue } from "drizzle-orm/pg-core";
+import type pg from "pg";
 import { db } from "../../src/server/db";
 import {
   users,
   feeds,
   entries,
+  entrySummaries,
   subscriptions,
   subscriptionTags,
   tags,
@@ -41,6 +43,7 @@ import { generateToken, hashToken } from "../../src/server/oauth/utils";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { insertUserEntriesWithMemberships } from "../../src/server/services/subscription-entries";
 import { deleteUser } from "../../src/server/services/users";
+import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -329,6 +332,27 @@ export async function createTestEntryBatch(
 }
 
 /**
+ * Caches `summaryText` as the user's current summary of the content with
+ * `contentHash` (`createTestEntry`'s is `hash-<entry id>`).
+ */
+export async function createTestEntrySummary(
+  userId: string,
+  contentHash: string,
+  summaryText: string,
+  { modelId = "claude-test" }: { modelId?: string } = {}
+): Promise<void> {
+  await db.insert(entrySummaries).values({
+    id: generateUuidv7(),
+    userId,
+    contentHash,
+    summaryText,
+    modelId,
+    promptVersion: CURRENT_PROMPT_VERSION,
+    generatedAt: new Date(),
+  });
+}
+
+/**
  * Puts a user's article in `subscriptionId` (#1846), as a redirect merge
  * copies an old feed's articles into the survivor, creating the user's row
  * (unread unless `read`) if they have none.
@@ -582,6 +606,21 @@ export async function waitForLockWaiter(pattern: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("nothing ever waited on the lock");
+}
+
+/** Resolves once some backend is waiting on a lock `holder`'s connection holds. */
+export async function waitUntilBlockedBy(holder: pg.ClientBase): Promise<void> {
+  const {
+    rows: [{ pid }],
+  } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const result = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`
+    );
+    if (result.rows[0].n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`nothing waited on backend ${pid}`);
 }
 
 /**

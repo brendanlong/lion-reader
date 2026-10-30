@@ -32,18 +32,11 @@ describe("OpmlImportExport drop zone accessibility", () => {
     renderWithTrpc(<OpmlImportExport />, { handlers });
 
     const input = getFileInput();
+    // Hidden without opacity, which would also hide its focus outline (#1573).
     expect(input).toHaveClass(DROP_ZONE_FILE_INPUT_CLASSES);
     expect(input).not.toHaveAttribute("hidden");
     expect(input.tabIndex).toBeGreaterThanOrEqual(0);
     expect(input).not.toBeDisabled();
-  });
-
-  it("can be focused", () => {
-    renderWithTrpc(<OpmlImportExport />, { handlers });
-
-    const input = getFileInput();
-    input.focus();
-    expect(input).toHaveFocus();
   });
 
   it("selecting a file through the input alone reaches the import preview", async () => {

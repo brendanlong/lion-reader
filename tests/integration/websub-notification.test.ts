@@ -30,7 +30,10 @@ import {
   MAX_RUNNING_FULL_CONTENT_JOBS,
   DEFAULT_JOB_TIMEOUT_MS,
 } from "../../src/server/jobs/queue";
-import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
+import {
+  handleFetchFullContent,
+  MAX_ATTEMPTS,
+} from "../../src/server/jobs/handlers/fetch-full-content";
 import { MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../../src/server/services/full-content";
 import {
   createTestEntry,
@@ -453,7 +456,10 @@ describe("ingestWebsubNotification", () => {
     const { feed } = await seedPushFeed("pushorder", new Date(now - 60 * 60 * 1000), {
       fetchFullContent: true,
     });
-    await ingestWebsubNotification(feed, multiPushBody("order", 12, new Date(now - 60 * 1000)));
+    await ingestWebsubNotification(
+      feed,
+      multiPushBody("order", MAX_FULL_CONTENT_ENTRIES_PER_BATCH + 2, new Date(now - 60 * 1000))
+    );
     const claimed = await claimFullContentJob();
     const claimedIds = getJobPayload(claimed!, "fetch_full_content").entryIds;
 
@@ -468,7 +474,7 @@ describe("ingestWebsubNotification", () => {
     )!;
     const pendingIds = getJobPayload(pending, "fetch_full_content").entryIds;
     expect(pendingIds).toHaveLength(3);
-    expect(pendingIds.slice(0, 2)).toEqual(claimedIds.slice(10));
+    expect(pendingIds.slice(0, 2)).toEqual(claimedIds.slice(MAX_FULL_CONTENT_ENTRIES_PER_BATCH));
   });
 
   describe("attempt cap", () => {
@@ -476,7 +482,7 @@ describe("ingestWebsubNotification", () => {
     // infrastructure failures that are the only way this job throws.
     const broken = { feedId: "not-a-uuid", entryIds: ["also-not-a-uuid"] };
 
-    it("still runs on the third attempt", async () => {
+    it("still runs on the last attempt", async () => {
       const now = Date.now();
       const { feed } = await seedPushFeed("pushthird", new Date(now - 60 * 60 * 1000), {
         fetchFullContent: true,
@@ -487,17 +493,20 @@ describe("ingestWebsubNotification", () => {
       );
       const [queued] = await queuedFullContentJobs();
 
-      const result = await handleFetchFullContent(getJobPayload(queued, "fetch_full_content"), 2);
+      const result = await handleFetchFullContent(
+        getJobPayload(queued, "fetch_full_content"),
+        MAX_ATTEMPTS - 1
+      );
       expect(result.success).toBe(true);
       expect(articleRequests).toEqual(["/post/third-1"]);
     });
 
     it("rethrows for the worker to retry before the last attempt", async () => {
-      await expect(handleFetchFullContent(broken, 1)).rejects.toThrow();
+      await expect(handleFetchFullContent(broken, MAX_ATTEMPTS - 2)).rejects.toThrow();
     });
 
     it("gives up without throwing when the last attempt fails", async () => {
-      const result = await handleFetchFullContent(broken, 2);
+      const result = await handleFetchFullContent(broken, MAX_ATTEMPTS - 1);
       expect(result.success).toBe(false);
       expect(result.error).toMatch(/^Giving up/);
     });

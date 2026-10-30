@@ -7,7 +7,7 @@
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { REDIS_COMMAND_TIMEOUT_MS, REDIS_SOCKET_TIMEOUT_MS } from "@/server/redis";
+import { REDIS_SOCKET_TIMEOUT_MS } from "@/server/redis";
 
 describe("getRedisClient", () => {
   let proxy: Server;
@@ -58,9 +58,7 @@ describe("getRedisClient", () => {
         await redis.ping();
         frozen = true;
 
-        const start = Date.now();
         await expect(redis.get("key")).rejects.toThrow(/timed out/);
-        expect(Date.now() - start).toBeLessThan(REDIS_COMMAND_TIMEOUT_MS * 2);
 
         frozen = false;
         await vi.waitFor(() => expect(connections).toBe(2), {

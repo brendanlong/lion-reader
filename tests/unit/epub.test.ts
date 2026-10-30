@@ -350,13 +350,16 @@ describe("openEpub", () => {
     });
 
     it("drops an inlined SVG once the book's chapters have saved its text budget", async () => {
+      // Small enough to fit one chapter, inlined in more chapters than the budget holds.
+      const svgBytes = Math.floor(limit * 0.4);
+      const chapterCount = Math.ceil((limit * EPUB_MAX_TEXT_FACTOR) / svgBytes) + 1;
       const chapters = await readChapters(
         buildEpub({
-          spine: Array.from({ length: 5 }, (_, i) => ({
+          spine: Array.from({ length: chapterCount }, (_, i) => ({
             path: `${i}.xhtml`,
             xhtml: chapterXhtml('<p>Text</p><img src="pic.svg"/>'),
           })),
-          files: { "OEBPS/pic.svg": svgOfSize(Math.floor(limit * 0.4)) },
+          files: { "OEBPS/pic.svg": svgOfSize(svgBytes) },
           manifest: { "pic.svg": "image/svg+xml" },
         })
       );

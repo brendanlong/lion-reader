@@ -20,11 +20,11 @@ import { users, entrySummaries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { getAppErrorCode } from "../../src/server/errors";
-import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { DEFAULT_SUMMARIZATION_MODELS } from "../../src/lib/summarization/constants";
 import {
   createAuthContext,
   createTestEntry,
+  createTestEntrySummary,
   createTestFeed,
   createTestSubscription,
   createTestUser,
@@ -187,17 +187,11 @@ describe("summarization.generate cached read path", () => {
 
     // Simulate a summary stored before a sanitizer hardening: it still carries a
     // <script> tag and an inline event handler that the current sanitizer strips.
-    await db.insert(entrySummaries).values({
-      id: generateUuidv7(),
+    await createTestEntrySummary(
       userId,
       contentHash,
-      summaryText:
-        '<p onclick="steal()">Summary body</p><script>alert(1)</script><img src=x onerror="alert(2)">',
-      modelId: "claude-test",
-      promptVersion: CURRENT_PROMPT_VERSION,
-      generatedAt: new Date(),
-      createdAt: new Date(),
-    });
+      '<p onclick="steal()">Summary body</p><script>alert(1)</script><img src=x onerror="alert(2)">'
+    );
 
     const caller = createCaller(await createAuthContext(userId));
     const result = await caller.summarization.generate({ entryId, useFullContent: false });
@@ -244,16 +238,7 @@ describe("summarization.generate entry visibility", () => {
   it("summarizes a saved article, which has no subscription row", async () => {
     const contentHash = `hash-${generateUuidv7()}`;
     const entryId = await createVisibleEntry(userId, contentHash, { saved: true });
-    await db.insert(entrySummaries).values({
-      id: generateUuidv7(),
-      userId,
-      contentHash,
-      summaryText: "<p>Saved article summary</p>",
-      modelId: "claude-test",
-      promptVersion: CURRENT_PROMPT_VERSION,
-      generatedAt: new Date(),
-      createdAt: new Date(),
-    });
+    await createTestEntrySummary(userId, contentHash, "<p>Saved article summary</p>");
 
     const caller = createCaller(await createAuthContext(userId));
     const result = await caller.summarization.generate({ entryId, useFullContent: false });
@@ -280,24 +265,13 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     return userId;
   }
 
-  async function cacheSummary(userId: string, contentHash: string, text: string): Promise<void> {
-    await db.insert(entrySummaries).values({
-      id: generateUuidv7(),
-      userId,
-      contentHash,
-      summaryText: text,
-      modelId: DEFAULT_SUMMARIZATION_MODELS.anthropic,
-      promptVersion: CURRENT_PROMPT_VERSION,
-      generatedAt: new Date(),
-      createdAt: new Date(),
-    });
-  }
-
   it("skips the cached feed summary when regenerate is true", async () => {
     const userId = await createUser();
     const contentHash = `hash-${generateUuidv7()}`;
     const entryId = await createVisibleEntry(userId, contentHash);
-    await cacheSummary(userId, contentHash, "<p>Cached feed summary</p>");
+    await createTestEntrySummary(userId, contentHash, "<p>Cached feed summary</p>", {
+      modelId: DEFAULT_SUMMARIZATION_MODELS.anthropic,
+    });
 
     const caller = createCaller(await createAuthContext(userId));
 
@@ -317,7 +291,9 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     const contentHash = `hash-${generateUuidv7()}`;
     const fullContentHash = `full-hash-${generateUuidv7()}`;
     const entryId = await createVisibleEntry(userId, contentHash, { fullContentHash });
-    await cacheSummary(userId, fullContentHash, "<p>Cached full-content summary</p>");
+    await createTestEntrySummary(userId, fullContentHash, "<p>Cached full-content summary</p>", {
+      modelId: DEFAULT_SUMMARIZATION_MODELS.anthropic,
+    });
 
     const caller = createCaller(await createAuthContext(userId));
 

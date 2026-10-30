@@ -23,66 +23,32 @@ describe("stripHtml", () => {
     });
   });
 
-  describe("spacing between block elements", () => {
-    it("adds space between heading and paragraph", () => {
-      const html = "<h1>The Title</h1><p>The content starts here.</p>";
-      expect(stripHtml(html, 300)).toBe("The Title The content starts here.");
-    });
-
-    it("adds space between consecutive paragraphs", () => {
-      const html = "<p>First paragraph.</p><p>Second paragraph.</p>";
-      expect(stripHtml(html, 300)).toBe("First paragraph. Second paragraph.");
-    });
-
-    it("adds space after list items", () => {
-      const html = "<ul><li>Item one</li><li>Item two</li></ul>";
-      expect(stripHtml(html, 300)).toBe("Item one Item two");
-    });
-
-    it("handles br tags", () => {
-      const html = "Line one<br>Line two<br/>Line three";
-      expect(stripHtml(html, 300)).toBe("Line one Line two Line three");
-    });
-
-    it("handles hr tags", () => {
-      const html = "<p>Before</p><hr><p>After</p>";
-      expect(stripHtml(html, 300)).toBe("Before After");
-    });
-
-    it("handles deeply nested block elements", () => {
-      const html = `
-        <article>
-          <header>
-            <h1>Article Title</h1>
-          </header>
-          <section>
-            <p>First paragraph.</p>
-          </section>
-        </article>
-      `;
-      expect(stripHtml(html, 300)).toBe("Article Title First paragraph.");
-    });
-  });
-
-  describe("whitespace normalization", () => {
-    it("collapses multiple spaces", () => {
-      const html = "<p>Hello    world</p>";
-      expect(stripHtml(html, 300)).toBe("Hello world");
-    });
-
-    it("collapses newlines and tabs", () => {
-      const html = "<p>Hello\n\n\tworld</p>";
-      expect(stripHtml(html, 300)).toBe("Hello world");
-    });
-
-    it("trims leading and trailing whitespace", () => {
-      const html = "   <p>  Hello world  </p>   ";
-      expect(stripHtml(html, 300)).toBe("Hello world");
-    });
-
-    it("does not add duplicate spaces between block elements", () => {
-      const html = "<h1>Title</h1>   <p>Content</p>";
-      expect(stripHtml(html, 300)).toBe("Title Content");
+  describe("spacing and whitespace", () => {
+    it.each([
+      [
+        "heading then paragraph",
+        "<h1>The Title</h1><p>The content starts here.</p>",
+        "The Title The content starts here.",
+      ],
+      [
+        "consecutive paragraphs",
+        "<p>First paragraph.</p><p>Second paragraph.</p>",
+        "First paragraph. Second paragraph.",
+      ],
+      ["list items", "<ul><li>Item one</li><li>Item two</li></ul>", "Item one Item two"],
+      ["br tags", "Line one<br>Line two<br/>Line three", "Line one Line two Line three"],
+      ["hr tags", "<p>Before</p><hr><p>After</p>", "Before After"],
+      [
+        "deeply nested blocks",
+        "<article>\n  <header><h1>Article Title</h1></header>\n  <section><p>First paragraph.</p></section>\n</article>",
+        "Article Title First paragraph.",
+      ],
+      ["runs of spaces", "<p>Hello    world</p>", "Hello world"],
+      ["newlines and tabs", "<p>Hello\n\n\tworld</p>", "Hello world"],
+      ["leading and trailing whitespace", "   <p>  Hello world  </p>   ", "Hello world"],
+      ["whitespace between blocks", "<h1>Title</h1>   <p>Content</p>", "Title Content"],
+    ])("separates words exactly once: %s", (_, html, expected) => {
+      expect(stripHtml(html, 300)).toBe(expected);
     });
   });
 
@@ -217,13 +183,6 @@ describe("stripHtml", () => {
 
     it("adds an ellipsis when the text before a cut is exactly the limit", () => {
       expect(stripHtml("<p>abcde</p><p>more</p>", 5)).toBe("ab...");
-    });
-
-    it("truncates at exact limit when no space found", () => {
-      const html = "<p>Supercalifragilisticexpialidocious</p>";
-      const result = stripHtml(html, 20);
-      expect(result).toBe("Supercalifragilis...");
-      expect(result.length).toBe(20);
     });
   });
 

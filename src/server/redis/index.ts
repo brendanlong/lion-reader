@@ -24,7 +24,7 @@ let redisClient: Redis | null = null;
  * unreachable, which hangs every request that touches Redis. A timed-out
  * command can still run once the connection recovers.
  */
-export const REDIS_COMMAND_TIMEOUT_MS = 1000;
+const REDIS_COMMAND_TIMEOUT_MS = 1000;
 
 /**
  * Drop the connection when a reply is this overdue, so a host that vanished

@@ -33,6 +33,9 @@ import { trackSSEEventSent } from "@/server/metrics/metrics";
 import type { EntryType } from "@/lib/entry-types";
 import { logger } from "@/lib/logger";
 
+/** How often the route sends a heartbeat. Here because a route file may export only handlers. */
+export const HEARTBEAT_INTERVAL_MS = 30_000;
+
 /**
  * Gets a mapping of feedId -> subscriptionId for a user's active web
  * subscriptions. This lets the connection transform feed events (which use

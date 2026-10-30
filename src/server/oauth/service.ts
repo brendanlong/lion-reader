@@ -466,7 +466,7 @@ export async function rotateRefreshToken(
  * requests). A genuine stolen-token replay lands well outside this window and is
  * still caught. Kept short to bound the window in which a real replay is missed.
  */
-const REFRESH_ROTATION_REUSE_GRACE_MS = 10_000;
+export const REFRESH_ROTATION_REUSE_GRACE_MS = 10_000;
 
 /**
  * Rotation-reuse detection: if a rotation attempt failed because the token was

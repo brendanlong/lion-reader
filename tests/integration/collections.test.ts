@@ -40,6 +40,7 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -397,7 +398,7 @@ describe("collections", () => {
       const { userId, feedId, entryA, collectionId } = await setup();
       const otherId = await createTestUser();
       await createTestSubscription(otherId, feedId);
-      await db.insert(userEntries).values({ userId: otherId, entryId: entryA });
+      await createTestUserEntries({ userId: otherId, entryId: entryA });
       const other = await createCollection(db, otherId, "Theirs");
       await addEntriesToCollection(db, otherId, other.subscription.id, [entryA]);
       const since = await cursorNow();

@@ -119,7 +119,6 @@ export function toMcpError(error: unknown): unknown {
 function withoutContent<T extends savedService.SavedArticle>(
   article: T
 ): Omit<T, "contentCleaned"> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { contentCleaned, ...rest } = article;
   return rest;
 }
