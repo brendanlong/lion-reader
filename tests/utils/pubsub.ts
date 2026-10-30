@@ -101,3 +101,48 @@ export async function expectNoMessage(
     subscriber.off("message", listener);
   }
 }
+
+/**
+ * Runs `action`, waits for `count` messages across `channels`, then `quietMs`
+ * longer, and returns every message that arrived: for asserting the exact set
+ * an action publishes, including that it published nothing more.
+ */
+export async function collectMessages(
+  subscriber: Redis,
+  channels: string[],
+  count: number,
+  action: () => Promise<unknown>,
+  quietMs = 200,
+  timeoutMs = 5000
+): Promise<Array<{ channel: string; message: string }>> {
+  const received: Array<{ channel: string; message: string }> = [];
+  let onMessage = (): void => {};
+  const listener = (channel: string, message: string) => {
+    if (!channels.includes(channel)) return;
+    received.push({ channel, message });
+    onMessage();
+  };
+  subscriber.on("message", listener);
+  try {
+    await action();
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(`Timed out waiting for ${count} message(s) (received ${received.length})`)
+          ),
+        timeoutMs
+      );
+      onMessage = () => {
+        if (received.length < count) return;
+        clearTimeout(timer);
+        resolve();
+      };
+      onMessage();
+    });
+    await new Promise((resolve) => setTimeout(resolve, quietMs));
+    return received;
+  } finally {
+    subscriber.off("message", listener);
+  }
+}

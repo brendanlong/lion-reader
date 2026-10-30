@@ -222,7 +222,7 @@ export function clampPublishedAt(pubDate: Date | undefined, fetchedAt: Date): Da
 }
 
 /** See {@link isBackfilledEntry}. */
-const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Decides whether an article reaching a subscriber who was already watching
