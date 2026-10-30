@@ -25,8 +25,6 @@ interface KeyboardShortcutsContextValue {
   openShortcutsModal: () => void;
   /** Close the keyboard shortcuts modal */
   closeShortcutsModal: () => void;
-  /** Whether the modal is currently open */
-  isModalOpen: boolean;
 }
 
 const KeyboardShortcutsContext = createContext<KeyboardShortcutsContextValue | null>(null);
@@ -75,9 +73,8 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
       setEnabled,
       openShortcutsModal,
       closeShortcutsModal,
-      isModalOpen,
     }),
-    [enabled, setEnabled, openShortcutsModal, closeShortcutsModal, isModalOpen]
+    [enabled, setEnabled, openShortcutsModal, closeShortcutsModal]
   );
 
   return (

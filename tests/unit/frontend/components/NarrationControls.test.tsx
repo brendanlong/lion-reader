@@ -228,6 +228,21 @@ describe("NarrationControls paragraph position", () => {
     fireEvent.keyDown(document, { key: "[", code: "BracketLeft" });
     await waitFor(() => expect(screen.getByText("1 of 8")).toBeInTheDocument());
   });
+
+  it("leaves the keyboard to an open dialog", async () => {
+    renderHarness(SKEWED_HTML);
+    await startNarration();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.append(dialog);
+
+    fireEvent.keyDown(document, { key: "]", code: "BracketRight" });
+    fireEvent.keyDown(document, { key: "p", code: "KeyP" });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(screen.getByText("1 of 8")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    dialog.remove();
+  });
 });
 
 describe("NarrationControls content variant switching", () => {
