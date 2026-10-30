@@ -1006,7 +1006,9 @@ const hasActiveSubscriber = (): SQL =>
  * Drops leases expiring before `expiryThreshold` on feeds nobody subscribes to
  * back to polling instead of renewing them: nothing polls such a feed, so
  * nothing else would ever end its lease. The hub's lease then lapses, and a
- * later subscriber's first fetch subscribes again. Returns how many it dropped.
+ * later subscriber's first fetch subscribes again. A subscriber arriving just
+ * after this ran, whose first fetch already saw WebSub active, gets push back
+ * only at the feed's next scheduled fetch. Returns how many it dropped.
  */
 async function deactivateUnsubscribedLeases(expiryThreshold: Date): Promise<number> {
   const now = new Date();

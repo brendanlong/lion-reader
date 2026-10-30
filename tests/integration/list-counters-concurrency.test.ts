@@ -32,6 +32,7 @@ import { deleteTag, lockUserTagLinks } from "../../src/server/services/tags";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { deleteUser } from "../../src/server/services/users";
+import { getAppErrorCode } from "../../src/server/errors";
 import {
   createTestEntry,
   createTestFeed,
@@ -310,13 +311,36 @@ describe("unread counters under concurrent writes", () => {
     const tagging = setSubscriptionTags(db, userId, subscriptionId, [tagId]);
     await waitForLockWaiter("%pg_advisory_xact_lock%");
     await deleting.commit();
-    await expect(tagging).rejects.toThrow();
+    await expect(tagging.catch(getAppErrorCode)).resolves.toBe("VALIDATION_ERROR");
 
     expect(
       await db
         .select()
         .from(subscriptionTags)
         .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+    ).toEqual([]);
+    await expectNoDrift();
+  });
+
+  it("deleting a tag while it's being linked sweeps the new link", async () => {
+    // The reverse order: deleteTag must wait for a setTags that has already
+    // linked the tag, or its sweep misses the uncommitted link.
+    const userId = await createTestUser();
+    const { subscriptionId } = await feedWithEntries(userId, 1);
+    const tagId = await createTestTag(userId);
+
+    // setTags, paused after linking the tag.
+    const tagging = await holdTransaction(async (tx) => {
+      await lockUserTagLinks(tx, userId);
+      await tx.insert(subscriptionTags).values({ subscriptionId, tagId });
+    });
+    const deleting = deleteTag(db, userId, tagId);
+    await waitForLockWaiter("%pg_advisory_xact_lock%");
+    await tagging.commit();
+    await deleting;
+
+    expect(
+      await db.select().from(subscriptionTags).where(eq(subscriptionTags.tagId, tagId))
     ).toEqual([]);
     await expectNoDrift();
   });

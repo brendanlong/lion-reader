@@ -91,7 +91,7 @@ describe("Job Queue", () => {
     it("claims a pending job", async () => {
       const created = await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       const claimed = await claimJob();
@@ -111,7 +111,7 @@ describe("Job Queue", () => {
 
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
         nextRunAt: futureDate,
       });
 
@@ -126,13 +126,13 @@ describe("Job Queue", () => {
       // Create jobs in reverse order
       const job2 = await createJob({
         type: "process_opml_import",
-        payload: { importId: "feed-2" },
+        payload: { importId: generateUuidv7() },
         nextRunAt: now,
       });
 
       const job1 = await createJob({
         type: "process_opml_import",
-        payload: { importId: "feed-1" },
+        payload: { importId: generateUuidv7() },
         nextRunAt: earlier,
       });
 
@@ -155,7 +155,7 @@ describe("Job Queue", () => {
       await createJob({ type: "fetch_feed", payload: { feedId: "test-feed-id" } });
       const oneTime = await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-import-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       expect((await claimJob())!.id).toBe(oneTime.id);
@@ -165,7 +165,7 @@ describe("Job Queue", () => {
     it("does not claim already running jobs", async () => {
       const created = await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       // Claim the job
@@ -180,7 +180,7 @@ describe("Job Queue", () => {
     it("reclaims stale jobs", async () => {
       const job = await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       // Claim the job
@@ -204,7 +204,7 @@ describe("Job Queue", () => {
       // Create a single job
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       // Simulate 5 workers trying to claim the job concurrently
@@ -224,15 +224,15 @@ describe("Job Queue", () => {
       // Create 3 jobs
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "feed-1" },
+        payload: { importId: generateUuidv7() },
       });
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "feed-2" },
+        payload: { importId: generateUuidv7() },
       });
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "feed-3" },
+        payload: { importId: generateUuidv7() },
       });
 
       // 5 workers try to claim jobs concurrently
@@ -292,7 +292,7 @@ describe("Job Queue", () => {
     it("finishes a job successfully", async () => {
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       const claimed = await claimJob();
@@ -313,7 +313,7 @@ describe("Job Queue", () => {
     it("finishes a job with failure", async () => {
       await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       const claimed = await claimJob();
@@ -335,7 +335,7 @@ describe("Job Queue", () => {
     it("increments consecutiveFailures on repeated failures", async () => {
       const job = await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       // First failure
@@ -361,7 +361,7 @@ describe("Job Queue", () => {
     it("resets consecutiveFailures on success", async () => {
       const job = await createJob({
         type: "process_opml_import",
-        payload: { importId: "test-feed-id" },
+        payload: { importId: generateUuidv7() },
       });
 
       // Fail twice
