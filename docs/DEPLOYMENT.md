@@ -152,7 +152,8 @@ flyctl secrets set REDIS_URL="rediss://default:password@your-endpoint.upstash.io
 ## Object Storage
 
 Images in saved articles, uploads and newsletters live in S3-compatible object
-storage, and ebook import requires it (without it, images stay inline in the
+storage (as does the demo's recorded narration, among other things), and ebook
+import requires it (without it, images stay inline in the
 HTML). Create two buckets (lionreader.com's are Tigris, in
 `terraform/tigris.tf`):
 

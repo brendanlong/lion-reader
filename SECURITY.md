@@ -276,4 +276,5 @@ fetches user-influenced URLs and must never be usable to reach internal services
   procedure's credential checks before reading the body** and bound its size
   themselves (`serveUpload`).
 - **PDFs are converted only out of process** (`src/server/file/pdf-to-markdown.ts`),
-  so the kernel can cap what a hostile file costs.
+  since one hostile page can take gigabytes and only a separate process lets the
+  kernel cap that.

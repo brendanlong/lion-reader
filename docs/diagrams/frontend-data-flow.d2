@@ -167,11 +167,6 @@ hooks.useRealtimeUpdates -> client.cache_helpers: "handleSyncEvent" {
   style.stroke: "#388e3c"
 }
 
-hooks.useRealtimeUpdates -> client.local_db: "entry state/metadata,\nlive list inserts" {
-  style.stroke: "#388e3c"
-  style.stroke-width: 2
-}
-
 client.cache_helpers -> client.local_db: "Direct store updates" {
   style.stroke: "#00796b"
   style.stroke-width: 2

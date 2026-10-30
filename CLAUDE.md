@@ -48,7 +48,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Local Services (no Docker)
 
-Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres, Redis and an in-memory S3 on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<port> pnpm dev:local` (web + worker, no Discord bot).
+Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres, Redis and an in-memory S3 on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<random free port> pnpm dev:local` (web + worker, no Discord bot).
 
 ## Code Quality
 
@@ -108,7 +108,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM. Parse once and pas
 - HTML extraction: htmlparser2 (streaming)
 - DOM required: `linkedom`. Article extraction is the native `@lion-reader/readability`.
 - A DOM that must number elements exactly as the browser does: `src/lib/narration/parse-html.ts` (parse5 first; it says why). Nothing else needs it.
-- PDF: the `native/pdf` helper (pdf_oxide), spawned per file by `src/server/file/pdf-to-markdown.ts`. Never parse PDFs in-process: one hostile page can take gigabytes, and only a separate process lets the kernel cap that.
+- PDF: the `native/pdf` helper (pdf_oxide), spawned per file by `src/server/file/pdf-to-markdown.ts`. Never parse PDFs in-process (SECURITY.md §12).
 - Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, so every source shares one dialect and the renderer's size budgets.
 
 ## Module System (ESM)
