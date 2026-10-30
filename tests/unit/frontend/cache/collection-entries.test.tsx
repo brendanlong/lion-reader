@@ -430,6 +430,8 @@ describe("catch-up after a membership change made elsewhere", () => {
     writeCounts(db.counts, [{ list: { tagId: tag.id }, unread: 1 }], beforeGap);
     // An entry list fetched while disconnected, after the article left the
     // collection: the store already has its new memberships and newer state.
+    // The counts don't depend on it; it documents the scenario that broke
+    // deciding from the replayed memberships.
     upsertServerEntries(db.entries, [
       makeEntry("entry-1", "2024-06-01", { updatedAt: new Date("2024-07-01T12:00:00Z") }),
     ]);
