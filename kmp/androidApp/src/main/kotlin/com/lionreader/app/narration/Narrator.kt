@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -206,8 +207,9 @@ class Narrator(
     }
 
     /** Synthesis from one chunk on; a seek starts another. */
-    private class Feed {
-        var job: Job? = null
+    private class Feed(parent: Job) {
+        /** Its synthesis and [replay]s, so stopping it stops them all. */
+        val job = SupervisorJob(parent)
         val starved = Starved()
         /** Whether it has queued and synthesized everything it's going to. */
         var fed = false
@@ -417,7 +419,7 @@ class Narrator(
         val prepared = audio.prepared ?: return
         audio.feed?.job?.cancel()
         playingChunk.value = chunk
-        val feed = Feed()
+        val feed = Feed(scope.coroutineContext.job)
         audio.feed = feed
         player.setPlaybackSpeed(settings.value.narrationSpeed)
         player.playWhenReady = play
@@ -427,7 +429,7 @@ class Narrator(
         dir.deleteRecursively()
         dir.mkdirs()
         publishAt(chunk)
-        feed.job = scope.launch {
+        scope.launch(feed.job) {
             try {
                 feed(feed, audio.article, prepared, chunk)
             } catch (e: SpeechUnavailable) {
@@ -719,20 +721,16 @@ class Narrator(
         val feed = audio.feed ?: return
         // Each is paid for: one that keeps breaking is skipped, as the web does.
         val replays = feed.replays.merge(chunk, 1, Int::plus)!!
-        scope.launch {
+        scope.launch(feed.job) {
             val again =
                 try {
                     if (replays > MAX_REPLAYS) null else synthesizeOrSkip(feed, prepared, chunk)
                 } catch (e: SpeechUnavailable) {
-                    if (onArticle?.feed === feed) fail(e.message)
+                    // Not if a seek or another article replaced this feed meanwhile.
+                    if (isActive) fail(e.message)
                     return@launch
                 }
-            // Not if a seek or another article replaced this feed meanwhile.
-            if (onArticle?.feed !== feed) return@launch
-            val index =
-                (0 until player.mediaItemCount).firstOrNull {
-                    player.getMediaItemAt(it).mediaId == "$chunk"
-                } ?: return@launch
+            val index = itemOf(chunk) ?: return@launch
             // Unless it was moved off meanwhile.
             val playing = player.currentMediaItemIndex == index
             if (again == null) {

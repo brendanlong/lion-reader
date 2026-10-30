@@ -31,6 +31,8 @@ import org.robolectric.annotation.Config
 @Config(application = android.app.Application::class)
 class NarratorTest {
     private val synthesized = mutableListOf<String>()
+    /** Syntheses that failed as unreachable. */
+    private var unreached = 0
     /** Calls to fail as unreachable before the engine answers again; -1 for all of them. */
     private var unreachableFor = 0
     /** Getting the engine fails as unreachable while this is set. */
@@ -58,6 +60,7 @@ class NarratorTest {
                 synthesisDone?.await()
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
+                    unreached++
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
@@ -585,6 +588,21 @@ class NarratorTest {
         assertEquals("a", state?.entryId)
         assertTrue(state!!.playing)
         assertEquals(0, state?.paragraph)
+    }
+
+    @Test
+    fun stoppingEndsTheTriesToSaySpeechAgain() {
+        streamHalf += "One."
+        narrator.narrate(article("a", "One.", "Two."))
+        idle()
+        unreachableFor = -1
+        breakOff(streamed.single())
+        idleUntil { unreached > 0 }
+        narrator.stop()
+        val tried = unreached
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(5))
+        assertEquals(tried, unreached)
     }
 
     @Test
