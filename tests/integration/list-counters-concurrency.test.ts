@@ -21,7 +21,8 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { markEntriesRead } from "../../src/server/services/entry-state";
+import { markEntriesRead, updateEntriesStarred } from "../../src/server/services/entry-state";
+import { setEntryScores } from "../../src/server/services/entry-scores";
 import {
   createSubscription,
   migrateSubscriptionsToExistingFeed,
@@ -215,6 +216,115 @@ describe("unread counters under concurrent writes", () => {
       await holder.end();
       await probe.end();
     }
+    await expectNoDrift();
+  });
+
+  it.each<[string, (userId: string, entryIds: string[]) => Promise<unknown>]>([
+    [
+      "marking read",
+      (userId, ids) =>
+        markEntriesRead(
+          db,
+          userId,
+          ids.map((id) => ({ id })),
+          true
+        ),
+    ],
+    [
+      "starring",
+      (userId, ids) =>
+        updateEntriesStarred(
+          db,
+          userId,
+          ids.map((id) => ({ id })),
+          true
+        ),
+    ],
+    [
+      "scoring",
+      (userId, ids) =>
+        setEntryScores(
+          db,
+          userId,
+          ids.map((entryId) => ({ entryId, score: 1 }))
+        ),
+    ],
+  ])(
+    "%s a batch locks its articles in id order, whatever order it names them",
+    async (_, write) => {
+      // An UPDATE locks rows in plan order, so two batches naming the same
+      // articles in opposite orders could each hold one the other waits for.
+      const userId = await createTestUser();
+      const { entryIds } = await feedWithEntries(userId, 2);
+      const [lower, higher] = [...entryIds].sort();
+      // Rewrite the lower row, so on disk it comes after the higher one.
+      await db
+        .update(userEntries)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, lower)));
+
+      const holder = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      const probe = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await holder.connect();
+      await probe.connect();
+      try {
+        const { rows } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        await holder.query("BEGIN");
+        await holder.query(
+          "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE",
+          [userId, lower]
+        );
+        const pending = write(userId, [higher, lower]);
+        await waitUntilBlockedBy(rows[0].pid);
+        // Waiting for the lower row, the write must not hold the higher one.
+        await probe.query("BEGIN");
+        await probe.query(
+          "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE NOWAIT",
+          [userId, higher]
+        );
+        await probe.query("ROLLBACK");
+        await holder.query("COMMIT");
+        await pending;
+      } finally {
+        await holder.end();
+        await probe.end();
+      }
+      await expectNoDrift();
+    }
+  );
+
+  it("tagging a subscription with a tag being deleted doesn't link the deleted tag", async () => {
+    // deleteTag holds the user row from before it reads the tag's links until
+    // it commits the tombstone; a setTags reading the tag as live meanwhile
+    // would link it after the delete's sweep, hiding the subscription from
+    // Uncategorized behind a tag nobody can see.
+    const userId = await createTestUser();
+    const { subscriptionId } = await feedWithEntries(userId, 1);
+    const tagId = await createTestTag(userId);
+
+    const deleter = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await deleter.connect();
+    try {
+      const { rows } = await deleter.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      await deleter.query("BEGIN");
+      await deleter.query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE", [userId]);
+      await deleter.query("UPDATE tags SET deleted_at = now(), updated_at = now() WHERE id = $1", [
+        tagId,
+      ]);
+      const tagging = setSubscriptionTags(db, userId, subscriptionId, [tagId]);
+      await waitUntilBlockedBy(rows[0].pid);
+      await deleter.query("COMMIT");
+      await expect(tagging).rejects.toThrow();
+    } finally {
+      await deleter.end();
+    }
+
+    expect(
+      await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+    ).toEqual([]);
     await expectNoDrift();
   });
 

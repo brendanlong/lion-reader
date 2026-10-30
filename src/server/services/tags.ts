@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, ne, sql, isNull, inArray, type SQL } from "drizzle-orm";
+import { eq, and, or, sql, isNull, inArray, type SQL } from "drizzle-orm";
 import { countsAsOfSchema } from "@/lib/events/schemas";
 import type { db as dbType } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
@@ -244,74 +244,43 @@ export async function updateTag(
   params: UpdateTagParams
 ): Promise<Tag> {
   const name = params.name === undefined ? undefined : validTagName(params.name);
-  // Verify the tag exists and belongs to the user (and is not deleted)
-  const existingTag = await db
-    .select()
-    .from(tags)
-    .where(and(eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
-    .limit(1);
+  const live = [eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)];
+  const changes = [
+    name === undefined ? undefined : sql`${tags.name} IS DISTINCT FROM ${name}`,
+    params.color === undefined ? undefined : sql`${tags.color} IS DISTINCT FROM ${params.color}`,
+  ].filter((change) => change !== undefined);
 
-  if (existingTag.length === 0) {
-    throw errors.tagNotFound();
-  }
-
-  // Check for duplicates among *live* tags only, so this fails with a clear
-  // error up front; the unique index decides races (caught below). A tag may
-  // be renamed to a different capitalization of its own name.
-  if (name !== undefined && name !== existingTag[0].name) {
-    const duplicateName = await db
-      .select({ id: tags.id })
-      .from(tags)
-      .where(
-        and(
-          eq(tags.userId, userId),
-          tagNameMatches(name),
-          isNull(tags.deletedAt),
-          ne(tags.id, tagId)
-        )
-      )
-      .limit(1);
-
-    if (duplicateName.length > 0) {
-      throw errors.tagNameTaken();
+  let changed = false;
+  if (changes.length > 0) {
+    try {
+      // The unique index decides a name clash, ignoring case, among live tags.
+      const updated = await db
+        .update(tags)
+        .set({ name, color: params.color, updatedAt: new Date() })
+        .where(and(...live, or(...changes)))
+        .returning({ id: tags.id });
+      changed = updated.length > 0;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw errors.tagNameTaken();
+      }
+      throw err;
     }
   }
 
-  // Build the update object - always set updatedAt on changes
-  const updateData: { name?: string; color?: string | null; updatedAt: Date } = {
-    updatedAt: new Date(),
-  };
-
-  if (name !== undefined) {
-    updateData.name = name;
-  }
-
-  if (params.color !== undefined) {
-    updateData.color = params.color;
-  }
-
-  try {
-    // Scope the UPDATE by userId too — the ownership SELECT above already
-    // guarantees it, but keeping the predicate here makes the mutation
-    // self-evidently user-scoped in isolation (defense-in-depth).
-    await db
-      .update(tags)
-      .set(updateData)
-      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)));
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      throw errors.tagNameTaken();
-    }
-    throw err;
-  }
-
-  const tag = await selectTagWithCounts(db, eq(tags.id, tagId), eq(tags.userId, userId));
+  const tag = await selectTagWithCounts(db, ...live);
   if (!tag) {
     throw errors.tagNotFound();
   }
 
-  // Publish tag updated event for multi-tab/device sync (fire and forget)
-  publishUserEvent({ type: "tag_updated", userId, tag: toSyncTag(tag), updatedAt: tag.updatedAt });
+  if (changed) {
+    publishUserEvent({
+      type: "tag_updated",
+      userId,
+      tag: toSyncTag(tag),
+      updatedAt: tag.updatedAt,
+    });
+  }
 
   return toTag(tag);
 }
@@ -379,6 +348,10 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
       .where(and(eq(subscriptions.userId, userId), tagged))
       .orderBy(subscriptions.id)
       .for("no key update");
+    // Then the user row, before reading the associations: setTags takes it
+    // before checking its tags are live, so a link it adds is either visible
+    // to the delete below or refused there.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
     // Then the associations (scoped to the user's live tag): removing them
     // recomputes the user's counters, which locks the users row before the
     // tags rows, and tombstoning the tag first would invert that order.

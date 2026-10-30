@@ -293,6 +293,21 @@ describe("Tags API", () => {
 
         await expectNoMessage(subscriber, channel, () => caller.tags.create({ name: "news" }));
       });
+
+      it("publishes tag_updated only when the tag actually changes", async () => {
+        const userId = await createTestUser();
+        const tagId = await createTestTag(userId, { name: "Tech", color: "#ff6b6b" });
+        const caller = createCaller(await createAuthContext(userId));
+        const channel = getUserEventsChannel(userId);
+
+        await subscribeAndDrain(subscriber, channel, () =>
+          caller.tags.update({ id: tagId, color: "#000000" })
+        );
+
+        await expectNoMessage(subscriber, channel, () =>
+          caller.tags.update({ id: tagId, name: "Tech", color: "#000000" })
+        );
+      });
     });
 
     it("gives concurrent creates of one name the same tag", async () => {

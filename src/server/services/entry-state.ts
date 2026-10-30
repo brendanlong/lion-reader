@@ -154,6 +154,26 @@ export async function finishEntriesRead(
   return counts;
 }
 
+/**
+ * Locks the user's rows for these entries sorted by entry id, as the lock order
+ * in `src/server/CLAUDE.md` requires before a statement updates several: an
+ * `UPDATE` locks rows in plan order, so two batches naming the same entries in
+ * different orders would otherwise deadlock.
+ */
+export async function lockUserEntryRows(
+  tx: DbOrTx,
+  userId: string,
+  entryIds: string[]
+): Promise<void> {
+  if (entryIds.length === 0) return;
+  await tx
+    .select({ entryId: userEntries.entryId })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)))
+    .orderBy(userEntries.entryId)
+    .for("no key update");
+}
+
 /** The write half of `markEntriesRead`, safe inside a transaction. */
 export async function writeEntriesRead(
   db: DbOrTx,
@@ -192,7 +212,10 @@ export async function writeEntriesRead(
   // clients (issue #1118 Part 2). The last-writer-wins watermark
   // (`read_changed_at`) is a SEPARATE column and still advances on every
   // accepted write, so cross-device conflict resolution is unchanged.
-  const updated = await db.execute<{ entry_id: string; old_read: boolean }>(sql`
+  const ids = entriesToMark.map((e) => e.id);
+  const updated = await db.transaction(async (tx) => {
+    await lockUserEntryRows(tx, userId, ids);
+    return tx.execute<{ entry_id: string; old_read: boolean }>(sql`
     UPDATE user_entries AS ue
     SET read = ${read},
         updated_at = CASE WHEN prev.read <> ${read} THEN ${now} ELSE ue.updated_at END,
@@ -206,6 +229,7 @@ export async function writeEntriesRead(
       AND (ue.read_changed_at IS NULL OR ue.read_changed_at <= v.ts)
     RETURNING ue.entry_id AS entry_id, prev.read AS old_read
   `);
+  });
   // Rows whose read value actually flipped — the only ones that warrant SSE
   // events and count recomputation. Same-value writes still advanced the
   // watermark above.
@@ -215,11 +239,7 @@ export async function writeEntriesRead(
 
   // Always resolve final state for all requested entries, including the context
   // fields callers need for cache updates and count queries.
-  const entries = await selectEntryStates(
-    db,
-    userId,
-    entriesToMark.map((e) => e.id)
-  );
+  const entries = await selectEntryStates(db, userId, ids);
 
   return { entries, changed: entries.filter((entry) => flippedIds.has(entry.id)) };
 }
@@ -576,7 +596,10 @@ export async function updateEntriesStarred(
   const rows = entriesToStar.map(
     (entry) => sql`(${entry.id}::uuid, ${(entry.changedAt ?? now).toISOString()}::timestamptz)`
   );
-  const updated = await db.execute<{ entry_id: string; old_starred: boolean }>(sql`
+  const ids = entriesToStar.map((entry) => entry.id);
+  const updated = await db.transaction(async (tx) => {
+    await lockUserEntryRows(tx, userId, ids);
+    return tx.execute<{ entry_id: string; old_starred: boolean }>(sql`
     UPDATE user_entries AS ue
     SET starred = ${starred},
         starred_changed_at = v.ts,
@@ -590,6 +613,7 @@ export async function updateEntriesStarred(
       AND ue.starred_changed_at <= v.ts
     RETURNING ue.entry_id AS entry_id, prev.starred AS old_starred
   `);
+  });
   const flippedIds = new Set(
     updated.rows.filter((row) => row.old_starred !== starred).map((row) => row.entry_id)
   );
@@ -597,11 +621,7 @@ export async function updateEntriesStarred(
   // Resolved from `user_entries`, not `visible_entries`: unstarring an orphan
   // drops it out of the view, and a silently empty read-back here would skip
   // the counts and the SSE publish (see selectStarredEntryStates).
-  const entriesState = await selectStarredEntryStates(
-    db,
-    userId,
-    entriesToStar.map((entry) => entry.id)
-  );
+  const entriesState = await selectStarredEntryStates(db, userId, ids);
 
   // Only entries whose starred value actually flipped warrant SSE events and
   // count recomputation (issue #1118); a batch of pure re-asserts still

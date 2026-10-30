@@ -15,6 +15,7 @@ import {
   tags,
   subscriptionTags,
   userEntries,
+  users,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
@@ -203,21 +204,6 @@ async function changeSubscriptionTags(
     throw errors.subscriptionNotFound();
   }
 
-  // Excluding tombstoned tags prevents assigning a tag that is invisible in
-  // listTags (which would silently drop the subscription from "Uncategorized").
-  const validTags =
-    addedTagIds.length === 0
-      ? []
-      : await db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(
-            and(eq(tags.userId, userId), inArray(tags.id, addedTagIds), isNull(tags.deletedAt))
-          );
-  if (validTags.length !== addedTagIds.length) {
-    throw errors.validation("One or more tag IDs are invalid or do not belong to you");
-  }
-
   const now = new Date();
 
   // One transaction, or a crash or concurrent call between the delete and the
@@ -228,6 +214,20 @@ async function changeSubscriptionTags(
     // then users, then tags. The row is read under the lock, so the event
     // can't revert a concurrent rename.
     await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
+    // The user row serializes this with deleteTag, so a tag it tombstones is
+    // either gone below or its delete sees the link this adds. A link to a
+    // tombstoned tag would silently drop the subscription from "Uncategorized"
+    // while the tag is invisible in listTags.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
+    if (addedTagIds.length > 0) {
+      const liveTags = await tx
+        .select({ id: tags.id })
+        .from(tags)
+        .where(and(eq(tags.userId, userId), inArray(tags.id, addedTagIds), isNull(tags.deletedAt)));
+      if (liveTags.length !== addedTagIds.length) {
+        throw errors.validation("One or more tag IDs are invalid or do not belong to you");
+      }
+    }
 
     let changed: boolean;
     if ("set" in change) {

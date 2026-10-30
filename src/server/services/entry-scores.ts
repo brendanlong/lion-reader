@@ -10,7 +10,7 @@ import type { db as dbType } from "@/server/db";
 import { userEntries } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 import { visibleUserEntrySql } from "./entry-filters";
-import { publishEntryStates } from "./entry-state";
+import { lockUserEntryRows, publishEntryStates } from "./entry-state";
 
 /** The most scores one write may set. */
 export const MAX_ENTRY_SCORE_BATCH = 1000;
@@ -61,7 +61,9 @@ export async function setEntryScores(
         visibleUserEntrySql()
       )
     );
-  const updated = await db.execute<{ entry_id: string; score: number | null }>(sql`
+  const updated = await db.transaction(async (tx) => {
+    await lockUserEntryRows(tx, userId, [...byEntry.keys()]);
+    return tx.execute<{ entry_id: string; score: number | null }>(sql`
     UPDATE ${userEntries}
     SET score = v.score, updated_at = ${new Date()}
     FROM (VALUES ${sql.join(values, sql`, `)}) AS v(entry_id, score)
@@ -71,6 +73,7 @@ export async function setEntryScores(
       AND ${userEntries.score} IS DISTINCT FROM v.score
     RETURNING ${userEntries.entryId}, ${userEntries.score}
   `);
+  });
 
   const found = new Set(visible.map((row) => row.entryId));
   publishEntryStates(

@@ -23,7 +23,7 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-events";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
-import { publishEntryStates } from "@/server/services/entry-state";
+import { lockUserEntryRows, publishEntryStates } from "@/server/services/entry-state";
 import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   getSubscription,
@@ -471,22 +471,6 @@ export async function addEntryToCollections(
       });
     }
   }
-}
-
-/**
- * Locks the user's rows for these entries before anything else, matching the
- * unread-counter triggers' lock order (user_entries rows, subscriptions,
- * users, tags); marking one of them read concurrently would otherwise
- * deadlock against this transaction.
- */
-async function lockUserEntryRows(tx: Transaction, userId: string, entryIds: string[]) {
-  if (entryIds.length === 0) return;
-  await tx
-    .select({ entryId: userEntries.entryId })
-    .from(userEntries)
-    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)))
-    .orderBy(userEntries.entryId)
-    .for("no key update");
 }
 
 /**
