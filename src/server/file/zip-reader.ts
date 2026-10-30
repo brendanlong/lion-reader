@@ -1,10 +1,10 @@
-/**
- * Opens an uploaded ZIP archive (EPUB, DOCX) with JSZip. Every archive we read
- * comes through {@link loadZip}.
- */
+/** Opens an uploaded ZIP archive (EPUB, DOCX) with JSZip. */
 
 import JSZip from "jszip";
 import { errors } from "@/server/errors";
+
+export type ZipArchive = JSZip;
+export type ZipArchiveEntry = JSZip.JSZipObject;
 
 /**
  * The most entries an archive may have. JSZip builds objects for every
@@ -37,7 +37,7 @@ function countCentralHeaders(buffer: Buffer, limit: number): number {
  * @throws `CONTENT_TOO_LARGE` if the archive has too many entries
  * @throws JSZip's error if `buffer` isn't a ZIP archive
  */
-export async function loadZip(buffer: Buffer): Promise<JSZip> {
+export async function loadZip(buffer: Buffer): Promise<ZipArchive> {
   if (countCentralHeaders(buffer, MAX_ZIP_ENTRIES) > MAX_ZIP_ENTRIES) {
     throw errors.contentTooComplex("The archive");
   }

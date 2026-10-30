@@ -22,11 +22,10 @@
 
 import { Worker } from "node:worker_threads";
 import { join } from "node:path";
-import type JSZip from "jszip";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
-import { loadZip } from "@/server/file/zip-reader";
+import { loadZip, type ZipArchiveEntry } from "@/server/file/zip-reader";
 import {
   documentConversionSlot,
   QueueTimeoutError,
@@ -156,7 +155,7 @@ async function assertInflatedSizeWithinBudget(buffer: Buffer): Promise<void> {
  * Inflates one entry, returning its size — or, once it passes `budget`, a count
  * just over it, having paused the stream so no more is inflated.
  */
-function countInflatedBytes(entry: JSZip.JSZipObject, budget: number): Promise<number> {
+function countInflatedBytes(entry: ZipArchiveEntry, budget: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const stream = entry.nodeStream();
     let bytes = 0;

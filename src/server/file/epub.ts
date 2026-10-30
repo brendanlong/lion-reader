@@ -20,13 +20,12 @@
 import { posix } from "node:path";
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { TRPCError } from "@trpc/server";
-import type JSZip from "jszip";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
 import { escapeHtml } from "@/server/http/html";
 import { createSaxParser } from "@/server/html/sax";
 import { documentConversionSlot, QueueTimeoutError } from "@/server/file/conversion-slot";
-import { loadZip } from "@/server/file/zip-reader";
+import { loadZip, type ZipArchive } from "@/server/file/zip-reader";
 
 /**
  * Everything inflated from one book, as a multiple of the saved-article size
@@ -157,7 +156,7 @@ class BudgetedZip {
   private inflated = 0;
   private readonly budget = usageLimitsConfig.maxSavedArticleSizeBytes * EPUB_MAX_INFLATION_FACTOR;
 
-  constructor(private readonly zip: JSZip) {}
+  constructor(private readonly zip: ZipArchive) {}
 
   has(path: string): boolean {
     const entry = this.zip.file(path);
