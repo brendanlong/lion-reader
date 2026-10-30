@@ -148,9 +148,10 @@
   --control-selected: #b45309; /* amber-700 */
 
   /* The paragraph being narrated (NarrationHighlightStyles): a fill behind
-     text, a ring around an image */
+     text, and a ring around an image (and, -edge wide, around text) */
   --narration-highlight: rgba(253, 230, 138, 0.3); /* amber-200/30 */
   --narration-highlight-ring: rgba(253, 230, 138, 0.5); /* amber-200/50 */
+  --narration-highlight-edge: 0;
 
   /* =================================
      UI Typography Scale (16px baseline)
@@ -336,6 +337,7 @@
   --control-selected: #f59e0b; /* amber-500 */
   --narration-highlight: rgba(113, 63, 18, 0.3); /* yellow-900/30 */
   --narration-highlight-ring: rgba(113, 63, 18, 0.5); /* yellow-900/50 */
+  --narration-highlight-edge: 0;
 }
 
 /* =================================
@@ -487,10 +489,11 @@
   /* Gray, not ink: a hovered card must not read as the selected (black) one */
   --edge-emphasis: var(--epaper-gray-light);
 
-  /* Solid, not a translucent tint (near-invisible in grayscale). The fill is
-     the ramp's light level, which black text still reads on at 5.9:1. */
-  --narration-highlight: var(--epaper-gray-light);
-  --narration-highlight-ring: var(--epaper-ink);
+  /* A ring, not a fill (state goes on borders here): a gray fill would take
+     dark-gray text below 3:1. Dark gray, so it isn't the black focus outline. */
+  --narration-highlight: transparent;
+  --narration-highlight-ring: var(--epaper-gray-dark);
+  --narration-highlight-edge: 2px;
 }
 
 /* Darken Tailwind Typography's prose palette to match the e-paper text tones */
@@ -593,6 +596,7 @@
     --control-selected: #f59e0b; /* amber-500 */
     --narration-highlight: rgba(113, 63, 18, 0.3); /* yellow-900/30 */
     --narration-highlight-ring: rgba(113, 63, 18, 0.5); /* yellow-900/50 */
+    --narration-highlight-edge: 0;
   }
 }
 

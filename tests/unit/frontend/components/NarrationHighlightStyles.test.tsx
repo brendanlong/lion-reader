@@ -42,4 +42,11 @@ describe("NarrationHighlightStyles", () => {
       for (const token of tokens) expect(block, `${token} in ${theme}`).toContain(`${token}:`);
     }
   });
+
+  it("marks e-paper's highlight with a ring, not a fill", () => {
+    // E-paper carries state on borders (src/components/CLAUDE.md).
+    const epaper = themeBlock(".epaper");
+    expect(epaper).toContain("--narration-highlight: transparent;");
+    expect(epaper).not.toMatch(/--narration-highlight-edge: 0;/);
+  });
 });

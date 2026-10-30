@@ -57,6 +57,7 @@ function generateHighlightCSS(paragraphIds: Set<number>): string {
   return `
 ${textSelectors.join(",\n")} {
   background-color: var(--narration-highlight);
+  box-shadow: 0 0 0 var(--narration-highlight-edge) var(--narration-highlight-ring);
   border-radius: 0.25rem;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
   scroll-margin-top: 100px;
