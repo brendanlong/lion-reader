@@ -22,7 +22,6 @@ import type { NewEntryListItem } from "@/lib/events/schemas";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
-import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES, maxEbookUploadBytes } from "@/lib/upload-limits";
 import { uploadIdempotencyKeySchema } from "@/server/trpc/validation";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import {
@@ -74,7 +73,11 @@ const listItem: NewEntryListItem = {
 
 const book = createSubscriptionRow({ id: "collection-1", type: "collection", title: "Book" });
 
+// Not the default limits, which the dialog mustn't assume.
+const uploadLimits = { maxFileBytes: 1000, maxEbookBytes: 4000 };
+
 const handlers: ProcedureHandlers = {
+  "saved.uploadLimits": () => uploadLimits,
   "subscriptions.list": () => ({ items: [book], nextCursor: undefined }),
   "saved.uploadFile": () => ({
     article: { id: "entry-1", title: "notes" },
@@ -195,28 +198,26 @@ describe("FileUploadButton drop zone accessibility", () => {
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
   });
 
-  it("holds a document to the article limit and an ebook to the ebook limit", async () => {
+  it("holds a document and an ebook to the server's limits", async () => {
     renderWithTrpc(<FileUploadButton />, { handlers });
     openDialog();
+    expect(await screen.findByText(/up to 1000 B; .* up to 3\.9 KB/)).toBeInTheDocument();
     const sized = (name: string, size: number) => {
       const file = new File([""], name);
       Object.defineProperty(file, "size", { value: size });
       return file;
     };
 
-    const doc = sized("big.md", DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES + 1);
+    const doc = sized("big.md", uploadLimits.maxFileBytes + 1);
     fireEvent.change(getFileInput(), { target: { files: [doc] } });
     expect(await screen.findByText(/File is too large/)).toBeInTheDocument();
 
-    const ebook = sized("big.epub", DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES + 1);
+    const ebook = sized("big.epub", uploadLimits.maxEbookBytes);
     fireEvent.change(getFileInput(), { target: { files: [ebook] } });
     expect(await screen.findByText("big.epub")).toBeInTheDocument();
     expect(screen.queryByText(/File is too large/)).not.toBeInTheDocument();
 
-    const tooBigEbook = sized(
-      "huge.epub",
-      maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES) + 1
-    );
+    const tooBigEbook = sized("huge.epub", uploadLimits.maxEbookBytes + 1);
     fireEvent.change(getFileInput(), { target: { files: [tooBigEbook] } });
     expect(await screen.findByText(/File is too large/)).toBeInTheDocument();
   });
@@ -315,6 +316,7 @@ describe("FileUploadButton ebook import (#1805)", () => {
     originalTitle: "A Tale",
   };
   const ebookHandlers: ProcedureHandlers = {
+    "saved.uploadLimits": () => uploadLimits,
     "subscriptions.list": () => ({ items: [], nextCursor: undefined }),
     "collections.importEbook": () => ({
       subscription: collection,

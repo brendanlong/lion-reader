@@ -16,6 +16,7 @@
  * - saved.save: Save a URL (content extraction in services/saved.ts)
  * - saved.delete: Hard delete a saved article (entries use soft delete)
  * - saved.uploadFile: Upload a file (.docx/.pdf/.html/.md) as a saved article
+ * - saved.uploadLimits: The largest file uploadFile and collections.importEbook take
  *
  * Business logic lives in the saved service (`@/server/services/saved`),
  * shared with the MCP save_article/delete_saved_article/upload_article tools.
@@ -24,7 +25,12 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, scopedProtectedProcedure, uploadProcedure } from "../trpc";
+import {
+  confirmedProtectedProcedure,
+  createTRPCRouter,
+  scopedProtectedProcedure,
+  uploadProcedure,
+} from "../trpc";
 import { READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
@@ -36,6 +42,7 @@ import {
   uuidSchema,
 } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
+import { UPLOAD_FILE_LIMITS } from "@/lib/upload-limits";
 import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
@@ -228,6 +235,21 @@ export const savedRouter = createTRPCRouter({
         article,
         listItem,
         counts: await savedArticleCounts(ctx.db, userId, article.id),
+      };
+    }),
+
+  /**
+   * The largest file, in bytes, `saved.uploadFile` (`maxFileBytes`) and
+   * `collections.importEbook` (`maxEbookBytes`) take, as this server is
+   * configured, so a client can refuse a file before sending it.
+   */
+  uploadLimits: confirmedProtectedProcedure
+    .output(z.object({ maxFileBytes: z.number().int(), maxEbookBytes: z.number().int() }))
+    .query(() => {
+      const maxSavedArticleBytes = usageLimitsConfig.maxSavedArticleSizeBytes;
+      return {
+        maxFileBytes: UPLOAD_FILE_LIMITS["saved.uploadFile"](maxSavedArticleBytes),
+        maxEbookBytes: UPLOAD_FILE_LIMITS["collections.importEbook"](maxSavedArticleBytes),
       };
     }),
 });

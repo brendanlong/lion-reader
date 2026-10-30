@@ -27,7 +27,6 @@ import {
   SUPPORTED_UPLOAD_EXTENSIONS,
   isEbookFile,
 } from "@/lib/upload-file-types";
-import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES, maxEbookUploadBytes } from "@/lib/upload-limits";
 import { untitledSubscriptionLabel } from "@/lib/collections";
 import { useAppHref, useAppPathname } from "@/lib/hooks/useAppLocation";
 import { clientPush, extractParamsFromPathname } from "@/lib/navigation";
@@ -48,16 +47,11 @@ const COLLECTIONS_PAGE_SIZE = 100;
 
 const ACCEPTED_EXTENSIONS = [...SUPPORTED_UPLOAD_EXTENSIONS, ...EBOOK_UPLOAD_EXTENSIONS];
 
-const MAX_DOCUMENT_BYTES = DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES;
-const MAX_EBOOK_BYTES = maxEbookUploadBytes(DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES);
-
 // ============================================================================
 // Types
 // ============================================================================
 
 interface FileUploadButtonProps {
-  /** Optional class name for additional styling */
-  className?: string;
   /** Callback when file is successfully uploaded */
   onSuccess?: () => void;
 }
@@ -81,7 +75,7 @@ function formatFileSize(bytes: number): string {
 // FileUploadButton Component
 // ============================================================================
 
-export function FileUploadButton({ className = "", onSuccess }: FileUploadButtonProps) {
+export function FileUploadButton({ onSuccess }: FileUploadButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -132,6 +126,8 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     },
   });
   const isPending = uploadMutation.isPending || importEbookMutation.isPending;
+  // Until it loads, a file of any size may be picked: the server checks it too.
+  const { data: limits } = trpc.saved.uploadLimits.useQuery(undefined, { enabled: isOpen });
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -147,16 +143,22 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
     setIsDragging(false);
   };
 
-  const validateFile = useCallback((file: File): string | null => {
-    if (!isValidFileType(file.name)) {
-      return `Unsupported file type. Please upload ${ACCEPTED_EXTENSIONS.join(", ")} files.`;
-    }
-    const maxSize = isEbookFile(file.name, file.type) ? MAX_EBOOK_BYTES : MAX_DOCUMENT_BYTES;
-    if (file.size > maxSize) {
-      return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(maxSize)}.`;
-    }
-    return null;
-  }, []);
+  const validateFile = useCallback(
+    (file: File): string | null => {
+      if (!isValidFileType(file.name)) {
+        return `Unsupported file type. Please upload ${ACCEPTED_EXTENSIONS.join(", ")} files.`;
+      }
+      if (!limits) return null;
+      const maxSize = isEbookFile(file.name, file.type)
+        ? limits.maxEbookBytes
+        : limits.maxFileBytes;
+      if (file.size > maxSize) {
+        return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(maxSize)}.`;
+      }
+      return null;
+    },
+    [limits]
+  );
 
   const handleFileSelect = useCallback(
     (file: File) => {
@@ -246,7 +248,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`${buttonClassName({ variant: "secondary" })} gap-1.5 ${className}`}
+        className={`${buttonClassName({ variant: "secondary" })} gap-1.5`}
         title="Upload file"
         aria-label="Upload file"
       >
@@ -305,11 +307,13 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
               <div className="pointer-events-none flex flex-col items-center">
                 <UploadIcon className="text-faint h-10 w-10" />
                 <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
-                <p className="ui-text-sm text-muted">
-                  {SUPPORTED_UPLOAD_EXTENSIONS.join(", ")} up to{" "}
-                  {formatFileSize(MAX_DOCUMENT_BYTES)}; {EBOOK_UPLOAD_EXTENSIONS.join(", ")} up to{" "}
-                  {formatFileSize(MAX_EBOOK_BYTES)}
-                </p>
+                {limits && (
+                  <p className="ui-text-sm text-muted">
+                    {SUPPORTED_UPLOAD_EXTENSIONS.join(", ")} up to{" "}
+                    {formatFileSize(limits.maxFileBytes)}; {EBOOK_UPLOAD_EXTENSIONS.join(", ")} up
+                    to {formatFileSize(limits.maxEbookBytes)}
+                  </p>
+                )}
               </div>
             )}
           </div>

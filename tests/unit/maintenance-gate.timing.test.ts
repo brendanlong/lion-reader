@@ -5,7 +5,7 @@ import { evaluateRequest } from "../../src/server/maintenance/server-gate";
 
 describe("evaluateRequest", () => {
   beforeAll(() => {
-    process.env.ADMIN_SECRET = "test-admin-secret-for-gate";
+    process.env.ALLOWLIST_SECRET = "test-admin-secret-for-gate";
   });
 
   it("resolves a crafted whitespace-heavy Authorization header quickly (no ReDoS)", () => {

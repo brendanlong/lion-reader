@@ -92,7 +92,7 @@ describe("evaluateRequest", () => {
 
   describe("/api/trpc admin exception", () => {
     beforeAll(() => {
-      process.env.ADMIN_SECRET = "test-admin-secret-for-gate";
+      process.env.ALLOWLIST_SECRET = "test-admin-secret-for-gate";
     });
 
     it("blocks /api/trpc without a cookie", () => {
