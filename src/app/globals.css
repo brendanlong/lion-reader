@@ -147,6 +147,11 @@
      Aliases the accent (branded selection); kept separate so the two roles can diverge. */
   --control-selected: #b45309; /* amber-700 */
 
+  /* The paragraph being narrated (NarrationHighlightStyles): a fill behind
+     text, a ring around an image */
+  --narration-highlight: rgba(253, 230, 138, 0.3); /* amber-200/30 */
+  --narration-highlight-ring: rgba(253, 230, 138, 0.5); /* amber-200/50 */
+
   /* =================================
      UI Typography Scale (16px baseline)
      ================================= */
@@ -329,6 +334,8 @@
   --edge-emphasis: #71717a; /* zinc-500 */
   --focus: #f59e0b; /* amber-500 - the brand accent */
   --control-selected: #f59e0b; /* amber-500 */
+  --narration-highlight: rgba(113, 63, 18, 0.3); /* yellow-900/30 */
+  --narration-highlight-ring: rgba(113, 63, 18, 0.5); /* yellow-900/50 */
 }
 
 /* =================================
@@ -479,6 +486,11 @@
   --edge-input: var(--epaper-ink);
   /* Gray, not ink: a hovered card must not read as the selected (black) one */
   --edge-emphasis: var(--epaper-gray-light);
+
+  /* Solid, not a translucent tint (near-invisible in grayscale). The fill is
+     the ramp's light level, which black text still reads on at 5.9:1. */
+  --narration-highlight: var(--epaper-gray-light);
+  --narration-highlight-ring: var(--epaper-ink);
 }
 
 /* Darken Tailwind Typography's prose palette to match the e-paper text tones */
@@ -579,6 +591,8 @@
     --edge-emphasis: #71717a; /* zinc-500 */
     --focus: #f59e0b; /* amber-500 - the brand accent */
     --control-selected: #f59e0b; /* amber-500 */
+    --narration-highlight: rgba(113, 63, 18, 0.3); /* yellow-900/30 */
+    --narration-highlight-ring: rgba(113, 63, 18, 0.5); /* yellow-900/50 */
   }
 }
 
