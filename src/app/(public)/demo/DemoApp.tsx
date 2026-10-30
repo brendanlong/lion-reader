@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 import { HydrationBoundary } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { PageLink } from "@/components/ui/page-link";
+import { buttonClassName } from "@/components/ui/button";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { LayoutShell } from "@/components/layout/LayoutShell";
 import {
@@ -85,16 +86,10 @@ function DemoShell() {
     <LayoutShell
       headerRight={
         <div className="flex items-center gap-2">
-          <PageLink
-            href="/register"
-            className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
-          >
+          <PageLink href="/register" className={buttonClassName({ variant: "primary" })}>
             Sign up for free
           </PageLink>
-          <PageLink
-            href="/login"
-            className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors"
-          >
+          <PageLink href="/login" className={buttonClassName({ variant: "secondary" })}>
             Sign In
           </PageLink>
         </div>

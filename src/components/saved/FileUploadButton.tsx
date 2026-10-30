@@ -18,7 +18,7 @@ import {
   handleSubscriptionCreated,
 } from "@/lib/cache/operations";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonClassName } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
@@ -246,7 +246,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
       <button
         type="button"
         onClick={handleOpen}
-        className={`ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted active:bg-surface-pressed inline-flex min-h-[40px] items-center gap-1.5 rounded-md border px-3 font-medium transition-colors ${className}`}
+        className={`${buttonClassName({ variant: "secondary" })} gap-1.5 ${className}`}
         title="Upload file"
         aria-label="Upload file"
       >
