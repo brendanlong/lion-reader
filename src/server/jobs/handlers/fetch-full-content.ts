@@ -22,7 +22,7 @@ import type { OneTimeJobHandlerResult } from "./types";
  * backed-off retries (1 min, then 2 min) ride out a blip, and past that the
  * summary the feed already provided is an acceptable fallback.
  */
-const MAX_ATTEMPTS = 3;
+export const MAX_ATTEMPTS = 3;
 
 /**
  * Fetches full content for one batch of the job's entries, re-queues the rest

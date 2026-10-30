@@ -29,6 +29,8 @@ import { BUILD_ID } from "../../src/lib/build-id";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
+import { HEARTBEAT_INTERVAL_MS } from "../../src/server/realtime/sse-connection";
+import { ENTRY_TOMBSTONE_RETENTION_MS } from "../../src/server/services/entry-tombstones";
 import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
 import { MAX_CLOUD_SPEECH_CHARS } from "../../src/lib/narration/constants";
 import { createSession, revokeUserSession } from "../../src/server/auth/session";
@@ -239,7 +241,7 @@ describe("SSE credential re-check", () => {
     expect((await reader.read()).done).toBe(false);
     await revoke();
     for (let i = 0; i < 3; i++) {
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
     }
     for (;;) {
       const read = await Promise.race([
@@ -537,8 +539,10 @@ describe("sync.changes", () => {
     const userId = await createUser();
     const token = await appToken(userId);
     const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
-    // Nearly at the retention horizon.
-    const old = new Date(Date.now() - 59 * 24 * 60 * 60 * 1000).toISOString();
+    // A day short of the retention horizon.
+    const old = new Date(
+      Date.now() - ENTRY_TOMBSTONE_RETENTION_MS + 24 * 60 * 60 * 1000
+    ).toISOString();
 
     const delta = await (
       await rest(

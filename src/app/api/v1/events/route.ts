@@ -33,6 +33,7 @@ import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { checkRedisHealth } from "@/server/redis/pubsub";
 import {
   getUserFeedSubscriptionMap,
+  HEARTBEAT_INTERVAL_MS,
   startSseConnection,
   type SseConnection,
 } from "@/server/realtime/sse-connection";
@@ -45,15 +46,6 @@ import {
   trackSSEEventSent,
 } from "@/server/metrics/metrics";
 import { logger } from "@/lib/logger";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Heartbeat interval in milliseconds (30 seconds)
- */
-const HEARTBEAT_INTERVAL_MS = 30_000;
 
 // ============================================================================
 // Helper Functions

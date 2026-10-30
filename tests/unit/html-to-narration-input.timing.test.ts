@@ -18,7 +18,7 @@ import {
   parseBodyAsBrowser,
 } from "../../src/lib/narration/parse-html";
 import { parse, serialize } from "parse5";
-import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
+import { LLM_INPUT_VOICE, MAX_DEPTH, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
  * What the narration says, in order. Most of these tests are about the words;
@@ -818,7 +818,9 @@ describe("htmlToNarrationInput", () => {
 
   describe("markup nested past the depth the walk descends", () => {
     it("does not repeat an image an enclosing figure already spoke", () => {
-      const html = `${"<div>".repeat(62)}<figure><div><img alt="A cat"></div></figure>${"</div>".repeat(62)}`;
+      // The figure is above the cap, its image below it.
+      const wrappers = MAX_DEPTH - 2;
+      const html = `${"<div>".repeat(wrappers)}<figure><div><img alt="A cat"></div></figure>${"</div>".repeat(wrappers)}`;
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["Image: A cat"]);
@@ -827,7 +829,8 @@ describe("htmlToNarrationInput", () => {
     it("still speaks the text and the alt text it finds there", () => {
       // The cap keeps feed-controlled nesting from overflowing the stack; what
       // is below it is spoken as one paragraph rather than dropped.
-      const html = `${"<div>".repeat(70)}<p>bottom text</p><img alt="deep alt">${"</div>".repeat(70)}`;
+      const wrappers = MAX_DEPTH + 6;
+      const html = `${"<div>".repeat(wrappers)}<p>bottom text</p><img alt="deep alt">${"</div>".repeat(wrappers)}`;
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["bottom text Image: deep alt"]);

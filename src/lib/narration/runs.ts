@@ -108,8 +108,10 @@ const TEXT_NODE = 3;
  * Nothing a listener can follow nests this far, and the markup is
  * feed-controlled: a document nesting thousands of elements deep would
  * otherwise overflow the stack instead of being narrated.
+ *
+ * @testonly
  */
-const MAX_DEPTH = 64;
+export const MAX_DEPTH = 64;
 
 /** A table's own structure, which a layout table is walked through. */
 const TABLE_STRUCTURE = new Set(["thead", "tbody", "tfoot", "tr", "td", "th"]);

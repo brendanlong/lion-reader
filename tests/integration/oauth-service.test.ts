@@ -38,6 +38,7 @@ import {
   rotateRefreshToken,
   validateAccessToken,
   revokeClientToken,
+  REFRESH_ROTATION_REUSE_GRACE_MS,
 } from "../../src/server/oauth/service";
 import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -51,7 +52,7 @@ import { hashToken, isOAuthAccessTokenFormat } from "../../src/server/oauth/util
 async function backdateRevocation(refreshTokenPlaintext: string): Promise<void> {
   await db
     .update(oauthRefreshTokens)
-    .set({ revokedAt: new Date(Date.now() - 60_000) })
+    .set({ revokedAt: new Date(Date.now() - REFRESH_ROTATION_REUSE_GRACE_MS - 1) })
     .where(eq(oauthRefreshTokens.tokenHash, hashToken(refreshTokenPlaintext)));
 }
 
