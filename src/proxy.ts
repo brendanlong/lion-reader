@@ -71,9 +71,11 @@ function isPublicStaticPath(pathname: string): boolean {
 /**
  * The paths of our POST route handlers (`*` is one dynamic segment, `**` a
  * catch-all). Keep in sync with the `route.ts` files that export `POST`: the
- * proxy test POSTs to every one of them, and a missing entry fails closed (405).
+ * proxy test POSTs to every one of them and fails on an entry matching none; a
+ * missing entry fails closed (405).
+ * @testonly
  */
-const POST_ROUTE_HANDLER_PATHS = [
+export const POST_ROUTE_HANDLER_PATHS = [
   "/api/admin/session",
   "/api/greader.php/accounts/ClientLogin",
   "/api/greader.php/reader/api/0/disable-tag",
