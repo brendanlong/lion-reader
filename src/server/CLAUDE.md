@@ -55,7 +55,7 @@ Every badge reads one trigger-maintained counter (spam excluded; the list is in 
 
 ## Deletions in Delta Sync
 
-Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`). It must also queue, in that transaction, the deletion of the entry's objects in storage: its archived full-content pages (`enqueueFullContentArchiveDeletion`, `services/full-content-archive.ts`) and, for a saved article, the images stored under its prefix (`enqueueEntriesObjectsDeletion`, `services/stored-objects.ts`; deleting a user deletes their whole prefix). Nothing sweeps either bucket, so an object left there is never deleted, and the public bucket keeps it readable.
+Deltas key off change times, so a hard delete is invisible to them. **Hard-deleting an entry a client may hold must record an `entry_tombstones` row in the same transaction** (`services/entry-tombstones.ts`). It must also queue, in that transaction, the deletion of the entry's objects in storage: its archived full-content pages (`enqueueFullContentArchiveDeletion`, `services/full-content-archive.ts`) and, for a user's entry, the images stored under its prefix (`enqueueStoredObjectsDeletion`, `services/stored-objects.ts`; deleting a user deletes their whole prefix). Nothing sweeps either bucket, so an object left there is never deleted, and the public bucket keeps it readable.
 
 ## Stored Objects
 

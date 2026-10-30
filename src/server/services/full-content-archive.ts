@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
 import type { DbOrTx } from "@/server/db";
-import { createJob } from "@/server/jobs/queue";
+import { createJobs } from "@/server/jobs/queue";
 import { deleteObjectsWithPrefix, isArchiveAvailable, putArchiveObject } from "@/server/storage/s3";
 
 const gzipAsync = promisify(gzip);
@@ -21,10 +21,11 @@ const gzipAsync = promisify(gzip);
 const KEY_PREFIX = "full-content/";
 
 /**
- * Entries per deletion job. Each costs a list request, so this keeps a job
- * well inside `DEFAULT_JOB_TIMEOUT_MS` however many entries a delete removes.
+ * Entries per deletion job, here and in `stored-objects.ts`. Each costs a list
+ * request, so this keeps a job well inside `DEFAULT_JOB_TIMEOUT_MS` however
+ * many entries a delete removes.
  */
-const DELETION_JOB_ENTRIES = 200;
+export const DELETION_JOB_ENTRIES = 200;
 
 function fullContentArchiveKey(entryId: string, html: string): string {
   const hash = createHash("sha256").update(html, "utf8").digest("hex");
@@ -32,14 +33,19 @@ function fullContentArchiveKey(entryId: string, html: string): string {
   return `${KEY_PREFIX}${entryId.toLowerCase()}/${hash}.html.gz`;
 }
 
-/** Archives `html` as a page behind `entryId`'s full content (idempotent). */
-export async function archiveFullContentOriginal(entryId: string, html: string): Promise<void> {
-  if (!isArchiveAvailable()) return;
+/**
+ * Archives `html` as a page behind `entryId`'s full content (idempotent).
+ *
+ * @returns whether it did: false when there's no archive bucket
+ */
+export async function archiveFullContentOriginal(entryId: string, html: string): Promise<boolean> {
+  if (!isArchiveAvailable()) return false;
   await putArchiveObject(
     fullContentArchiveKey(entryId, html),
     await gzipAsync(html),
     "application/gzip"
   );
+  return true;
 }
 
 /**
@@ -53,26 +59,21 @@ export async function enqueueFullContentArchiveDeletion(
   entryIds: string[]
 ): Promise<void> {
   if (!isArchiveAvailable()) return;
+  const payloads = [];
   for (let i = 0; i < entryIds.length; i += DELETION_JOB_ENTRIES) {
-    await createJob(
-      {
-        type: "delete_full_content_archives",
-        payload: { entryIds: entryIds.slice(i, i + DELETION_JOB_ENTRIES) },
-      },
-      executor
-    );
+    payloads.push({ entryIds: entryIds.slice(i, i + DELETION_JOB_ENTRIES) });
   }
+  await createJobs("delete_full_content_archives", payloads, executor);
 }
 
 /**
- * Deletes every archived page of `entryIds` (idempotent). Throws on a storage
- * error, so the job retries.
+ * Deletes every archived page of `entryIds` (idempotent). Throws when the
+ * archive refuses or isn't configured (the job exists because it was), so the
+ * job retries.
  *
  * @returns how many pages were deleted
  */
 export async function deleteFullContentArchives(entryIds: string[]): Promise<number> {
-  if (!isArchiveAvailable()) return 0;
-
   let deleted = 0;
   for (const entryId of entryIds) {
     deleted += await deleteObjectsWithPrefix("archive", `${KEY_PREFIX}${entryId.toLowerCase()}/`);

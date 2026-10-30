@@ -1,6 +1,6 @@
 /**
  * Ebook images in object storage (#1805): each chapter's images are stored
- * under its entry (or the import fails), and deleting the chapter or the
+ * under its entry (or the import fails), and deleting the chapters or the
  * account deletes them through a `delete_stored_objects` job.
  */
 
@@ -10,7 +10,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, jobs, users } from "../../src/server/db/schema";
 import { importEbook } from "../../src/server/services/ebooks";
-import { deleteSavedArticle } from "../../src/server/services/saved";
+import {
+  deleteSavedArticle,
+  deleteSavedArticlesOnlyInCollection,
+} from "../../src/server/services/saved";
 import { deleteUser } from "../../src/server/services/users";
 import {
   entryObjectsPrefix,
@@ -19,7 +22,7 @@ import {
 } from "../../src/server/services/stored-objects";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getAppErrorCode } from "../../src/server/errors";
-import type { JobPayloads } from "../../src/server/jobs/queue";
+import { createJob, getJobPayload } from "../../src/server/jobs/queue";
 import { getPublicObjectUrl } from "../../src/server/storage/s3";
 import { handleDeleteStoredObjects } from "../../src/server/jobs/handlers/delete-stored-objects";
 import { buildEpub, chapterXhtml } from "../utils/epub";
@@ -38,7 +41,14 @@ afterAll(async () => {
   await s3.close();
   for (const id of createdUserIds) {
     await db.delete(users).where(eq(users.id, id));
-    await db.delete(jobs).where(sql`${jobs.payload}->>'prefix' LIKE ${`uploads/${id}/%`}`);
+    await db
+      .delete(jobs)
+      .where(
+        and(
+          eq(jobs.type, "delete_stored_objects"),
+          sql`${jobs.payload}::text LIKE ${`%uploads/${id}/%`}`
+        )
+      );
   }
 });
 
@@ -54,14 +64,18 @@ const BOOK = buildEpub({
   manifest: { "pic.png": "image/png" },
 });
 
-async function importBook(): Promise<{ userId: string; entryIds: string[] }> {
+async function importBook(): Promise<{
+  userId: string;
+  entryIds: string[];
+  collectionId: string;
+}> {
   const userId = await createTestUser({ emailPrefix: "ebook-images" });
   createdUserIds.push(userId);
-  const { entryIds } = await importEbook(db, userId, {
+  const { entryIds, subscription } = await importEbook(db, userId, {
     content: BOOK.toString("base64"),
     filename: "pictures.epub",
   });
-  return { userId, entryIds };
+  return { userId, entryIds, collectionId: subscription.id };
 }
 
 /** The public bucket's keys under `prefix`. */
@@ -71,16 +85,24 @@ function keysUnder(prefix: string): string[] {
     .map((key) => key.slice(BUCKET.length + 1));
 }
 
-/** Runs the one queued `delete_stored_objects` job for `prefix`, as the worker would. */
-async function runQueuedJob(prefix: string): Promise<void> {
+/**
+ * Runs the one queued `delete_stored_objects` job holding `prefixes`, as the
+ * worker would, after checking it holds exactly them.
+ */
+async function runQueuedJob(...prefixes: string[]): Promise<void> {
   const queued = await db
-    .select({ payload: jobs.payload })
+    .select()
     .from(jobs)
     .where(
-      and(eq(jobs.type, "delete_stored_objects"), sql`${jobs.payload}->>'prefix' = ${prefix}`)
+      and(
+        eq(jobs.type, "delete_stored_objects"),
+        sql`${jobs.payload}->'prefixes' @> ${JSON.stringify(prefixes)}::jsonb`
+      )
     );
   expect(queued).toHaveLength(1);
-  await handleDeleteStoredObjects(queued[0].payload as JobPayloads["delete_stored_objects"]);
+  const payload = getJobPayload(queued[0], "delete_stored_objects");
+  expect(payload.prefixes.toSorted()).toEqual(prefixes.toSorted());
+  await handleDeleteStoredObjects(payload);
 }
 
 describe("ebook images in storage", () => {
@@ -133,6 +155,27 @@ describe("ebook images in storage", () => {
     expect(keysUnder(entryObjectsPrefix(userId, kept))).toHaveLength(1);
   });
 
+  it("deletes a collection's chapters' images in one job", async () => {
+    const { userId, entryIds, collectionId } = await importBook();
+
+    await deleteSavedArticlesOnlyInCollection(db, userId, collectionId);
+    await runQueuedJob(...entryIds.map((entryId) => entryObjectsPrefix(userId, entryId)));
+
+    expect(keysUnder(userObjectsPrefix(userId))).toEqual([]);
+  });
+
+  it("runs a job the previous release queued for one prefix", async () => {
+    const { userId, entryIds } = await importBook();
+    const prefix = entryObjectsPrefix(userId, entryIds[0]);
+    const job = await createJob({ type: "delete_stored_objects", payload: { prefixes: [] } });
+    await db.update(jobs).set({ payload: { prefix } }).where(eq(jobs.id, job.id));
+    const [queued] = await db.select().from(jobs).where(eq(jobs.id, job.id));
+
+    await handleDeleteStoredObjects(getJobPayload(queued, "delete_stored_objects"));
+
+    expect(keysUnder(prefix)).toEqual([]);
+  });
+
   it("fails the import when storage refuses an image, keeping the chapters before it", async () => {
     const userId = await createTestUser({ emailPrefix: "ebook-images" });
     createdUserIds.push(userId);
@@ -166,7 +209,7 @@ describe("ebook images in storage", () => {
     const prefix = entryObjectsPrefix(userId, entryIds[0]);
     s3.failDeletesWith = 503;
     try {
-      await expect(handleDeleteStoredObjects({ prefix })).rejects.toThrow();
+      await expect(handleDeleteStoredObjects({ prefixes: [prefix] })).rejects.toThrow();
     } finally {
       s3.failDeletesWith = null;
     }

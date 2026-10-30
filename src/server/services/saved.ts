@@ -33,7 +33,7 @@ import {
 } from "./collections";
 import { recordEntryTombstones } from "./entry-tombstones";
 import { enqueueFullContentArchiveDeletion } from "./full-content-archive";
-import { enqueueEntriesObjectsDeletion, entryObjectsPrefix } from "./stored-objects";
+import { enqueueStoredObjectsDeletion, entryObjectsPrefix } from "./stored-objects";
 import { normalizeUrl } from "@/lib/url";
 import { processMarkdown } from "@/server/markdown";
 import { detectFileType, getSupportedTypesDescription } from "@/server/file/process-upload";
@@ -1011,10 +1011,9 @@ async function hardDeleteSavedArticles(
       tx,
       deleted.filter((row) => row.fullContentFetchedAt).map((row) => row.id)
     );
-    await enqueueEntriesObjectsDeletion(
+    await enqueueStoredObjectsDeletion(
       tx,
-      userId,
-      deleted.map((row) => row.id)
+      deleted.map((row) => entryObjectsPrefix(userId, row.id))
     );
   });
 }

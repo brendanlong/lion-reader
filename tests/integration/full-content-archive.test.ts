@@ -91,6 +91,15 @@ describe("persistFullContentResult", () => {
     expect(row.fullContentCleaned).toBe("<p>Article</p>");
   });
 
+  it("leaves no page behind for an entry deleted during the fetch", async () => {
+    const entryId = await createTestEntry(await createTestFeed());
+    await db.delete(entries).where(eq(entries.id, entryId));
+
+    await persistFullContentResult(db, entryId, success);
+
+    expect(archived(entryId)).toEqual([]);
+  });
+
   it("stores the article even when the archive refuses the page", async () => {
     const entryId = await createTestEntry(await createTestFeed());
     s3.failPutsWith = 503;
