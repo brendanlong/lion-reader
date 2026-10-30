@@ -18,7 +18,7 @@ import {
   updateEntryContent,
 } from "@/server/feed/entry-processor";
 import type { ParsedEntry } from "@/server/feed/types";
-import { addEntriesToCollection } from "@/server/services/collections";
+import { addEntriesToCollection, removeEntriesFromCollection } from "@/server/services/collections";
 import {
   countUserLists,
   listEntries,
@@ -164,6 +164,21 @@ WHERE ve.user_id = ${q(U0)}
 ORDER BY ve.published_or_fetched_at DESC, ve.id DESC LIMIT ${n}`
     )
   ).map((r) => r.id);
+}
+
+/** Up to `n` of a collection's members. */
+async function collectionMembers(
+  db: ClientBase,
+  collectionId: string,
+  n: number
+): Promise<string[]> {
+  return (
+    await rows<{ entry_id: string }>(
+      db,
+      `SELECT entry_id FROM subscription_entries WHERE subscription_id = ${q(collectionId)}
+ORDER BY entry_id LIMIT ${n}`
+    )
+  ).map((r) => r.entry_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -756,6 +771,46 @@ ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC LIMIT 1`
       return {
         statements: await recordStatements("add", (app) =>
           addEntriesToCollection(app, U0, emptyCollection, ids)
+        ),
+      };
+    },
+  },
+  {
+    name: "write.collection_add_one",
+    kind: "write",
+    source:
+      "services/collections.ts addEntriesToCollection (one article, as each ebook chapter is filed)",
+    prepare: async (db) => {
+      const [id] = await newestVisibleIds(db, 1);
+      return {
+        statements: await recordStatements("add", (app) =>
+          addEntriesToCollection(app, U0, readingList, [id])
+        ),
+      };
+    },
+  },
+  {
+    name: "write.collection_remove_one",
+    kind: "write",
+    source: "services/collections.ts removeEntriesFromCollection (one of 40 members)",
+    prepare: async (db) => {
+      const [member] = await collectionMembers(db, readingList, 1);
+      return {
+        statements: await recordStatements("remove", (app) =>
+          removeEntriesFromCollection(app, U0, readingList, [member])
+        ),
+      };
+    },
+  },
+  {
+    name: "write.collection_remove_1000",
+    kind: "write",
+    source: "services/collections.ts removeEntriesFromCollection (all 1,000 members)",
+    prepare: async (db) => {
+      const members = await collectionMembers(db, archive, 1000);
+      return {
+        statements: await recordStatements("remove", (app) =>
+          removeEntriesFromCollection(app, userId(1), archive, members)
         ),
       };
     },
