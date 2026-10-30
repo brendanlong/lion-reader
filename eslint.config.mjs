@@ -177,9 +177,9 @@ const eslintConfig = defineConfig([
       "no-restricted-syntax": [
         "error",
         {
-          // `Date.now() - start`; subtracting a literal (a backdated time) is fine.
+          // `Date.now() - start`; backdating by a literal or a SCREAMING_CASE constant is fine.
           selector:
-            'BinaryExpression[operator="-"][left.callee.object.name="Date"][left.callee.property.name="now"][right.type="Identifier"]',
+            'BinaryExpression[operator="-"][left.callee.object.name="Date"][left.callee.property.name="now"][right.type="Identifier"][right.name=/^[a-z]/]',
           message: WALL_CLOCK_MESSAGE,
         },
       ],

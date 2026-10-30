@@ -108,8 +108,6 @@ const TEXT_NODE = 3;
  * Nothing a listener can follow nests this far, and the markup is
  * feed-controlled: a document nesting thousands of elements deep would
  * otherwise overflow the stack instead of being narrated.
- *
- * @testonly
  */
 export const MAX_DEPTH = 64;
 

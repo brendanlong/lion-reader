@@ -1178,15 +1178,18 @@ describe("sync.events", () => {
 
       // One unstar of a page of entries, from a feed the user left, stamps
       // them all with one timestamp — shared with visible entries read in the
-      // same instant (and sorting first), so the first page mixes both and its
-      // boundary lands inside the tie.
+      // same instant. Each half of the hidden rows sorts before a few visible
+      // ones, so the page boundary lands inside the tie and both pages mix
+      // hidden and visible rows.
       const created = new Date("2025-04-02T00:00:00.000Z");
       const unstarredAt = "2025-04-03T00:00:00.123456Z";
-      const visible = await createTestEntryBatch(activeFeed, 60, { start: created, stepMs: 0 });
-      const hidden = await createTestEntryBatch(goneFeed, MAX_SYNC_PAGE_ENTRIES, {
-        start: created,
-        stepMs: 0,
-      });
+      const batch = { start: created, stepMs: 0 };
+      const hidden: string[] = [];
+      const visible: string[] = [];
+      for (let half = 0; half < 2; half++) {
+        hidden.push(...(await createTestEntryBatch(goneFeed, MAX_SYNC_PAGE_ENTRIES / 2, batch)));
+        visible.push(...(await createTestEntryBatch(activeFeed, 30, batch)));
+      }
       const updatedAt = sql`${unstarredAt}::timestamptz`;
       await createTestUserEntries([
         ...visible.map((entryId) => ({ userId, entryId, read: true, updatedAt })),

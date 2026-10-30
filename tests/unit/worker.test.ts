@@ -664,22 +664,24 @@ describe("Worker", () => {
         processJob: async () => {},
       });
 
-      const beforeStart = new Date();
+      const created = Date.now();
+      await tick(50);
       await worker.start();
       await tick(50);
 
-      const stats = worker.getStats();
-      expect(stats.lastActivityAt.getTime()).toBeGreaterThanOrEqual(beforeStart.getTime());
+      expect(worker.getStats().lastActivityAt.getTime()).toBeGreaterThan(created);
 
       await stop(worker);
     });
 
     it("updates lastActivityAt when jobs complete", async () => {
       let jobsClaimed = 0;
+      const jobMs = 20;
 
       const worker = createWorker({
         concurrency: 1,
-        pollIntervalMs: 10,
+        // Longer than the test runs, so no poll touches lastActivityAt after the job.
+        pollIntervalMs: 1000,
         logger: silentLogger,
         claimJob: async () => {
           if (jobsClaimed === 0) {
@@ -689,16 +691,15 @@ describe("Worker", () => {
           return null;
         },
         processJob: async () => {
-          await sleep(20);
+          await sleep(jobMs);
         },
       });
 
+      const start = Date.now();
       await worker.start();
       await tick(100);
 
-      const stats = worker.getStats();
-      // lastActivityAt should be very recent (after job completed)
-      expect(Date.now() - stats.lastActivityAt.getTime()).toBeLessThan(200);
+      expect(worker.getStats().lastActivityAt.getTime()).toBeGreaterThanOrEqual(start + jobMs);
 
       await stop(worker);
     });

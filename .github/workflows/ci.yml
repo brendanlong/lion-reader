@@ -190,6 +190,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: docker build --target rust-base .
 
+      # Installs the pnpm version package.json names; a malformed
+      # packageManager fails here rather than in the deploy build.
+      - name: Check the base stage installs pnpm
+        if: ${{ !cancelled() }}
+        run: docker build --target base .
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

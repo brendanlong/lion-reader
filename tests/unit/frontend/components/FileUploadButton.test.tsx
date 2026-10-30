@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
+import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import type { NewEntryListItem } from "@/lib/events/schemas";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
@@ -118,7 +119,10 @@ describe("FileUploadButton drop zone accessibility", () => {
 
     const input = getFileInput();
     // `hidden` (display: none) and a negative tabindex are the two ways to drop
-    // a control out of the tab order; the input must use neither.
+    // a control out of the tab order; the input must use neither. The shared
+    // classes hide it without opacity, which would also hide its focus outline
+    // (#1573); `drop-zone-file-input.test.ts` pins what they contain.
+    expect(input).toHaveClass(DROP_ZONE_FILE_INPUT_CLASSES);
     expect(input).not.toHaveAttribute("hidden");
     expect(input.tabIndex).toBeGreaterThanOrEqual(0);
     expect(input).not.toBeDisabled();
