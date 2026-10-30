@@ -497,8 +497,8 @@ test("entry_state_changed event inserts an entry marked unread elsewhere into th
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 
-// mark_all_read is the ONE realtime event that deliberately refetches entry
-// lists (see src/FRONTEND_STATE.md): mark-all-read is unbounded, so the server
+// mark_all_read is one of the two realtime events that deliberately refetch
+// entry lists (see src/FRONTEND_STATE.md): mark-all-read is unbounded, so the server
 // sends one signal with the absolute counts, and the client refetches its lists
 // rather than patching every entry. This locks in the behavior (unread view
 // empties, badges clear) and the boundary (only entries.list refetches).

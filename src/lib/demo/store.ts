@@ -743,6 +743,14 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
 
     "subscriptions.delete": (input) => {
       const sub = requireSubscription(input.id);
+      if (sub.type === "collection" && bool(input.deleteSavedArticles)) {
+        for (const id of sub.members) {
+          const inOtherCollection = liveSubscriptions().some(
+            (other) => other !== sub && other.members.has(id)
+          );
+          if (entries.get(id)?.entry.type === "saved" && !inOtherCollection) entries.delete(id);
+        }
+      }
       sub.deleted = true;
       sub.members.clear();
       return { success: true, counts: countsForSubscriptions([sub]) };

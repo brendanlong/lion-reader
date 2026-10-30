@@ -248,17 +248,26 @@ export function setStoredEntryCollection(
   const { collectionId, added, tagLists, position } = change;
   const stored = store.getSynced(id);
   if (!stored) return;
-  if (stored.subscriptionIds.includes(collectionId) === added) {
-    store.upsert([{ ...stored, tagLists }]);
+  if (!added) {
+    store.upsert([
+      {
+        ...stored,
+        subscriptionIds: stored.subscriptionIds.filter(
+          (subscriptionId) => subscriptionId !== collectionId
+        ),
+        tagLists,
+        positions: withoutKey(stored.positions, collectionId),
+      },
+    ]);
     return;
   }
-  const subscriptionIds = added
-    ? [...stored.subscriptionIds, collectionId]
-    : stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
+  // The membership may be stored already (a page fetched after the change)
+  // without the position the change carries.
+  const subscriptionIds = stored.subscriptionIds.includes(collectionId)
+    ? stored.subscriptionIds
+    : [...stored.subscriptionIds, collectionId];
   const positions =
-    added && position !== undefined
-      ? { ...stored.positions, [collectionId]: position }
-      : withoutKey(stored.positions, collectionId);
+    position !== undefined ? { ...stored.positions, [collectionId]: position } : stored.positions;
   store.upsert([{ ...stored, subscriptionIds, tagLists, positions }]);
 }
 

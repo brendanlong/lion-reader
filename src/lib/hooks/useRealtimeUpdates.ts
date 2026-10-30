@@ -172,6 +172,11 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
             syncRetryTimeoutRef.current = null;
           }
           break;
+        case "refresh-after-catch-up":
+          void utils.subscriptions.list.invalidate();
+          void utils.tags.list.invalidate();
+          refreshStoredCollections(utils, queryClient);
+          break;
       }
     }
 
@@ -182,15 +187,6 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           cursors: action.cursors,
         });
         for (const event of events) handleSyncEvent(utils, queryClient, event);
-        // Membership changes are SSE-only (collection_entries_changed isn't
-        // replayed; the replayed entries carry their memberships): refetch the
-        // sidebar counts of a collection an article joined or left while
-        // disconnected, which no replayed event carries.
-        if (events.length > 0) {
-          void utils.subscriptions.list.invalidate();
-          void utils.tags.list.invalidate();
-          refreshStoredCollections(utils, queryClient);
-        }
         result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
       } catch (error) {
         console.error("Sync failed:", error);

@@ -315,6 +315,26 @@ describe("createDemoStore", () => {
       expect(remaining.filter((i) => i.subscriptionId === null)).toHaveLength(starredInSub);
       expect(procedures["tags.list"]().items.find((t) => t.id === "about")!.feedCount).toBe(0);
     });
+
+    it("deleting a collection with its saved articles keeps those in another collection and its feed articles", () => {
+      const { procedures } = createDemoStore();
+      const [onlyHere, alsoElsewhere] = DEMO_ENTRIES.filter((e) => e.type === "saved");
+      const feedArticle = DEMO_ENTRIES.find((e) => e.type === "web")!;
+      const create = (name: string) => procedures["collections.create"]({ name }).subscription.id;
+      const doomed = create("Doomed");
+      const other = create("Other");
+      procedures["collections.addEntries"]({
+        id: doomed,
+        entryIds: [onlyHere.id, alsoElsewhere.id, feedArticle.id],
+      });
+      procedures["collections.addEntries"]({ id: other, entryIds: [alsoElsewhere.id] });
+
+      procedures["subscriptions.delete"]({ id: doomed, deleteSavedArticles: true });
+
+      const ids = listAll(procedures).map((item) => item.id);
+      expect(ids).not.toContain(onlyHere.id);
+      expect(ids).toEqual(expect.arrayContaining([alsoElsewhere.id, feedArticle.id]));
+    });
   });
 
   describe("entries.get and summaries", () => {

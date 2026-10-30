@@ -425,7 +425,8 @@ export function handleSubscriptionDeleted(
   void utils.subscriptions.list.invalidate({ type: "collection" });
   forgetDeletedSubscription(utils, subscriptionId);
 
-  // Always invalidate entries.list - entries from this subscription should be filtered out
+  // Its entries (and a collection's saved articles deleted with it) drop out
+  // of the lists, which the client can't tell entry by entry.
   utils.entries.list.invalidate();
 }
 

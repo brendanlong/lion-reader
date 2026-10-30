@@ -376,4 +376,23 @@ describe("collection_entries_changed", () => {
     changeMembership(["a"], true);
     expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1", COLLECTION]);
   });
+
+  it("records the position an entry joined with even when its membership is already stored", () => {
+    // Fetched after the add, before its event.
+    const entry = makeEntry("a", "2024-06-01", { subscriptionIds: ["sub-1", COLLECTION] });
+    const { utils, queryClient } = setup({ feed: [entry], collection: [] });
+
+    act(() =>
+      applyCollectionEntriesChange(utils, queryClient, {
+        subscriptionId: COLLECTION,
+        added: true,
+        tagLists: tagListsOf(["a"]),
+        positions: { a: 7 },
+      })
+    );
+
+    expect(getLocalDb(queryClient).entries.getSynced("a")?.positions).toEqual({
+      [COLLECTION]: 7,
+    });
+  });
 });

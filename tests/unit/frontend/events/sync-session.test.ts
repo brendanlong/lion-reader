@@ -120,6 +120,28 @@ describe("reduceSyncSession: starting syncs", () => {
   });
 });
 
+describe("reduceSyncSession: refresh after catch-up", () => {
+  const refreshes = (actions: SyncSessionAction[]) =>
+    actions.filter((action) => action.type === "refresh-after-catch-up").length;
+
+  it("refreshes once, when a multi-page catch-up that replayed events finishes", () => {
+    const session = new Session();
+    const run = session.connect();
+
+    const firstPage = session.succeed(run, [entryEvent("2026-01-02T00:00:00Z")], true);
+    expect(refreshes(firstPage)).toBe(0);
+    const secondPage = runSyncIn(firstPage)!;
+    const secondActions = session.succeed(secondPage, [entryEvent("2026-01-03T00:00:00Z")], true);
+    expect(refreshes(secondActions)).toBe(0);
+    expect(refreshes(session.succeed(runSyncIn(secondActions)!, [], false))).toBe(1);
+  });
+
+  it("doesn't refresh after a catch-up that replayed nothing", () => {
+    const session = new Session();
+    expect(refreshes(session.succeed(session.connect()))).toBe(0);
+  });
+});
+
 describe("reduceSyncSession: cursor freeze (#1081)", () => {
   it("doesn't advance the cursors from live events before the catch-up succeeds", () => {
     const session = new Session();

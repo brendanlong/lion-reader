@@ -933,7 +933,7 @@ describe("handleSyncEvent - mark_all_read", () => {
     expect(getSidebarUnreadCount("sub-1")).toBe(0);
     expect(getTagsList()?.items.find((tag) => tag.id === "tag-1")?.unreadCount).toBe(10);
     expect(getEntriesCount()).toEqual({ unread: 3 });
-    // The one SSE event that deliberately refetches entries.list.
+    // One of the two SSE events that deliberately refetch entries.list.
     expect(invalidatedProcedures(invalidateSpy)).toEqual(["entries.list"]);
   });
 

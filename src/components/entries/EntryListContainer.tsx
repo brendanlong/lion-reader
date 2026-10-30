@@ -30,7 +30,7 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
-import { entryListKey } from "@/lib/local-db/entry-lists";
+import { entryListKey, isServerOrdered } from "@/lib/local-db/entry-lists";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
@@ -289,8 +289,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Search results and Recently Read can't be approximated from stored entries
   // (membership depends on the query; order on read time), so they show a
   // plain skeleton instead.
-  const isServerOrdered = !!queryInput.query || queryInput.sortBy === "readChanged";
-  if (isLoading && entries.length === 0 && isServerOrdered) {
+  if (isLoading && entries.length === 0 && isServerOrdered(queryInput)) {
     return <EntryListSkeleton />;
   }
   if (isLoading && entries.length === 0) {

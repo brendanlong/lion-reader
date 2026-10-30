@@ -108,7 +108,7 @@ function listEntryKey(listKey: string, entryId: string): string {
 }
 
 /** Search results and Recently Read are ordered by fields entries don't carry. */
-function isServerOrdered(input: EntryListFilters): boolean {
+export function isServerOrdered(input: EntryListFilters): boolean {
   return !!input.query || input.sortBy === "readChanged";
 }
 

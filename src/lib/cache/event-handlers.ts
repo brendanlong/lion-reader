@@ -123,8 +123,8 @@ export function handleSyncEvent(
     }
 
     case "mark_all_read":
-      // The one SSE event that deliberately refetches entries.list: the user
-      // is done with the list, so refetching it is an acceptable, rare cost.
+      // One of the two SSE events that deliberately refetch entries.list: the
+      // user is done with the list, so refetching it is an acceptable, rare cost.
       handleMarkAllRead(utils, queryClient, event.counts);
       break;
 
