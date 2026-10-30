@@ -93,8 +93,6 @@ export interface UseNarrationReturn {
   stop: () => void;
   /** Whether narration is supported in this browser */
   isSupported: boolean;
-  /** Processed HTML with data-para-id attributes (only for client-side narration) */
-  processedHtml: string | null;
 }
 
 /**
@@ -103,9 +101,11 @@ export interface UseNarrationReturn {
  * the view can hold the report in state without a render loop.
  */
 export interface NarrationEngineView extends UseNarrationReturn {
-  /** Whether the article renders with paragraph ids, i.e. narration has started */
-  isHighlighting: boolean;
-  /** The displayed content with paragraph ids, while `isHighlighting` */
+  /**
+   * The displayed content with paragraph ids, for highlighting and seeking.
+   * Made whether or not narration is playing, so starting and stopping it
+   * doesn't replace the article (restarting embeds, losing the selection).
+   */
   highlightHtml: string | null;
   /**
    * The content `highlightHtml` was made from. The view lags a commit behind a

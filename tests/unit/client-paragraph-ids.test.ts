@@ -322,8 +322,8 @@ describe("htmlToClientNarration", () => {
         { n: 0, o: 0 },
         { n: 1, o: 1 },
       ]);
-      expect(result.processedHtml).toContain('data-para-id="para-0"');
-      expect(result.processedHtml).toContain('data-para-id="para-1"');
+      expect(processHtmlForHighlighting(html)).toContain('data-para-id="para-0"');
+      expect(processHtmlForHighlighting(html)).toContain('data-para-id="para-1"');
     });
 
     it("handles empty input", () => {
@@ -331,7 +331,6 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("");
       expect(result.paragraphMap).toEqual([]);
-      expect(result.processedHtml).toBe("");
     });
 
     it("handles whitespace-only input", () => {
@@ -339,7 +338,6 @@ describe("htmlToClientNarration", () => {
 
       expect(result.narrationText).toBe("");
       expect(result.paragraphMap).toEqual([]);
-      expect(result.processedHtml).toBe("");
     });
   });
 
@@ -377,7 +375,7 @@ describe("htmlToClientNarration", () => {
         { n: 1, o: 2 },
       ]);
       // But the image still gets its ID in the DOM
-      expect(result.processedHtml).toContain('data-para-id="para-1"');
+      expect(processHtmlForHighlighting(html)).toContain('data-para-id="para-1"');
     });
 
     it("skips image with empty alt text", () => {
@@ -513,7 +511,7 @@ describe("htmlToClientNarration", () => {
         { n: 1, o: 1 },
         { n: 2, o: 2 },
       ]);
-      expect(result.processedHtml).toContain('<div data-para-id="para-1">');
+      expect(processHtmlForHighlighting(html)).toContain('<div data-para-id="para-1">');
     });
 
     it("does not narrate a structural wrapper's blocks twice", () => {
@@ -539,7 +537,7 @@ describe("htmlToClientNarration", () => {
       // rather than the wrapper around it (para-0).
       expect(result.narrationText).toBe("Image: A cat");
       expect(result.paragraphMap).toEqual([{ n: 0, o: 1 }]);
-      expect(result.processedHtml).toMatch(/<img[^>]*data-para-id="para-1"/);
+      expect(processHtmlForHighlighting(html)).toMatch(/<img[^>]*data-para-id="para-1"/);
     });
 
     it("narrates a wrapper that holds text alongside an image", () => {
@@ -660,7 +658,10 @@ describe("htmlToClientNarration", () => {
 
       // Every mapped element index resolves to a real data-para-id in the HTML.
       const parser = new DOMParser();
-      const doc = parser.parseFromString(`<div>${result.processedHtml}</div>`, "text/html");
+      const doc = parser.parseFromString(
+        `<div>${processHtmlForHighlighting(html)}</div>`,
+        "text/html"
+      );
       const container = doc.body.firstElementChild!;
       for (const mapping of result.paragraphMap) {
         expect(container.querySelector(`[data-para-id="para-${mapping.o}"]`)).not.toBeNull();

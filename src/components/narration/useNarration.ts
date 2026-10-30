@@ -131,7 +131,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     () => (prerecordedVoice ? canPlayPrerecordedSpeech() : isNarrationSupported()), // Client snapshot
     () => false // Server snapshot - always false during SSR
   );
-  const [processedHtml, setProcessedHtml] = useState<string | null>(null);
 
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
@@ -374,12 +373,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
       try {
         let generated: { narrationText: string; paragraphMap: ParagraphMapEntry[] };
-        let processedHtmlResult: string | null = null;
 
         if (!settings.useLlmNormalization && content) {
-          const clientResult = htmlToClientNarration(content);
-          generated = clientResult;
-          processedHtmlResult = clientResult.processedHtml;
+          generated = htmlToClientNarration(content);
         } else {
           const result = await generateMutation.mutateAsync({
             id,
@@ -399,7 +395,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         paragraphMapRef.current = paragraphMap;
         if (splitNarrationParagraphs(narration).some(isSpeakable)) {
           setNarrationText(narration);
-          setProcessedHtml(processedHtmlResult);
           await start(narration);
         } else {
           // Nothing to narrate — release the primed media-session audio.
@@ -553,7 +548,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
   if (narrationResetKey !== prevNarrationResetKey) {
     setPrevNarrationResetKey(narrationResetKey);
-    setProcessedHtml(null);
     setNarrationText(null);
     // A load still in flight is abandoned (the effect cleanup below cancels
     // it), so end its spinner now rather than when the stale request returns.
@@ -628,6 +622,5 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     playFromElement,
     stop,
     isSupported,
-    processedHtml,
   };
 }

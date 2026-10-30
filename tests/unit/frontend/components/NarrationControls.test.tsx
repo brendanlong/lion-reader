@@ -27,7 +27,9 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { NarrationControlsImpl } from "@/components/narration/NarrationControls";
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
+import { NarrationEngineImpl } from "@/components/narration/NarrationEngine";
 import { useNarration } from "@/components/narration/useNarration";
+import type { NarrationEngineView } from "@/components/narration/useNarrationTypes";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
@@ -305,6 +307,36 @@ describe("playFromElement", () => {
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
     expect(lastSpoken()).toBe("Eta");
+  });
+});
+
+describe("NarrationEngine's article HTML", () => {
+  it("is the same before, during and after narration, so the article isn't replaced", async () => {
+    let view: NarrationEngineView | null = null;
+    const onChange = (next: NarrationEngineView | null) => {
+      view = next;
+    };
+    const current = () => view as NarrationEngineView;
+    renderWithTrpc(
+      <NarrationEngineImpl
+        id="entry-1"
+        title="Test article"
+        feedTitle="Test feed"
+        content={SPARSE_HTML}
+        onChange={onChange}
+      />
+    );
+    await waitFor(() => expect(current().isSupported).toBe(true));
+    const idle = current().highlightHtml;
+    expect(idle).toContain('data-para-id="para-3"');
+
+    await act(() => current().play());
+    await waitFor(() => expect(current().state.status).toBe("playing"));
+    expect(current().highlightHtml).toBe(idle);
+
+    act(() => current().stop());
+    await waitFor(() => expect(current().state.status).toBe("idle"));
+    expect(current().highlightHtml).toBe(idle);
   });
 });
 

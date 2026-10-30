@@ -51,7 +51,7 @@ interface UseEntryNarrationOptions {
 interface EntryNarration {
   /** Renders nothing visible; mount it anywhere. */
   engine: ReactNode;
-  /** The HTML to render: `content`, with paragraph ids while highlighting. */
+  /** The HTML to render: `content`, with paragraph ids once the engine has loaded. */
   contentHtml: string | null;
   onContentClick: React.MouseEventHandler;
   /** For the action bar. */
@@ -148,14 +148,13 @@ export function useEntryNarration({
     [isNarrationActive, playFromElement]
   );
 
-  const shouldProcessForHighlighting = narration?.isHighlighting ?? false;
   const highlightHtml = narration?.highlightSource === content ? narration.highlightHtml : null;
   const contentHtml = content ? (highlightHtml ?? content) : null;
 
   // Auto-scroll to the highlighted paragraph while playing. The highlight
   // itself is CSS (NarrationHighlightStyles), not DOM manipulation.
   useEffect(() => {
-    if (!contentRef.current || !shouldProcessForHighlighting) return;
+    if (!contentRef.current || !isSupported) return;
     if (!narrationSettings.autoScrollEnabled) return;
     if (narrationState.status !== "playing") return;
     if (highlightedParagraphIds.size === 0) return;
@@ -184,7 +183,7 @@ export function useEntryNarration({
   }, [
     contentRef,
     highlightedParagraphIds,
-    shouldProcessForHighlighting,
+    isSupported,
     narrationSettings.autoScrollEnabled,
     narrationState.status,
   ]);
@@ -208,7 +207,7 @@ export function useEntryNarration({
     contentHtml,
     onContentClick,
     controls: showNarration && <NarrationControls narration={narration} />,
-    highlightStyles: showNarration && shouldProcessForHighlighting && (
+    highlightStyles: showNarration && isSupported && (
       <NarrationHighlightStyles
         highlightedParagraphIds={highlightedParagraphIds}
         enabled={narrationSettings.highlightEnabled}

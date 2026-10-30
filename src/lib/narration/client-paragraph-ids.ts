@@ -104,8 +104,6 @@ export interface ClientNarrationResult {
   narrationText: string;
   /** Paragraph mapping for highlighting (narration index -> original indices) */
   paragraphMap: ParagraphMapEntry[];
-  /** HTML with data-para-id attributes added */
-  processedHtml: string;
 }
 
 /**
@@ -116,22 +114,21 @@ export interface ClientNarrationResult {
  * rather than the annotated one the LLM is fed.
  *
  * @param html - HTML content to convert
- * @returns Object with narration text, paragraph map, and processed HTML
+ * @returns Object with narration text and paragraph map
  *
  * @example
  * const result = htmlToClientNarration('<p>Hello</p><img src="x" alt="photo">');
  * // result.narrationText: "Hello\n\nImage: photo"
  * // result.paragraphMap: [{ n: 0, o: 0 }, { n: 1, o: 1 }]
- * // result.processedHtml: '<p data-para-id="para-0">Hello</p>...'
  */
 export function htmlToClientNarration(html: string): ClientNarrationResult {
   if (!html || html.trim() === "") {
-    return { narrationText: "", paragraphMap: [], processedHtml: "" };
+    return { narrationText: "", paragraphMap: [] };
   }
 
   const marked = markParagraphs(html);
   if (!marked) {
-    return { narrationText: "", paragraphMap: [], processedHtml: "" };
+    return { narrationText: "", paragraphMap: [] };
   }
 
   // The runs are the player's paragraphs, in order, each naming the element it
@@ -141,9 +138,5 @@ export function htmlToClientNarration(html: string): ClientNarrationResult {
     narrationRuns(marked.body, DIRECT_TTS_VOICE)
   );
 
-  return {
-    narrationText,
-    paragraphMap,
-    processedHtml: marked.body.innerHTML,
-  };
+  return { narrationText, paragraphMap };
 }
