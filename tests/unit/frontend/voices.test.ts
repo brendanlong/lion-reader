@@ -1,11 +1,14 @@
 /**
- * Unit tests for voice ranking utilities.
- *
- * Tests the rankVoices function which sorts voices by quality heuristics.
+ * @vitest-environment jsdom
  */
 
-import { describe, it, expect } from "vitest";
-import { rankVoices } from "@/lib/narration/voices";
+/**
+ * Unit tests for voice utilities: loading the browser's voices, and ranking
+ * them by quality heuristics.
+ */
+
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { rankVoices, waitForVoices } from "@/lib/narration/voices";
 
 /**
  * Creates a mock SpeechSynthesisVoice object for testing.
@@ -130,5 +133,53 @@ describe("rankVoices", () => {
       // Default last
       expect(ranked[3].name).toBe("Google US English");
     });
+  });
+});
+
+describe("waitForVoices", () => {
+  /** A `speechSynthesis` whose voices load when `load` is called. */
+  function stubSpeechSynthesis() {
+    let voices: SpeechSynthesisVoice[] = [];
+    const target = new EventTarget();
+    vi.stubGlobal(
+      "speechSynthesis",
+      Object.assign(target, { getVoices: () => voices, onvoiceschanged: null })
+    );
+    return {
+      load(loaded: SpeechSynthesisVoice[]) {
+        voices = loaded;
+        target.dispatchEvent(new Event("voiceschanged"));
+        speechSynthesis.onvoiceschanged?.(new Event("voiceschanged"));
+      },
+    };
+  }
+
+  /** What `promise` has resolved to by now, without waiting out any timeout. */
+  async function settled<T>(promise: Promise<T>): Promise<T | "pending"> {
+    return Promise.race([promise, Promise.resolve("pending" as const)]);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("answers at once when the voices have loaded with none in the language", async () => {
+    const synthesis = stubSpeechSynthesis();
+    synthesis.load([createMockVoice("Anna", { lang: "de-DE" })]);
+
+    expect(await settled(waitForVoices("en"))).toEqual([]);
+  });
+
+  it("answers every concurrent caller when the voices load", async () => {
+    const synthesis = stubSpeechSynthesis();
+    const english = waitForVoices("en");
+    const german = waitForVoices("de");
+    synthesis.load([
+      createMockVoice("Alex", { lang: "en-US" }),
+      createMockVoice("Anna", { lang: "de-DE" }),
+    ]);
+
+    expect(await settled(english)).toEqual([expect.objectContaining({ name: "Alex" })]);
+    expect(await settled(german)).toEqual([expect.objectContaining({ name: "Anna" })]);
   });
 });
