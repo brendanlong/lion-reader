@@ -69,28 +69,67 @@ function isPublicStaticPath(pathname: string): boolean {
 }
 
 /**
+ * The paths of our POST route handlers (`*` is one dynamic segment, `**` a
+ * catch-all). Keep in sync with the `route.ts` files that export `POST`: the
+ * proxy test POSTs to every one of them, and a missing entry fails closed (405).
+ */
+const POST_ROUTE_HANDLER_PATHS = [
+  "/api/admin/session",
+  "/api/greader.php/accounts/ClientLogin",
+  "/api/greader.php/reader/api/0/disable-tag",
+  "/api/greader.php/reader/api/0/edit-tag",
+  "/api/greader.php/reader/api/0/mark-all-as-read",
+  "/api/greader.php/reader/api/0/rename-tag",
+  "/api/greader.php/reader/api/0/stream/contents",
+  "/api/greader.php/reader/api/0/stream/contents/**",
+  "/api/greader.php/reader/api/0/stream/items/contents",
+  "/api/greader.php/reader/api/0/subscription/edit",
+  "/api/greader.php/reader/api/0/subscription/import",
+  "/api/greader.php/reader/api/0/subscription/quickadd",
+  "/api/internal/revalidate-public",
+  "/api/mcp",
+  "/api/share",
+  "/api/trpc/*",
+  "/api/v1/**",
+  "/api/wallabag/api/entries",
+  "/api/wallabag/api/entries.json",
+  "/api/wallabag/api/entries/*/tags",
+  "/api/wallabag/api/entries/*/tags.json",
+  "/api/wallabag/developer/client/create",
+  "/api/wallabag/oauth/v2/token",
+  "/api/webhooks/email/mailgun",
+  "/api/webhooks/websub/*/*",
+  "/oauth/authorize",
+  "/oauth/register",
+  "/oauth/revoke",
+  "/oauth/token",
+  SENTRY_TUNNEL_ROUTE,
+];
+
+const POST_ROUTE_HANDLER_PATTERN = new RegExp(
+  `^(?:${POST_ROUTE_HANDLER_PATHS.map((route) =>
+    route
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*|\*/g, (wildcard) => (wildcard === "**" ? ".+" : "[^/]+"))
+  ).join("|")})$`
+);
+
+/**
  * We define no server functions, so a POST that Next.js would treat as a
  * server-function call is only ever a probe. Next rejects those itself while
  * the app has none, but its plain-text reply to an RSC-flavored probe throws an
  * InvariantError into Sentry, and the decoder behind it was the CVE-2025-55182
  * RCE entry point should a dependency ever ship a server function. Next
- * considers every POST to a page a possible call, header or not, so POSTs pass
- * only on the prefixes holding our POST route handlers (and the Sentry tunnel),
- * and never with `Next-Action`: those prefixes contain pages and not-found
- * renders too, and no route handler reads it.
+ * considers every POST to a page (including a not-found render) a possible
+ * call, header or not, so POSTs pass only to our POST route handlers, and
+ * never with `Next-Action`: no route handler reads it.
  */
 function isPossibleServerFunctionCall(request: NextRequest): boolean {
   if (request.method !== "POST") {
     return false;
   }
-  if (request.headers.has("next-action")) {
-    return true;
-  }
-  const { pathname } = request.nextUrl;
-  return !(
-    pathname.startsWith("/api/") ||
-    pathname.startsWith("/oauth/") ||
-    pathname === SENTRY_TUNNEL_ROUTE
+  return (
+    request.headers.has("next-action") || !POST_ROUTE_HANDLER_PATTERN.test(request.nextUrl.pathname)
   );
 }
 
@@ -241,7 +280,7 @@ export async function proxy(request: NextRequest) {
  * `_next/static`/`_next/image` are excluded so middleware doesn't run per-asset
  * (a CSP on those subresources is meaningless); `/sw.js` is matched but
  * bypassed inside `proxy()` (see there). The upload endpoints
- * (`isUploadPath`, which a test holds this to) are excluded because Next
+ * (`UPLOAD_PATHS`, which a test holds this to) are excluded because Next
  * buffers the body of every request the proxy sees, up to a limit that would
  * then have to fit an upload for every route.
  */

@@ -13,7 +13,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { config, proxy } from "../../src/proxy";
-import { isUploadPath, PROXY_BODY_LIMIT_BYTES, UPLOAD_PATHS } from "../../src/lib/upload-limits";
+import { PROXY_BODY_LIMIT_BYTES, UPLOAD_PATHS } from "../../src/lib/upload-limits";
 import { SENTRY_TUNNEL_ROUTE } from "../../src/lib/sentry/tunnel-route";
 
 function makeRequest(
@@ -182,12 +182,18 @@ describe("proxy rejects server function calls", () => {
       "/all",
       { "content-type": "multipart/form-data; boundary=x" },
     ],
+    ["a fetch-style call to a POST route handler", "/api/share", { "next-action": "7f00" }],
     [
-      "a fetch-style call to a page under an exempt prefix",
+      "a header-less multipart form POST to a page under /oauth",
       "/oauth/consent",
-      { "next-action": "7f00" },
+      { "content-type": "multipart/form-data; boundary=x" },
     ],
     ["a fetch-style call to an unknown API path", "/api/nonexistent", { "next-action": "7f00" }],
+    [
+      "a header-less urlencoded POST to an unknown API path",
+      "/api/nonexistent",
+      { "content-type": "application/x-www-form-urlencoded" },
+    ],
     ["a POST to a static page", "/register", {}],
     ["a POST to the root", "/", { "next-action": "7f00" }],
   ])("405s %s", async (_label, pathname, headers) => {
@@ -228,7 +234,7 @@ describe("proxy matcher", () => {
     unstable_doesMiddlewareMatch({ config, url: `https://reader.example.com${pathname}` });
 
   it("skips exactly the upload endpoints, so Next doesn't buffer their bodies", () => {
-    for (const pathname of UPLOAD_PATHS) expect(matches(pathname)).toBe(false);
+    for (const pathname of UPLOAD_PATHS.keys()) expect(matches(pathname)).toBe(false);
     for (const pathname of [
       "/api/trpc/collections.importEbook,entries.list",
       "/api/trpc/saved.uploadFileX",
@@ -236,7 +242,7 @@ describe("proxy matcher", () => {
       "/api/v1/narration/speech",
       "/all",
     ]) {
-      expect(isUploadPath(pathname)).toBe(false);
+      expect(UPLOAD_PATHS.has(pathname)).toBe(false);
       expect(matches(pathname)).toBe(true);
     }
   });
