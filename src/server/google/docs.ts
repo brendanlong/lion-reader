@@ -652,8 +652,8 @@ function extractTabContent(doc: ParsedDoc, tabId: string | null): TabContent | n
 interface ConversionContext {
   /** The tab content being converted */
   content: TabContent;
-  /** Image object ids to their fetched images, as `data:` URIs */
-  imageUrls: Map<string, string>;
+  /** Image object ids to their fetched images, as `data:` URIs; null leaves images out */
+  imageUrls: Map<string, string> | null;
   /** Footnotes encountered during conversion (id -> number) */
   footnoteNumbers: Map<string, number>;
   /** Current footnote counter */
@@ -701,6 +701,7 @@ function isOrderedList(listId: string, nestingLevel: number, ctx: ConversionCont
  * Gets the image URL for an inline or positioned object.
  */
 function getImageUrl(objectId: string, ctx: ConversionContext): string | null {
+  if (!ctx.imageUrls) return null;
   const dataUri = ctx.imageUrls.get(objectId);
   if (dataUri) {
     return dataUri;
@@ -1039,7 +1040,8 @@ function convertFootnotes(ctx: ConversionContext): string {
  * other inlined image. An image that can't be fetched keeps its `contentUri`.
  *
  * @throws `CONTENT_TOO_LARGE` if the images total more than
- *   {@link maxImageBytes}
+ *   {@link maxImageBytes}: one that doesn't fit fails the document rather than
+ *   being left out, as storage refusing an image fails a save
  */
 async function fetchDocumentImages(
   content: TabContent,
@@ -1058,22 +1060,28 @@ async function fetchDocumentImages(
 
   const dataUris = new Map<string, string>();
   const budget = maxImageBytes();
+  const tooLarge = () => errors.contentTooLarge("The Google Doc's images", budget);
   let total = 0;
   const queue = [...contentUris];
+  // Stops the other fetches once one fails the document.
+  const failed = new AbortController();
   const fetchNext = async (): Promise<void> => {
-    for (let next = queue.pop(); next; next = queue.pop()) {
+    for (let next = queue.pop(); next && !failed.signal.aborted; next = queue.pop()) {
       const [objectId, uri] = next;
-      const image = await fetchImage(uri, accessToken, budget);
+      const image = await fetchImage(uri, accessToken, budget - total, failed.signal);
+      if (image === "too_large") throw tooLarge();
       if (!image) continue;
       total += image.data.length;
-      if (total > budget) {
-        queue.length = 0;
-        throw errors.contentTooLarge("The Google Doc's images", budget);
-      }
+      if (total > budget) throw tooLarge();
       dataUris.set(objectId, `data:${image.contentType};base64,${image.data.toString("base64")}`);
     }
   };
-  await Promise.all(Array.from({ length: IMAGE_FETCH_CONCURRENCY }, fetchNext));
+  try {
+    await Promise.all(Array.from({ length: IMAGE_FETCH_CONCURRENCY }, fetchNext));
+  } catch (error) {
+    failed.abort();
+    throw error;
+  }
 
   logger.debug("Fetched document images", {
     docId,
@@ -1087,13 +1095,14 @@ async function fetchDocumentImages(
 async function fetchImage(
   url: string,
   accessToken: string,
-  maxBytes: number
-): Promise<{ data: Buffer; contentType: string } | null> {
+  maxBytes: number,
+  signal: AbortSignal
+): Promise<{ data: Buffer; contentType: string } | "too_large" | null> {
   try {
     const response = await fetchWithSsrfProtection(url, {
       method: "GET",
       headers: { "User-Agent": USER_AGENT, Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS)]),
     });
     if (!response.ok) {
       logger.warn("Failed to fetch Google Docs image", { url, status: response.status });
@@ -1104,9 +1113,7 @@ async function fetchImage(
     const contentType = response.headers.get("content-type")?.split(";")[0] || "image/png";
     return { data, contentType };
   } catch (error) {
-    if (error instanceof ContentTooLargeError) {
-      throw errors.contentTooLarge("The Google Doc's images", maxBytes);
-    }
+    if (error instanceof ContentTooLargeError) return "too_large";
     logger.warn("Failed to fetch Google Docs image", {
       url,
       error: error instanceof Error ? error.message : String(error),
@@ -1132,12 +1139,14 @@ async function fetchImage(
  *
  * @param doc - The parsed Google Docs document
  * @param accessToken - OAuth access token for fetching images
- * @param tabId - Optional tab ID to select (from URL ?tab=t.{tabId})
+ * @param tabId - Tab ID to select (from URL ?tab=t.{tabId})
+ * @param images - Fetch and inline the images; without, they're left out
  */
 async function convertDocsApiToHtml(
   doc: ParsedDoc,
   accessToken: string,
-  tabId: string | null = null
+  tabId: string | null,
+  images: boolean
 ): Promise<string> {
   // Extract content from the specified tab (or first tab / legacy body)
   const content = extractTabContent(doc, tabId);
@@ -1145,7 +1154,7 @@ async function convertDocsApiToHtml(
     return "<p>Empty document</p>";
   }
 
-  const imageUrls = await fetchDocumentImages(content, doc.documentId, accessToken);
+  const imageUrls = images ? await fetchDocumentImages(content, doc.documentId, accessToken) : null;
 
   // Create conversion context
   const ctx: ConversionContext = {
@@ -1185,12 +1194,14 @@ async function convertDocsApiToHtml(
  * access token (Phase 2).
  *
  * @param docId - The Google Docs document ID
- * @param tabId - Optional tab ID to fetch (from URL ?tab=t.{tabId})
+ * @param tabId - Tab ID to fetch (from URL ?tab=t.{tabId})
+ * @param images - Fetch and inline the images (see `convertDocsApiToHtml`)
  * @returns Document content including HTML, or null if fetch fails or doc is private
  */
 async function fetchPublicGoogleDoc(
   docId: string,
-  tabId: string | null = null
+  tabId: string | null,
+  images: boolean
 ): Promise<GoogleDocsContent | null> {
   // Check if service account is configured
   if (!googleConfig.serviceAccountJson) {
@@ -1205,7 +1216,7 @@ async function fetchPublicGoogleDoc(
     return null;
   }
 
-  return fetchGoogleDocWithToken(docId, accessToken, tabId, false);
+  return fetchGoogleDocWithToken(docId, accessToken, tabId, false, images);
 }
 
 /**
@@ -1230,7 +1241,7 @@ export async function fetchPrivateGoogleDoc(
   accessToken: string,
   tabId: string | null = null
 ): Promise<GoogleDocsContent | null> {
-  return fetchGoogleDocWithToken(docId, accessToken, tabId, true);
+  return fetchGoogleDocWithToken(docId, accessToken, tabId, true, true);
 }
 
 /**
@@ -1245,7 +1256,8 @@ async function fetchGoogleDocWithToken(
   docId: string,
   accessToken: string,
   tabId: string | null,
-  isPrivate: boolean
+  isPrivate: boolean,
+  images: boolean
 ): Promise<GoogleDocsContent | null> {
   let docsApiError: Error | null = null;
 
@@ -1341,7 +1353,7 @@ async function fetchGoogleDocWithToken(
       } else {
         const doc = parsed.data;
 
-        const html = await convertDocsApiToHtml(doc, accessToken, tabId);
+        const html = await convertDocsApiToHtml(doc, accessToken, tabId, images);
 
         return {
           docId: doc.documentId,
@@ -1397,9 +1409,14 @@ async function fetchGoogleDocWithToken(
  * Phase 2: Will support private documents with user OAuth tokens
  *
  * @param url - The Google Docs document URL
+ * @param options.images - Fetch and inline the images: only content with an
+ *   objects prefix has somewhere to store them
  * @returns Document content including HTML, or null if URL is invalid or fetch fails
  */
-export async function fetchGoogleDocsFromUrl(url: string): Promise<GoogleDocsContent | null> {
+export async function fetchGoogleDocsFromUrl(
+  url: string,
+  options: { images: boolean }
+): Promise<GoogleDocsContent | null> {
   const docId = extractDocId(url);
   if (!docId) {
     logger.debug("Not a valid Google Docs URL", { url });
@@ -1409,5 +1426,5 @@ export async function fetchGoogleDocsFromUrl(url: string): Promise<GoogleDocsCon
   // Extract tab ID if present in URL (e.g., ?tab=t.i957b74dlfgd)
   const tabId = extractTabId(url);
 
-  return fetchPublicGoogleDoc(docId, tabId);
+  return fetchPublicGoogleDoc(docId, tabId, options.images);
 }

@@ -357,6 +357,7 @@ export async function acquireSavedArticleContent(
   try {
     acquired = await acquireArticleContent(fetchUrl, {
       asUser: params.userAuth ? { userId, authMode: params.userAuth } : undefined,
+      images: true,
     });
   } catch (error) {
     if (error instanceof UserFetchError) {

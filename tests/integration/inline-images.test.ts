@@ -53,16 +53,18 @@ const BIG_PNG = Buffer.concat([
   Buffer.alloc(usageLimitsConfig.maxSavedArticleSizeBytes, 7),
 ]);
 
-// Hands back its images inlined, as the Google Docs plugin does.
+// Hands back the images it fetches inlined, when asked to, as the Google Docs
+// plugin does.
 pluginRegistry.register({
   name: "fixture-inlined-images",
   hosts: ["127.0.0.1"],
   matchUrl: (url) => url.pathname === "/plugin-images",
   capabilities: {
     savedArticle: {
-      async fetchContent() {
+      async fetchContent(_url, { images }) {
         const src = `data:image/png;base64,${BIG_PNG.toString("base64")}`;
-        return { html: `<p>A document with a big picture.</p><img src="${src}">` };
+        const img = images ? `<img src="${src}">` : "";
+        return { html: `<p>A document with a big picture.</p>${img}` };
       },
       skipReadability: true,
     },
@@ -299,11 +301,15 @@ describe("inlined images", () => {
     expect((await storedContent(article.id)).original).not.toContain("data:image");
   });
 
-  it("fails content its inline images put over the limit", async () => {
+  it("asks a plugin to leave its images out of a feed entry's full content", async () => {
+    const storedBefore = s3.objects.size;
+
     const result = await fetchFullContent(`${baseUrl}/plugin-images`, { objectsPrefix: null });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/exceeds the maximum size/);
+    expect(result.success).toBe(true);
+    expect(result.contentCleaned).toContain("A document with a big picture.");
+    expect(result.contentCleaned).not.toContain("<img");
+    expect(s3.objects.size).toBe(storedBefore);
   });
 
   it("fails an upload storage refuses, saving nothing", async () => {

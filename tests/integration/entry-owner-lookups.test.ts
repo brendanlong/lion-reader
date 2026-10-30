@@ -15,6 +15,7 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { usageLimitsConfig } from "../../src/server/config/env";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import {
   deleteSavedArticle,
@@ -129,6 +130,20 @@ describe("email and saved lookups by owner (#1846)", () => {
     expect(results.filter((result) => !result.success)).toEqual([
       { success: false, error: "Duplicate email" },
     ]);
+  });
+
+  it("rejects an email over the article size limit instead of failing, so it isn't retried", async () => {
+    const userId = await user();
+    const limit = usageLimitsConfig.maxSavedArticleSizeBytes;
+    usageLimitsConfig.maxSavedArticleSizeBytes = 1;
+    try {
+      expect(await receiveEmail(userId)).toEqual({
+        success: false,
+        error: "Email content too large",
+      });
+    } finally {
+      usageLimitsConfig.maxSavedArticleSizeBytes = limit;
+    }
   });
 
   it("clearing an email subscription's name shows its sender", async () => {

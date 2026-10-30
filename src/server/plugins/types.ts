@@ -118,8 +118,12 @@ export interface SavedArticleCapability {
   /**
    * Fetch content for a saved article.
    * Return null to fall back to normal fetching.
+   *
+   * @param options.images - Whether to include images the plugin fetches
+   *   itself (inlined as `data:` URIs): false when the content has nowhere to
+   *   store them (a feed entry's), so leave them out
    */
-  fetchContent(url: URL): Promise<SavedArticleContent | null>;
+  fetchContent(url: URL, options: { images: boolean }): Promise<SavedArticleContent | null>;
 
   /**
    * Fetch content with the saving user's own credentials for the source (e.g.

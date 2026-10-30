@@ -14,8 +14,7 @@
 
 import { createHash } from "node:crypto";
 import type { DbOrTx } from "@/server/db";
-import { createJobs } from "@/server/jobs/queue";
-import { DELETION_JOB_ENTRIES } from "./full-content-archive";
+import { createJobs, DELETION_JOB_ENTRIES } from "@/server/jobs/queue";
 import {
   deleteObjectsWithPrefix,
   getPublicObjectUrl,

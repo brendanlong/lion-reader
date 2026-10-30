@@ -63,10 +63,11 @@ export async function fetchFullContent(
   const { objectsPrefix, offloadClean = true } = options;
 
   try {
-    const acquired = await acquireArticleContent(url);
+    const images = objectsPrefix !== null;
+    const acquired = await acquireArticleContent(url, { images });
     const bundle = await articleContentFromAcquired(acquired, {
       offload: offloadClean,
-      pdfImages: objectsPrefix !== null,
+      pdfImages: images,
     });
     const { contentOriginal, contentCleaned } = await processArticleContent(
       bundle,

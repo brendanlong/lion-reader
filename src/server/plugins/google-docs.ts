@@ -34,7 +34,7 @@ export const googleDocsPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
-      async fetchContent(url: URL): Promise<SavedArticleContent | null> {
+      async fetchContent(url: URL, options): Promise<SavedArticleContent | null> {
         try {
           // Validates it's a Google Docs URL: extractDocId returns null when it isn't.
           const docId = extractDocId(url.href);
@@ -43,7 +43,7 @@ export const googleDocsPlugin: UrlPlugin = {
           }
 
           // Fetch the document content
-          const content = await fetchGoogleDocsFromUrl(url.href);
+          const content = await fetchGoogleDocsFromUrl(url.href, options);
           if (!content) {
             return null;
           }

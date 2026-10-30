@@ -13,19 +13,12 @@ import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
 import type { DbOrTx } from "@/server/db";
-import { createJobs } from "@/server/jobs/queue";
+import { createJobs, DELETION_JOB_ENTRIES } from "@/server/jobs/queue";
 import { deleteObjectsWithPrefix, isArchiveAvailable, putArchiveObject } from "@/server/storage/s3";
 
 const gzipAsync = promisify(gzip);
 
 const KEY_PREFIX = "full-content/";
-
-/**
- * Entries per deletion job, here and in `stored-objects.ts`. Each costs a list
- * request, so this keeps a job well inside `DEFAULT_JOB_TIMEOUT_MS` however
- * many entries a delete removes.
- */
-export const DELETION_JOB_ENTRIES = 200;
 
 function fullContentArchiveKey(entryId: string, html: string): string {
   const hash = createHash("sha256").update(html, "utf8").digest("hex");

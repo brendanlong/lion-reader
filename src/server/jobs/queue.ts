@@ -340,6 +340,14 @@ export async function createJob<T extends JobType>(
 }
 
 /**
+ * Entries (or prefixes) per storage deletion job (`delete_stored_objects`,
+ * `delete_full_content_archives`). Each costs a list request, so this keeps a
+ * job well inside {@link DEFAULT_JOB_TIMEOUT_MS} however many entries a delete
+ * removes.
+ */
+export const DELETION_JOB_ENTRIES = 200;
+
+/**
  * Creates a due job of `type` per payload, in one insert.
  *
  * @param executor Where to insert them: a transaction makes the jobs commit

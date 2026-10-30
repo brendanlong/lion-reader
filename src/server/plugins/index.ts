@@ -95,6 +95,12 @@ export type AcquiredArticle =
 export interface AcquireArticleOptions {
   /** The saving user, for plugins that can fetch with their credentials. */
   asUser?: UserFetchContext;
+  /**
+   * Whether a plugin should include images it fetches itself: only content
+   * with an objects prefix (`processArticleContent`) has somewhere to store
+   * them.
+   */
+  images: boolean;
 }
 
 /**
@@ -126,7 +132,7 @@ export class UserFetchError extends Error {
  */
 export async function acquireArticleContent(
   url: string,
-  options: AcquireArticleOptions = {}
+  options: AcquireArticleOptions
 ): Promise<AcquiredArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   const parsed = toUrl(url);
@@ -134,7 +140,7 @@ export async function acquireArticleContent(
   if (plugin && parsed) {
     const capability = plugin.capabilities.savedArticle;
     try {
-      const content = await capability.fetchContent(parsed);
+      const content = await capability.fetchContent(parsed, { images: options.images });
       if (content) {
         logger.debug("Plugin fetched the article", { url, plugin: plugin.name });
         return pluginArticle(plugin, content, url);

@@ -106,7 +106,7 @@ beforeEach(() => {
 describe("acquireArticleContent: hostname plugin", () => {
   it("returns the plugin's content without fetching the page", async () => {
     const url = `${baseUrl}/plugin/ok`;
-    const acquired = await acquireArticleContent(url);
+    const acquired = await acquireArticleContent(url, { images: true });
     expect(acquired).toMatchObject({
       kind: "plugin",
       source: "fixture-hostname",
@@ -119,19 +119,19 @@ describe("acquireArticleContent: hostname plugin", () => {
   });
 
   it("rethrows a plugin rate limit instead of fetching the same host", async () => {
-    await expect(acquireArticleContent(`${baseUrl}/plugin/rate-limited`)).rejects.toThrow(
-      HttpFetchError
-    );
+    await expect(
+      acquireArticleContent(`${baseUrl}/plugin/rate-limited`, { images: true })
+    ).rejects.toThrow(HttpFetchError);
     expect(pageRequests).toEqual([]);
   });
 
   it("falls back to the page when the plugin fails", async () => {
-    const acquired = await acquireArticleContent(`${baseUrl}/plugin/broken`);
+    const acquired = await acquireArticleContent(`${baseUrl}/plugin/broken`, { images: true });
     expect(acquired).toMatchObject({ kind: "page", content: PAGE_HTML });
   });
 
   it("does not offer a hostname-matched page to fetched-page plugins", async () => {
-    const acquired = await acquireArticleContent(`${baseUrl}/plugin/claimable`);
+    const acquired = await acquireArticleContent(`${baseUrl}/plugin/claimable`, { images: true });
     expect(acquired.kind).toBe("page");
   });
 });
@@ -141,7 +141,7 @@ describe("acquireArticleContent: fetchContentAsUser", () => {
 
   it("fetches as the user after fetchContent declines, without fetching the page", async () => {
     const url = `${baseUrl}/plugin/as-user`;
-    const acquired = await acquireArticleContent(url, { asUser });
+    const acquired = await acquireArticleContent(url, { asUser, images: true });
     expect(acquired).toMatchObject({
       kind: "plugin",
       source: "fixture-hostname",
@@ -152,12 +152,15 @@ describe("acquireArticleContent: fetchContentAsUser", () => {
   });
 
   it("is not tried without a user", async () => {
-    const acquired = await acquireArticleContent(`${baseUrl}/plugin/as-user`);
+    const acquired = await acquireArticleContent(`${baseUrl}/plugin/as-user`, { images: true });
     expect(acquired).toMatchObject({ kind: "page", content: PAGE_HTML });
   });
 
   it("throws its failure as a UserFetchError instead of fetching the page", async () => {
-    const failure = acquireArticleContent(`${baseUrl}/plugin/as-user-broken`, { asUser });
+    const failure = acquireArticleContent(`${baseUrl}/plugin/as-user-broken`, {
+      asUser,
+      images: true,
+    });
     await expect(failure).rejects.toBeInstanceOf(UserFetchError);
     await expect(failure).rejects.toMatchObject({ cause: { message: "needs consent" } });
     expect(pageRequests).toEqual([]);
@@ -167,7 +170,7 @@ describe("acquireArticleContent: fetchContentAsUser", () => {
 describe("acquireArticleContent: fetched-page plugins", () => {
   it("lets a plugin claim a page no hostname plugin matched", async () => {
     const url = `${baseUrl}/page/claimable`;
-    const acquired = await acquireArticleContent(url);
+    const acquired = await acquireArticleContent(url, { images: true });
     expect(acquired).toMatchObject({
       kind: "plugin",
       source: "fixture-page-claim",
@@ -177,12 +180,14 @@ describe("acquireArticleContent: fetched-page plugins", () => {
   });
 
   it("keeps the page when the claimed content is over the size cap", async () => {
-    const acquired = await acquireArticleContent(`${baseUrl}/page/claimable-huge`);
+    const acquired = await acquireArticleContent(`${baseUrl}/page/claimable-huge`, {
+      images: true,
+    });
     expect(acquired.kind).toBe("page");
   });
 
   it("does not offer Markdown to fetched-page plugins", async () => {
-    const acquired = await acquireArticleContent(`${baseUrl}/page/markdown`);
+    const acquired = await acquireArticleContent(`${baseUrl}/page/markdown`, { images: true });
     expect(acquired).toMatchObject({ kind: "page", isMarkdown: true });
   });
 });

@@ -27,7 +27,11 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { getSubscriptionsByIds, lockSubscriptionMembers } from "@/server/services/subscriptions";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { entryObjectsPrefix } from "@/server/services/stored-objects";
-import { processArticleContent } from "@/server/services/article-content";
+import {
+  processArticleContent,
+  type ProcessedArticleContent,
+} from "@/server/services/article-content";
+import { getAppErrorCode } from "@/server/errors";
 
 // ============================================================================
 // Types
@@ -158,9 +162,10 @@ function generateEmailContentHash(subject: string, content: string): string {
  * 3. Normalize sender email
  * 4. Check if sender is blocked (reject silently)
  * 5. Find, create or reactivate the subscription to the sender (the owner)
- * 6. Process the content
- * 7. Create the entry, unless its Message-ID is a duplicate
- * 8. Publish real-time event via Redis
+ * 6. Reject a duplicate Message-ID
+ * 7. Process the content
+ * 8. Create the entry, unless a concurrent duplicate just did
+ * 9. Publish real-time event via Redis
  *
  * @param email - The normalized inbound email
  * @returns Processing result
@@ -296,7 +301,17 @@ export async function processInboundEmail(
     }
   }
 
-  // 6. Process the content: its inlined images moved to storage, and
+  // 6. Reject a duplicate Message-ID (a Mailgun retry of an email already
+  // stored) before processing it again: a seek on the (owner_subscription_id,
+  // guid) unique index. The insert below settles a concurrent duplicate.
+  const [existingEntry] = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .where(and(eq(entries.ownerSubscriptionId, owner.id), eq(entries.guid, email.messageId)))
+    .limit(1);
+  if (existingEntry) return rejectDuplicate(email, owner.id);
+
+  // 7. Process the content: its inlined images moved to storage, and
   // Readability's extraction, with lower thresholds than web articles since
   // emails are often shorter. It strips email boilerplate (headers, footers,
   // unsubscribe links); null if it fails, and the UI only shows the toggle when
@@ -305,16 +320,28 @@ export async function processInboundEmail(
   let html: string | null = null;
   let contentCleaned: string | null = null;
   if (email.html) {
-    const processed = await processArticleContent(
-      { html: email.html, contentUrl: null, pluginContent: null, preCleanedContent: null },
-      null,
-      {
-        offload: true,
-        objectsPrefix: entryObjectsPrefix(userId, entryId),
-        minContentLength: 50,
-        minCleanedLength: 20,
-      }
-    );
+    let processed: ProcessedArticleContent;
+    try {
+      processed = await processArticleContent(
+        { html: email.html, contentUrl: null, pluginContent: null, preCleanedContent: null },
+        null,
+        {
+          offload: true,
+          objectsPrefix: entryObjectsPrefix(userId, entryId),
+          minContentLength: 50,
+          minCleanedLength: 20,
+        }
+      );
+    } catch (error) {
+      // Permanent, so answered like step 0's check rather than with a 500
+      // Mailgun would retry.
+      if (getAppErrorCode(error) !== "CONTENT_TOO_LARGE") throw error;
+      logger.info("Email rejected: content too large after processing", {
+        subscriptionId: owner.id,
+        messageId: email.messageId,
+      });
+      return { success: false, error: "Email content too large" };
+    }
     html = processed.contentOriginal;
     contentCleaned = processed.contentCleaned;
   }
@@ -367,8 +394,8 @@ export async function processInboundEmail(
 
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
   //
-  // 7. Insert the entry, unless its Message-ID is a duplicate (the
-  // (owner_subscription_id, guid) unique index).
+  // 8. Insert the entry, unless a concurrent delivery of the same Message-ID
+  // just did.
   //
   // The entry insert and the user_entries fanout MUST be atomic. Mailgun retries
   // its webhook on any non-2xx/timeout, and a retry is rejected as a duplicate
@@ -401,13 +428,7 @@ export async function processInboundEmail(
     return true;
   });
 
-  if (!inserted) {
-    logger.info("Email rejected: duplicate Message-ID", {
-      messageId: email.messageId,
-      subscriptionId: owner.id,
-    });
-    return { success: false, error: "Duplicate email" };
-  }
+  if (!inserted) return rejectDuplicate(email, owner.id);
 
   logger.info("Email processed successfully", {
     subscriptionId: owner.id,
@@ -417,7 +438,7 @@ export async function processInboundEmail(
     isSpam: email.isSpam ?? false,
   });
 
-  // 8. Publish real-time event via Redis
+  // 9. Publish real-time event via Redis
   // Fire and forget - we don't want publishing failures to affect email processing.
   // A spam entry's event still fires, for the counts.
   publishUserEvent({
@@ -435,6 +456,14 @@ export async function processInboundEmail(
     entryId,
     subscriptionId: owner.id,
   };
+}
+
+function rejectDuplicate(email: InboundEmail, subscriptionId: string): ProcessEmailResult {
+  logger.info("Email rejected: duplicate Message-ID", {
+    messageId: email.messageId,
+    subscriptionId,
+  });
+  return { success: false, error: "Duplicate email" };
 }
 
 /** The user's email subscription to `senderEmail` (active or not), if any. */

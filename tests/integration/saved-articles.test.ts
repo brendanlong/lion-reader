@@ -19,6 +19,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries, userEntries, feeds } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { getAppErrorCode } from "../../src/server/errors";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   saveArticle,
@@ -925,6 +926,23 @@ describe("Saved Articles API", () => {
         .from(entries)
         .where(eq(entries.url, "https://example.com/too-big"));
       expect(saved).toHaveLength(0);
+    });
+
+    it("rejects HTML that the URL pass grows past the limit", async () => {
+      const userId = await createTestUser();
+      const { usageLimitsConfig } = await import("../../src/server/config/env");
+      const html = '<p><a href="x">relative</a></p>';
+      const limit = usageLimitsConfig.maxSavedArticleSizeBytes;
+      usageLimitsConfig.maxSavedArticleSizeBytes = Buffer.byteLength(html);
+      try {
+        const error = await saveArticle(db, userId, {
+          url: "https://example.com/a/long/path/to/grow/",
+          html,
+        }).catch((e: unknown) => e);
+        expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+      } finally {
+        usageLimitsConfig.maxSavedArticleSizeBytes = limit;
+      }
     });
 
     it("uses provided HTML instead of fetching the URL", async () => {
