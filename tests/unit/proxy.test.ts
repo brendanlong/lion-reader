@@ -12,8 +12,8 @@ import path from "node:path";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
-import { config, proxy } from "../../src/proxy";
-import { isUploadPath, PROXY_BODY_LIMIT_BYTES, UPLOAD_PATHS } from "../../src/lib/upload-limits";
+import { config, POST_ROUTE_HANDLER_PATHS, proxy } from "../../src/proxy";
+import { PROXY_BODY_LIMIT_BYTES, UPLOAD_PATHS } from "../../src/lib/upload-limits";
 import { SENTRY_TUNNEL_ROUTE } from "../../src/lib/sentry/tunnel-route";
 
 function makeRequest(
@@ -152,7 +152,10 @@ describe("proxy session redirects (issue #1359)", () => {
   // they're covered by tests/e2e/auth-ssr.spec.ts rather than mocked here.
 });
 
-/** URL paths of every App Router route handler exporting POST, with dynamic segments filled in. */
+/**
+ * URL paths of every App Router route handler exporting POST, with each
+ * dynamic segment filled in as `x` (an optional catch-all also left empty).
+ */
 function postRouteHandlerPaths(): string[] {
   const appDir = path.join(import.meta.dirname, "../../src/app");
   return readdirSync(appDir, { recursive: true, encoding: "utf8" })
@@ -162,16 +165,16 @@ function postRouteHandlerPaths(): string[] {
         readFileSync(path.join(appDir, file), "utf8")
       )
     )
-    .map(
-      (file) =>
-        "/" +
-        path
-          .dirname(file)
-          .split(path.sep)
-          .filter((segment) => !/^\(.*\)$/.test(segment))
-          .map((segment) => (segment.startsWith("[") ? "x" : segment))
-          .join("/")
-    );
+    .flatMap((file) => {
+      const segments = path
+        .dirname(file)
+        .split(path.sep)
+        .filter((segment) => !/^\(.*\)$/.test(segment));
+      const filled = segments.map((segment) => (segment.startsWith("[") ? "x" : segment));
+      const paths = ["/" + filled.join("/")];
+      if (segments.at(-1)?.startsWith("[[")) paths.push("/" + filled.slice(0, -1).join("/"));
+      return paths;
+    });
 }
 
 describe("proxy rejects server function calls", () => {
@@ -182,12 +185,18 @@ describe("proxy rejects server function calls", () => {
       "/all",
       { "content-type": "multipart/form-data; boundary=x" },
     ],
+    ["a fetch-style call to a POST route handler", "/api/share", { "next-action": "7f00" }],
     [
-      "a fetch-style call to a page under an exempt prefix",
+      "a header-less multipart form POST to a page under /oauth",
       "/oauth/consent",
-      { "next-action": "7f00" },
+      { "content-type": "multipart/form-data; boundary=x" },
     ],
     ["a fetch-style call to an unknown API path", "/api/nonexistent", { "next-action": "7f00" }],
+    [
+      "a header-less urlencoded POST to an unknown API path",
+      "/api/nonexistent",
+      { "content-type": "application/x-www-form-urlencoded" },
+    ],
     ["a POST to a static page", "/register", {}],
     ["a POST to the root", "/", { "next-action": "7f00" }],
   ])("405s %s", async (_label, pathname, headers) => {
@@ -199,6 +208,14 @@ describe("proxy rejects server function calls", () => {
   it("finds the POST route handlers it checks", () => {
     expect(postRouteHandlerPaths()).toContain("/api/share");
   });
+
+  it.each(POST_ROUTE_HANDLER_PATHS)(
+    "exempts %s only because a POST route handler is there",
+    (route) => {
+      const handlers = new Set([...postRouteHandlerPaths(), SENTRY_TUNNEL_ROUTE]);
+      expect(handlers).toContain(route.replace(/\*\*|\*/g, "x"));
+    }
+  );
 
   it.each([...postRouteHandlerPaths(), SENTRY_TUNNEL_ROUTE])(
     "passes POST %s through",
@@ -228,7 +245,7 @@ describe("proxy matcher", () => {
     unstable_doesMiddlewareMatch({ config, url: `https://reader.example.com${pathname}` });
 
   it("skips exactly the upload endpoints, so Next doesn't buffer their bodies", () => {
-    for (const pathname of UPLOAD_PATHS) expect(matches(pathname)).toBe(false);
+    for (const pathname of UPLOAD_PATHS.keys()) expect(matches(pathname)).toBe(false);
     for (const pathname of [
       "/api/trpc/collections.importEbook,entries.list",
       "/api/trpc/saved.uploadFileX",
@@ -236,7 +253,7 @@ describe("proxy matcher", () => {
       "/api/v1/narration/speech",
       "/all",
     ]) {
-      expect(isUploadPath(pathname)).toBe(false);
+      expect(UPLOAD_PATHS.has(pathname)).toBe(false);
       expect(matches(pathname)).toBe(true);
     }
   });

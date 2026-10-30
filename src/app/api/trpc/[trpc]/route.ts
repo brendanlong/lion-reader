@@ -7,7 +7,7 @@
 
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "@/server/trpc/root";
-import { createContext } from "@/server/trpc/context";
+import { createContext, type TrpcCredential } from "@/server/trpc/context";
 import { serveTrpcHttp, withFailingBody } from "@/server/trpc/http";
 
 /**
@@ -28,8 +28,18 @@ function normalizeTrpcPath(url: URL): string {
   return `/api/trpc/${firstProcedure}`;
 }
 
-const serve = (req: Request, onError?: Parameters<typeof fetchRequestHandler>[0]["onError"]) =>
-  fetchRequestHandler({ endpoint: "/api/trpc", req, router: appRouter, createContext, onError });
+const serve = (
+  req: Request,
+  onError?: Parameters<typeof fetchRequestHandler>[0]["onError"],
+  credential?: TrpcCredential
+) =>
+  fetchRequestHandler({
+    endpoint: "/api/trpc",
+    req,
+    router: appRouter,
+    createContext: (opts) => createContext(opts, credential),
+    onError,
+  });
 
 const handler = (req: Request): Promise<Response> =>
   serveTrpcHttp(

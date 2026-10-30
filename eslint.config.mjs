@@ -31,6 +31,13 @@ const HTMLPARSER2 = {
   message: "Parse with createSaxParser (@/server/html/sax), which bounds the nesting depth.",
 };
 
+// JSZip builds objects for every entry of an archive before anything can
+// budget it, so a many-entry upload takes hundreds of MB.
+const JSZIP = {
+  name: "jszip",
+  message: "Open archives with loadZip (@/server/file/zip-reader), which caps their entry count.",
+};
+
 // Shared code doesn't depend on the routes: src/server and src/lib import
 // nothing from src/app. Data a route and the server both need lives under
 // src/lib (the demo's articles are in src/lib/demo for that reason).
@@ -168,14 +175,21 @@ const eslintConfig = defineConfig([
   // paths instead of merging: each override re-lists the rules it keeps.
   {
     files: ["src/**/*.{ts,tsx}"],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2], [NARRATION_INTERNALS]),
+    rules: restrictImports([JSZIP, NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2], [NARRATION_INTERNALS]),
   },
   {
     files: ["src/components/narration/**/*.{ts,tsx}"],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2]),
+    rules: restrictImports([JSZIP, NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2]),
   },
   {
     files: ["src/server/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    rules: restrictImports(
+      [JSZIP, NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
+      [APP_LAYER, NARRATION_INTERNALS]
+    ),
+  },
+  {
+    files: ["src/server/file/zip-reader.ts"],
     rules: restrictImports(
       [NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
       [APP_LAYER, NARRATION_INTERNALS]
@@ -183,34 +197,34 @@ const eslintConfig = defineConfig([
   },
   {
     files: ["src/server/html/sax.ts"],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, NARRATION_INTERNALS]),
+    rules: restrictImports([JSZIP, NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, NARRATION_INTERNALS]),
   },
   {
     files: ["src/server/db/**/*.ts"],
     rules: restrictImports(
-      [NEXT_LINK, NATIVE_MARKDOWN, DRIZZLE_JSONB],
+      [JSZIP, NEXT_LINK, NATIVE_MARKDOWN, DRIZZLE_JSONB],
       [APP_LAYER, NARRATION_INTERNALS]
     ),
   },
   {
     files: ["src/components/ui/page-link.tsx"],
-    rules: restrictImports([NATIVE_MARKDOWN, HTMLPARSER2], [NARRATION_INTERNALS]),
+    rules: restrictImports([JSZIP, NATIVE_MARKDOWN, HTMLPARSER2], [NARRATION_INTERNALS]),
   },
   {
     files: ["src/server/markdown/index.ts"],
-    rules: restrictImports([NEXT_LINK, HTMLPARSER2], [APP_LAYER, NARRATION_INTERNALS]),
+    rules: restrictImports([JSZIP, NEXT_LINK, HTMLPARSER2], [APP_LAYER, NARRATION_INTERNALS]),
   },
   {
     files: API_SURFACES.filter((glob) => glob.startsWith("src/app/")),
     rules: restrictImports(
-      [NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
+      [JSZIP, NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
       [NARRATION_INTERNALS, ...RAW_CREDENTIAL_VALIDATORS]
     ),
   },
   {
     files: [...API_SURFACES.filter((glob) => glob.startsWith("src/server/")), ...REQUEST_AUTH],
     rules: restrictImports(
-      [NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
+      [JSZIP, NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
       [APP_LAYER, NARRATION_INTERNALS, ...RAW_CREDENTIAL_VALIDATORS]
     ),
   },

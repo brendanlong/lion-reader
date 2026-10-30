@@ -83,6 +83,13 @@ describe("evaluateRequest", () => {
     expect(evaluateRequest("/admins")).toBe("block-page");
   });
 
+  it("matches on the path Next routes to, not the raw URL", () => {
+    expect(evaluateRequest("/demo/../api/v1/entries")).toBe("block-api");
+    expect(evaluateRequest("/demo/%2e%2e/api/trpc/x")).toBe("block-api");
+    expect(evaluateRequest("/privacy/%2E%2E/settings")).toBe("block-page");
+    expect(evaluateRequest("/demo/all?x=../../api")).toBe("allow");
+  });
+
   describe("/api/trpc admin exception", () => {
     beforeAll(() => {
       process.env.ADMIN_SECRET = "test-admin-secret-for-gate";

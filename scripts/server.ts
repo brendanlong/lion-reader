@@ -130,8 +130,11 @@ app.prepare().then(() => {
     // database, which is the whole point during a DB migration.
     const maintenance = getCurrentMaintenance();
     if (maintenance.enabled) {
-      const pathname = (req.url || "/").split("?")[0];
-      const decision = evaluateRequest(pathname, req.headers.cookie, req.headers.authorization);
+      const decision = evaluateRequest(
+        req.url || "/",
+        req.headers.cookie,
+        req.headers.authorization
+      );
       if (decision !== "allow") {
         res.statusCode = 503;
         res.setHeader("Retry-After", "3600");

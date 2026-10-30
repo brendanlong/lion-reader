@@ -9,7 +9,11 @@ import { type FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { db, type Database } from "@/server/db";
 import type { SessionData } from "@/server/auth/session";
 import type { ApiTokenData } from "@/server/auth/api-token";
-import { authenticateCredential, getBearerOrSessionCookie } from "@/server/auth/credential";
+import {
+  authenticateCredential,
+  getBearerOrSessionCookie,
+  type Credential,
+} from "@/server/auth/credential";
 import { trackAndroidAppRequest } from "@/server/metrics/metrics";
 import type { OAuthScope } from "@/server/oauth/utils";
 import type { User } from "@/server/db/schema";
@@ -98,12 +102,26 @@ function syntheticSession(
   };
 }
 
+/** The credential kinds tRPC and REST accept. */
+export const TRPC_CREDENTIAL_KINDS = ["session", "api_token", "app_token"] as const;
+
+export type TrpcCredential = Extract<Credential, { kind: (typeof TRPC_CREDENTIAL_KINDS)[number] }>;
+
+async function authenticate(token: string | null): Promise<TrpcCredential | null> {
+  const auth = await authenticateCredential(token, { accept: TRPC_CREDENTIAL_KINDS });
+  return auth.ok ? auth.credential : null;
+}
+
 /**
  * Creates the tRPC context for each request: a browser session, an API token,
  * or the first-party app's OAuth token. Procedures enforce scopes and signup
- * confirmation (src/server/trpc/trpc.ts).
+ * confirmation (src/server/trpc/trpc.ts). `authenticated` is the request's
+ * credential when the caller has already authenticated it.
  */
-export async function createContext(opts: FetchCreateContextFnOptions): Promise<Context> {
+export async function createContext(
+  opts: FetchCreateContextFnOptions,
+  authenticated?: TrpcCredential
+): Promise<Context> {
   const { req } = opts;
   // Present on the browser tRPC fetch path; undefined on the REST/OpenAPI path
   // (its adapter uses a Node res shim and doesn't pass resHeaders through).
@@ -111,10 +129,8 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
   const base = { db, headers: req.headers, resHeaders };
 
   const token = getBearerOrSessionCookie(req.headers);
-  const auth = await authenticateCredential(token, {
-    accept: ["session", "api_token", "app_token"],
-  });
-  if (!auth.ok) {
+  const credential = authenticated ?? (await authenticate(token));
+  if (!credential) {
     return {
       ...base,
       session: null,
@@ -125,7 +141,6 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
     };
   }
 
-  const { credential } = auth;
   switch (credential.kind) {
     case "session":
       return {

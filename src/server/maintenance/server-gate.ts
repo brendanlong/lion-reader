@@ -85,15 +85,30 @@ function hasValidAdminAuth(cookieHeader?: string, authHeader?: string): boolean 
 }
 
 /**
+ * The pathname Next routes `requestUrl` to. Next parses `req.url` as a WHATWG
+ * URL against a dummy origin, which resolves `..` and `%2e%2e` segments, so the
+ * gate must match on the same form: the raw string would let
+ * `/demo/../api/v1/entries` match the exempt `/demo` prefix.
+ */
+function routedPathname(requestUrl: string): string | null {
+  const base = "http://n";
+  const url = URL.parse(requestUrl.startsWith("/") ? `${base}${requestUrl}` : requestUrl, base);
+  return url?.pathname ?? null;
+}
+
+/**
  * Decide what to do with a request while maintenance is active. Pure — takes the
- * pathname and the raw Cookie/Authorization headers, returns the decision.
- * Unit-tested.
+ * raw request URL (`req.url`) and the Cookie/Authorization headers, returns the
+ * decision. Unit-tested.
  */
 export function evaluateRequest(
-  pathname: string,
+  requestUrl: string,
   cookieHeader?: string,
   authHeader?: string
 ): GateDecision {
+  const pathname = routedPathname(requestUrl);
+  // Next can't route a URL it can't parse either.
+  if (pathname === null) return "block-page";
   if (EXEMPT_EXACT.has(pathname)) return "allow";
   if (EXEMPT_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return "allow";
