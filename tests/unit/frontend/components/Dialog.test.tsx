@@ -73,6 +73,22 @@ describe("Dialog", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
+    it("keeps Escape from page-level document listeners, whatever their order", () => {
+      const pageListener = vi.fn();
+      document.addEventListener("keydown", pageListener);
+      try {
+        render(
+          <Dialog isOpen={true} onClose={vi.fn()} title="Test Dialog">
+            Content
+          </Dialog>
+        );
+        fireEvent.keyDown(document.body, { key: "Escape" });
+        expect(pageListener).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener("keydown", pageListener);
+      }
+    });
+
     it("does not call onClose when other keys are pressed", () => {
       const onClose = vi.fn();
       render(

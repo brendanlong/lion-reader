@@ -11,9 +11,9 @@ interface ShortcutHotkeyOptions {
 }
 
 /**
- * Binds a page-level shortcut. Every app shortcut goes through this so none
- * fires while typing in a form field or behind an open dialog, which owns the
- * keyboard (its Escape handler can't stop other document listeners).
+ * Binds a page-level shortcut so it doesn't fire while typing in a form field
+ * or behind an open dialog, which owns the keyboard. Bind page shortcuts
+ * through this rather than `useHotkeys`.
  */
 export function useShortcutHotkeys(
   keys: string,
