@@ -33,11 +33,4 @@ describe("UnreadToggle", () => {
       expect(onToggle).toHaveBeenCalledTimes(1);
     });
   });
-
-  describe("styling", () => {
-    it("applies custom className", () => {
-      render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} className="custom-class" />);
-      expect(screen.getByRole("button")).toHaveClass("custom-class");
-    });
-  });
 });

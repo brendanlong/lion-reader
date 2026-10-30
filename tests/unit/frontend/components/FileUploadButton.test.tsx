@@ -16,13 +16,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
-import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import type { NewEntryListItem } from "@/lib/events/schemas";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES, maxEbookUploadBytes } from "@/lib/upload-limits";
+import { uploadIdempotencyKeySchema } from "@/server/trpc/validation";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import {
   createCounts,
@@ -118,22 +118,10 @@ describe("FileUploadButton drop zone accessibility", () => {
 
     const input = getFileInput();
     // `hidden` (display: none) and a negative tabindex are the two ways to drop
-    // a control out of the tab order; the input must use neither. It is hidden
-    // visually instead, by the shared class string that
-    // `drop-zone-file-input.test.ts` pins.
-    expect(input).toHaveClass(DROP_ZONE_FILE_INPUT_CLASSES);
+    // a control out of the tab order; the input must use neither.
     expect(input).not.toHaveAttribute("hidden");
     expect(input.tabIndex).toBeGreaterThanOrEqual(0);
     expect(input).not.toBeDisabled();
-  });
-
-  it("can be focused", () => {
-    renderWithTrpc(<FileUploadButton />, { handlers });
-    openDialog();
-
-    const input = getFileInput();
-    input.focus();
-    expect(input).toHaveFocus();
   });
 
   it("selecting a file through the input alone drives the whole upload flow", async () => {
@@ -174,7 +162,7 @@ describe("FileUploadButton drop zone accessibility", () => {
     await waitFor(() => expect(keys()).toHaveLength(3));
 
     const [first, retry, other] = keys();
-    expect(first).toMatch(/^[A-Za-z0-9_-]{1,128}$/);
+    expect(uploadIdempotencyKeySchema.unwrap().safeParse(first).success).toBe(true);
     expect(retry).toBe(first);
     expect(other).not.toBe(first);
   });

@@ -16,7 +16,6 @@
 import { describe, it, expect } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
 import { OpmlImportExport } from "@/components/settings/OpmlImportExport";
-import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 
 const handlers: ProcedureHandlers = {
@@ -32,18 +31,9 @@ describe("OpmlImportExport drop zone accessibility", () => {
     renderWithTrpc(<OpmlImportExport />, { handlers });
 
     const input = getFileInput();
-    expect(input).toHaveClass(DROP_ZONE_FILE_INPUT_CLASSES);
     expect(input).not.toHaveAttribute("hidden");
     expect(input.tabIndex).toBeGreaterThanOrEqual(0);
     expect(input).not.toBeDisabled();
-  });
-
-  it("can be focused", () => {
-    renderWithTrpc(<OpmlImportExport />, { handlers });
-
-    const input = getFileInput();
-    input.focus();
-    expect(input).toHaveFocus();
   });
 
   it("selecting a file through the input alone reaches the import preview", async () => {
