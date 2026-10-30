@@ -165,13 +165,11 @@ describe("handleSubscriptionDeleted", () => {
     invalidateSpy = spyOnInvalidate(queryClient);
   });
 
-  it("invalidates entries.list cache", async () => {
+  it("invalidates entries.list cache", () => {
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
-    await vi.waitFor(() =>
-      expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "entries.list")).toHaveLength(
-        1
-      )
+    expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "entries.list")).toHaveLength(
+      1
     );
   });
 

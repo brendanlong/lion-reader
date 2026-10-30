@@ -166,7 +166,7 @@ export function handleSyncEvent(
       // handleSubscriptionDeleted is idempotent: it skips the structural removal
       // when the subscription is already gone from cache (optimistic same-tab
       // delete, or a never-cached subscription) but still applies the absolute
-      // counts and refreshes the entry lists. Calling it unconditionally fixes
+      // counts and invalidates entries.list. Calling it unconditionally fixes
       // the case where a delete for a never-cached subscription (common with
       // tags collapsed) left inflated counts and stale entries (#1081).
       handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);

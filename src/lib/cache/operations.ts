@@ -47,7 +47,6 @@ import {
 } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import { setCollectionChangeInLists } from "@/lib/local-db/entry-lists";
-import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 
 /**
  * Drops a deleted subscription's `subscriptions.get` data. Run once the server
@@ -398,9 +397,7 @@ export function applyNewEntry(
 
 /**
  * Handles a subscription being deleted: removes it from the local store,
- * applies the counts, and refreshes the entry lists. Its entries drop out of
- * them, and a deleted collection's saved articles may be deleted with it,
- * none of which the client can tell entry by entry.
+ * applies the counts, and invalidates `entries.list` (its entries drop out).
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - ID of the deleted subscription
@@ -429,7 +426,9 @@ export function handleSubscriptionDeleted(
   // The collection picker searches on the server, so it refetches.
   void utils.subscriptions.list.invalidate({ type: "collection" });
   forgetDeletedSubscription(utils, subscriptionId);
-  void refreshEntryLists(queryClient);
+
+  // Always invalidate entries.list - entries from this subscription should be filtered out
+  utils.entries.list.invalidate();
 }
 
 /**
@@ -445,7 +444,7 @@ export function handleMarkAllRead(
   counts?: UnreadCounts
 ): void {
   if (counts) applyUnreadCounts(utils, queryClient, counts);
-  void refreshEntryLists(queryClient);
+  utils.entries.list.invalidate();
 }
 
 /**

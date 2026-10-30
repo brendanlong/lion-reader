@@ -934,7 +934,7 @@ describe("handleSyncEvent - tag and Uncategorized lists", () => {
 // ============================================================================
 
 describe("handleSyncEvent - mark_all_read", () => {
-  it("sets the counts it carries and refetches only the entry lists", async () => {
+  it("sets the counts it carries and refetches only the entry lists", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -953,7 +953,7 @@ describe("handleSyncEvent - mark_all_read", () => {
     expect(getTagsList()?.items.find((tag) => tag.id === "tag-1")?.unreadCount).toBe(10);
     expect(getEntriesCount()).toEqual({ unread: 3 });
     // One of the two SSE events that deliberately refetch entries.list.
-    await vi.waitFor(() => expect(invalidatedProcedures(invalidateSpy)).toEqual(["entries.list"]));
+    expect(invalidatedProcedures(invalidateSpy)).toEqual(["entries.list"]);
   });
 
   it("does not touch entry read state directly (invalidation handles it)", () => {
@@ -1258,7 +1258,7 @@ describe("handleSyncEvent - subscription_deleted", () => {
     expect(getEntriesCount({ all: true })?.unread).toBe(countAfterFirst);
   });
 
-  it("still applies counts + invalidates entries.list when the subscription is not cached (#1081)", async () => {
+  it("still applies counts + invalidates entries.list when the subscription is not cached (#1081)", () => {
     // A delete for a subscription that was never cached (e.g. tags collapsed, so
     // its per-tag subscriptions.list was never loaded) must NOT be skipped: the
     // event still carries absolute counts and the deleted feed's entries must be
@@ -1287,10 +1287,10 @@ describe("handleSyncEvent - subscription_deleted", () => {
     // Absolute counts from the event are applied even though nothing was removed.
     expect(getEntriesCount({ all: true })?.unread).toBe(12);
     // entries.list is invalidated so the deleted feed's entries are re-filtered.
-    await vi.waitFor(() => expect(invalidatedProcedures(invalidateSpy)).toContain("entries.list"));
+    expect(invalidatedProcedures(invalidateSpy)).toContain("entries.list");
   });
 
-  it("invalidates count caches + entries.list for an uncached subscription with no counts (sync catch-up)", async () => {
+  it("invalidates count caches + entries.list for an uncached subscription with no counts (sync catch-up)", () => {
     invalidateSpy.mockClear();
     handleSyncEvent(
       utils,
@@ -1302,11 +1302,10 @@ describe("handleSyncEvent - subscription_deleted", () => {
 
     // No counts on the event → invalidate the count caches and entries.list
     // rather than silently doing nothing.
-    await vi.waitFor(() =>
-      expect(invalidatedProcedures(invalidateSpy)).toEqual(
-        expect.arrayContaining(["tags.list", "entries.countLists", "entries.list"])
-      )
-    );
+    const paths = invalidatedProcedures(invalidateSpy);
+    expect(paths).toContain("tags.list");
+    expect(paths).toContain("entries.countLists");
+    expect(paths).toContain("entries.list");
   });
 });
 
