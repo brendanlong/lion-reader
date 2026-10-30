@@ -5,12 +5,14 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import com.lionreader.app.graph
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 sealed interface FileShareState {
-    /** Not open yet: closing the dialog now would end the read grant, losing the file. */
+    /** Not open yet: the read grant ends with the dialog, so closing it now cancels the save. */
     data object Opening : FileShareState
 
     data object Copying : FileShareState
@@ -30,25 +32,34 @@ sealed interface FileShareState {
 class FileShareModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow<FileShareState>(FileShareState.Opening)
     val state: StateFlow<FileShareState> = _state
-    private var started = false
+    private var job: Job? = null
 
     fun start(uri: Uri, sharedType: String?) {
-        if (started) return
-        started = true
+        if (job != null) return
         val app = getApplication<Application>()
-        app.graph.appScope.launch(Dispatchers.IO) {
-            val opened = openSharedFile(app, uri, sharedType)
-            _state.value =
-                when (opened) {
-                    is ShareFailed -> FileShareState.Failed(opened.message)
-                    is SharedStream -> {
-                        _state.value = FileShareState.Copying
-                        when (val copied = copySharedFile(app, opened)) {
-                            is CopiedFile -> FileShareState.Saving(SaveWorker.enqueue(app, copied))
-                            is ShareFailed -> FileShareState.Failed(copied.message)
-                        }
-                    }
+        job =
+            app.graph.appScope.launch(Dispatchers.IO) {
+                val opened = openSharedFile(app, uri, sharedType)
+                if (opened is ShareFailed) {
+                    _state.value = FileShareState.Failed(opened.message)
+                    return@launch
                 }
-        }
+                opened as SharedStream
+                if (!isActive) {
+                    opened.input.close()
+                    return@launch
+                }
+                _state.value = FileShareState.Copying
+                _state.value =
+                    when (val copied = copySharedFile(app, opened)) {
+                        is CopiedFile -> FileShareState.Saving(SaveWorker.enqueue(app, copied))
+                        is ShareFailed -> FileShareState.Failed(copied.message)
+                    }
+            }
+    }
+
+    /** The dialog closed while [FileShareState.Opening]: the file won't be readable, so no save. */
+    fun cancelOpening() {
+        if (_state.value == FileShareState.Opening) job?.cancel()
     }
 }

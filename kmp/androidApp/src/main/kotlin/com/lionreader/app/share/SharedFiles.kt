@@ -38,9 +38,10 @@ class SharedStream(val input: InputStream, val filename: String) : OpenResult
 
 /**
  * A shared file copied into app storage, so a background save can read it later. Its name is a hash
- * of its bytes, which is also its upload's idempotency key: the same file shared again (or the
- * dialog recreated after process death) is the same save, and a different file is a different save
- * even when the sending app shares every file from the same URI.
+ * of its upload [filename] and bytes, which is also its upload's idempotency key: the same file
+ * shared again (or the dialog recreated after process death) is the same save, and a different file
+ * is a different save even when the sending app shares every file from the same URI. The filename
+ * is in it because it picks the converter: the same text as `.txt` and as `.md` differs.
  */
 data class CopiedFile(val path: String, val filename: String) : CopyResult
 
@@ -108,6 +109,9 @@ fun copySharedFile(context: Context, shared: SharedStream): CopyResult {
     return try {
         val written = File.createTempFile("copy", ".partial", dir).also { partial = it }
         val digest = MessageDigest.getInstance("SHA-256")
+        // Ended by a 0, which no filename holds, so where it ends can't be shifted into the bytes.
+        digest.update(shared.filename.encodeToByteArray())
+        digest.update(0)
         var tooLarge = false
         shared.input.use { source ->
             written.outputStream().use { sink ->

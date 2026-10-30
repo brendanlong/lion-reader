@@ -114,9 +114,13 @@ class SharedFilesTest {
         val second = share(uri, sharedType = null) as CopiedFile
         serve("a.md", "text/markdown", "# One".toByteArray())
         val again = share(uri, sharedType = null) as CopiedFile
+        // The name picks the converter, so the same bytes under another type are another save.
+        serve("a.txt", "text/plain", "# One".toByteArray())
+        val asText = share(uri, sharedType = null) as CopiedFile
 
         assertNotEquals(first.path, second.path)
         assertEquals(first.path, again.path)
+        assertNotEquals(first.path, asText.path)
         assertArrayEquals("# Two".toByteArray(), File(second.path).readBytes())
     }
 
