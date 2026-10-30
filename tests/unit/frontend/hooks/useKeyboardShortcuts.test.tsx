@@ -159,12 +159,19 @@ describe("useKeyboardShortcuts", () => {
     expect(window.location.pathname).toBe("/all");
   });
 
-  it("does nothing while typing in a form field or when shortcuts are disabled", () => {
+  it("does nothing while typing in a form field, behind a dialog, or when shortcuts are disabled", () => {
     const { options } = setup();
     const input = document.createElement("input");
     document.body.appendChild(input);
     fireEvent.keyDown(input, { key: "r", code: "KeyR" });
     input.remove();
+    expect(options.onRefresh).not.toHaveBeenCalled();
+
+    const dialog = document.createElement("div");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    press("r");
+    dialog.remove();
     expect(options.onRefresh).not.toHaveBeenCalled();
 
     cleanup();

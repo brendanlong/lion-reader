@@ -12,13 +12,13 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { SHORTCUTS } from "@/components/keyboard/shortcuts";
+import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { SearchIcon } from "@/components/ui/icons";
 import { SkeletonText } from "@/components/ui/skeleton";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
@@ -117,9 +117,9 @@ export function EntryPageLayout({
   };
 
   // `/` focuses the search input (opening the bar if needed), matching the
-  // convention of other readers. enableOnFormTags stays false so typing "/"
-  // inside the input itself is unaffected.
-  useHotkeys(
+  // convention of other readers; typing "/" inside the input itself is
+  // unaffected.
+  useShortcutHotkeys(
     SHORTCUTS.search.hotkey,
     (e) => {
       e.preventDefault();
@@ -129,13 +129,7 @@ export function EntryPageLayout({
         setSearchOpen(true);
       }
     },
-    // useKey matches the produced character (event.key) rather than the
-    // physical key code — "/" has no layout-independent code.
-    {
-      enabled: keyboardShortcutsEnabled && !openEntryId,
-      enableOnFormTags: false,
-      useKey: true,
-    },
+    { enabled: keyboardShortcutsEnabled && !openEntryId, useKey: true },
     [keyboardShortcutsEnabled, openEntryId]
   );
 

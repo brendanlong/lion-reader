@@ -8,7 +8,6 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
@@ -19,6 +18,7 @@ import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { SHORTCUTS } from "@/components/keyboard/shortcuts";
 import { ENTRY_ACTION_BAR_CLASSES, EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
@@ -212,22 +212,22 @@ export function EntryContentBody({
   });
 
   // The open entry's half of `m`/`s`; useKeyboardShortcuts handles them in the list.
-  useHotkeys(
+  useShortcutHotkeys(
     SHORTCUTS.toggleRead.hotkey,
     (e) => {
       e.preventDefault();
       onToggleRead();
     },
-    { enabled: keyboardShortcutsEnabled, enableOnFormTags: false },
+    { enabled: keyboardShortcutsEnabled },
     [onToggleRead]
   );
-  useHotkeys(
+  useShortcutHotkeys(
     SHORTCUTS.toggleStar.hotkey,
     (e) => {
       e.preventDefault();
       onToggleStar();
     },
-    { enabled: keyboardShortcutsEnabled, enableOnFormTags: false },
+    { enabled: keyboardShortcutsEnabled },
     [onToggleStar]
   );
 

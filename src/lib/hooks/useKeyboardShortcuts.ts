@@ -8,7 +8,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { clientPush } from "@/lib/navigation";
 import { useAppHref } from "./useAppLocation";
 import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
@@ -339,7 +339,7 @@ export function useKeyboardShortcuts(
 
   // One binding for the whole table, dispatched on the alternative that
   // matched. No deps array: react-hotkeys-hook then calls the latest callback.
-  useHotkeys(
+  useShortcutHotkeys(
     LIST_HOTKEYS,
     (e, { hotkey }) => {
       const pending = pendingPrefixRef.current;
@@ -370,7 +370,7 @@ export function useKeyboardShortcuts(
         action.run();
       }
     },
-    { enabled, enableOnFormTags: false }
+    { enabled }
   );
 
   return {
