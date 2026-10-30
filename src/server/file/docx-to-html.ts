@@ -22,10 +22,11 @@
 
 import { Worker } from "node:worker_threads";
 import { join } from "node:path";
-import JSZip from "jszip";
+import type JSZip from "jszip";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
+import { loadZip } from "@/server/file/zip-reader";
 import {
   documentConversionSlot,
   QueueTimeoutError,
@@ -131,7 +132,7 @@ type WorkerResult =
 async function assertInflatedSizeWithinBudget(buffer: Buffer): Promise<void> {
   const maxText = usageLimitsConfig.maxSavedArticleSizeBytes * DOCX_MAX_TEXT_FACTOR;
   const maxTotal = usageLimitsConfig.maxSavedArticleSizeBytes * DOCX_MAX_INFLATION_FACTOR;
-  const zip = await JSZip.loadAsync(buffer);
+  const zip = await loadZip(buffer);
 
   let text = 0;
   let total = 0;

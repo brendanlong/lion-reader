@@ -22,7 +22,7 @@
  * `.docx` that hasn't been through that check.
  */
 
-import JSZip from "jszip";
+import { loadZip } from "@/server/file/zip-reader";
 import { createSaxParser } from "@/server/html/sax";
 import { logger } from "@/lib/logger";
 
@@ -46,7 +46,7 @@ const CORE_PROPS_PATH = "docProps/core.xml";
  */
 export async function extractDocxCoreProperties(buffer: Buffer): Promise<DocxCoreProperties> {
   try {
-    const zip = await JSZip.loadAsync(buffer);
+    const zip = await loadZip(buffer);
     const entry = zip.file(CORE_PROPS_PATH);
     if (!entry) {
       return EMPTY_PROPERTIES;
