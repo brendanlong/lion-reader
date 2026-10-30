@@ -20,10 +20,6 @@ import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
 import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import type { EntryRow } from "@/lib/local-db/entries";
-import type { inferRouterOutputs } from "@trpc/server";
-import type { AppRouter } from "@/server/trpc/root";
-
-type MembershipResult = inferRouterOutputs<AppRouter>["collections"]["addEntries"];
 
 /**
  * The collections holding an entry: every membership but its origin, the saved
@@ -60,20 +56,24 @@ export function useCollectionMembership(entryId: string) {
 
   const onError = () => toast.error("Failed to update collection");
 
-  const applyResult = (subscriptionId: string, added: boolean, result: MembershipResult) =>
-    applyCollectionEntriesChange(utils, queryClient, {
-      subscriptionId,
-      added,
-      counts: result.counts,
-      tagLists: result.tagLists,
-      updatedAt: result.updatedAt,
-    });
   const addMutation = trpc.collections.addEntries.useMutation({
-    onSuccess: (result, variables) => applyResult(variables.id, true, result),
+    onSuccess: (result, variables) =>
+      applyCollectionEntriesChange(utils, queryClient, {
+        subscriptionId: variables.id,
+        added: true,
+        counts: result.counts,
+        tagLists: result.tagLists,
+      }),
     onError,
   });
   const removeMutation = trpc.collections.removeEntries.useMutation({
-    onSuccess: (result, variables) => applyResult(variables.id, false, result),
+    onSuccess: (result, variables) =>
+      applyCollectionEntriesChange(utils, queryClient, {
+        subscriptionId: variables.id,
+        added: false,
+        counts: result.counts,
+        tagLists: result.tagLists,
+      }),
     onError,
   });
   const createMutation = trpc.collections.create.useMutation();

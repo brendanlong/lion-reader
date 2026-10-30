@@ -512,8 +512,7 @@ async function selectInsertedSavedArticle(
       subscriptionId: row.subscriptionId,
       subscriptionIds: row.subscriptionIds,
       tagLists: tagLists.get(entry.id)!,
-      // What clients compare entries by (visible_entries.updated_at).
-      updatedAt: userState.changedAt.toString(),
+      updatedAt: userState.updatedAt.toISOString(),
       entry: toNewEntryListData(entry, SAVED_ARTICLES_TITLE, {
         read: userState.read,
         starred: userState.starred,
@@ -1103,8 +1102,9 @@ export async function uploadFile(
     return insertUploadedArticle(db, userId, fields, guid, entryId);
   });
   if (!params.collectionIds?.length) return uploaded;
-  // Filed into its collections after the insert: its list item names them,
-  // as fresh as filing it.
+  // Filed into its collections after the insert, so read the list item again:
+  // the client stores the response's over what the collections' events wrote,
+  // so it must name them and be as fresh as filing it.
   return (
     (await selectInsertedSavedArticle(db, userId, eq(entries.id, uploaded.article.id))) ?? uploaded
   );

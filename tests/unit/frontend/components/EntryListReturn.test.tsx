@@ -69,7 +69,6 @@ function renderCollection() {
           added: false,
           counts: result.counts,
           tagLists: result.tagLists,
-          updatedAt: result.updatedAt!,
         }
       )
     );

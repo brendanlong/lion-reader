@@ -112,12 +112,12 @@ describe("uploadFile's list item", () => {
       collectionIds: [collection.id],
     });
 
-    const [{ changedAt }] = await db
-      .select({ changedAt: userEntries.changedAt })
+    const [{ updatedAt }] = await db
+      .select({ updatedAt: userEntries.updatedAt })
       .from(userEntries)
       .where(eq(userEntries.entryId, listItem.entryId));
     expect(listItem.subscriptionIds).toContain(collection.id);
-    expect(new Date(listItem.updatedAt)).toEqual(new Date(changedAt.epochMilliseconds));
+    expect(listItem.updatedAt).toBe(updatedAt.toISOString());
   });
 });
 

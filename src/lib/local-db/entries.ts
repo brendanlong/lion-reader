@@ -232,54 +232,43 @@ export function setServerEntryState(
   if (next) store.upsert([next]);
 }
 
-/** An entry joining or leaving a collection, as the server reported it. */
-export interface CollectionMembershipChange {
-  collectionId: string;
-  added: boolean;
-  /** The tag lists holding the entry after the change, or null when unknown. */
-  tagLists: TagLists | null;
-  /** Its position in the collection, when it joined with one. */
-  position?: number;
-}
-
 /**
- * Writes a collection membership change to a stored entry as a state write
- * as of `updatedAt`, when the change moved the entry's state: like any state
- * write, it applies only over older state, and a page read before it can't
- * revert it. Returns the membership the entry has as far as the store knows:
- * the change, or what the newer stored state says. A response from a server
- * a release behind has no `updatedAt`: it applies over the stored state
- * without moving its watermark.
+ * Adds a collection to (or removes it from) a stored entry's
+ * `subscriptionIds`, with the tag lists the membership change left it in and,
+ * when the change carries one, its position there. The change's response
+ * carries no `updatedAt`, so this moves no watermark: a page fetched before
+ * the change that lands after it can revert them, which only matters until
+ * the next write that carries them (any unread flip does).
  */
 export function setStoredEntryCollection(
   store: EntryStore,
   id: string,
-  change: CollectionMembershipChange,
-  updatedAt: Date | undefined
-): CollectionMembershipChange {
+  change: { collectionId: string; added: boolean; tagLists: TagLists; position?: number }
+): void {
   const { collectionId, added, tagLists, position } = change;
   const stored = store.getSynced(id);
-  if (!stored) return change;
-  if (updatedAt && !isFresh(updatedAt, stored.stateUpdatedAt)) {
-    return {
-      collectionId,
-      added: stored.subscriptionIds.includes(collectionId),
-      tagLists: stored.tagLists,
-    };
+  if (!stored) return;
+  if (!added) {
+    store.upsert([
+      {
+        ...stored,
+        subscriptionIds: stored.subscriptionIds.filter(
+          (subscriptionId) => subscriptionId !== collectionId
+        ),
+        tagLists,
+        positions: withoutKey(stored.positions, collectionId),
+      },
+    ]);
+    return;
   }
-  const others = stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
-  setServerEntryState(store, id, {
-    read: stored.read,
-    starred: stored.starred,
-    subscriptionIds: added ? [...others, collectionId] : others,
-    positions:
-      added && position !== undefined
-        ? { ...stored.positions, [collectionId]: position }
-        : withoutKey(stored.positions, collectionId),
-    ...(tagLists && { tagLists }),
-    updatedAt: updatedAt ?? stored.stateUpdatedAt,
-  });
-  return change;
+  // The membership may be stored already (a page fetched after the change)
+  // without the position the change carries.
+  const subscriptionIds = stored.subscriptionIds.includes(collectionId)
+    ? stored.subscriptionIds
+    : [...stored.subscriptionIds, collectionId];
+  const positions =
+    position !== undefined ? { ...stored.positions, [collectionId]: position } : stored.positions;
+  store.upsert([{ ...stored, subscriptionIds, tagLists, positions }]);
 }
 
 /**

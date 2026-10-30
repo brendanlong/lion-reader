@@ -117,36 +117,23 @@ describe("MCP curation tools", () => {
 });
 
 describe("collection_entries_changed", () => {
-  it("publishes the change and its counts on the user's channel, stamped like the response", async () => {
+  it("publishes the change and its counts on the user's channel", async () => {
     const { userId, entryId } = await userWithEntry();
     const channel = getUserEventsChannel(userId);
     let collectionId = "";
     await subscribeAndDrain(subscriber, channel, async () => {
       collectionId = (await createCollection(db, userId, "C")).subscription.id;
     });
-    // Another machine, its clock ahead of this one's, updated the entry.
-    const ahead = new Date(Date.now() + 60 * 60 * 1000);
-    await db.update(entries).set({ updatedAt: ahead }).where(eq(entries.id, entryId));
     const message = waitForMessage(subscriber, channel);
 
-    const result = await addEntriesToCollection(db, userId, collectionId, [entryId]);
+    await addEntriesToCollection(db, userId, collectionId, [entryId]);
 
-    // Clients order the response and the event against the entry by its
-    // changed_at, so the change is stamped with it, past the entry's.
-    const [{ changedAt }] = await db
-      .select({ changedAt: userEntries.changedAt })
-      .from(userEntries)
-      .where(eq(userEntries.entryId, entryId));
-    const updatedAt = new Date(changedAt.epochMilliseconds);
-    expect(updatedAt.getTime()).toBeGreaterThan(ahead.getTime());
-    expect(result.updatedAt).toEqual(updatedAt);
     expect(JSON.parse(await message)).toMatchObject({
       type: "collection_entries_changed",
       subscriptionId: collectionId,
       entryIds: [entryId],
       added: true,
       counts: { subscriptions: [{ id: collectionId, unread: 1 }] },
-      updatedAt: updatedAt.toISOString(),
     });
   });
 });

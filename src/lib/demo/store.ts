@@ -475,21 +475,17 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
     added: boolean
   ): Outputs["collections"]["addEntries"] {
     const collection = requireCollection(collectionId);
-    const updatedAt = new Date();
     const changed = entryIds.filter((id) => {
       const state = entries.get(id);
       if (!state || !isVisible(state) || collection.members.has(id) === added) return false;
       if (added) collection.members.add(id);
       else collection.members.delete(id);
-      state.updatedAt = updatedAt;
       return true;
     });
-    if (changed.length === 0) return { entryIds: [], tagLists: [] };
     return {
       entryIds: changed,
-      counts: countsForSubscriptions([collection]),
+      counts: changed.length > 0 ? countsForSubscriptions([collection]) : undefined,
       tagLists: changed.map((entryId) => ({ entryId, ...tagListsOf(entries.get(entryId)!) })),
-      updatedAt,
     };
   }
 

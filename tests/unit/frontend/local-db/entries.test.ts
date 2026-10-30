@@ -303,12 +303,11 @@ describe("setStoredEntryCollection", () => {
   it("takes the change's tag lists even when the entry's memberships already show it", () => {
     // A page fetched after the add, landing before its event.
     upsertServerEntries(store, [makeEntry({ subscriptionIds: ["sub-1", "col-1"] })]);
-    setStoredEntryCollection(
-      store,
-      "e1",
-      { collectionId: "col-1", added: true, tagLists: TAGGED },
-      t2
-    );
+    setStoredEntryCollection(store, "e1", {
+      collectionId: "col-1",
+      added: true,
+      tagLists: TAGGED,
+    });
     expect(store.collection.get("e1")).toMatchObject({
       subscriptionIds: ["sub-1", "col-1"],
       tagLists: TAGGED,

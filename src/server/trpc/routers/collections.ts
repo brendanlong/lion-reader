@@ -31,8 +31,6 @@ const membershipOutputSchema = z.object({
   entryIds: z.array(z.string()),
   counts: unreadCountsSchema.optional(),
   tagLists: entryTagListsSchema,
-  /** When the changed articles' state moved; absent when nothing changed. */
-  updatedAt: z.date().optional(),
 });
 
 export const collectionsRouter = createTRPCRouter({
