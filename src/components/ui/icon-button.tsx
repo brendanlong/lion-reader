@@ -12,7 +12,11 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   icon: ReactNode;
   /** Accessible label for the button */
   "aria-label": string;
-  /** Button size */
+  /**
+   * `md` is a 44px touch target on hover-less devices. `sm` stays 28px
+   * everywhere, for dense rows that stretch its hit area themselves (see
+   * SubscriptionItem).
+   */
   size?: "sm" | "md";
   /** Visual variant */
   variant?: "ghost" | "subtle";
@@ -46,7 +50,7 @@ export function IconButton({
 }: IconButtonProps) {
   const sizeStyles = {
     sm: "h-7 w-7",
-    md: "h-8 w-8",
+    md: "h-8 w-8 hover-none:h-11 hover-none:w-11",
   };
 
   const variantStyles = {

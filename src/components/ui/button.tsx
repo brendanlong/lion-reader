@@ -37,9 +37,10 @@ export function buttonClassName({
       "control-outline bg-danger-solid text-danger-solid-foreground hover:bg-danger-solid-hover",
   };
 
-  // Ensure minimum 44px height for touch targets on mobile (WCAG touch target guidelines)
+  // Every size is a 44px touch target; `sm` is compact only where there's a
+  // hover-capable pointer, which doesn't need one.
   const sizeStyles = {
-    sm: "min-h-[36px] px-3 ui-text-sm sm:min-h-[32px]",
+    sm: "min-h-8 px-3 ui-text-sm hover-none:min-h-11 hover-none:min-w-11",
     md: "min-h-[44px] px-4 ui-text-sm",
     lg: "min-h-[48px] px-6 ui-text-base",
   };
