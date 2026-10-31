@@ -329,26 +329,35 @@ $_$;
 
 CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $_$
 DECLARE
   v_sign integer := CASE WHEN TG_OP = 'INSERT' THEN 1 ELSE -1 END;
+  v_any boolean;
   v_user uuid[]; v_entry uuid[]; v_sub uuid[];
+  v_collections uuid[];
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM changed_rows) THEN
+  EXECUTE 'SELECT EXISTS (SELECT 1 FROM changed_rows)' INTO v_any;
+  IF NOT v_any THEN
     RETURN NULL;
   END IF;
-  IF TG_OP = 'INSERT' THEN
-    PERFORM 1 FROM subscriptions
-    WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
-    ORDER BY id FOR NO KEY UPDATE;
-  END IF;
-  SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id)
-  INTO v_user, v_entry, v_sub
-  FROM changed_rows;
+  EXECUTE $q$
+    SELECT array_agg(id) FILTER (WHERE type = 'collection')
+    FROM (
+      SELECT id, type FROM subscriptions
+      WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
+      ORDER BY id FOR NO KEY UPDATE
+    ) s
+  $q$ INTO v_collections;
+  EXECUTE $q$
+    SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id) FROM changed_rows
+  $q$ INTO v_user, v_entry, v_sub;
   PERFORM apply_membership_changes(v_sign, v_user, v_entry, v_sub);
+  IF v_collections IS NOT NULL THEN
+    UPDATE subscriptions SET memberships_changed_at = now() WHERE id = ANY(v_collections);
+  END IF;
   RETURN NULL;
 END;
-$$;
+$_$;
 
 CREATE FUNCTION public.subscription_entries_drop_lists() RETURNS trigger
     LANGUAGE plpgsql
@@ -505,36 +514,50 @@ $_$;
 
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
-    AS $$
+    AS $_$
 DECLARE
   m_sign integer[]; m_user uuid[]; m_entry uuid[]; m_sub uuid[];
   c_user uuid[]; c_all integer[]; c_starred integer[];
 BEGIN
-  SELECT array_agg(-1), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
-  INTO m_sign, m_user, m_entry, m_sub
-  FROM old_rows o
-  JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
-  WHERE NOT o.read AND NOT o.is_spam;
+  EXECUTE $q$
+    SELECT 1 FROM subscriptions
+    WHERE id IN (
+      SELECT se.subscription_id
+      FROM old_rows o
+      JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
+    )
+    ORDER BY id FOR NO KEY UPDATE
+  $q$;
 
-  SELECT array_agg(user_id), array_agg(al), array_agg(st)
-  INTO c_user, c_all, c_starred
-  FROM (
-    SELECT user_id,
-           -count(*) FILTER (WHERE NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
-           -count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
-    FROM old_rows
-    GROUP BY user_id
-  ) d
-  WHERE al <> 0 OR st <> 0;
+  EXECUTE $q$
+    SELECT array_agg(-1), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
+    FROM old_rows o
+    JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
+    WHERE NOT o.read AND NOT o.is_spam
+  $q$ INTO m_sign, m_user, m_entry, m_sub;
+
+  EXECUTE $q$
+    SELECT array_agg(user_id), array_agg(al), array_agg(st)
+    FROM (
+      SELECT user_id,
+             -count(*) FILTER (WHERE NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
+             -count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
+      FROM old_rows
+      GROUP BY user_id
+    ) d
+    WHERE al <> 0 OR st <> 0
+  $q$ INTO c_user, c_all, c_starred;
 
   PERFORM apply_unread_memberships(m_sign, m_user, m_entry, m_sub, true, c_user, c_all, c_starred);
 
-  DELETE FROM subscription_entries se
-  USING old_rows o
-  WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id;
+  EXECUTE $q$
+    DELETE FROM subscription_entries se
+    USING old_rows o
+    WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id
+  $q$;
   RETURN NULL;
 END;
-$$;
+$_$;
 
 CREATE FUNCTION public.user_entries_counters_insert() RETURNS trigger
     LANGUAGE plpgsql
@@ -949,6 +972,7 @@ CREATE TABLE public.subscriptions (
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     type public.feed_type NOT NULL,
     email_sender text,
+    memberships_changed_at timestamp with time zone,
     CONSTRAINT subscriptions_feed_iff_web CHECK (((type = 'web'::public.feed_type) = (feed_id IS NOT NULL))),
     CONSTRAINT subscriptions_named_unless_web CHECK (((type = 'web'::public.feed_type) OR (custom_title IS NOT NULL)))
 );
@@ -1352,6 +1376,8 @@ CREATE INDEX idx_subscriptions_feed_active ON public.subscriptions USING btree (
 CREATE UNIQUE INDEX idx_subscriptions_greader_stream_id ON public.subscriptions USING btree (greader_stream_id);
 
 CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (user_id) WHERE (unsubscribed_at IS NULL);
+
+CREATE INDEX idx_subscriptions_user_memberships_changed ON public.subscriptions USING btree (user_id, memberships_changed_at) WHERE ((type = 'collection'::public.feed_type) AND (unsubscribed_at IS NULL));
 
 CREATE INDEX idx_tag_entries_read_score ON public.tag_entries USING btree (list_id, read, score DESC NULLS LAST, published_or_fetched_at DESC, entry_id DESC);
 

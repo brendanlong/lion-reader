@@ -23,7 +23,11 @@ import {
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 import { listEntryTagLists } from "../../src/server/services/entry-tag-lists";
 import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
-import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
+import {
+  addEntriesToCollection,
+  createCollection,
+  removeEntriesFromCollection,
+} from "../../src/server/services/collections";
 import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
 import { setSubscriptionTags } from "../../src/server/services/subscription-updates";
 import { entries, tags, userEntries } from "../../src/server/db/schema";
@@ -118,8 +122,8 @@ async function seedAndOpenAll(
     { timeout: 90_000 }
   );
   // Each SSE connect runs a sync.events catch-up. If its query lands after a
-  // test's write, it replays the change and (legitimately) refetches the
-  // sidebar lists, which the tests would count as stray refetches (#1831).
+  // test's write, it replays the change too, and the test no longer shows
+  // that the live event alone did the work (#1831).
   const catchUpResponse = page.waitForResponse(
     (response) => trpcProcedures(response.url()).includes("sync.events"),
     { timeout: 90_000 }
@@ -633,4 +637,81 @@ test("collection_entries_changed updates a tag holding the collection without re
   // The unread-only sidebar hid the empty collection; it loads just that row.
   await expect(page.getByRole("link", { name: /^Picks/ })).toContainText("(1)");
   expect(refetchProcedures(trpcCalls)).toEqual(["subscriptions.get"]);
+});
+
+test("a catch-up corrects a collection an entry left while disconnected without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  // Track the page's EventSources so the test can drop the stream.
+  await page.addInitScript(() => {
+    const NativeEventSource = window.EventSource;
+    const opened: EventSource[] = [];
+    (window as unknown as { openedEventSources: EventSource[] }).openedEventSources = opened;
+    window.EventSource = class extends NativeEventSource {
+      constructor(...args: ConstructorParameters<typeof EventSource>) {
+        super(...args);
+        opened.push(this);
+      }
+    };
+  });
+  // A collection tagged News holding the untagged feed's post: News counts 3
+  // distinct posts, Picks 1.
+  let collectionId = "";
+  let untaggedId = "";
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ user }) => getUserEventsChannel(user.id),
+    {
+      beforeLogin: async ({ user }) => {
+        const db = getDb();
+        collectionId = (await createCollection(db, user.id, "Picks")).subscription.id;
+        const [news] = await db.select({ id: tags.id }).from(tags).where(eq(tags.userId, user.id));
+        await setSubscriptionTags(db, user.id, collectionId, [news.id]);
+        const [untagged] = await db
+          .select({ id: entries.id })
+          .from(entries)
+          .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+          .where(and(eq(userEntries.userId, user.id), eq(entries.title, "Untagged post")));
+        untaggedId = untagged.id;
+        await addEntriesToCollection(db, user.id, collectionId, [untaggedId]);
+      },
+    }
+  );
+  const links = sidebarLinks(page, taggedFeed);
+  const picks = page.getByRole("link", { name: /^Picks/ });
+  await expect(links.newsTag).toContainText("(3)");
+  await expect(picks).toContainText("(1)");
+
+  // Drop the stream and hold the reconnect until the post has been removed
+  // elsewhere, so its live event is lost and only the catch-up can report it.
+  let releaseReconnect = () => {};
+  const removed = new Promise<void>((resolve) => (releaseReconnect = resolve));
+  await page.route("**/api/v1/events", async (route) => {
+    await removed;
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    const opened = (window as unknown as { openedEventSources: EventSource[] }).openedEventSources;
+    const stream = opened[opened.length - 1];
+    stream.close();
+    stream.dispatchEvent(new Event("error"));
+  });
+  await removeEntriesFromCollection(getDb(), user.id, collectionId, [untaggedId]);
+
+  trpcCalls.length = 0;
+  const reconnected = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/events") && response.request().method() === "GET"
+  );
+  releaseReconnect();
+  await reconnected;
+
+  await expect(links.newsTag).toContainText("(2)");
+  // At 0 unread, the unread-only sidebar drops the row.
+  await expect(picks).toBeHidden();
+  expect(trpcCalls).toContain("sync.events");
+  expect(
+    trpcCalls.filter((procedure) => ["subscriptions.list", "tags.list"].includes(procedure))
+  ).toEqual([]);
 });

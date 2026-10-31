@@ -12,11 +12,6 @@
  *
  * Syncs are serialized by `reduceSyncScheduler` (#897): at most one runs at a
  * time, and requests made meanwhile coalesce into one follow-up.
- *
- * Collection membership changes aren't replayed (the replayed entries carry
- * their memberships, but no count for a collection one left), so a catch-up
- * that replayed any events ends by refreshing the sidebar counts once
- * (`refresh-after-catch-up`).
  */
 
 import { advanceCursors, type SyncCursors } from "./cursors";
@@ -65,8 +60,6 @@ export interface SyncSessionState {
   scheduler: SyncSchedulerState;
   /** The delay before the next retry of a failing catch-up. */
   retryDelayMs: number;
-  /** Whether the current catch-up has replayed any events. */
-  replayedEvents: boolean;
 }
 
 /** The cursors a `sync.events` request sends. */
@@ -99,9 +92,7 @@ export type SyncSessionEvent =
 export type SyncSessionAction =
   | { type: "run-sync"; epoch: number; cursors: SyncQueryCursors }
   | { type: "schedule-retry"; delayMs: number }
-  | { type: "cancel-retry" }
-  /** Refetch the sidebar counts a replayed membership change may have moved. */
-  | { type: "refresh-after-catch-up" };
+  | { type: "cancel-retry" };
 
 export interface SyncSessionResult {
   state: SyncSessionState;
@@ -117,7 +108,6 @@ export function initialSyncSession(cursors: SyncCursors): SyncSessionState {
     epoch: 0,
     scheduler: INITIAL_SYNC_SCHEDULER_STATE,
     retryDelayMs: INITIAL_SYNC_RETRY_DELAY_MS,
-    replayedEvents: false,
   };
 }
 
@@ -170,17 +160,14 @@ function settleSync(
     // requested meanwhile, and no freeze happened since it started.
     const caughtUp =
       state.caughtUp || (!event.hasMore && !state.scheduler.pending && event.epoch === state.epoch);
-    const replayedEvents = state.replayedEvents || event.events.length > 0;
     next = {
       ...state,
       cursors,
       catchUpStart: event.hasMore ? state.catchUpStart : null,
       caughtUp,
       retryDelayMs: INITIAL_SYNC_RETRY_DELAY_MS,
-      replayedEvents: event.hasMore && replayedEvents,
     };
     actions.push({ type: "cancel-retry" });
-    if (!event.hasMore && replayedEvents) actions.push({ type: "refresh-after-catch-up" });
   } else if (state.active) {
     // The cursors stay frozen, so the retry re-queries the same gap.
     next = {
