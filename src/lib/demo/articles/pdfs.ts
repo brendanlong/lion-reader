@@ -32,7 +32,7 @@ const article: DemoArticle = {
       </ul>
     </details>
 
-    <p>Saving an arXiv paper from its PDF link gets you arXiv&rsquo;s own web version when there is one, or the paper&rsquo;s abstract page when there isn&rsquo;t &mdash; see <a href="/demo/all?entry=plugins">smart content sources</a>. And if your book is an EPUB rather than a PDF, you can <a href="/demo/all?entry=books">import it with its chapters</a>.</p>
+    <p>Saving an arXiv paper from its PDF link gets you arXiv&rsquo;s own web version when there is one &mdash; see <a href="/demo/all?entry=plugins">smart content sources</a>. And if your book is an EPUB rather than a PDF, you can <a href="/demo/all?entry=books">import it with its chapters</a>.</p>
   `,
 };
 

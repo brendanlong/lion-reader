@@ -17,7 +17,13 @@ import { threadsPlugin } from "./threads";
 import { threadReaderPlugin } from "./threadreader";
 import { notionPlugin } from "./notion";
 import { substackPlugin } from "./substack";
-import type { FetchedPage, PluginWith, SavedArticleContent, UserFetchContext } from "./types";
+import type {
+  FetchedPage,
+  PluginWith,
+  SavedArticleContent,
+  SavedArticlePdf,
+  UserFetchContext,
+} from "./types";
 import type { ParsedEntry } from "@/server/feed/types";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -87,10 +93,16 @@ interface PluginArticle {
   baseUrl: string;
 }
 
-export type AcquiredArticle =
-  | PluginArticle
-  | ({ kind: "page" } & FetchHtmlPageResult)
-  | { kind: "pdf"; pdf: Buffer; finalUrl: string };
+/** A PDF, fetched generically or by a plugin. */
+interface FetchedPdf {
+  kind: "pdf";
+  pdf: Buffer;
+  finalUrl: string;
+  /** Set when a plugin fetched it: metadata preferred over the PDF's own. */
+  plugin?: Omit<SavedArticlePdf, "pdf" | "finalUrl"> & { siteName?: string };
+}
+
+export type AcquiredArticle = PluginArticle | ({ kind: "page" } & FetchHtmlPageResult) | FetchedPdf;
 
 export interface AcquireArticleOptions {
   /** The saving user, for plugins that can fetch with their credentials. */
@@ -143,6 +155,11 @@ export async function acquireArticleContent(
       const content = await capability.fetchContent(parsed, { images: options.images });
       if (content) {
         logger.debug("Plugin fetched the article", { url, plugin: plugin.name });
+        if ("pdf" in content) {
+          const { pdf, finalUrl, ...metadata } = content;
+          const { siteName } = capability;
+          return { kind: "pdf", pdf, finalUrl, plugin: { ...metadata, siteName } };
+        }
         return pluginArticle(plugin, content, url);
       }
     } catch (error) {
