@@ -21,16 +21,18 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { markEntriesRead } from "../../src/server/services/entry-state";
+import { markEntriesRead, updateEntriesStarred } from "../../src/server/services/entry-state";
+import { setEntryScores } from "../../src/server/services/entry-scores";
 import {
   createSubscription,
   migrateSubscriptionsToExistingFeed,
 } from "../../src/server/services/subscribe";
 import { setSubscriptionTags, unsubscribe } from "../../src/server/services/subscription-updates";
-import { deleteTag } from "../../src/server/services/tags";
+import { deleteTag, lockUserTagLinks } from "../../src/server/services/tags";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { deleteUser } from "../../src/server/services/users";
+import { getAppErrorCode } from "../../src/server/errors";
 import {
   createTestEntry,
   createTestFeed,
@@ -39,6 +41,8 @@ import {
   createTestTag,
   createTestUser,
   waitUntilBlockedBy,
+  holdTransaction,
+  waitForLockWaiter,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -215,6 +219,129 @@ describe("unread counters under concurrent writes", () => {
       await holder.end();
       await probe.end();
     }
+    await expectNoDrift();
+  });
+
+  it.each<[string, (userId: string, entryIds: string[]) => Promise<unknown>]>([
+    [
+      "marking read",
+      (userId, ids) =>
+        markEntriesRead(
+          db,
+          userId,
+          ids.map((id) => ({ id })),
+          true
+        ),
+    ],
+    [
+      "starring",
+      (userId, ids) =>
+        updateEntriesStarred(
+          db,
+          userId,
+          ids.map((id) => ({ id })),
+          true
+        ),
+    ],
+    [
+      "scoring",
+      (userId, ids) =>
+        setEntryScores(
+          db,
+          userId,
+          ids.map((entryId) => ({ entryId, score: 1 }))
+        ),
+    ],
+  ])(
+    "%s a batch locks its articles in id order, whatever order it names them",
+    async (_, write) => {
+      // An UPDATE locks rows in plan order, so two batches naming the same
+      // articles in opposite orders could each hold one the other waits for.
+      const userId = await createTestUser();
+      const { entryIds } = await feedWithEntries(userId, 2);
+      const [lower, higher] = [...entryIds].sort();
+      // Rewrite the lower row, so on disk it comes after the higher one.
+      await db
+        .update(userEntries)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, lower)));
+
+      const holder = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      const probe = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await holder.connect();
+      await probe.connect();
+      try {
+        await holder.query("BEGIN");
+        await holder.query(
+          "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE",
+          [userId, lower]
+        );
+        const pending = write(userId, [higher, lower]);
+        await waitUntilBlockedBy(holder);
+        // Waiting for the lower row, the write must not hold the higher one.
+        await probe.query("BEGIN");
+        await probe.query(
+          "SELECT 1 FROM user_entries WHERE user_id = $1 AND entry_id = $2 FOR NO KEY UPDATE NOWAIT",
+          [userId, higher]
+        );
+        await probe.query("ROLLBACK");
+        await holder.query("COMMIT");
+        await pending;
+      } finally {
+        await holder.end();
+        await probe.end();
+      }
+      await expectNoDrift();
+    }
+  );
+
+  it("tagging a subscription with a tag being deleted doesn't link the deleted tag", async () => {
+    // A setTags reading the tag as live while deleteTag runs would link it
+    // after the delete's sweep, hiding the subscription from Uncategorized
+    // behind a tag nobody can see.
+    const userId = await createTestUser();
+    const { subscriptionId } = await feedWithEntries(userId, 1);
+    const tagId = await createTestTag(userId);
+
+    // deleteTag, paused between taking its lock and committing the tombstone.
+    const deleting = await holdTransaction(async (tx) => {
+      await lockUserTagLinks(tx, userId);
+      await tx.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
+    });
+    const tagging = setSubscriptionTags(db, userId, subscriptionId, [tagId]);
+    await waitForLockWaiter("%pg_advisory_xact_lock%");
+    await deleting.commit();
+    await expect(tagging.catch(getAppErrorCode)).resolves.toBe("VALIDATION_ERROR");
+
+    expect(
+      await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+    ).toEqual([]);
+    await expectNoDrift();
+  });
+
+  it("deleting a tag while it's being linked sweeps the new link", async () => {
+    // The reverse order: deleteTag must wait for a setTags that has already
+    // linked the tag, or its sweep misses the uncommitted link.
+    const userId = await createTestUser();
+    const { subscriptionId } = await feedWithEntries(userId, 1);
+    const tagId = await createTestTag(userId);
+
+    // setTags, paused after linking the tag.
+    const tagging = await holdTransaction(async (tx) => {
+      await lockUserTagLinks(tx, userId);
+      await tx.insert(subscriptionTags).values({ subscriptionId, tagId });
+    });
+    const deleting = deleteTag(db, userId, tagId);
+    await waitForLockWaiter("%pg_advisory_xact_lock%");
+    await tagging.commit();
+    await deleting;
+
+    expect(
+      await db.select().from(subscriptionTags).where(eq(subscriptionTags.tagId, tagId))
+    ).toEqual([]);
     await expectNoDrift();
   });
 

@@ -5,7 +5,6 @@
  * timeouts, and User-Agent headers.
  */
 
-import { USER_AGENT } from "./user-agent";
 import { fetchWithSsrfProtection } from "./ssrf";
 import { decodeBody } from "./charset";
 import { errors } from "@/server/errors";
@@ -310,7 +309,6 @@ export async function fetchUrl(url: string): Promise<FetchUrlResult> {
   try {
     const response = await fetchWithSsrfProtection(url, {
       headers: {
-        "User-Agent": USER_AGENT,
         Accept: FEED_ACCEPT_HEADER,
         "Accept-Encoding": ACCEPT_ENCODING,
       },
@@ -414,7 +412,6 @@ async function fetchPage(url: string, allowPdf: boolean): Promise<FetchedArticle
   const response = await fetchWithSsrfProtection(url, {
     signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
     headers: {
-      "User-Agent": USER_AGENT,
       Accept: HTML_ACCEPT_HEADER,
       "Accept-Encoding": ACCEPT_ENCODING,
     },

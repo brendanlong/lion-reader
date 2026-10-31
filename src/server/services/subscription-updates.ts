@@ -32,6 +32,7 @@ import {
 import { errors } from "@/server/errors";
 import { deleteSavedArticlesOnlyInCollection } from "@/server/services/saved";
 import { isUniqueViolation } from "@/server/db/errors";
+import { lockUserTagLinks } from "@/server/services/tags";
 
 /**
  * Locks one of the user's subscription rows for the rest of the transaction,
@@ -203,31 +204,28 @@ async function changeSubscriptionTags(
     throw errors.subscriptionNotFound();
   }
 
-  // Excluding tombstoned tags prevents assigning a tag that is invisible in
-  // listTags (which would silently drop the subscription from "Uncategorized").
-  const validTags =
-    addedTagIds.length === 0
-      ? []
-      : await db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(
-            and(eq(tags.userId, userId), inArray(tags.id, addedTagIds), isNull(tags.deletedAt))
-          );
-  if (validTags.length !== addedTagIds.length) {
-    throw errors.validation("One or more tag IDs are invalid or do not belong to you");
-  }
-
   const now = new Date();
 
   // One transaction, or a crash or concurrent call between the delete and the
   // insert could leave a partial tag set (#952).
   const after = await db.transaction(async (tx) => {
+    // A link to a tag deleteTag is tombstoning would silently drop the
+    // subscription from "Uncategorized" while the tag is invisible in listTags.
+    await lockUserTagLinks(tx, userId);
     // Members' rows, then the subscription row: retagging moves the members'
     // tag rows (tag_entries), and the counter triggers lock subscriptions,
     // then users, then tags. The row is read under the lock, so the event
     // can't revert a concurrent rename.
     await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
+    if (addedTagIds.length > 0) {
+      const liveTags = await tx
+        .select({ id: tags.id })
+        .from(tags)
+        .where(and(eq(tags.userId, userId), inArray(tags.id, addedTagIds), isNull(tags.deletedAt)));
+      if (liveTags.length !== addedTagIds.length) {
+        throw errors.validation("One or more tag IDs are invalid or do not belong to you");
+      }
+    }
 
     let changed: boolean;
     if ("set" in change) {

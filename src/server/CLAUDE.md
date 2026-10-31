@@ -57,7 +57,7 @@ Every badge reads one trigger-maintained counter (spam excluded; the list is in 
    - Exception: account deletion's cascade locks the user first, so `deleteUser` retries on deadlock.
 6. Tags.
 
-Lock each table's rows sorted by id, `FOR NO KEY UPDATE`, before any statement updates several: an `UPDATE` locks rows in plan order. A transaction that changes tags, subscriptions or memberships across statements takes its locks in this order first (`lockSubscriptionRow`, `lockUserEntryRows`) or it deadlocks against a concurrent mark-read. (Un)subscribing, retagging and deleting a tag move every member's `active_memberships` or tag rows (whose triggers lock the `user_entries` rows they copy state from), so they lock the members' rows first (`lockSubscriptionMembers`).
+Lock each table's rows sorted by id, `FOR NO KEY UPDATE`, before any statement updates several: an `UPDATE` locks rows in plan order. A transaction that changes tags, subscriptions or memberships across statements takes its locks in this order first (`lockSubscriptionRow`, `lockUserEntryRows`, or `lockedUserEntriesCte` to lock in the updating statement itself) or it deadlocks against a concurrent mark-read. (Un)subscribing, retagging and deleting a tag move every member's `active_memberships` or tag rows (whose triggers lock the `user_entries` rows they copy state from), so they lock the members' rows first (`lockSubscriptionMembers`).
 
 Add any new operation that moves a counter to the `OPS` of `tests/integration/list-counters-model.test.ts`. The daily `reconcile_membership_counters` job repairs drift and logs each fix at error level — **a fix means a trigger bug to investigate.**
 

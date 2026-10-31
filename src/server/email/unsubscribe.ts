@@ -10,7 +10,6 @@ import { eq, desc, and, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { entries } from "../db/schema";
 import { fetchWithSsrfProtection } from "../http/ssrf";
-import { USER_AGENT } from "../http/user-agent";
 import { logger } from "@/lib/logger";
 
 export interface UnsubscribeResult {
@@ -44,7 +43,6 @@ async function sendUnsubscribePost(url: string): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": USER_AGENT,
       },
       body: "List-Unsubscribe=One-Click",
       signal: AbortSignal.timeout(HTTPS_TIMEOUT_MS),
