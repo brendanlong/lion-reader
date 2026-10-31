@@ -529,28 +529,32 @@ BEGIN
     ORDER BY id FOR NO KEY UPDATE
   $q$;
 
-  SELECT array_agg(-1), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
-  INTO m_sign, m_user, m_entry, m_sub
-  FROM old_rows o
-  JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
-  WHERE NOT o.read AND NOT o.is_spam;
+  EXECUTE $q$
+    SELECT array_agg(-1), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
+    FROM old_rows o
+    JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
+    WHERE NOT o.read AND NOT o.is_spam
+  $q$ INTO m_sign, m_user, m_entry, m_sub;
 
-  SELECT array_agg(user_id), array_agg(al), array_agg(st)
-  INTO c_user, c_all, c_starred
-  FROM (
-    SELECT user_id,
-           -count(*) FILTER (WHERE NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
-           -count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
-    FROM old_rows
-    GROUP BY user_id
-  ) d
-  WHERE al <> 0 OR st <> 0;
+  EXECUTE $q$
+    SELECT array_agg(user_id), array_agg(al), array_agg(st)
+    FROM (
+      SELECT user_id,
+             -count(*) FILTER (WHERE NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
+             -count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
+      FROM old_rows
+      GROUP BY user_id
+    ) d
+    WHERE al <> 0 OR st <> 0
+  $q$ INTO c_user, c_all, c_starred;
 
   PERFORM apply_unread_memberships(m_sign, m_user, m_entry, m_sub, true, c_user, c_all, c_starred);
 
-  DELETE FROM subscription_entries se
-  USING old_rows o
-  WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id;
+  EXECUTE $q$
+    DELETE FROM subscription_entries se
+    USING old_rows o
+    WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id
+  $q$;
   RETURN NULL;
 END;
 $_$;
