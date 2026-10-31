@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries } from "../../src/server/db/schema";
+import { entries, users } from "../../src/server/db/schema";
 import { entryObjectsPrefix } from "../../src/server/services/stored-objects";
 import { getPublicObjectUrl, uploadObject } from "../../src/server/storage/s3";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -29,6 +29,10 @@ const BUCKET = "test-public";
 
 function png(filler: number): Buffer {
   return Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(300, filler)]);
+}
+
+function docUrl(): string {
+  return `https://docs.google.com/document/d/${generateUuidv7()}/edit`;
 }
 
 function legacyKey(): string {
@@ -93,27 +97,37 @@ describe("moving google-docs/ images", () => {
 
     const savedA = await createTestEntry(userA, {
       type: "saved",
+      url: docUrl(),
       contentOriginal: `<p>A</p><img src="${sharedLink}"><img src="${svgLink}"><img src="${missingLink}">`,
       contentCleaned: `<p>A</p><img src="${sharedLink}">`,
     });
     const savedB = await createTestEntry(userB, {
       type: "saved",
+      url: docUrl(),
       contentCleaned: `<img src="${sharedLink}"><img src="${oldBaseLink}">`,
     });
     const email = await createTestEntry(await createTestEmailSubscription(userA), {
       type: "email",
+      url: docUrl(),
       contentCleaned: "<p>A newsletter linking a Doc</p>",
       fullContentCleaned: `<img src="${newsletterLink}">`,
       fullContentFetchedAt: new Date(),
       fullContentHash: "hash",
     });
     const feedEntry = await createTestEntry(await createTestFeed(), {
+      url: docUrl().toUpperCase(),
       contentCleaned: `<p>A feed entry hotlinking</p><img src="${publishersLink}">`,
       fullContentCleaned: `<p>The Doc</p><figure><img src="${feedLink}" alt="chart"></figure>`,
       fullContentFetchedAt: new Date(),
       fullContentHash: "hash",
     });
     // Mentions `rewrite` doesn't relink, which `delete` must still respect.
+    const notADocLink = await storeLegacyImage(png(10), "image/png");
+    const notADoc = await createTestEntry(userB, {
+      type: "saved",
+      url: "https://example.com/docs.google.com/document/d/x",
+      contentCleaned: `<img src="${notADocLink}">`,
+    });
     await createTestEntry(userB, {
       type: "saved",
       imageUrl: imageUrlLink,
@@ -126,7 +140,7 @@ describe("moving google-docs/ images", () => {
     );
 
     // Before the rewrite, only the image nothing mentions goes.
-    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 7, deleted: 1 });
+    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 8, deleted: 1 });
     expect(stored(s3, orphanLink)).toBeUndefined();
     expect(stored(s3, sharedLink)).toEqual(SHARED);
 
@@ -141,8 +155,25 @@ describe("moving google-docs/ images", () => {
 
     // Resuming after savedA leaves it for the full run below; one id per
     // batch crosses window boundaries.
-    const resumed = await rewriteGoogleDocsLinks(db, { after: savedA, batchSize: 1 });
+    // Progress lines also name window boundaries; keep the per-entry ones.
+    const logged: string[] = [];
+    const resumed = await rewriteGoogleDocsLinks(db, {
+      after: savedA,
+      batchSize: 1,
+      log: (line) => {
+        if (!line.startsWith("through ")) logged.push(line);
+      },
+    });
     expect(resumed).toMatchObject({ rewritten: 2, dropped: 1, missingLinks: 0 });
+    // Each changed entry is named, with its owner's email, to check afterwards.
+    const [{ email: emailOfB }] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userB));
+    expect(logged.some((line) => line.includes(savedB) && line.includes(emailOfB))).toBe(true);
+    expect(
+      logged.filter((line) => [email, feedEntry].some((id) => line.includes(id)))
+    ).toHaveLength(2);
     expect((await readEntry(savedA)).contentOriginal).toBe(before.get(savedA)!.contentOriginal);
 
     const result = await rewriteGoogleDocsLinks(db, { batchSize: 1 });
@@ -176,19 +207,21 @@ describe("moving google-docs/ images", () => {
       );
     }
 
+    expect((await readEntry(notADoc)).contentCleaned).toBe(`<img src="${notADocLink}">`);
+
     // Idempotent: nothing left to move, and nothing touched again.
     const updatedAt = (await readEntry(savedB)).updatedAt;
     expect(await rewriteGoogleDocsLinks(db)).toMatchObject({ rewritten: 0, dropped: 0 });
     expect((await readEntry(savedB)).updatedAt).toEqual(updatedAt);
 
     expect(await deleteUnlinkedGoogleDocsImages(db, { dryRun: true })).toMatchObject({
-      kept: 3,
+      kept: 4,
       deleted: 4,
     });
-    expect(googleDocsKeys(s3)).toHaveLength(7);
-    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 3, deleted: 4 });
+    expect(googleDocsKeys(s3)).toHaveLength(8);
+    expect(await deleteUnlinkedGoogleDocsImages(db)).toMatchObject({ kept: 4, deleted: 4 });
     expect(googleDocsKeys(s3).sort()).toEqual(
-      [publishersLink, imageUrlLink, getPublicObjectUrl(encodedKey)!]
+      [publishersLink, imageUrlLink, notADocLink, getPublicObjectUrl(encodedKey)!]
         .map((link) => `${BUCKET}/${link.slice(getPublicObjectUrl("")!.length)}`)
         .sort()
     );
@@ -200,6 +233,7 @@ describe("moving google-docs/ images", () => {
     const link = await storeLegacyImage(png(5), "image/png");
     const entryId = await createTestEntry(userId, {
       type: "saved",
+      url: docUrl(),
       contentCleaned: `<img src="${link}">`,
     });
 
@@ -221,6 +255,7 @@ describe("moving google-docs/ images", () => {
     const link = await storeLegacyImage(png(9), "image/png");
     const entryId = await createTestEntry(userId, {
       type: "saved",
+      url: docUrl(),
       contentCleaned: `<img src="${link}">`,
     });
 

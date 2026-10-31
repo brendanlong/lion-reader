@@ -8,8 +8,11 @@
  *
  * Both run against production: DATABASE_URL and the STORAGE_* variables.
  *
- * `rewrite` walks `entries` in id order, reading `--batch-size` ids per query.
- * For a saved article or newsletter whose content links such an image, it
+ * `rewrite` walks `entries` in id order, reading `--batch-size` ids per query,
+ * and looks only at entries whose URL is a Google Doc: only the Google Docs
+ * plugin stored these images, and it claims nothing else. It logs each entry it
+ * changes, to check afterwards. For a saved article or newsletter whose content
+ * links such an image, it
  * stores the image under the entry's prefix exactly as a save today would (the
  * URL pass hash-names it; one that pass doesn't store stays inline), relinks it
  * in every column, and bumps `updated_at` so synced clients download the new
@@ -53,6 +56,9 @@ const GOOGLE_DOCS_PREFIX = "google-docs/";
  */
 const LINK_PATTERN =
   /https?:\/\/[^\s"'<>()]+?\/(google-docs\/[\w-]+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z]+)/g;
+
+/** What the Google Docs plugin's URLs look like (`plugins/google-docs.ts`), lowercased. */
+const DOCS_URL = "%://docs.google.com/document/d/%";
 
 /** Cheap SQL prefilter for {@link LINK_PATTERN}. */
 const LIKE_LINK = `%/${GOOGLE_DOCS_PREFIX}%`;
@@ -118,8 +124,10 @@ function withoutLinkedImages(html: string): string {
 interface LinkingRow extends Record<string, unknown> {
   id: string;
   type: "web" | "email" | "saved";
+  url: string;
   /** The user whose objects prefix the entry's images go under; null for a feed's entry. */
   user_id: string | null;
+  email: string | null;
   content_original: string | null;
   content_cleaned: string | null;
   full_content_cleaned: string | null;
@@ -183,26 +191,33 @@ export async function rewriteGoogleDocsLinks(
 
   for await (const window of idWindows(db, { after, batchSize, pauseMs })) {
     const { rows } = await db.execute<LinkingRow>(sql`
-      SELECT e.id, e.type, COALESCE(e.owner_user_id, s.user_id) AS user_id,
+      SELECT e.id, e.type, e.url, u.id AS user_id, u.email,
              e.content_original, e.content_cleaned, e.full_content_cleaned
       FROM entries e
       LEFT JOIN subscriptions s ON s.id = e.owner_subscription_id
+      LEFT JOIN users u ON u.id = COALESCE(e.owner_user_id, s.user_id)
       WHERE e.id > ${window.after}::uuid AND e.id <= ${window.through}::uuid
-        AND (
+        -- A CASE, so the content of the rest is never read.
+        AND CASE WHEN lower(e.url) LIKE ${DOCS_URL} THEN (
           e.full_content_cleaned LIKE ${LIKE_LINK}
           -- A feed's own content is the publisher's, not ours to relink.
           OR (e.type <> 'web' AND (e.content_original LIKE ${LIKE_LINK} OR e.content_cleaned LIKE ${LIKE_LINK}))
-        )
+        ) ELSE false END
       ORDER BY e.id
     `);
 
     for (const row of rows) {
+      const changed = (verb: string) =>
+        log(
+          `${dryRun ? `would have ${verb}` : verb} ${row.type} entry ${row.id} (${row.url})${row.email ? ` of ${row.email}` : ""}`
+        );
       if (row.user_id === null) {
         if (row.full_content_cleaned === null) continue;
         const dropped = withoutLinkedImages(row.full_content_cleaned);
         if (linkedKeys(dropped).length === linkedKeys(row.full_content_cleaned).length) continue;
         if (dryRun) {
           result.dropped++;
+          changed("dropped the images of");
           continue;
         }
         const updated = await db.execute(sql`
@@ -210,8 +225,10 @@ export async function rewriteGoogleDocsLinks(
           WHERE id = ${row.id}::uuid
             AND full_content_cleaned IS NOT DISTINCT FROM ${row.full_content_cleaned}
         `);
-        if (updated.rowCount === 1) result.dropped++;
-        else {
+        if (updated.rowCount === 1) {
+          result.dropped++;
+          changed("dropped the images of");
+        } else {
           result.skipped++;
           log(`skipped ${row.id}: changed while being rewritten`);
         }
@@ -236,6 +253,7 @@ export async function rewriteGoogleDocsLinks(
       if (srcs.size === 0) continue;
       if (dryRun) {
         result.rewritten++;
+        changed("relinked");
         continue;
       }
 
@@ -254,6 +272,7 @@ export async function rewriteGoogleDocsLinks(
       `);
       if (updated.rowCount === 1) {
         result.rewritten++;
+        changed("relinked");
         continue;
       }
       result.skipped++;
