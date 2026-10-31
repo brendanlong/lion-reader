@@ -36,7 +36,7 @@ import {
 } from "@/server/services/subscription-sync-events";
 import type { Database } from "@/server/db";
 import { databaseNow, parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
-import { getBulkEntryRelatedCounts } from "@/server/services/counts";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { listEntryTagLists } from "@/server/services/entry-tag-lists";
 import {
   getSubscriptionsByIds,
@@ -125,11 +125,16 @@ export async function currentSyncCursors(
 }
 
 /**
- * How far behind the database clock the deletions cursor stays, so a delete
- * transaction that started before the cursor but hadn't committed yet is still
- * reported on the next sync.
+ * How far behind a cursor a sync still looks for changes stamped by the
+ * database clock: a transaction stamps its start but commits later, and the
+ * entries cursor comes from app machines' clocks. Re-reporting is harmless.
+ * The deletions cursor stays this far behind the database clock, and a
+ * catch-up reports collections whose memberships changed this long before its
+ * start.
+ *
+ * @testonly
  */
-const DELETIONS_CURSOR_MARGIN_MS = 60 * 1000;
+export const SYNC_CLOCK_MARGIN_MS = 60 * 1000;
 
 /**
  * Each entry's (active) collections, empty for one in none. Membership is per-user
@@ -440,6 +445,35 @@ async function collectTagEvents(db: Database, userId: string, cursor: string) {
 }
 
 /**
+ * Absolute counts of the user's active collections whose memberships changed
+ * since `since` (less {@link SYNC_CLOCK_MARGIN_MS}), with their tags,
+ * Uncategorized and the global lists, or none when none changed. Membership
+ * changes aren't replayed as events, and a replayed entry carries counts only
+ * for the collections it's in now, so these reach a collection an entry left
+ * (or was deleted from).
+ */
+async function collectChangedCollectionCounts(
+  db: Database,
+  userId: string,
+  since: string
+): Promise<BulkUnreadCounts | undefined> {
+  const collections = await db
+    .select({ subscriptionId: subscriptions.id })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isCollectionSubscription(),
+        isNull(subscriptions.unsubscribedAt),
+        sql`${subscriptions.membershipsChangedAt} > ${Temporal.Instant.from(since)
+          .subtract({ milliseconds: SYNC_CLOCK_MARGIN_MS })
+          .toString()}::timestamptz`
+      )
+    );
+  return collections.length > 0 ? getBulkEntryRelatedCounts(db, userId, collections) : undefined;
+}
+
+/**
  * Changes since the given cursors as individual events (SSE-compatible format),
  * sorted by timestamp, plus the cursors to send next time.
  *
@@ -454,15 +488,21 @@ async function collectTagEvents(db: Database, userId: string, cursor: string) {
  * otherwise keep them (starred) forever. Only for a caller that takes the
  * returned cursors — a page of nothing but hidden rows has no events for a
  * client to advance its own cursor from.
+ *
+ * With `collectionCounts`, the last page (no `hasMore`) also carries
+ * {@link collectChangedCollectionCounts} since the catch-up's start, so a
+ * catch-up needs no refetch to correct the count of a collection an entry left
+ * or was deleted from.
  */
 export async function collectSyncEvents(
   db: Database,
   userId: string,
   cursors: SyncCursorsInput,
-  options: { reportHidden?: boolean } = {}
+  options: { reportHidden?: boolean; collectionCounts?: boolean } = {}
 ): Promise<{
   events: SyncEvent[];
   hasMore: boolean;
+  counts?: BulkUnreadCounts;
   next: SyncCursorsInput;
   hidden: Array<{ entryId: string; deletedAt: string }>;
   /** Visible entries whose per-user state (collection membership included) changed. */
@@ -471,6 +511,7 @@ export async function collectSyncEvents(
   // Cursors stay strings to keep Postgres µs precision (#680). A type without
   // one has nothing to diff against (sync.cursors establishes them).
   const { entries: entriesCursor, subscriptions: subscriptionsCursor, tags: tagsCursor } = cursors;
+  const catchUpStart = cursors.entriesSince ?? entriesCursor;
   const [entryResult, subscriptionResult, tagResult] = await Promise.all([
     entriesCursor
       ? collectEntryEvents(
@@ -483,6 +524,11 @@ export async function collectSyncEvents(
     subscriptionsCursor ? collectSubscriptionEvents(db, userId, subscriptionsCursor) : null,
     tagsCursor ? collectTagEvents(db, userId, tagsCursor) : null,
   ]);
+  const hasMore = entryResult?.hasMore ?? false;
+  const collectionCounts =
+    options.collectionCounts && catchUpStart && !hasMore
+      ? await collectChangedCollectionCounts(db, userId, catchUpStart)
+      : undefined;
 
   const events = [
     ...(entryResult?.events ?? []),
@@ -494,7 +540,8 @@ export async function collectSyncEvents(
 
   return {
     events,
-    hasMore: entryResult?.hasMore ?? false,
+    hasMore,
+    ...(collectionCounts && { counts: collectionCounts }),
     next: {
       entries: entryResult?.next?.entries ?? cursors.entries,
       entriesAfterId: entryResult?.next?.entriesAfterId ?? cursors.entriesAfterId,
@@ -544,7 +591,7 @@ export async function collectSyncChanges(
   // cursor is read from it too, backed off by a margin that covers a
   // delete transaction still in flight. Re-reporting a deletion is harmless.
   const safeDeletionsCursorFrom = (now: Temporal.Instant) =>
-    now.subtract({ milliseconds: DELETIONS_CURSOR_MARGIN_MS });
+    now.subtract({ milliseconds: SYNC_CLOCK_MARGIN_MS });
 
   if (!deletionsCursor && !cursors.entries && !cursors.subscriptions && !cursors.tags) {
     const [dbNow, current] = await Promise.all([databaseNow(db), currentSyncCursors(db, userId)]);

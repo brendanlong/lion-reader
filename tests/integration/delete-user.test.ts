@@ -6,8 +6,10 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries, feeds, users } from "../../src/server/db/schema";
+import { entries, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { deleteUser } from "../../src/server/services/users";
+import { createCollection } from "../../src/server/services/collections";
+import { uploadArticle } from "../../src/server/services/saved";
 import { createSession, validateSession } from "../../src/server/auth/session";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
@@ -60,6 +62,27 @@ describe("deleteUser", () => {
     expect(await db.select().from(entries).where(eq(entries.id, orphanEntry))).toEqual([]);
     expect(await feedExists(shared)).toBe(true);
     expect(await feedExists(stillRead)).toBe(true);
+  });
+
+  it("deletes a user whose collections hold articles", async () => {
+    // The subscriptions cascade deletes the memberships, whose trigger locks
+    // and stamps collections that are being deleted (#2232).
+    const userId = await user();
+    const collectionId = (await createCollection(db, userId, "Papers")).subscription.id;
+    await uploadArticle(db, userId, {
+      content: "Body",
+      title: "Paper",
+      collectionIds: [collectionId],
+    });
+
+    await deleteUser(db, userId);
+
+    expect(
+      await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId))
+    ).toEqual([]);
   });
 
   it("ends the user's sessions immediately (#2046)", async () => {
