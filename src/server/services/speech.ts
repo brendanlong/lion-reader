@@ -8,8 +8,10 @@ import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model
 import {
   aiProviderName,
   aiProviderNames,
+  AI_PROVIDER_INFO,
   isSpeechProvider,
   SPEECH_PROVIDERS,
+  USER_KEY_PROVIDERS,
   type SpeechProvider,
 } from "@/lib/ai/providers";
 import { z } from "zod";
@@ -55,6 +57,11 @@ import {
   type OpenRouterModel,
 } from "@/server/services/openrouter";
 import { listTogetherSpeechModels, togetherSpeech } from "@/server/services/together";
+import {
+  listSelfHostedVoices,
+  SELFHOSTED_KOKORO_MODEL,
+  selfHostedSpeech,
+} from "@/server/services/selfhosted";
 import { failoverModels } from "@/server/services/model-failover";
 
 export interface SpeechVoice {
@@ -123,6 +130,17 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
         pricePerMillionCharacters: model.pricePerMillionCharacters,
       })),
     speak: togetherSpeech,
+  },
+  selfhosted: {
+    listModels: async (apiKey) => [
+      {
+        id: formatModelRef("selfhosted", SELFHOSTED_KOKORO_MODEL),
+        displayName: "hexgrad: Kokoro 82M",
+        provider: "selfhosted",
+        voices: voicesNamedById(await listSelfHostedVoices(apiKey)),
+      },
+    ],
+    speak: selfHostedSpeech,
   },
 };
 
@@ -471,9 +489,12 @@ function speechRejection(
 ): SpeechRejectedError {
   const name = aiProviderName(provider);
   if (!isOnUserKey(provider, keys)) {
+    const ownKey = AI_PROVIDER_INFO[provider].userKey
+      ? `, or add your own ${name} API key in Settings`
+      : "";
     return new SpeechRejectedError(
       error.refusedKey
-        ? `This server's ${name} API key was refused, so its voices can't be used. Pick another cloud voice, or add your own ${name} API key in Settings.`
+        ? `This server's ${name} API key was refused, so its voices can't be used. Pick another cloud voice${ownKey}.`
         : `${name} refused the request. Try another cloud voice in Settings.`
     );
   }
@@ -513,7 +534,9 @@ export function resolveSpeechModel(
   }
   if (models.length === 0) {
     throw new SpeechRequestError(
-      `Cloud voices require an API key from ${aiProviderNames(SPEECH_PROVIDERS)}`
+      `Cloud voices require an API key from ${aiProviderNames(
+        USER_KEY_PROVIDERS.filter(isSpeechProvider)
+      )}`
     );
   }
   const modelId = targetSpeechModelId(models, keys, requestedModel);

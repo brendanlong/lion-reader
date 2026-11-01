@@ -11756,7 +11756,8 @@
                               "deepinfra",
                               "openrouter",
                               "breezeblue",
-                              "together"
+                              "together",
+                              "selfhosted"
                             ]
                           },
                           "providerDisplayName": {

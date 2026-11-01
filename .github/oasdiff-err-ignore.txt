@@ -20,6 +20,7 @@ POST /auth/oauth/apple/callback api path removed without deprecation
 POST /auth/oauth/discord/callback api path removed without deprecation
 POST /auth/oauth/google/callback api path removed without deprecation
 GET /narration/voice-models added the new `together` enum value to the `models/items/provider` response property for the response status `200`
+GET /narration/voice-models added the new `selfhosted` enum value to the `models/items/provider` response property for the response status `200`
 GET /users/me/preferences added the new `together` enum value to the `apiKeyProviders/items/` response property for the response status `200`
 GET /users/me/preferences added the new `together` enum value to the `unreadableApiKeyProviders/items/` response property for the response status `200`
 PATCH /users/me/preferences added the new `together` enum value to the `apiKeyProviders/items/` response property for the response status `200`

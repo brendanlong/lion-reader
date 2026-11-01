@@ -20,7 +20,7 @@ import { revokeUserSession, revokeOtherUserSessionsOrReport } from "@/server/aut
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/password";
 import { isEncryptionConfigured } from "@/lib/encryption";
-import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
+import { USER_KEY_PROVIDERS, type UserKeyProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
 import { isSummarizationAvailable } from "@/server/services/summarization";
 import { isNarrationLlmAvailable } from "@/server/services/narration";
@@ -58,9 +58,9 @@ const preferencesOutputSchema = z.object({
   showSpam: z.boolean(),
   canConfigureApiKeys: z.boolean(),
   /** The providers the user has set their own API key for. */
-  apiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
+  apiKeyProviders: z.array(z.enum(USER_KEY_PROVIDERS)),
   /** Those of them whose saved key can't be read, and has to be entered again. */
-  unreadableApiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
+  unreadableApiKeyProviders: z.array(z.enum(USER_KEY_PROVIDERS)),
   summarizationModel: z.string().nullable(),
   summarizationMaxWords: z.number().nullable(),
   summarizationPrompt: z.string().nullable(),
@@ -401,7 +401,9 @@ export const usersRouter = createTRPCRouter({
       z.object({
         showSpam: z.boolean().optional(),
         // API keys by provider: empty string clears the key, non-empty sets it
-        apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().trim().max(1000)).optional(),
+        apiKeys: z
+          .partialRecord(z.enum(USER_KEY_PROVIDERS), z.string().trim().max(1000))
+          .optional(),
         summarizationModel: z.string().optional(),
         narrationModel: z.string().optional(),
         // Summarization settings: null clears (reverts to default)
@@ -414,7 +416,7 @@ export const usersRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       const apiKeys = Object.entries(input.apiKeys ?? {}).filter(
-        (entry): entry is [AiProvider, string] => entry[1] !== undefined
+        (entry): entry is [UserKeyProvider, string] => entry[1] !== undefined
       );
 
       // Build update object with only provided fields

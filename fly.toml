@@ -76,15 +76,15 @@ kill_timeout = 30
   # Models the server's AI keys may run (see .env.example): gpt-oss-120b on
   # Cerebras or anything cheaper (Cerebras lists it at $0.35/$0.75 per million
   # tokens), Kokoro or anything cheaper (DeepInfra's priority tier is $0.93 per
-  # million characters). A user's own key can use any.
-  SERVER_KEY_MODELS = "cerebras:gpt-oss-120b,deepinfra:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m"
+  # million characters), and our own Kokoro. A user's own key can use any.
+  SERVER_KEY_MODELS = "selfhosted:kokoro,cerebras:gpt-oss-120b,deepinfra:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m"
   SERVER_KEY_MAX_INPUT_PRICE = "0.35"
   SERVER_KEY_MAX_OUTPUT_PRICE = "0.75"
   SERVER_KEY_MAX_SPEECH_PRICE = "1"
   # Hosts of the same model to fail over between (see .env.example). Together's
   # Kokoro is $4 per million characters, so it's only a failover; OpenRouter
   # adds latency, so it's last.
-  MODEL_FAILOVER = "deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
+  MODEL_FAILOVER = "selfhosted:kokoro,deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
 
   WORKER_CONCURRENCY = "1"
 
