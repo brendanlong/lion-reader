@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/icons";
 import {
   ENHANCED_VOICES,
-  PHONON_MODEL_SIZE_BYTES,
+  PHONON_DOWNLOAD_SIZE_BYTES,
   resolveEnhancedVoice,
   type EnhancedVoice,
 } from "@/lib/narration/enhanced-voices";
@@ -51,11 +51,13 @@ function ModelDownload({
         <div className="min-w-0">
           <p className="ui-text-sm text-body font-medium">Voice model</p>
           <p className="ui-text-xs text-muted">
-            {megabytes(PHONON_MODEL_SIZE_BYTES)}, shared by every voice below
+            {megabytes(PHONON_DOWNLOAD_SIZE_BYTES)}, for every voice below
           </p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
-          {modelStatus === "downloading" ? (
+          {modelStatus === "checking" ? (
+            <SpinnerIcon className="text-faint h-4 w-4" />
+          ) : modelStatus === "downloading" ? (
             <div className="ui-text-xs text-muted flex items-center gap-2">
               <SpinnerIcon className="h-4 w-4" />
               Downloading...
@@ -91,8 +93,8 @@ function ModelDownload({
             />
           </div>
           <p className="ui-text-xs text-muted mt-1 tabular-nums">
-            {Math.round(progress * 100)}% ({megabytes(progress * PHONON_MODEL_SIZE_BYTES)} /{" "}
-            {megabytes(PHONON_MODEL_SIZE_BYTES)})
+            {Math.round(progress * 100)}% ({megabytes(progress * PHONON_DOWNLOAD_SIZE_BYTES)} /{" "}
+            {megabytes(PHONON_DOWNLOAD_SIZE_BYTES)})
           </p>
         </div>
       )}
@@ -244,8 +246,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       </div>
 
       <p className="ui-text-xs text-muted">
-        Enhanced voices run entirely in your browser. Once the model is downloaded, they work
-        offline.
+        Enhanced voices run entirely in your browser. Once downloaded, they work offline.
       </p>
     </div>
   );

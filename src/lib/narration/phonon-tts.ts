@@ -1,94 +1,218 @@
 /**
- * Phonon running in the browser: one model, loaded once per page into the
- * package's worker and kept for every enhanced voice.
+ * Phonon running in the browser. We download the model and every voice into a
+ * Cache Storage entry of our own, so whether they're downloaded is read from
+ * what's stored; loading hands them to the package's worker as `blob:` URLs
+ * (with the package's own cache off), once per page.
  *
  * @module narration/phonon-tts
  */
 
-import type { LoadProgress, PhononTTS } from "phonon-tts";
+import type { PhononTTS } from "phonon-tts";
 import { version as PHONON_TTS_VERSION } from "phonon-tts/package.json";
 import {
   ENHANCED_VOICES,
   enhancedVoiceUrl,
+  PHONON_DOWNLOAD_SIZE_BYTES,
   PHONON_MODEL_FILES,
-  PHONON_MODEL_SIZE_BYTES,
 } from "./enhanced-voices";
 import type { PcmAudio } from "./audio-encoding";
 
+const CACHE_NAME = "lion-reader-phonon";
+/** Tells other tabs that the stored files changed. */
+const CHANNEL_NAME = "lion-reader-phonon";
+
+const FILE_URLS = [
+  PHONON_MODEL_FILES.weights,
+  PHONON_MODEL_FILES.tokenizer,
+  PHONON_MODEL_FILES.config,
+  ...ENHANCED_VOICES.map((voice) => enhancedVoiceUrl(voice.id)),
+];
+
+// ============================================================================
+// Whether the files are stored, as an external store for React
+// ============================================================================
+
+export type PhononModelState = "checking" | "missing" | "downloaded";
+
+let state: PhononModelState = "checking";
+const stateListeners = new Set<() => void>();
+let channel: BroadcastChannel | null = null;
+let checks = 0;
+
+async function storedUrls(cache: Cache): Promise<Set<string>> {
+  return new Set((await cache.keys()).map((request) => request.url));
+}
+
+async function refreshState(): Promise<void> {
+  const check = ++checks;
+  let stored = false;
+  try {
+    const urls = await storedUrls(await caches.open(CACHE_NAME));
+    stored = FILE_URLS.every((url) => urls.has(url));
+  } catch {
+    // No Cache Storage here (or it's blocked): nothing can be stored.
+  }
+  if (check !== checks) return;
+  const next = stored ? "downloaded" : "missing";
+  if (next === state) return;
+  state = next;
+  stateListeners.forEach((listener) => listener());
+}
+
+/** For `useSyncExternalStore`; the server snapshot is `"checking"`. */
+export function subscribePhononModelState(listener: () => void): () => void {
+  if (stateListeners.size === 0 && typeof BroadcastChannel !== "undefined") {
+    channel = new BroadcastChannel(CHANNEL_NAME);
+    channel.onmessage = () => void refreshState();
+  }
+  stateListeners.add(listener);
+  void refreshState();
+  return () => {
+    stateListeners.delete(listener);
+    if (stateListeners.size === 0) {
+      channel?.close();
+      channel = null;
+    }
+  };
+}
+
+export function getPhononModelState(): PhononModelState {
+  return state;
+}
+
+async function announceChange(): Promise<void> {
+  if (typeof BroadcastChannel !== "undefined") {
+    const announcer = new BroadcastChannel(CHANNEL_NAME);
+    announcer.postMessage("changed");
+    announcer.close();
+  }
+  await refreshState();
+}
+
+// ============================================================================
+// Downloading and removing
+// ============================================================================
+
+/** Downloads and removals run one at a time, so neither sees half of the other. */
+let queue: Promise<unknown> = Promise.resolve();
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task, task);
+  queue = run.catch(() => {});
+  return run;
+}
+
 /**
- * Remembers that this browser finished downloading the model, so settings can
- * say so without loading it. The package keeps the files in the Cache API
- * under a name it doesn't document; if the browser evicts them, the next load
- * just downloads them again.
+ * Downloads whatever of the model and voices isn't stored yet. `onProgress`
+ * hears the fraction of the whole download this run has fetched.
  */
-const DOWNLOADED_KEY = "lion-reader-phonon-model";
+export function downloadPhononModel(onProgress?: (fraction: number) => void): Promise<void> {
+  return serialized(async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const stored = await storedUrls(cache);
+    let loaded = 0;
+    for (const url of FILE_URLS) {
+      if (stored.has(url)) continue;
+      const response = await fetch(url);
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to download ${url}: HTTP ${response.status}`);
+      }
+      const [toStore, toCount] = response.body.tee();
+      const storing = cache.put(url, new Response(toStore));
+      const reader = toCount.getReader();
+      for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+        loaded += chunk.value.length;
+        onProgress?.(Math.min(loaded / PHONON_DOWNLOAD_SIZE_BYTES, 1));
+      }
+      await storing;
+    }
+    // Files from a model or voice commit we no longer use.
+    for (const request of await cache.keys()) {
+      if (!FILE_URLS.includes(request.url)) await cache.delete(request);
+    }
+    await announceChange();
+  });
+}
+
+/** Frees the loaded model and deletes the stored files. */
+export function removePhononModel(): Promise<void> {
+  return serialized(async () => {
+    const current = loading;
+    loading = null;
+    (await current?.catch(() => null))?.dispose();
+    releaseVoiceBlobUrls();
+    await caches.delete(CACHE_NAME);
+    await announceChange();
+  });
+}
+
+// ============================================================================
+// Loading and synthesis
+// ============================================================================
 
 let loading: Promise<PhononTTS> | null = null;
-const progressListeners = new Set<(fraction: number) => void>();
-const loadedBytes = new Map<string, number>();
+/**
+ * The voices' URLs, kept while the model is loaded: the worker fetches a
+ * voice the first time it speaks (preloading all of them adds seconds to
+ * every load).
+ */
+let voiceBlobUrls: string[] = [];
 
-function reportProgress({ file, loaded }: LoadProgress): void {
-  if (file.startsWith("voice:")) return;
-  loadedBytes.set(file, loaded);
-  const total = [...loadedBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
-  const fraction = Math.min(total / PHONON_MODEL_SIZE_BYTES, 1);
-  progressListeners.forEach((listener) => listener(fraction));
-}
-
-const downloadedListeners = new Set<() => void>();
-
-/** For `useSyncExternalStore` over {@link isPhononModelDownloaded}. */
-export function subscribePhononModelDownloaded(listener: () => void): () => void {
-  downloadedListeners.add(listener);
-  return () => downloadedListeners.delete(listener);
-}
-
-function setDownloaded(downloaded: boolean): void {
-  try {
-    if (downloaded) localStorage.setItem(DOWNLOADED_KEY, PHONON_MODEL_FILES.weights);
-    else localStorage.removeItem(DOWNLOADED_KEY);
-  } catch {
-    // Settings will offer the download again; it comes from the cache.
-  }
-  downloadedListeners.forEach((listener) => listener());
-}
-
-export function isPhononModelDownloaded(): boolean {
-  try {
-    return localStorage.getItem(DOWNLOADED_KEY) === PHONON_MODEL_FILES.weights;
-  } catch {
-    return false;
-  }
+function releaseVoiceBlobUrls(): void {
+  voiceBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+  voiceBlobUrls = [];
 }
 
 async function loadModel(): Promise<PhononTTS> {
-  loadedBytes.clear();
-  const { PhononTTS } = await import("phonon-tts");
-  return PhononTTS.load({
-    lang: "en",
-    model: {
-      weights: { q8: PHONON_MODEL_FILES.weights },
-      tokenizer: PHONON_MODEL_FILES.tokenizer,
-      config: PHONON_MODEL_FILES.config,
-      voices: Object.fromEntries(ENHANCED_VOICES.map((v) => [v.id, enhancedVoiceUrl(v.id)])),
-    },
-    voices: [],
-    // Served from our origin (scripts/copy-phonon-runtime.mjs): a worker
-    // can't start from the CDN our chunks load from. Versioned, so a page
-    // from before a deploy never talks to a newer worker.
-    workerUrl: `${window.location.origin}/phonon/${PHONON_TTS_VERSION}/worker.js`,
-    onProgress: reportProgress,
-  });
+  const cache = await caches.open(CACHE_NAME);
+  const blobUrl = async (url: string, keep: string[]): Promise<string> => {
+    const response = await cache.match(url);
+    if (!response) throw new Error("The enhanced voice model isn't downloaded");
+    const blob = URL.createObjectURL(await response.blob());
+    keep.push(blob);
+    return blob;
+  };
+  const modelBlobUrls: string[] = [];
+  releaseVoiceBlobUrls();
+  try {
+    const { PhononTTS } = await import("phonon-tts");
+    const voices = Object.fromEntries(
+      await Promise.all(
+        ENHANCED_VOICES.map(async (voice) => [
+          voice.id,
+          await blobUrl(enhancedVoiceUrl(voice.id), voiceBlobUrls),
+        ])
+      )
+    );
+    return await PhononTTS.load({
+      lang: "en",
+      model: {
+        weights: { q8: await blobUrl(PHONON_MODEL_FILES.weights, modelBlobUrls) },
+        tokenizer: await blobUrl(PHONON_MODEL_FILES.tokenizer, modelBlobUrls),
+        config: await blobUrl(PHONON_MODEL_FILES.config, modelBlobUrls),
+        voices,
+      },
+      voices: [],
+      cache: false,
+      // Served from our origin (scripts/copy-phonon-runtime.mjs): a worker
+      // can't start from the CDN our chunks load from. Versioned, so a page
+      // from before a deploy never talks to a newer worker.
+      workerUrl: `${window.location.origin}/phonon/${PHONON_TTS_VERSION}/worker.js`,
+    });
+  } catch (error) {
+    releaseVoiceBlobUrls();
+    throw error;
+  } finally {
+    modelBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+  }
 }
 
 function startLoad(): Promise<PhononTTS> {
   const load: Promise<PhononTTS> = loadModel().then((tts) => {
-    // Deleted while loading.
+    // Removed while loading.
     if (loading !== load) {
       tts.dispose();
-      throw new Error("The voice model was deleted");
+      throw new Error("The enhanced voice model was deleted");
     }
-    setDownloaded(true);
     return tts;
   });
   load.catch(() => {
@@ -97,28 +221,10 @@ function startLoad(): Promise<PhononTTS> {
   return load;
 }
 
-/**
- * The loaded model, downloading it first if this browser hasn't. Every caller
- * shares one load; `onProgress` hears it as a fraction of the download.
- */
-export async function loadPhonon(onProgress?: (fraction: number) => void): Promise<PhononTTS> {
-  if (onProgress) progressListeners.add(onProgress);
+/** The downloaded model, loaded once per page and shared by every caller. */
+export function loadPhonon(): Promise<PhononTTS> {
   loading ??= startLoad();
-  try {
-    return await loading;
-  } finally {
-    if (onProgress) progressListeners.delete(onProgress);
-  }
-}
-
-/** Frees the loaded model and deletes its downloaded files. */
-export async function removePhononModel(): Promise<void> {
-  const current = loading;
-  loading = null;
-  setDownloaded(false);
-  (await current?.catch(() => null))?.dispose();
-  const { clearCache } = await import("phonon-tts");
-  await clearCache();
+  return loading;
 }
 
 export async function synthesizePhonon(

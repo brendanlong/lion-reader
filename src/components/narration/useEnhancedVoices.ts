@@ -14,10 +14,11 @@ import { toast } from "sonner";
 import { PREVIEW_TEXT } from "@/lib/narration/constants";
 import { getVoiceErrorInfo } from "@/lib/narration/errors";
 import {
-  isPhononModelDownloaded,
+  downloadPhononModel,
+  getPhononModelState,
   loadPhonon,
   removePhononModel,
-  subscribePhononModelDownloaded,
+  subscribePhononModelState,
 } from "@/lib/narration/phonon-tts";
 import { PreviewAudio } from "@/lib/narration/preview-audio";
 import {
@@ -26,7 +27,7 @@ import {
   trackEnhancedVoiceModelDownloadFailed,
 } from "@/lib/telemetry";
 
-export type ModelStatus = "not-downloaded" | "downloading" | "downloaded";
+export type ModelStatus = "checking" | "not-downloaded" | "downloading" | "downloaded";
 
 export interface UseEnhancedVoicesReturn {
   modelStatus: ModelStatus;
@@ -45,18 +46,18 @@ function toastError(title: string, error: unknown): void {
 }
 
 export function useEnhancedVoices(): UseEnhancedVoicesReturn {
-  const isDownloaded = useSyncExternalStore(
-    subscribePhononModelDownloaded,
-    isPhononModelDownloaded,
-    () => false
+  const stored = useSyncExternalStore(
+    subscribePhononModelState,
+    getPhononModelState,
+    () => "checking" as const
   );
   const [isDownloading, setIsDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
   const modelStatus: ModelStatus = isDownloading
     ? "downloading"
-    : isDownloaded
-      ? "downloaded"
-      : "not-downloaded";
+    : stored === "missing"
+      ? "not-downloaded"
+      : stored;
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
   const isMountedRef = useRef(true);
@@ -77,7 +78,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
     setIsDownloading(true);
     setProgress(0);
     try {
-      await loadPhonon((fraction) => {
+      await downloadPhononModel((fraction) => {
         if (isMountedRef.current) setProgress(fraction);
       });
       trackEnhancedVoiceModelDownloadCompleted();

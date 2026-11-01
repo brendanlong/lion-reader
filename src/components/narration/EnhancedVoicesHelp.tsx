@@ -10,7 +10,7 @@
 "use client";
 
 import { useState } from "react";
-import { PHONON_MODEL_SIZE_BYTES } from "@/lib/narration/enhanced-voices";
+import { PHONON_DOWNLOAD_SIZE_BYTES } from "@/lib/narration/enhanced-voices";
 import { ChevronDownIcon, QuestionCircleIcon } from "@/components/ui/icons";
 
 /**
@@ -37,12 +37,12 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   {
     question: "How much storage do enhanced voices use?",
-    answer: `Every voice shares one model, about ${Math.round(PHONON_MODEL_SIZE_BYTES / (1024 * 1024))} MB. Each voice you use adds a quarter of a megabyte the first time it speaks.`,
+    answer: `About ${Math.round(PHONON_DOWNLOAD_SIZE_BYTES / (1024 * 1024))} MB: one model that every voice shares, plus a quarter of a megabyte for each voice.`,
   },
   {
     question: "Can I use enhanced voices offline?",
     answer:
-      "Yes. Once the model is downloaded, it is stored in your browser, and voices you have already used work without an internet connection.",
+      "Yes. Once downloaded, the model and every voice are stored in your browser and work without an internet connection.",
   },
   {
     question: "How do I free up storage space?",

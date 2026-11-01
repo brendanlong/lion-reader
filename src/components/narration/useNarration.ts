@@ -38,10 +38,7 @@ import { getMediaSourceClass } from "@/lib/narration/media-source-player";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { createPhononSpeechPlayer } from "@/lib/narration/phonon-speech";
-import {
-  isPhononModelDownloaded,
-  subscribePhononModelDownloaded,
-} from "@/lib/narration/phonon-tts";
+import { getPhononModelState, subscribePhononModelState } from "@/lib/narration/phonon-tts";
 import { resolveEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
   htmlToClientNarration,
@@ -161,12 +158,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // Until the model is downloaded (in settings, with its progress), browser
   // voices read instead of a silent model download on play.
-  const isPhononDownloaded = useSyncExternalStore(
-    subscribePhononModelDownloaded,
-    isPhononModelDownloaded,
-    () => false
+  const phononState = useSyncExternalStore(
+    subscribePhononModelState,
+    getPhononModelState,
+    () => "checking" as const
   );
-  const usePhonon = settings.provider === "phonon" && isPhononDownloaded;
+  const usePhonon = settings.provider === "phonon" && phononState === "downloaded";
   const useCloud = settings.provider === "cloud";
   // Phonon and cloud voices drive their own player; browser voices use ArticleNarrator.
   const usesBufferedPlayer = usePhonon || useCloud;
@@ -557,7 +554,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // its paragraph map are variant-specific: replaying a cached "cleaned"
   // narration while the DOM now shows "full"/"original" would highlight the
   // wrong elements. Resetting forces the next play to re-narrate what's on screen.
-  const narrationResetKey = `${id}:${settings.provider}:${settings.cloudModelId}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
+  // `usePhonon` too: deleting the model (maybe in another tab) moves narration
+  // to browser voices, which must not leave the Phonon player playing.
+  const narrationResetKey = `${id}:${settings.provider}:${usePhonon}:${settings.cloudModelId}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
   const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
   if (narrationResetKey !== prevNarrationResetKey) {
     setPrevNarrationResetKey(narrationResetKey);
@@ -591,6 +590,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   }, [
     id,
     settings.provider,
+    usePhonon,
     settings.cloudModelId,
     settings.voiceId,
     showFullContent,

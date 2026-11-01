@@ -53,6 +53,8 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  * - `connect-src`: same-origin covers tRPC, SSE, and the Sentry `/monitoring`
  *   tunnel. The external hosts are the enhanced voice downloads: the Phonon
  *   model and voices from Hugging Face (`src/lib/narration/enhanced-voices.ts`).
+ *   `blob:` is how the page hands those stored files to Phonon's worker
+ *   (`src/lib/narration/phonon-tts.ts`).
  *   CSP checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
  *   302s to its storage CDNs — `cdn-lfs*.huggingface.co` historically, Xet
  *   hosts like `cas-bridge.xethub.hf.co` today. A CSP host wildcard
@@ -136,7 +138,7 @@ function buildPolicy(scriptSrcExtra: string): string {
     "img-src 'self' data: blob: http: https:",
     "media-src 'self' data: blob: http: https:",
     `font-src 'self'${cdn} data:`,
-    `connect-src 'self'${cdn} https://huggingface.co https://*.huggingface.co https://*.hf.co${gcConnect}${
+    `connect-src 'self'${cdn} blob: https://huggingface.co https://*.huggingface.co https://*.hf.co${gcConnect}${
       isDev ? " ws:" : ""
     }`,
     "worker-src 'self' blob:",

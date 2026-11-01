@@ -10,18 +10,15 @@
  * traversal, so the markup that earns it is what's asserted.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  createMemoryCacheStorage,
+  type MemoryCacheStorage,
+} from "../../../utils/memory-cache-storage";
 
 // The package runs a wasm model in a worker, which jsdom can't.
-const { mockLoad, mockClearCache } = vi.hoisted(() => ({
-  mockLoad: vi.fn(),
-  mockClearCache: vi.fn(),
-}));
-vi.mock("phonon-tts", () => ({
-  PhononTTS: { load: mockLoad },
-  clearCache: mockClearCache,
-}));
+vi.mock("phonon-tts", () => ({ PhononTTS: { load: vi.fn() } }));
 
 import { EnhancedVoiceList } from "@/components/narration/EnhancedVoiceList";
 import { DEFAULT_NARRATION_SETTINGS, type NarrationSettings } from "@/lib/narration/settings";
@@ -48,11 +45,20 @@ async function downloadModel() {
 }
 
 describe("EnhancedVoiceList", () => {
+  let storage: MemoryCacheStorage;
+
   beforeEach(async () => {
-    vi.clearAllMocks();
-    mockLoad.mockResolvedValue({ dispose: vi.fn(), sampleRate: 24_000 });
-    mockClearCache.mockResolvedValue(true);
+    storage = createMemoryCacheStorage();
+    vi.stubGlobal("caches", storage);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("model bytes"))
+    );
     await removePhononModel();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("puts every voice in one native radio group, named for its voice", async () => {
@@ -117,7 +123,7 @@ describe("EnhancedVoiceList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete voice model" }));
 
     expect(await screen.findByRole("button", { name: "Download" })).toBeInTheDocument();
-    expect(mockClearCache).toHaveBeenCalled();
+    expect(storage.storedUrls()).toEqual([]);
     expect(screen.getByRole("radio", { name: OTHER.name })).toBeDisabled();
   });
 });

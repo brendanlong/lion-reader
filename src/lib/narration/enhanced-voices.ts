@@ -1,7 +1,7 @@
 /**
  * Enhanced voices: Phonon 31m (Apache-2.0), run in the browser by
- * `./phonon-tts`. Every voice shares one model download; a voice itself is a
- * small embedding fetched the first time it speaks.
+ * `./phonon-tts`. One download holds the model and every voice, each a small
+ * embedding.
  *
  * @module narration/enhanced-voices
  */
@@ -12,8 +12,8 @@ const VOICES_REPO =
   "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7";
 
 /**
- * The model's files, pinned to a commit so the package's download cache (keyed
- * by URL) never serves a stale file.
+ * The model's files, pinned to a commit: they're cached by URL, so a new
+ * commit is a new download rather than a stale file.
  */
 export const PHONON_MODEL_FILES = {
   weights: `${MODEL_REPO}/model.q8.gguf`,
@@ -21,8 +21,8 @@ export const PHONON_MODEL_FILES = {
   config: `${MODEL_REPO}/config.json`,
 };
 
-/** What downloading the model costs, for the UI. */
-export const PHONON_MODEL_SIZE_BYTES = 64_512_352 + 277_967 + 2_851;
+/** Every catalog voice embedding is this size (one 1×512×125 float32 tensor). */
+const VOICE_SIZE_BYTES = 256_136;
 
 export interface EnhancedVoice {
   /** The voice's id in the `gradium/phonon-voices` catalog. */
@@ -240,6 +240,10 @@ export const ENHANCED_VOICES: readonly EnhancedVoice[] = [
 export function enhancedVoiceUrl(voiceId: string): string {
   return `${VOICES_REPO}/voices/${voiceId}.safetensors`;
 }
+
+/** Everything the enhanced voices download, for progress and the UI. */
+export const PHONON_DOWNLOAD_SIZE_BYTES =
+  64_512_352 + 277_967 + 2_851 + ENHANCED_VOICES.length * VOICE_SIZE_BYTES;
 
 /** Even-toned, which suits reading articles better than the catalog's first, Zoey. */
 const DEFAULT_VOICE_ID = "bXwrkHhURL1VFJdG";
