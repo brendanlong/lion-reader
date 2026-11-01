@@ -122,7 +122,7 @@ jobs:
 
       # Keeps compiled dependencies between runs, so a change to one crate
       # rebuilds that crate rather than every dependency of every crate.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: steps.native-cache.outputs.cache-hit != 'true'
         with:
           workspaces: native
@@ -156,7 +156,7 @@ jobs:
 
       # No toolchain setup step: the runner's rustup installs the version
       # rust-toolchain.toml pins on the first cargo call.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Without this a red run saves nothing, so a PR iterating on a Rust
           # failure never warms its own branch cache.
