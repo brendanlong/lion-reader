@@ -9,7 +9,11 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
-import { listSpeechModels, streamSpeech } from "../../src/server/services/speech";
+import {
+  listSpeechModels,
+  SpeechRejectedError,
+  streamSpeech,
+} from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { SELFHOSTED_KOKORO } from "../../src/lib/narration/constants";
 
@@ -20,12 +24,12 @@ let base: string;
 const requests: Array<{ model: string; key: string; body: Record<string, unknown> }> = [];
 /** How the stand-in lists voices: Kokoro-FastAPI's older bare ids or newer objects. */
 let voiceShape: "ids" | "objects" = "objects";
-let selfHostedFails = false;
+let selfHostedFails: "500" | "401" | false = false;
 const saved = new Map<string, string | undefined>();
 
-/** A quarter second of sound at 24 kHz mono, 16-bit. */
+/** A second of sound at 24 kHz mono, 16-bit. */
 function speech(): Buffer {
-  const audio = Buffer.alloc(24_000 / 2);
+  const audio = Buffer.alloc(24_000 * 2);
   for (let at = 0; at < audio.length; at += 2) audio.writeInt16LE(8000, at);
   return audio;
 }
@@ -50,7 +54,8 @@ beforeAll(async () => {
         case "/selfhosted/v1/audio/speech": {
           const request = JSON.parse(body) as Record<string, unknown>;
           requests.push({ model: `selfhosted:${String(request.model)}`, key, body: request });
-          if (selfHostedFails) return json({ detail: "Internal Server Error" }, 500);
+          if (selfHostedFails === "500") return json({ detail: "Internal Server Error" }, 500);
+          if (selfHostedFails === "401") return json({ detail: "Invalid API key" }, 401);
           res.writeHead(200, { "Content-Type": "audio/pcm" });
           res.end(speech());
           return;
@@ -128,7 +133,10 @@ async function speak(model: string | null) {
     formats: ALL_FORMATS,
     source: new BufferSource(await new Response(audio).arrayBuffer()),
   });
-  expect(await input.computeDuration()).toBeGreaterThan(0.2);
+  // The stand-in's second, read at Kokoro's 24 kHz, plus the encoder's padding.
+  const duration = await input.computeDuration();
+  expect(duration).toBeGreaterThanOrEqual(1);
+  expect(duration).toBeLessThan(1.2);
   return requests.slice(before);
 }
 
@@ -161,7 +169,7 @@ describe("self-hosted voices", () => {
 
   it("fails over to another host of Kokoro, in the same voice, when the server fails", async () => {
     process.env.TOGETHER_API_KEY = "server-together";
-    selfHostedFails = true;
+    selfHostedFails = "500";
     const asked = await speak(SELFHOSTED_KOKORO);
     expect(asked.map((request) => [request.model, request.body.voice])).toEqual([
       [SELFHOSTED_KOKORO, "af_bella"],
@@ -180,5 +188,12 @@ describe("self-hosted voices", () => {
 
     const asked = await speak(null);
     expect(asked.map((request) => request.model)).toEqual([TOGETHER_KOKORO]);
+  });
+
+  it("doesn't ask users for a key of their own when the server's is refused", async () => {
+    selfHostedFails = "401";
+    const refusal = speak(SELFHOSTED_KOKORO);
+    await expect(refusal).rejects.toThrow(SpeechRejectedError);
+    await expect(refusal).rejects.not.toThrow(/own|Settings/);
   });
 });

@@ -138,6 +138,8 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
         displayName: "hexgrad: Kokoro 82M",
         provider: "selfhosted",
         voices: voicesNamedById(await listSelfHostedVoices(apiKey)),
+        // Nothing per character, so no price cap hides it.
+        pricePerMillionCharacters: 0,
       },
     ],
     speak: selfHostedSpeech,
