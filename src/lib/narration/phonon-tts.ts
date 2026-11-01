@@ -54,6 +54,8 @@ async function refreshState(): Promise<void> {
   }
   if (check !== checks) return;
   const next = stored ? "downloaded" : "missing";
+  // Removed, maybe by another tab: free the model it loaded from them.
+  if (next === "missing") unload();
   if (next === state) return;
   state = next;
   stateListeners.forEach((listener) => listener());
@@ -93,7 +95,10 @@ async function announceChange(): Promise<void> {
 // Downloading and removing
 // ============================================================================
 
-/** Downloads and removals run one at a time, so neither sees half of the other. */
+/**
+ * Downloads, removals and loads run one at a time, so none sees half of
+ * another.
+ */
 let queue: Promise<unknown> = Promise.resolve();
 function serialized<T>(task: () => Promise<T>): Promise<T> {
   const run = queue.then(task, task);
@@ -107,6 +112,9 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
  */
 export function downloadPhononModel(onProgress?: (fraction: number) => void): Promise<void> {
   return serialized(async () => {
+    if (typeof caches === "undefined") {
+      throw new Error("This browser can only store the voice model on an HTTPS page");
+    }
     const cache = await caches.open(CACHE_NAME);
     const stored = await storedUrls(cache);
     let loaded = 0;
@@ -118,6 +126,8 @@ export function downloadPhononModel(onProgress?: (fraction: number) => void): Pr
       }
       const [toStore, toCount] = response.body.tee();
       const storing = cache.put(url, new Response(toStore));
+      // Awaited below; if the read fails first, its error is the one to report.
+      storing.catch(() => {});
       const reader = toCount.getReader();
       for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
         loaded += chunk.value.length;
@@ -136,10 +146,7 @@ export function downloadPhononModel(onProgress?: (fraction: number) => void): Pr
 /** Frees the loaded model and deletes the stored files. */
 export function removePhononModel(): Promise<void> {
   return serialized(async () => {
-    const current = loading;
-    loading = null;
-    (await current?.catch(() => null))?.dispose();
-    releaseVoiceBlobUrls();
+    unload();
     await caches.delete(CACHE_NAME);
     await announceChange();
   });
@@ -149,21 +156,32 @@ export function removePhononModel(): Promise<void> {
 // Loading and synthesis
 // ============================================================================
 
-let loading: Promise<PhononTTS> | null = null;
-/**
- * The voices' URLs, kept while the model is loaded: the worker fetches a
- * voice the first time it speaks (preloading all of them adds seconds to
- * every load).
- */
-let voiceBlobUrls: string[] = [];
-
-function releaseVoiceBlobUrls(): void {
-  voiceBlobUrls.forEach((url) => URL.revokeObjectURL(url));
-  voiceBlobUrls = [];
+interface LoadedModel {
+  tts: PhononTTS;
+  /**
+   * Kept while the model is loaded: the worker fetches a voice the first
+   * time it speaks (preloading all of them adds seconds to every load).
+   */
+  voiceBlobUrls: string[];
 }
 
-async function loadModel(): Promise<PhononTTS> {
+let loading: Promise<LoadedModel> | null = null;
+
+function release({ tts, voiceBlobUrls }: LoadedModel): void {
+  tts.dispose();
+  voiceBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+}
+
+function unload(): void {
+  const current = loading;
+  loading = null;
+  current?.then(release, () => {});
+}
+
+async function loadModel(): Promise<LoadedModel> {
   const cache = await caches.open(CACHE_NAME);
+  const modelBlobUrls: string[] = [];
+  const voiceBlobUrls: string[] = [];
   const blobUrl = async (url: string, keep: string[]): Promise<string> => {
     const response = await cache.match(url);
     if (!response) throw new Error("The enhanced voice model isn't downloaded");
@@ -171,8 +189,6 @@ async function loadModel(): Promise<PhononTTS> {
     keep.push(blob);
     return blob;
   };
-  const modelBlobUrls: string[] = [];
-  releaseVoiceBlobUrls();
   try {
     const { PhononTTS } = await import("phonon-tts");
     const voices = Object.fromEntries(
@@ -183,7 +199,7 @@ async function loadModel(): Promise<PhononTTS> {
         ])
       )
     );
-    return await PhononTTS.load({
+    const tts = await PhononTTS.load({
       lang: "en",
       model: {
         weights: { q8: await blobUrl(PHONON_MODEL_FILES.weights, modelBlobUrls) },
@@ -198,22 +214,23 @@ async function loadModel(): Promise<PhononTTS> {
       // from before a deploy never talks to a newer worker.
       workerUrl: `${window.location.origin}/phonon/${PHONON_TTS_VERSION}/worker.js`,
     });
+    return { tts, voiceBlobUrls };
   } catch (error) {
-    releaseVoiceBlobUrls();
+    voiceBlobUrls.forEach((url) => URL.revokeObjectURL(url));
     throw error;
   } finally {
     modelBlobUrls.forEach((url) => URL.revokeObjectURL(url));
   }
 }
 
-function startLoad(): Promise<PhononTTS> {
-  const load: Promise<PhononTTS> = loadModel().then((tts) => {
-    // Removed while loading.
+function startLoad(): Promise<LoadedModel> {
+  const load: Promise<LoadedModel> = serialized(loadModel).then((loaded) => {
+    // Another tab removed the files while this loaded.
     if (loading !== load) {
-      tts.dispose();
+      release(loaded);
       throw new Error("The enhanced voice model was deleted");
     }
-    return tts;
+    return loaded;
   });
   load.catch(() => {
     if (loading === load) loading = null;
@@ -222,9 +239,9 @@ function startLoad(): Promise<PhononTTS> {
 }
 
 /** The downloaded model, loaded once per page and shared by every caller. */
-export function loadPhonon(): Promise<PhononTTS> {
+export async function loadPhonon(): Promise<PhononTTS> {
   loading ??= startLoad();
-  return loading;
+  return (await loading).tts;
 }
 
 export async function synthesizePhonon(

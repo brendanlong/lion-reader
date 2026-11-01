@@ -166,10 +166,55 @@ describe("phonon-tts", () => {
     const removal = removePhononModel();
     finishLoad(tts);
 
-    await expect(load).rejects.toThrow("deleted");
+    await load;
     await removal;
     expect(tts.dispose).toHaveBeenCalled();
     expect(getPhononModelState()).toBe("missing");
+  });
+
+  it("doesn't load a model requested while it's being removed", async () => {
+    await downloadPhononModel();
+    const removal = removePhononModel();
+    const load = loadPhonon();
+
+    await removal;
+    await expect(load).rejects.toThrow("isn't downloaded");
+    expect(mockLoad).not.toHaveBeenCalled();
+  });
+
+  it("stores nothing of a file whose download breaks off", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url !== PHONON_MODEL_FILES.weights) return new Response(`bytes of ${url}`);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(10));
+          controller.error(new TypeError("network error"));
+        },
+      });
+      return new Response(body);
+    });
+
+    await expect(downloadPhononModel()).rejects.toThrow("network error");
+
+    expect(storedFiles()).not.toContain(PHONON_MODEL_FILES.weights);
+    expect(getPhononModelState()).toBe("missing");
+  });
+
+  it("frees this tab's model when another tab removes the files", async () => {
+    await downloadPhononModel();
+    const tts = fakeTts();
+    mockLoad.mockResolvedValue(tts);
+    await loadPhonon();
+    const unsubscribe = subscribePhononModelState(() => {});
+
+    await storage.delete("lion-reader-phonon");
+    const otherTab = new BroadcastChannel("lion-reader-phonon");
+    otherTab.postMessage("changed");
+    otherTab.close();
+
+    await vi.waitFor(() => expect(tts.dispose).toHaveBeenCalled());
+    unsubscribe();
   });
 
   it("hears another tab's download", async () => {
