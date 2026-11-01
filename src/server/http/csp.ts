@@ -52,8 +52,8 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  *   audio unlock. `http:` also covers plain-HTTP local dev.
  * - `connect-src`: same-origin covers tRPC, SSE, and the Sentry `/monitoring`
  *   tunnel. The external hosts are the enhanced voice downloads: the Phonon
- *   model and voices from Hugging Face
- *   (`src/lib/narration/enhanced-voices.ts`). CSP checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
+ *   model and voices from Hugging Face (`src/lib/narration/enhanced-voices.ts`).
+ *   CSP checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
  *   302s to its storage CDNs — `cdn-lfs*.huggingface.co` historically, Xet
  *   hosts like `cas-bridge.xethub.hf.co` today. A CSP host wildcard
  *   suffix-matches subdomains at ANY depth (unlike TLS certs), so

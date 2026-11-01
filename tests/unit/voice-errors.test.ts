@@ -75,7 +75,7 @@ describe("getVoiceErrorInfo", () => {
 
     expect(info.type).toBe("corrupted_cache");
     expect(info.message).toContain("corrupted");
-    expect(info.suggestion).toContain("cache");
+    expect(info.suggestion).toContain("download");
   });
 
   it("returns full error info for download interrupted", () => {

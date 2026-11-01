@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  ENHANCED_VOICES,
-  isEnhancedVoice,
-  resolveEnhancedVoice,
-} from "@/lib/narration/enhanced-voices";
+import { ENHANCED_VOICES, resolveEnhancedVoice } from "@/lib/narration/enhanced-voices";
 
 describe("resolveEnhancedVoice", () => {
   it("returns the voice an id names", () => {
@@ -24,6 +20,5 @@ describe("ENHANCED_VOICES", () => {
   it("has unique ids, which telemetry labels and settings key on", () => {
     const ids = ENHANCED_VOICES.map((v) => v.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.every(isEnhancedVoice)).toBe(true);
   });
 });

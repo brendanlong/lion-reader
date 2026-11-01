@@ -242,7 +242,7 @@ const nextConfig: NextConfig = {
     // (scripts/copy-phonon-runtime.mjs), so don't bundle the copies its
     // `new URL(..., import.meta.url)`s point at.
     config.module.rules.push({
-      test: /[\\/]node_modules[\\/]phonon-tts[\\/]/,
+      test: /[\\/]node_modules[\\/]phonon-tts[\\/].*\.js$/,
       parser: { worker: false, url: false },
     });
     config.devtool = "source-map";

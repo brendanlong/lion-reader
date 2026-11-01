@@ -38,6 +38,10 @@ import { getMediaSourceClass } from "@/lib/narration/media-source-player";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 import type { NarrationSettings } from "@/lib/narration/settings";
 import { createPhononSpeechPlayer } from "@/lib/narration/phonon-speech";
+import {
+  isPhononModelDownloaded,
+  subscribePhononModelDownloaded,
+} from "@/lib/narration/phonon-tts";
 import { resolveEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
   htmlToClientNarration,
@@ -155,7 +159,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     [storedSettings, prerecordedVoice]
   );
 
-  const usePhonon = settings.provider === "phonon";
+  // Until the model is downloaded (in settings, with its progress), browser
+  // voices read instead of a silent model download on play.
+  const isPhononDownloaded = useSyncExternalStore(
+    subscribePhononModelDownloaded,
+    isPhononModelDownloaded,
+    () => false
+  );
+  const usePhonon = settings.provider === "phonon" && isPhononDownloaded;
   const useCloud = settings.provider === "cloud";
   // Phonon and cloud voices drive their own player; browser voices use ArticleNarrator.
   const usesBufferedPlayer = usePhonon || useCloud;

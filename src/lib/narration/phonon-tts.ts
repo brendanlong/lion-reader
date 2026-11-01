@@ -6,6 +6,7 @@
  */
 
 import type { LoadProgress, PhononTTS } from "phonon-tts";
+import { version as PHONON_TTS_VERSION } from "phonon-tts/package.json";
 import {
   ENHANCED_VOICES,
   enhancedVoiceUrl,
@@ -60,35 +61,49 @@ export function isPhononModelDownloaded(): boolean {
   }
 }
 
+async function loadModel(): Promise<PhononTTS> {
+  loadedBytes.clear();
+  const { PhononTTS } = await import("phonon-tts");
+  return PhononTTS.load({
+    lang: "en",
+    model: {
+      weights: { q8: PHONON_MODEL_FILES.weights },
+      tokenizer: PHONON_MODEL_FILES.tokenizer,
+      config: PHONON_MODEL_FILES.config,
+      voices: Object.fromEntries(ENHANCED_VOICES.map((v) => [v.id, enhancedVoiceUrl(v.id)])),
+    },
+    voices: [],
+    // Served from our origin (scripts/copy-phonon-runtime.mjs): a worker
+    // can't start from the CDN our chunks load from. Versioned, so a page
+    // from before a deploy never talks to a newer worker.
+    workerUrl: `${window.location.origin}/phonon/${PHONON_TTS_VERSION}/worker.js`,
+    onProgress: reportProgress,
+  });
+}
+
+function startLoad(): Promise<PhononTTS> {
+  const load: Promise<PhononTTS> = loadModel().then((tts) => {
+    // Deleted while loading.
+    if (loading !== load) {
+      tts.dispose();
+      throw new Error("The voice model was deleted");
+    }
+    setDownloaded(true);
+    return tts;
+  });
+  load.catch(() => {
+    if (loading === load) loading = null;
+  });
+  return load;
+}
+
 /**
  * The loaded model, downloading it first if this browser hasn't. Every caller
  * shares one load; `onProgress` hears it as a fraction of the download.
  */
 export async function loadPhonon(onProgress?: (fraction: number) => void): Promise<PhononTTS> {
   if (onProgress) progressListeners.add(onProgress);
-  loading ??= (async () => {
-    loadedBytes.clear();
-    const { PhononTTS } = await import("phonon-tts");
-    const tts = await PhononTTS.load({
-      lang: "en",
-      model: {
-        weights: { q8: PHONON_MODEL_FILES.weights },
-        tokenizer: PHONON_MODEL_FILES.tokenizer,
-        config: PHONON_MODEL_FILES.config,
-        voices: Object.fromEntries(ENHANCED_VOICES.map((v) => [v.id, enhancedVoiceUrl(v.id)])),
-      },
-      voices: [],
-      // Served from our origin (scripts/copy-phonon-runtime.mjs): a worker
-      // can't start from the CDN our chunks load from.
-      workerUrl: `${window.location.origin}/phonon/worker.js`,
-      onProgress: reportProgress,
-    });
-    setDownloaded(true);
-    return tts;
-  })().catch((error: unknown) => {
-    loading = null;
-    throw error;
-  });
+  loading ??= startLoad();
   try {
     return await loading;
   } finally {

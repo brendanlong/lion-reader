@@ -61,6 +61,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
 
   const isMountedRef = useRef(true);
   const previewRef = useRef<PreviewAudio | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -68,6 +69,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
       isMountedRef.current = false;
       previewRef.current?.stop();
       previewRef.current = null;
+      previewAbortRef.current?.abort();
     };
   }, []);
 
@@ -81,8 +83,6 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
       trackEnhancedVoiceModelDownloadCompleted();
     } catch (err) {
       trackEnhancedVoiceModelDownloadFailed(classifyDownloadError(err));
-      // A file the browser cached half-written would fail every retry.
-      await removePhononModel().catch(() => {});
       toastError("Failed to download the voice model", err);
     } finally {
       if (isMountedRef.current) setIsDownloading(false);
@@ -92,6 +92,8 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   const stopPreview = useCallback(() => {
     previewRef.current?.stop();
     previewRef.current = null;
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
     if (isMountedRef.current) setPreviewingVoiceId(null);
   }, []);
 
@@ -107,8 +109,11 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
   const previewVoice = useCallback(
     async (voiceId: string) => {
       previewRef.current?.stop();
+      previewAbortRef.current?.abort();
       const preview = new PreviewAudio();
+      const abort = new AbortController();
       previewRef.current = preview;
+      previewAbortRef.current = abort;
       setPreviewingVoiceId(voiceId);
 
       const fail = (err: unknown) => {
@@ -117,7 +122,7 @@ export function useEnhancedVoices(): UseEnhancedVoicesReturn {
       };
       try {
         const tts = await loadPhonon();
-        const clip = await tts.synthWav(PREVIEW_TEXT, { voice: voiceId });
+        const clip = await tts.synthWav(PREVIEW_TEXT, { voice: voiceId, signal: abort.signal });
         // Superseded by another preview, a stop, or unmount.
         if (previewRef.current !== preview) return;
         preview.play(clip, 1.0, (error) => (error ? fail(error) : stopPreview()));

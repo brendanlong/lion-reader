@@ -56,7 +56,7 @@ const ERROR_INFO: Record<VoiceErrorType, Omit<VoiceErrorInfo, "type">> = {
   },
   corrupted_cache: {
     message: "The downloaded voice model appears to be corrupted.",
-    suggestion: "Its cached files were cleared. Try downloading again.",
+    suggestion: "Delete the voice model and download it again.",
   },
   download_interrupted: {
     message: "The download was interrupted.",
@@ -76,18 +76,6 @@ const ERROR_INFO: Record<VoiceErrorType, Omit<VoiceErrorInfo, "type">> = {
  *
  * @param error - The error to classify.
  * @returns The error type classification.
- *
- * @example
- * ```ts
- * try {
- *   await downloadVoice(voiceId, onProgress);
- * } catch (error) {
- *   const errorType = classifyVoiceError(error);
- *   if (errorType === "quota_exceeded") {
- *     showStorageWarning();
- *   }
- * }
- * ```
  */
 export function classifyVoiceError(error: unknown): VoiceErrorType {
   if (!(error instanceof Error)) {
@@ -165,19 +153,6 @@ export function classifyVoiceError(error: unknown): VoiceErrorType {
  *
  * @param error - The error to get information for.
  * @returns Complete error information including message and suggestion.
- *
- * @example
- * ```ts
- * try {
- *   await downloadVoice(voiceId, onProgress);
- * } catch (error) {
- *   const errorInfo = getVoiceErrorInfo(error);
- *   showError(errorInfo.message);
- *   if (errorInfo.suggestion) {
- *     showHint(errorInfo.suggestion);
- *   }
- *  * }
- * ```
  */
 export function getVoiceErrorInfo(error: unknown): VoiceErrorInfo {
   const type = classifyVoiceError(error);
