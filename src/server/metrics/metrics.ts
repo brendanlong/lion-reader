@@ -552,16 +552,15 @@ const enhancedVoiceSelectedTotal = getOrCreate(Counter, {
   labelNames: ["voice_id"] as const,
 });
 
-const enhancedVoiceDownloadCompletedTotal = getOrCreate(Counter, {
-  name: "enhanced_voice_download_completed_total",
-  help: "Total enhanced voice downloads completed",
-  labelNames: ["voice_id"] as const,
+const enhancedVoiceModelDownloadCompletedTotal = getOrCreate(Counter, {
+  name: "enhanced_voice_model_download_completed_total",
+  help: "Total enhanced voice model downloads completed",
 });
 
-const enhancedVoiceDownloadFailedTotal = getOrCreate(Counter, {
-  name: "enhanced_voice_download_failed_total",
-  help: "Total enhanced voice download failures",
-  labelNames: ["voice_id", "error_type"] as const,
+const enhancedVoiceModelDownloadFailedTotal = getOrCreate(Counter, {
+  name: "enhanced_voice_model_download_failed_total",
+  help: "Total enhanced voice model download failures",
+  labelNames: ["error_type"] as const,
 });
 
 const narrationPlaybackStartedTotal = getOrCreate(Counter, {
@@ -574,15 +573,12 @@ export function trackEnhancedVoiceSelected(voiceId: string): void {
   enhancedVoiceSelectedTotal?.inc({ voice_id: voiceId });
 }
 
-export function trackEnhancedVoiceDownloadCompleted(voiceId: string): void {
-  enhancedVoiceDownloadCompletedTotal?.inc({ voice_id: voiceId });
+export function trackEnhancedVoiceModelDownloadCompleted(): void {
+  enhancedVoiceModelDownloadCompletedTotal?.inc();
 }
 
-export function trackEnhancedVoiceDownloadFailed(
-  voiceId: string,
-  errorType: VoiceDownloadErrorType
-): void {
-  enhancedVoiceDownloadFailedTotal?.inc({ voice_id: voiceId, error_type: errorType });
+export function trackEnhancedVoiceModelDownloadFailed(errorType: VoiceDownloadErrorType): void {
+  enhancedVoiceModelDownloadFailedTotal?.inc({ error_type: errorType });
 }
 
 export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {

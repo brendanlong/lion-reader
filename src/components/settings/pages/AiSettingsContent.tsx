@@ -13,7 +13,6 @@ import {
   SummarizationSettings,
   NarrationAiSettings,
 } from "@/components/settings/ApiKeySettings";
-// Import directly from file to avoid barrel export pulling in piper-tts-web
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
 
 function ApiKeySettingsSections() {

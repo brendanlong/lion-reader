@@ -114,13 +114,13 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Steps that depend ONLY on node_modules / the native-builder stage go ABOVE
 # `COPY . .` so a source-only change (the common deploy) leaves them cached and
-# jumps straight to `pnpm build`. public/onnx/ and native/*/*.node are in
+# jumps straight to `pnpm build`. public/phonon/ and native/*/*.node are in
 # .dockerignore, so the `COPY . .` overlay below won't clobber what we generate.
 
-# Copy ONNX WASM files to public/ (reads node_modules only). Copy just the
-# script first so this layer busts only when the script itself changes.
-COPY scripts/copy-onnx-wasm.mjs ./scripts/copy-onnx-wasm.mjs
-RUN node scripts/copy-onnx-wasm.mjs
+# Copy the phonon-tts runtime to public/ (reads node_modules only). Copy just
+# the script first so this layer busts only when the script itself changes.
+COPY scripts/copy-phonon-runtime.mjs ./scripts/copy-phonon-runtime.mjs
+RUN node scripts/copy-phonon-runtime.mjs
 
 # Compiled native modules (the runner also copies these out of this stage)
 COPY --from=native-builder /app/native/sanitizer/sanitizer.node ./native/sanitizer/sanitizer.node

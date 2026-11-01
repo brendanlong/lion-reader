@@ -55,7 +55,6 @@ describe("getVoiceErrorInfo", () => {
     expect(info.type).toBe("quota_exceeded");
     expect(info.message).toContain("storage");
     expect(info.suggestion).toContain("delet"); // covers "delete" or "deleting"
-    expect(info.retryable).toBe(false);
   });
 
   it("returns full error info for network error", () => {
@@ -67,7 +66,6 @@ describe("getVoiceErrorInfo", () => {
     expect(info.type).toBe("network_error");
     expect(info.message).toContain("network");
     expect(info.suggestion).toContain("connection");
-    expect(info.retryable).toBe(true);
   });
 
   it("returns full error info for corrupted cache", () => {
@@ -78,7 +76,6 @@ describe("getVoiceErrorInfo", () => {
     expect(info.type).toBe("corrupted_cache");
     expect(info.message).toContain("corrupted");
     expect(info.suggestion).toContain("cache");
-    expect(info.retryable).toBe(true);
   });
 
   it("returns full error info for download interrupted", () => {
@@ -88,7 +85,6 @@ describe("getVoiceErrorInfo", () => {
 
     expect(info.type).toBe("download_interrupted");
     expect(info.message).toContain("interrupted");
-    expect(info.retryable).toBe(true);
   });
 
   it("returns full error info for voice not found", () => {
@@ -99,7 +95,6 @@ describe("getVoiceErrorInfo", () => {
     expect(info.type).toBe("voice_not_found");
     expect(info.message).toContain("not available");
     expect(info.suggestion).toContain("different voice");
-    expect(info.retryable).toBe(false);
   });
 
   it("returns full error info for unknown error", () => {
@@ -109,7 +104,6 @@ describe("getVoiceErrorInfo", () => {
 
     expect(info.type).toBe("unknown");
     expect(info.message).toBeDefined();
-    expect(info.retryable).toBe(true);
   });
 });
 

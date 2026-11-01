@@ -237,44 +237,9 @@ const nextConfig: NextConfig = {
     "@lion-reader/markdown",
     "@lion-reader/speech-encoder",
   ],
-  // Handle piper-tts-web which has conditional Node.js code (require('fs'))
-  // that the bundler tries to resolve even though it only runs in Node.js
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // Stub out Node.js modules for client bundles
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        path: false,
-      };
-      // Redirect onnxruntime-web (pulled in only by piper-tts-web for TTS
-      // narration) to its CPU-only `./wasm` build. The default entry loads the
-      // WebGPU/WebNN "JSEP" glue, which calls `new Function(...)` in its
-      // Emscripten/Embind init — both in the bundled `ort.bundle.min.mjs` and
-      // in the runtime-fetched `ort-wasm-simd-threaded.jsep.mjs` from
-      // public/onnx/. CSP treats `new Function` as `eval` and blocks it in prod
-      // (script-src has `wasm-unsafe-eval` but deliberately not `unsafe-eval`).
-      // Piper runs pure CPU inference and requests no `executionProviders`, so
-      // the JSEP build is dead weight whose init trips a CSP violation. The
-      // `$` limits the alias to the bare specifier so runtime wasm-file loads
-      // (served from public/onnx/) are untouched. See src/server/http/csp.ts.
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        "onnxruntime-web$": "onnxruntime-web/wasm",
-      };
-    }
+  webpack: (config) => {
     config.devtool = "source-map";
     return config;
-  },
-  // Turbopack equivalent configuration
-  turbopack: {
-    resolveAlias: {
-      fs: { browser: "./src/lib/stubs/empty.js" },
-      path: { browser: "./src/lib/stubs/empty.js" },
-      // See the webpack `onnxruntime-web$` alias above: use the CPU-only build
-      // so the JSEP glue's `new Function` (CSP eval) never loads.
-      "onnxruntime-web": { browser: "onnxruntime-web/wasm" },
-    },
   },
 };
 

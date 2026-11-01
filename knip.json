@@ -8,7 +8,7 @@
         "src/lib/narration/app-reader.ts",
         "terraform/backup-health/index.ts"
       ],
-      "ignore": ["extension/**", "kmp/**", "src/lib/stubs/**"],
+      "ignore": ["extension/**", "kmp/**"],
       "ignoreDependencies": ["mammoth"]
     },
     "native/sanitizer": {},

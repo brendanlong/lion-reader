@@ -5,10 +5,6 @@
  * Source), so they load with ssr: false: no hydration mismatch, and the engine
  * stays out of the initial bundle until an article with narration enabled is
  * open. Until then a disabled copy of the idle button holds their place.
- *
- * NOTE: EnhancedVoiceList and useEnhancedVoices depend on piper-tts-web which has
- * Node.js-only code (require('fs')) that breaks client bundling. Import them directly
- * from their files if needed, and use next/dynamic with ssr: false for components.
  */
 
 import dynamic from "next/dynamic";

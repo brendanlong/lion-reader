@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "postinstall": "node scripts/copy-onnx-wasm.mjs",
+    "postinstall": "node scripts/copy-phonon-runtime.mjs",
     "dev": "concurrently --kill-others --names worker,next,discord \"pnpm dev:worker\" \"pnpm dev:next\" \"pnpm dev:discord-bot\"",
     "dev:next": "tsx scripts/server.ts",
     "dev:worker": "tsx watch --clear-screen=false scripts/worker.ts",
@@ -95,7 +95,6 @@
     "@lion-reader/sanitizer": "workspace:*",
     "@lion-reader/speech-encoder": "workspace:*",
     "@mediabunny/aac-encoder": "1.62.1",
-    "@mintplex-labs/piper-tts-web": "^1.0.5",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@sentry/nextjs": "^11.9.0",
     "@tanstack/db": "^0.15.2",
@@ -120,10 +119,10 @@
     "mediabunny": "1.62.1",
     "next": "16.4.3",
     "next-themes": "^0.4.6",
-    "onnxruntime-web": "1.30.0",
     "openid-client": "^6.8.8",
     "parse5": "8.0.1",
     "pg": "^8.23.1",
+    "phonon-tts": "0.4.1",
     "prom-client": "^15.1.3",
     "qrcode.react": "^4.2.0",
     "react": "19.3.1",

@@ -1,28 +1,23 @@
 /**
- * Enhanced (Piper) voices in the browser: each sentence is synthesized on the
+ * Enhanced (Phonon) voices in the browser: each sentence is synthesized on the
  * device, encoded to fragmented MP4 here (see `./audio-encoding`), and played
  * through a {@link MediaSourcePlayer} like cloud voices are.
  *
- * @module narration/piper-speech
+ * @module narration/phonon-speech
  */
 
-import {
-  decodeToPcm,
-  loadSegmentEncoder,
-  withTrailingSilence,
-  type SegmentEncoder,
-} from "./audio-encoding";
+import { loadSegmentEncoder, withTrailingSilence, type SegmentEncoder } from "./audio-encoding";
 import { getMediaSourceClass, MediaSourcePlayer, UNSUPPORTED_MESSAGE } from "./media-source-player";
 import { splitIntoSentenceChunks } from "./speech-chunks";
-import { getPiperTTSProvider } from "./piper-tts-provider";
+import { synthesizePhonon } from "./phonon-tts";
 
-export interface PiperVoice {
-  voice: string | null;
+export interface PhononVoice {
+  voice: string;
   sentenceGapSeconds: number;
 }
 
-/** A player for Piper voices; `voice` is read for each sentence it synthesizes. */
-export function createPiperSpeechPlayer(voice: () => PiperVoice): MediaSourcePlayer {
+/** A player for Phonon voices; `voice` is read for each sentence it synthesizes. */
+export function createPhononSpeechPlayer(voice: () => PhononVoice): MediaSourcePlayer {
   let encoder: Promise<SegmentEncoder> | null = null;
   const getEncoder = () => {
     encoder ??= (async () => {
@@ -38,17 +33,15 @@ export function createPiperSpeechPlayer(voice: () => PiperVoice): MediaSourcePla
   };
 
   return new MediaSourcePlayer({
-    synthesize: async function* (text) {
+    synthesize: async function* (text, signal) {
       const { voice: voiceId, sentenceGapSeconds } = voice();
-      if (!voiceId) throw new Error("No enhanced voice selected");
-      const wav = await getPiperTTSProvider().synthesize(text, voiceId);
-      const audio = await decodeToPcm(new Uint8Array(await wav.arrayBuffer()));
+      const audio = await synthesizePhonon(text, voiceId, signal);
       yield await (await getEncoder()).encode(withTrailingSilence(audio, sentenceGapSeconds));
     },
     // The encoder picks the format: AAC where it can, else Opus.
     loadMimeType: async () => (await getEncoder()).mimeType,
     chunkParagraphs: splitIntoSentenceChunks,
-    // One WASM model on the device's CPU: one sentence at a time.
+    // One model in one worker: it generates one sentence at a time anyway.
     maxConcurrentSyntheses: 1,
   });
 }

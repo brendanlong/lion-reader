@@ -9,8 +9,8 @@ import { telemetryEventSchema } from "@/lib/telemetry";
 import {
   metricsEnabled,
   trackEnhancedVoiceSelected,
-  trackEnhancedVoiceDownloadCompleted,
-  trackEnhancedVoiceDownloadFailed,
+  trackEnhancedVoiceModelDownloadCompleted,
+  trackEnhancedVoiceModelDownloadFailed,
   trackNarrationPlaybackStarted,
 } from "@/server/metrics/metrics";
 
@@ -56,11 +56,11 @@ export async function POST(req: Request): Promise<Response> {
       case "enhanced_voice_selected":
         trackEnhancedVoiceSelected(event.voiceId);
         break;
-      case "enhanced_voice_download_completed":
-        trackEnhancedVoiceDownloadCompleted(event.voiceId);
+      case "enhanced_voice_model_download_completed":
+        trackEnhancedVoiceModelDownloadCompleted();
         break;
-      case "enhanced_voice_download_failed":
-        trackEnhancedVoiceDownloadFailed(event.voiceId, event.errorType);
+      case "enhanced_voice_model_download_failed":
+        trackEnhancedVoiceModelDownloadFailed(event.errorType);
         break;
       case "narration_playback_started":
         trackNarrationPlaybackStarted(event.provider);

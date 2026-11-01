@@ -11,7 +11,7 @@
  * them, a silent looping audio element (see `./silent-audio`) is played while
  * narration is active to make the browser treat narration as "media", which is
  * what surfaces the controls and routes hardware buttons to our action
- * handlers. Piper and cloud voices play through their own media element (see
+ * handlers. Enhanced and cloud voices play through their own media element (see
  * `./media-source-player`) and skip the silent loop.
  *
  * This module is provider-agnostic: callers pass plain control callbacks, so the
@@ -40,7 +40,7 @@ import { startSilentAudio, stopSilentAudio } from "./silent-audio";
  * Provider-agnostic playback controls invoked by OS media buttons.
  *
  * These map directly onto the narration hook's controls so both browser voices
- * and Piper TTS share one integration.
+ * and synthesized voices share one integration.
  */
 export interface MediaSessionControls {
   /** Resume/start playback (OS "play" button, media key). */
