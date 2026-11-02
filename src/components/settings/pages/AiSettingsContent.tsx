@@ -8,11 +8,7 @@
 "use client";
 
 import { trpc } from "@/lib/trpc/client";
-import {
-  AiProviderKeySettings,
-  SummarizationSettings,
-  NarrationAiSettings,
-} from "@/components/settings/ApiKeySettings";
+import { AiProviderKeySettings, SummarizationSettings } from "@/components/settings/ApiKeySettings";
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
 
 function ApiKeySettingsSections() {
@@ -28,9 +24,6 @@ function ApiKeySettingsSections() {
 
       {/* Summaries (model, max words, custom prompt) */}
       <SummarizationSettings />
-
-      {/* Narration text processing model (JSON-mode providers) */}
-      <NarrationAiSettings />
     </>
   );
 }

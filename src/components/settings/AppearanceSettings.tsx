@@ -68,9 +68,8 @@ function TextPreview() {
     <div className="border-edge-strong bg-surface rounded-lg border p-4">
       <p className="ui-text-xs text-muted mb-2 font-medium tracking-wide uppercase">Preview</p>
       <p className="text-body" style={style}>
-        The quick brown fox jumps over the lazy dog. This sample text demonstrates how your articles
-        will appear with the current settings. Adjusting the text size, font, and justification can
-        help improve readability based on your preferences.
+        The quick brown fox jumps over the lazy dog. This is how articles will look with these
+        settings, so you can try text sizes and fonts before opening one.
       </p>
     </div>
   );

@@ -90,10 +90,6 @@ export function SettingsSection({
   );
 }
 
-/**
- * The standard settings section heading. Exported for sections whose card
- * content doesn't fit the SettingsSection wrapper.
- */
-export function SettingsSectionHeading({ children }: { children: ReactNode }) {
+function SettingsSectionHeading({ children }: { children: ReactNode }) {
   return <h2 className="ui-text-lg text-body mb-4 font-semibold">{children}</h2>;
 }

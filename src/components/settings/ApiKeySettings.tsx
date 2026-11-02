@@ -19,7 +19,6 @@ import { InlineCode } from "@/components/ui/inline-code";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import {
   AI_PROVIDER_INFO,
-  aiProviderNames,
   SPEECH_PROVIDERS,
   TEXT_AI_PROVIDERS,
   USER_KEY_PROVIDERS,
@@ -356,9 +355,11 @@ export function SummarizationSettings() {
 }
 
 /**
- * Narration text processing model settings.
+ * The model that prepares article text for narration, shown under narration's
+ * "Use AI text processing" switch. Hidden where the server can't store API keys,
+ * since then only the default model is available.
  */
-export function NarrationAiSettings() {
+export function NarrationModelField() {
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const modelsQuery = trpc.narration.listModels.useQuery(undefined, {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -379,33 +380,25 @@ export function NarrationAiSettings() {
     [update]
   );
 
+  if (!preferencesQuery.data?.canConfigureApiKeys) return null;
+
   return (
-    <SettingsSection
-      title="AI Text Processing"
-      description={
-        <>
-          Expands abbreviations and cleans up text before narration reads it aloud. Needs an API key
-          from {aiProviderNames(NARRATION_PROVIDERS)}.
-        </>
-      }
-    >
-      <div>
-        <label htmlFor="narration-model" className="ui-text-sm text-body mb-1.5 block font-medium">
-          Model
-        </label>
-        <FeatureModelPicker
-          id="narration-model"
-          currentModel={currentModel}
-          defaultModelId={defaultModelId}
-          models={models}
-          suggestedModelIds={SUGGESTED_NARRATION_MODELS}
-          isLoading={modelsQuery.isLoading}
-          onChange={handleModelChange}
-        />
-        <p className="ui-text-xs text-muted mt-1.5">
-          Only models that support JSON output are listed.
-        </p>
-      </div>
-    </SettingsSection>
+    <div>
+      <label htmlFor="narration-model" className="ui-text-sm text-body mb-1.5 block font-medium">
+        Text processing model
+      </label>
+      <FeatureModelPicker
+        id="narration-model"
+        currentModel={currentModel}
+        defaultModelId={defaultModelId}
+        models={models}
+        suggestedModelIds={SUGGESTED_NARRATION_MODELS}
+        isLoading={modelsQuery.isLoading}
+        onChange={handleModelChange}
+      />
+      <p className="ui-text-xs text-muted mt-1.5">
+        Only models that support JSON output are listed.
+      </p>
+    </div>
   );
 }

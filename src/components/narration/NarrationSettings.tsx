@@ -25,6 +25,7 @@ import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 import { CloudVoiceSettings } from "./CloudVoiceSettings";
 import { trpc } from "@/lib/trpc/client";
 import { SwitchRow } from "@/components/ui/switch";
+import { NarrationModelField } from "@/components/settings/ApiKeySettings";
 
 // No-op subscribe function for static values (browser capabilities don't change)
 const noopSubscribe = () => () => {};
@@ -381,18 +382,21 @@ export function NarrationSettings() {
 
           {/* Processing Settings - only shown if AI text processing is available */}
           {isAiTextProcessingAvailable && (
-            <SwitchRow
-              id="narration-llm-label"
-              label="Use AI text processing"
-              description="Expand abbreviations and clean up text before reading it aloud."
-              checked={settings.useLlmNormalization}
-              onChange={() =>
-                setSettings((prev) => ({
-                  ...prev,
-                  useLlmNormalization: !prev.useLlmNormalization,
-                }))
-              }
-            />
+            <div className="space-y-4">
+              <SwitchRow
+                id="narration-llm-label"
+                label="Use AI text processing"
+                description="Expand abbreviations and clean up text before reading it aloud."
+                checked={settings.useLlmNormalization}
+                onChange={() =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    useLlmNormalization: !prev.useLlmNormalization,
+                  }))
+                }
+              />
+              {settings.useLlmNormalization && <NarrationModelField />}
+            </div>
           )}
 
           <SwitchRow

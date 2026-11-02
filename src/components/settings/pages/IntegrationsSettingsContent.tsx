@@ -1,8 +1,9 @@
 /**
  * Integrations Settings Content
  *
- * Page for browser extensions, bookmarklets, third-party app APIs, AI
- * assistants, and the Discord bot.
+ * Page for the ways to save articles (browser extensions, bookmarklet, Wallabag
+ * apps, the Discord bot), then other apps that use the account (Google Reader
+ * clients, AI assistants).
  */
 
 "use client";
@@ -16,20 +17,14 @@ import { IntegrationsSettings } from "@/components/settings/IntegrationsSettings
 export default function IntegrationsSettingsContent() {
   return (
     <div className="space-y-8">
-      {/* Save to Lion Reader (Firefox extension + bookmarklet) */}
+      {/* Ways to save articles */}
       <BookmarkletSettings />
-
-      {/* Google Reader API (mobile/desktop client sync) */}
-      <GoogleReaderApiSettings />
-
-      {/* Wallabag API (save articles via mobile app) */}
       <WallabagApiSettings />
-
-      {/* AI Integrations (MCP) */}
-      <IntegrationsSettings />
-
-      {/* Discord Bot */}
       <DiscordBotSettings />
+
+      {/* Other apps using your account */}
+      <GoogleReaderApiSettings />
+      <IntegrationsSettings />
     </div>
   );
 }

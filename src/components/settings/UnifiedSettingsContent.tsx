@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { ClientLink } from "@/components/ui/client-link";
@@ -155,14 +155,6 @@ export function UnifiedSettingsContent() {
   const pathname = usePathname();
   const [query, setQuery] = useState("");
   const isSearching = query.trim() !== "";
-  const navRef = useRef<HTMLUListElement>(null);
-
-  // On phones the tabs are one horizontally scrolling row; keep the current one in view.
-  useEffect(() => {
-    navRef.current
-      ?.querySelector('[aria-current="page"]')
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [pathname, isSearching]);
 
   // Leaving for a settings page (sidebar, a result's page link, back/forward)
   // ends the search — render-time state adjustment, not an effect.
@@ -192,10 +184,8 @@ export function UnifiedSettingsContent() {
       <div className="flex flex-col gap-6 md:flex-row md:gap-8">
         {/* Sidebar Navigation */}
         <nav className="w-full shrink-0 md:w-48">
-          <ul
-            ref={navRef}
-            className="-mx-4 flex scroll-px-4 gap-1 overflow-x-auto px-4 md:mx-0 md:flex-col md:overflow-x-visible md:px-0"
-          >
+          {/* Phones wrap the tabs so every one stays visible. */}
+          <ul className="flex flex-wrap gap-x-1 md:flex-col md:flex-nowrap md:gap-1">
             {isSearching && (
               <li>
                 <span

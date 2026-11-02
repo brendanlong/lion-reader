@@ -80,10 +80,6 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   summaries: dynamic(() => import("./ApiKeySettings").then((m) => m.SummarizationSettings), {
     loading: SectionSkeleton,
   }),
-  "ai-text-processing": dynamic(
-    () => import("./ApiKeySettings").then((m) => m.NarrationAiSettings),
-    { loading: SectionSkeleton }
-  ),
   narration: dynamic(
     () => import("@/components/narration/NarrationSettings").then((m) => m.NarrationSettings),
     { loading: SectionSkeleton }

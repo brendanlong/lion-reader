@@ -15,10 +15,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { SettingsSectionHeading } from "@/components/settings/SettingsSection";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { Card } from "@/components/ui/card";
+import { CardSection } from "@/components/ui/card";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icons";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import type { OpmlFeed } from "@/server/feed/opml";
@@ -54,14 +54,15 @@ type ImportState =
 
 export function OpmlImportExport() {
   return (
-    <section>
-      <SettingsSectionHeading>Import / Export</SettingsSectionHeading>
-      <div className="space-y-6">
-        <ImportSection />
+    <SettingsSection title="Import / Export">
+      <ImportSection />
+      <CardSection>
         <ExportSection />
+      </CardSection>
+      <CardSection>
         <LibraryExportSection />
-      </div>
-    </section>
+      </CardSection>
+    </SettingsSection>
   );
 }
 
@@ -250,7 +251,7 @@ function ImportSection() {
   }, []);
 
   return (
-    <Card>
+    <div>
       <h3 className="ui-text-sm text-body mb-2 font-medium">Import from OPML</h3>
       <p className="ui-text-sm text-muted mb-4">
         Bring your subscriptions over from another RSS reader.
@@ -342,7 +343,7 @@ function ImportSection() {
           onReset={handleReset}
         />
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -531,7 +532,7 @@ function ExportSection() {
   }, [utils.subscriptions.export]);
 
   return (
-    <Card>
+    <div>
       <h3 className="ui-text-sm text-body mb-2 font-medium">Export to OPML</h3>
       <p className="ui-text-sm text-muted mb-4">
         Download your subscriptions to import into another RSS reader.
@@ -541,7 +542,7 @@ function ExportSection() {
         <DownloadIcon className="mr-2 h-4 w-4" />
         Export subscriptions
       </Button>
-    </Card>
+    </div>
   );
 }
 
@@ -552,7 +553,7 @@ function ExportSection() {
 /** A plain link so the browser streams the zip to disk instead of buffering it in the page. */
 function LibraryExportSection() {
   return (
-    <Card>
+    <div>
       <h3 className="ui-text-sm text-body mb-2 font-medium">Export your library</h3>
       <p className="ui-text-sm text-muted mb-4">
         A zip of your saved articles, uploads, newsletters and starred entries, plus a bookmarks
@@ -563,6 +564,6 @@ function LibraryExportSection() {
         <DownloadIcon className="mr-2 h-4 w-4" />
         Export library
       </a>
-    </Card>
+    </div>
   );
 }
