@@ -1,5 +1,22 @@
 package com.lionreader.app.narration
 
+import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.media3.common.DataReader
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.ParsableByteArray
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.FileDataSource
+import androidx.media3.extractor.DefaultExtractorInput
+import androidx.media3.extractor.Extractor
+import androidx.media3.extractor.ExtractorOutput
+import androidx.media3.extractor.PositionHolder
+import androidx.media3.extractor.SeekMap
+import androidx.media3.extractor.TrackOutput
+import androidx.media3.extractor.mp4.FragmentedMp4Extractor
+import androidx.media3.extractor.text.SubtitleParser
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.ENHANCED_VOICES
 import com.lionreader.shared.api.EnhancedVoiceFiles
@@ -9,7 +26,10 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.file.Files
 import java.util.Collections
 import kotlinx.coroutines.Dispatchers
@@ -115,20 +135,93 @@ class EnhancedVoicesTest {
     }
 
     @Test
-    fun adtsHeadersMatchAReferenceEncoders() {
-        // ffmpeg's (`-c:a aac -profile:a aac_low -f adts`, 24 kHz mono) for frames of these sizes.
-        mapOf(
-                297 to "FF F1 58 40 26 1F FC",
-                359 to "FF F1 58 40 2D DF FC",
-                239 to "FF F1 58 40 1E DF FC",
-            )
-            .forEach { (payload, expected) ->
-                assertEquals(
-                    expected,
-                    StreamingAac.adtsHeader(payload, 24_000).joinToString(" ") {
-                        "%02X".format(it)
-                    },
-                )
+    fun streamedSpeechPlaysBackAsWrittenWithItsTiming() {
+        // Pieces of uneven length, as Phonon makes them, over several fragments: each sample's
+        // time comes out where its audio is, and the audio is what went in.
+        val pieces =
+            List(8) { listOf(1920, 37, 5000, 700) }
+                .flatten()
+                .map { n ->
+                    FloatArray(n) { ((it % 200) - 100) / 128f }
+                }
+        val file = File(root, "chunk.mp4")
+        val writer = StreamingFmp4(file, PhononTts.SAMPLE_RATE)
+        pieces.forEach { writer.write(it) }
+        assertTrue("A fragment is out before the end", file.length() > 0)
+        writer.finish(file)
+
+        val samples = extractSamples(file)
+        var frames = 0L
+        for ((timeUs, size) in samples.timesAndSizes) {
+            assertEquals(frames * 1_000_000 / PhononTts.SAMPLE_RATE, timeUs)
+            frames += size / 2
+        }
+        val expected = pieces.flatMap { it.asList() }
+        assertEquals(expected.size.toLong(), frames)
+        val decoded = ByteBuffer.wrap(samples.bytes.toByteArray()).order(ByteOrder.LITTLE_ENDIAN)
+        expected.forEachIndexed { i, sample ->
+            assertEquals("sample $i", (sample * Short.MAX_VALUE).toInt(), decoded.short.toInt())
+        }
+    }
+
+    private class Samples : TrackOutput {
+        val bytes = ByteArrayOutputStream()
+        val timesAndSizes = mutableListOf<Pair<Long, Int>>()
+
+        override fun format(format: Format) {
+            assertEquals(MimeTypes.AUDIO_RAW, format.sampleMimeType)
+            assertEquals(PhononTts.SAMPLE_RATE, format.sampleRate)
+        }
+
+        override fun sampleData(
+            input: DataReader,
+            length: Int,
+            allowEndOfInput: Boolean,
+            sampleDataPart: Int,
+        ): Int {
+            val buffer = ByteArray(length)
+            val read = input.read(buffer, 0, length)
+            if (read > 0) bytes.write(buffer, 0, read)
+            return read
+        }
+
+        override fun sampleData(data: ParsableByteArray, length: Int, sampleDataPart: Int) {
+            val buffer = ByteArray(length)
+            data.readBytes(buffer, 0, length)
+            bytes.write(buffer)
+        }
+
+        override fun sampleMetadata(
+            timeUs: Long,
+            flags: Int,
+            size: Int,
+            offset: Int,
+            cryptoData: TrackOutput.CryptoData?,
+        ) {
+            timesAndSizes += timeUs to size
+        }
+    }
+
+    /** What the player's MP4 extractor reads from [file]. */
+    @OptIn(UnstableApi::class)
+    private fun extractSamples(file: File): Samples {
+        val samples = Samples()
+        val extractor = FragmentedMp4Extractor(SubtitleParser.Factory.UNSUPPORTED)
+        extractor.init(
+            object : ExtractorOutput {
+                override fun track(id: Int, type: Int): TrackOutput = samples
+
+                override fun endTracks() {}
+
+                override fun seekMap(seekMap: SeekMap) {}
             }
+        )
+        val source = FileDataSource()
+        val length = source.open(DataSpec(Uri.fromFile(file)))
+        val input = DefaultExtractorInput(source, 0, length)
+        val position = PositionHolder()
+        while (extractor.read(input, position) != Extractor.RESULT_END_OF_INPUT) Unit
+        source.close()
+        return samples
     }
 }

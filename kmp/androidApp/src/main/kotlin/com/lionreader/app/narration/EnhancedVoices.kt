@@ -1,14 +1,19 @@
 package com.lionreader.app.narration
 
-import android.media.MediaCodec
-import android.media.MediaCodecInfo
-import android.media.MediaFormat
 import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.muxer.BufferInfo
+import androidx.media3.muxer.FragmentedMp4Muxer
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.channels.WritableByteChannel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -18,11 +23,11 @@ import kotlinx.coroutines.launch
 
 /**
  * Enhanced voices: Phonon on this device ([EnhancedVoiceModel]), speaking with the voice [voice].
- * Each chunk streams into an AAC file that plays from its first audio. Phonon makes one chunk at a
- * time, so the next starts as soon as one is done. One the narrator abandons stops at its next
- * piece of audio: before it's handed over, when the narration asking for it is cancelled; after,
- * when the narrator deletes its file, as it does a skipped or played chunk's. One still waiting its
- * turn when narration moves on doesn't start.
+ * Each chunk streams into a file ([StreamingFmp4]) that plays from its first audio. Phonon makes
+ * one chunk at a time, so the next starts as soon as one is done. One the narrator abandons stops
+ * at its next piece of audio: before it's handed over, when the narration asking for it is
+ * cancelled; after, when the narrator deletes its file, as it does a skipped or played chunk's. One
+ * still waiting its turn when narration moves on doesn't start.
  */
 class EnhancedVoices(
     private val model: EnhancedVoiceModel,
@@ -42,8 +47,8 @@ class EnhancedVoices(
                 model.withModel { tts, removed ->
                     if (!caller.isActive) throw CancellationException("Narration moved on")
                     tts.setVoice(voice)
-                    val file = File(dir, "$name.aac")
-                    val writer = StreamingAac(file, PhononTts.SAMPLE_RATE)
+                    val file = File(dir, "$name.mp4")
+                    val writer = StreamingFmp4(file, PhononTts.SAMPLE_RATE)
                     var abandoned = false
                     try {
                         tts.speak(text) { pcm ->
@@ -75,159 +80,84 @@ class EnhancedVoices(
 }
 
 /**
- * Speech encoded to AAC as it's spoken, in ADTS (each frame with a 7-byte header), for the player
- * to read meanwhile ([audio]). A stream that doesn't say how long it is, so the player plays it to
- * its end, as it does cloud voices': a WAV has to give its length up front, and one that claimed
- * the most it could hold played on in silence after the speech, toward that length.
+ * Speech written as it's spoken, as raw 16-bit audio in fragmented MP4, for the player to read
+ * meanwhile ([audio]). The format cloud voices stream in: it doesn't say how long it is, so the
+ * player plays each fragment as it comes and the whole to its end. (A WAV has to give its length up
+ * front, and one that claimed the most it could hold played on in silence after the speech.)
  */
-internal class StreamingAac(file: File, private val sampleRate: Int) {
+@OptIn(UnstableApi::class)
+internal class StreamingFmp4(file: File, private val sampleRate: Int) {
     val audio = StreamedAudio(file)
-    private val out = FileOutputStream(file)
-    private val codec =
-        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
-            configure(
-                MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1).apply {
-                    setInteger(
-                        MediaFormat.KEY_AAC_PROFILE,
-                        MediaCodecInfo.CodecProfileLevel.AACObjectLC,
-                    )
-                    setInteger(MediaFormat.KEY_BIT_RATE, BITRATE)
-                },
-                null,
-                null,
-                MediaCodec.CONFIGURE_FLAG_ENCODE,
+    private val out = FileOutputStream(file).channel
+    private val muxer =
+        FragmentedMp4Muxer.Builder(
+                object : WritableByteChannel by out {
+                    override fun write(src: ByteBuffer): Int =
+                        out.write(src).also { audio.appended(it) }
+                }
             )
-            start()
-        }
-    private val info = MediaCodec.BufferInfo()
+            .setFragmentDurationMs(FRAGMENT_MS)
+            .build()
+    private val track =
+        muxer.addTrack(
+            Format.Builder()
+                .setSampleMimeType(MimeTypes.AUDIO_RAW)
+                .setPcmEncoding(C.ENCODING_PCM_16BIT)
+                .setSampleRate(sampleRate)
+                .setChannelCount(1)
+                .build()
+        )
+    private var pending = newSample()
     private var frames = 0L
 
-    /** Encodes [pcm] (floats in [-1, 1]), handing the player what the encoder has done so far. */
+    /** Adds [pcm] (floats in [-1, 1]). */
     fun write(pcm: FloatArray) {
-        val bytes = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.nativeOrder())
         for (sample in pcm) {
-            bytes.putShort((sample.coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort())
+            pending.putShort((sample.coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort())
+            if (!pending.hasRemaining()) writePending()
         }
-        bytes.flip()
-        while (bytes.hasRemaining()) {
-            val index = codec.dequeueInputBuffer(TIMEOUT_US)
-            if (index >= 0) {
-                val input = codec.getInputBuffer(index)!!
-                input.clear()
-                val count = minOf(input.remaining(), bytes.remaining()) and 1.inv()
-                val slice = bytes.duplicate().apply { limit(position() + count) }
-                input.put(slice)
-                bytes.position(bytes.position() + count)
-                codec.queueInputBuffer(index, 0, count, frames * 1_000_000 / sampleRate, 0)
-                frames += count / 2
-            }
-            drain(endOfStream = false)
-        }
-        drain(endOfStream = false)
     }
 
-    /** Encodes what's left and ends the stream. */
+    /** Writes what's left and ends the stream. */
     fun finish(to: File) {
-        var queued = false
-        while (!queued) {
-            val index = codec.dequeueInputBuffer(TIMEOUT_US)
-            if (index >= 0) {
-                val input = codec.getInputBuffer(index)!!
-                input.clear()
-                val silence = minOf(input.capacity(), SILENCE_BYTES)
-                input.put(ByteArray(silence))
-                codec.queueInputBuffer(
-                    index,
-                    0,
-                    silence,
-                    frames * 1_000_000 / sampleRate,
-                    MediaCodec.BUFFER_FLAG_END_OF_STREAM,
-                )
-                frames += silence / 2
-                queued = true
-            }
-            drain(endOfStream = false)
-        }
-        drain(endOfStream = true)
-        codec.release()
+        if (pending.position() > 0) writePending()
+        // Gives the last sample its length: the muxer otherwise repeats the one before's.
+        muxer.writeSampleData(
+            track,
+            ByteBuffer.allocateDirect(0),
+            BufferInfo(timeUs(), 0, C.BUFFER_FLAG_END_OF_STREAM),
+        )
+        muxer.close()
         out.close()
         audio.finish(to)
     }
 
     fun fail(cause: Exception) {
         audio.fail(cause)
-        codec.release()
         out.close()
     }
 
-    /** Writes out the encoded frames there are; with [endOfStream], until the last. */
-    private fun drain(endOfStream: Boolean) {
-        while (true) {
-            val index = codec.dequeueOutputBuffer(info, if (endOfStream) TIMEOUT_US else 0)
-            if (index == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                if (!endOfStream) return
-                continue
-            }
-            if (index < 0) continue // The output format, which ADTS headers carry instead.
-            val config = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-            if (!config && info.size > 0) {
-                val frame = ByteArray(info.size)
-                codec.getOutputBuffer(index)!!.apply { position(info.offset) }.get(frame)
-                out.write(adtsHeader(frame.size, sampleRate))
-                out.write(frame)
-                audio.appended(ADTS_HEADER_BYTES + frame.size)
-            }
-            val last = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-            codec.releaseOutputBuffer(index, false)
-            if (last) return
-        }
+    private fun writePending() {
+        val size = pending.position()
+        pending.flip()
+        muxer.writeSampleData(track, pending, BufferInfo(timeUs(), size, C.BUFFER_FLAG_KEY_FRAME))
+        frames += size / 2
+        pending = newSample()
     }
 
-    companion object {
-        /** Plenty for one voice. */
-        private const val BITRATE = 48_000
-        private const val TIMEOUT_US = 10_000L
-        private const val ADTS_HEADER_BYTES = 7
+    private fun timeUs() = frames * 1_000_000 / sampleRate
+
+    private fun newSample() =
+        ByteBuffer.allocateDirect(sampleRate * SAMPLE_MS / 1000 * 2).order(ByteOrder.LITTLE_ENDIAN)
+
+    private companion object {
+        /** How much the player waits for before it can play the start of a chunk. */
+        const val FRAGMENT_MS = 250L
 
         /**
-         * One AAC frame of silence (1024 samples) carries the end of the stream: the platform's
-         * encoder, given the end in an empty buffer after part of a frame, never signalled it.
+         * Samples are all this long: the muxer takes each one's length from when the next starts,
+         * and the last in a fragment's from the one before it.
          */
-        private const val SILENCE_BYTES = 1024 * 2
-
-        /** The AAC sampling frequency indexes (ISO 14496-3), by rate. */
-        private val FREQUENCY_INDEX =
-            listOf(
-                96000,
-                88200,
-                64000,
-                48000,
-                44100,
-                32000,
-                24000,
-                22050,
-                16000,
-                12000,
-                11025,
-                8000,
-            )
-
-        /** The ADTS header of a mono AAC-LC frame of [payload] bytes, without a CRC. */
-        fun adtsHeader(payload: Int, sampleRate: Int): ByteArray {
-            val length = payload + ADTS_HEADER_BYTES
-            val frequency = FREQUENCY_INDEX.indexOf(sampleRate)
-            require(frequency >= 0) { "AAC has no rate $sampleRate" }
-            val profile = 1 // AAC-LC, less one
-            val channels = 1
-            return byteArrayOf(
-                0xFF.toByte(),
-                0xF1.toByte(), // MPEG-4, layer 0, no CRC
-                ((profile shl 6) or (frequency shl 2) or (channels shr 2)).toByte(),
-                (((channels and 3) shl 6) or (length shr 11)).toByte(),
-                ((length shr 3) and 0xFF).toByte(),
-                (((length and 7) shl 5) or 0x1F).toByte(), // and the buffer fullness: variable
-                0xFC.toByte(),
-            )
-        }
+        const val SAMPLE_MS = 20
     }
 }
