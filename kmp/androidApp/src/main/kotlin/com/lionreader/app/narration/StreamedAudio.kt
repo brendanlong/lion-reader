@@ -31,6 +31,9 @@ class StreamedAudio(file: File) {
     /** Where the audio is: the file being written, then wherever [finish] moved it. */
     private var file: File = file
 
+    internal val currentFile: File
+        get() = synchronized(lock) { file }
+
     val uri: Uri = Uri.Builder().scheme(SCHEME).authority(UUID.randomUUID().toString()).build()
 
     init {
@@ -111,7 +114,7 @@ class StreamedAudio(file: File) {
 }
 
 /** A stream that stopped partway: the chunk has to be heard again from its start. */
-class SpeechStreamBroken(cause: Exception) : IOException("The cloud voice stopped partway", cause)
+class SpeechStreamBroken(cause: Exception) : IOException("The voice stopped partway", cause)
 
 /**
  * What the narration player reads: [StreamedAudio] by its uri (still arriving, or the file it ended

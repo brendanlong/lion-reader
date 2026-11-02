@@ -645,7 +645,13 @@ class Narrator(
                 // Drop what's well behind, so skipping back a little stays instant.
                 // Only our own files: an engine's cache stays.
                 while (player.currentMediaItemIndex > KEEP_BEHIND) {
-                    val file = player.getMediaItemAt(0).localConfiguration?.uri?.path?.let(::File)
+                    val uri = player.getMediaItemAt(0).localConfiguration?.uri
+                    val file =
+                        if (uri?.scheme == StreamedAudio.SCHEME) {
+                            StreamedAudio.forUri(uri)?.currentFile
+                        } else {
+                            uri?.path?.let(::File)
+                        }
                     if (file?.parentFile == dir) file.delete()
                     player.removeMediaItem(0)
                 }

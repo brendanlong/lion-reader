@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.lionreader.shared.api.CloudSpeechPause
+import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.sync.RetentionPolicy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -52,6 +53,8 @@ enum class SyncInterval(val minutes: Long?, val label: String) {
 enum class NarrationEngine {
     DEVICE,
     CLOUD,
+    /** Phonon, on this device, once its model is downloaded. */
+    ENHANCED,
 }
 
 /** Per-device settings, like the web's localStorage ones. */
@@ -98,6 +101,8 @@ data class AppSettings(
     val cloudVoice: String? = null,
     /** Silence after each chunk of cloud speech. */
     val cloudVoicePauseSeconds: Float = CloudSpeechPause.DEFAULT_SECONDS,
+    /** The enhanced voice's id (the web's); null for the default (see [resolveEnhancedVoice]). */
+    val enhancedVoice: String? = null,
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
@@ -165,6 +170,9 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         Stored(stringPreferencesKey("cloud_voice"), { cloudVoice }) { copy(cloudVoice = it) },
         Stored(floatPreferencesKey("cloud_voice_pause_seconds"), { cloudVoicePauseSeconds }) {
             copy(cloudVoicePauseSeconds = it)
+        },
+        Stored(stringPreferencesKey("enhanced_voice"), { enhancedVoice }) {
+            copy(enhancedVoice = it)
         },
     )
 

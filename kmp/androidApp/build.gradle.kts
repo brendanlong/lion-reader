@@ -1,5 +1,6 @@
 import com.android.build.api.variant.HostTestBuilder
 import java.security.KeyStore
+import org.gradle.api.tasks.Exec
 
 plugins {
     // AGP 9 compiles Kotlin itself (built-in Kotlin), so no kotlin-android plugin.
@@ -59,6 +60,9 @@ android {
         }
     }
 
+    // JNA (enhanced voices) ships ABIs Android no longer runs.
+    packaging { jniLibs.excludes += listOf("lib/armeabi/**", "lib/mips/**", "lib/mips64/**") }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -93,17 +97,55 @@ class RobolectricRepo(@get:Internal val dir: String) : CommandLineArgumentProvid
     override fun asArguments(): List<String> = listOf("-Dmaven.repo.local=$dir")
 }
 
+/** Phonon's native library for enhanced voices, built from Gradium's source by phonon/build.sh. */
+abstract class BuildPhonon : Exec() {
+    @get:OutputDirectory abstract val jniLibs: DirectoryProperty
+}
+
+val buildPhonon =
+    tasks.register<BuildPhonon>("buildPhonon") {
+        val script = rootProject.file("phonon/build.sh")
+        val minSdk = libs.versions.androidMinSdk.get()
+        inputs.file(script)
+        // The Rust it builds with.
+        inputs.file(rootProject.file("../rust-toolchain.toml"))
+        inputs.property("minSdk", minSdk)
+        jniLibs.set(layout.buildDirectory.dir("phonon/jniLibs"))
+        val work = layout.buildDirectory.dir("phonon/work").get().asFile
+        argumentProviders.add { listOf(script.path, jniLibs.get().asFile.path, work.path, minSdk) }
+        executable = "bash"
+        // GitHub's CodeQL default setup builds the app on a runner without cargo-ndk, and only
+        // analyzes the Kotlin, so it does without the library.
+        val codeql = providers.environmentVariable("CODEQL_EXTRACTOR_JAVA_ROOT")
+        onlyIf("not under CodeQL") { !codeql.isPresent }
+    }
+
 androidComponents {
     // Compose UI tests need ui-test-manifest, which is debug-only; running the
     // same tests again against release adds time and nothing else.
     beforeVariants(selector().withBuildType("release")) { variant ->
         variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
     }
+    // The release workflow builds the library in a job of its own, without the signing key
+    // (building it runs every dependency's build script), and passes it in here.
+    val prebuiltPhonon = providers.gradleProperty("phononJniLibs")
+    onVariants { variant ->
+        if (prebuiltPhonon.isPresent) {
+            variant.sources.jniLibs?.addStaticSourceDirectory(prebuiltPhonon.get())
+        } else {
+            variant.sources.jniLibs?.addGeneratedSourceDirectory(buildPhonon, BuildPhonon::jniLibs)
+        }
+    }
+    // x86_64 is for emulators; on every phone it would be 8 MB of nothing.
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.add("lib/x86_64/libptts_ffi.so")
+    }
 }
 
 dependencies {
     implementation(project(":shared"))
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.jna) { artifact { type = "aar" } }
     implementation(libs.sqldelight.android.driver)
 
     implementation(platform(libs.androidx.compose.bom))
