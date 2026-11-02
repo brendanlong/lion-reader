@@ -1,28 +1,40 @@
 /**
  * Enhanced (Phonon) voices in the browser: each sentence is synthesized on the
- * device, encoded to fragmented MP4 here (see `./audio-encoding`), and played
- * through a {@link MediaSourcePlayer} like cloud voices are.
+ * device, encoded to fragmented MP4 as it's generated (see `./audio-encoding`),
+ * and played through a {@link MediaSourcePlayer} like cloud voices are, from
+ * its first fragment.
  *
  * @module narration/phonon-speech
  */
 
-import { loadSegmentEncoder, withTrailingSilence, type SegmentEncoder } from "./audio-encoding";
+import { loadSpeechEncoder, type SpeechEncoder } from "./audio-encoding";
 import { getMediaSourceClass, MediaSourcePlayer, UNSUPPORTED_MESSAGE } from "./media-source-player";
 import { splitIntoSentenceChunks } from "./speech-chunks";
-import { synthesizePhonon } from "./phonon-tts";
+import { streamPhonon } from "./phonon-tts";
 
 export interface PhononVoice {
   voice: string;
   sentenceGapSeconds: number;
 }
 
+/** `speech`, then `seconds` of silence. */
+async function* withTrailingSilence(
+  speech: AsyncIterable<Float32Array>,
+  sampleRate: number,
+  seconds: number
+): AsyncGenerator<Float32Array> {
+  yield* speech;
+  const silence = Math.round(seconds * sampleRate);
+  if (silence > 0) yield new Float32Array(silence);
+}
+
 /** A player for Phonon voices; `voice` is read for each sentence it synthesizes. */
 export function createPhononSpeechPlayer(voice: () => PhononVoice): MediaSourcePlayer {
-  let encoder: Promise<SegmentEncoder> | null = null;
+  let encoder: Promise<SpeechEncoder> | null = null;
   const getEncoder = () => {
     encoder ??= (async () => {
       const mediaSource = getMediaSourceClass();
-      const loaded = mediaSource ? await loadSegmentEncoder(mediaSource) : null;
+      const loaded = mediaSource ? await loadSpeechEncoder(mediaSource) : null;
       if (!loaded) throw new Error(UNSUPPORTED_MESSAGE);
       return loaded;
     })().catch((error: unknown) => {
@@ -35,8 +47,9 @@ export function createPhononSpeechPlayer(voice: () => PhononVoice): MediaSourceP
   return new MediaSourcePlayer({
     synthesize: async function* (text, signal) {
       const { voice: voiceId, sentenceGapSeconds } = voice();
-      const audio = await synthesizePhonon(text, voiceId, signal);
-      yield await (await getEncoder()).encode(withTrailingSilence(audio, sentenceGapSeconds));
+      const speech = await streamPhonon(text, voiceId, signal);
+      const pcm = withTrailingSilence(speech, speech.sampleRate, sentenceGapSeconds);
+      yield* (await getEncoder()).encode(pcm, speech.sampleRate);
     },
     // The encoder picks the format: AAC where it can, else Opus.
     loadMimeType: async () => (await getEncoder()).mimeType,

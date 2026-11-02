@@ -1,8 +1,8 @@
 /**
- * Turns speech synthesized in the browser (Phonon) into self-contained
- * fragmented-MP4 segments that {@link MediaSourcePlayer} appends to one Media
- * Source Extensions stream. Cloud voices arrive from the server already in
- * that form, as AAC.
+ * Turns speech synthesized in the browser (Phonon) into fragmented MP4 as it's
+ * generated, which {@link MediaSourcePlayer} appends to one Media Source
+ * Extensions stream as it arrives. Cloud voices arrive from the server already
+ * in that form, as AAC.
  *
  * AAC in MP4 is the only format every MSE implementation accepts — iOS's
  * `ManagedMediaSource` refuses MP3 and Opus-in-MP4. We prefer the browser's
@@ -19,21 +19,23 @@
 import type { AudioCodec } from "mediabunny";
 import { AAC_MIME_TYPE } from "./media-source-player";
 
-/** Mono speech samples in [-1, 1]. */
-export interface PcmAudio {
-  samples: Float32Array;
-  sampleRate: number;
-}
-
-export interface SegmentEncoder {
+export interface SpeechEncoder {
   /** MIME type (with codec) for `MediaSource.addSourceBuffer`. */
   mimeType: string;
-  /** Encodes one chunk as a complete fragmented MP4 (init segment + fragments). */
-  encode(audio: PcmAudio): Promise<Uint8Array>;
+  /**
+   * Encodes one chunk of mono speech (samples in [-1, 1]) as one fragmented
+   * MP4, yielding its bytes as the encoder writes them: the init segment, then
+   * a fragment per {@link FRAGMENT_SECONDS} of audio, so playback can start
+   * long before the chunk is finished.
+   */
+  encode(pcm: AsyncIterable<Float32Array>, sampleRate: number): AsyncGenerator<Uint8Array>;
 }
 
 /** Plenty for mono speech; keeps an hour of narration around 20 MB. */
 const BITRATE = 48_000;
+
+/** Short, so a chunk starts playing soon after its first audio is generated. */
+const FRAGMENT_SECONDS = 0.25;
 
 interface Candidate {
   codec: AudioCodec;
@@ -60,9 +62,9 @@ const OPUS: Candidate = {
  * Picks the best format this browser can both encode and play through MSE.
  * Resolves null when there is none.
  */
-export async function loadSegmentEncoder(
+export async function loadSpeechEncoder(
   mediaSource: typeof MediaSource
-): Promise<SegmentEncoder | null> {
+): Promise<SpeechEncoder | null> {
   const mediabunny = await import("mediabunny");
   const canPlay = (candidate: Candidate) => mediaSource.isTypeSupported(candidate.mimeType);
 
@@ -84,18 +86,40 @@ export async function loadSegmentEncoder(
   return createEncoder(mediabunny, AAC, AAC.sampleRates[0]);
 }
 
+function concat(pieces: Uint8Array[]): Uint8Array {
+  if (pieces.length === 1) return pieces[0];
+  const joined = new Uint8Array(pieces.reduce((length, piece) => length + piece.length, 0));
+  let offset = 0;
+  for (const piece of pieces) {
+    joined.set(piece, offset);
+    offset += piece.length;
+  }
+  return joined;
+}
+
 function createEncoder(
   mediabunny: typeof import("mediabunny"),
   candidate: Candidate,
   sampleRate: number
-): SegmentEncoder {
+): SpeechEncoder {
   return {
     mimeType: candidate.mimeType,
-    async encode(audio: PcmAudio): Promise<Uint8Array> {
-      const target = new mediabunny.BufferTarget();
+    async *encode(pcm, pcmSampleRate) {
+      const written: Uint8Array[] = [];
+      let wake: (() => void) | null = null;
       const output = new mediabunny.Output({
-        format: new mediabunny.Mp4OutputFormat({ fastStart: "fragmented" }),
-        target,
+        format: new mediabunny.Mp4OutputFormat({
+          fastStart: "fragmented",
+          minimumFragmentDuration: FRAGMENT_SECONDS,
+        }),
+        target: new mediabunny.StreamTarget(
+          new WritableStream({
+            write: (chunk) => {
+              written.push(chunk.data);
+              wake?.();
+            },
+          })
+        ),
       });
       const source = new mediabunny.AudioSampleSource({
         codec: candidate.codec,
@@ -104,28 +128,45 @@ function createEncoder(
         transform: { sampleRate, numberOfChannels: 1 },
       });
       output.addAudioTrack(source);
-      await output.start();
-      const sample = new mediabunny.AudioSample({
-        data: audio.samples,
-        format: "f32",
-        numberOfChannels: 1,
-        sampleRate: audio.sampleRate,
-        timestamp: 0,
-      });
+
+      let finished = false;
+      let failure: unknown = null;
+      const feeding = (async () => {
+        await output.start();
+        let timestamp = 0;
+        for await (const samples of pcm) {
+          const sample = new mediabunny.AudioSample({
+            data: samples,
+            format: "f32",
+            numberOfChannels: 1,
+            sampleRate: pcmSampleRate,
+            timestamp,
+          });
+          timestamp += samples.length / pcmSampleRate;
+          try {
+            await source.add(sample);
+          } finally {
+            sample.close();
+          }
+        }
+        await output.finalize();
+      })().then(
+        () => (finished = true),
+        (error: unknown) => (failure = error)
+      );
+      void feeding.finally(() => wake?.());
+
       try {
-        await source.add(sample);
+        for (;;) {
+          if (written.length > 0) yield concat(written.splice(0));
+          else if (failure) throw failure;
+          else if (finished) return;
+          else await new Promise<void>((resolve) => (wake = resolve));
+          wake = null;
+        }
       } finally {
-        sample.close();
+        if (!finished && !failure) void output.cancel().catch(() => {});
       }
-      await output.finalize();
-      if (!target.buffer) throw new Error("Audio encoder produced no output");
-      return new Uint8Array(target.buffer);
     },
   };
-}
-
-export function withTrailingSilence(audio: PcmAudio, seconds: number): PcmAudio {
-  const samples = new Float32Array(audio.samples.length + Math.round(seconds * audio.sampleRate));
-  samples.set(audio.samples);
-  return { samples, sampleRate: audio.sampleRate };
 }
