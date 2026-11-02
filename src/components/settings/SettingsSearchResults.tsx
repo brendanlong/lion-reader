@@ -58,6 +58,9 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   "entry-list": dynamic(() => import("./AppearanceSettings").then((m) => m.EntryListSettings), {
     loading: SectionSkeleton,
   }),
+  "mark-read": dynamic(() => import("./AppearanceSettings").then((m) => m.MarkReadSettings), {
+    loading: SectionSkeleton,
+  }),
   tags: dynamic(() => import("./TagManagement").then((m) => m.TagManagement), {
     loading: SectionSkeleton,
   }),

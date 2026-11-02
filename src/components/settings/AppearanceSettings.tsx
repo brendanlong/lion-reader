@@ -6,6 +6,7 @@
  * - Text size for entry content
  * - Text justification for entry content
  * - Font family for entry content
+ * - When an opened article is marked read
  */
 
 "use client";
@@ -15,6 +16,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useIsEInkDisplay } from "@/lib/theme/eink";
 import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
 import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
+import { useMarkReadOn, type MarkReadOn } from "@/lib/hooks/useMarkReadOn";
 import type {
   TextSize,
   TextJustification,
@@ -112,6 +114,21 @@ const LIST_DENSITY_OPTIONS: { value: ListDensity; label: string }[] = [
   { value: "compact", label: "Compact" },
 ];
 
+const MARK_READ_ON_OPTIONS: { value: MarkReadOn; label: string; description: string }[] = [
+  {
+    value: "opened",
+    label: "Opened",
+    description: "Articles are marked read as soon as you open them.",
+  },
+  {
+    value: "finished",
+    label: "Finished",
+    description:
+      "Articles are marked read once you've scrolled to the end of the text, or narration has read all of it.",
+  },
+  { value: "never", label: "Never", description: "Articles are only marked read when you say so." },
+];
+
 /**
  * Preview text for demonstrating text appearance settings.
  * Uses the same styling as actual article content.
@@ -137,6 +154,7 @@ export function AppearanceSettings() {
       <ThemeSettings />
       <ArticleTextSettings />
       <EntryListSettings />
+      <MarkReadSettings />
     </div>
   );
 }
@@ -227,6 +245,24 @@ export function EntryListSettings() {
         value={settings.listDensity}
         options={LIST_DENSITY_OPTIONS}
         onChange={(listDensity) => updateSettings({ listDensity })}
+      />
+    </SettingsSection>
+  );
+}
+
+export function MarkReadSettings() {
+  const [markReadOn, setMarkReadOn] = useMarkReadOn();
+
+  return (
+    <SettingsSection title="Mark as Read" description="Applies to this browser only.">
+      <OptionGroup
+        label="Mark Articles Read When"
+        description={
+          MARK_READ_ON_OPTIONS.find((option) => option.value === markReadOn)?.description
+        }
+        value={markReadOn}
+        options={MARK_READ_ON_OPTIONS}
+        onChange={setMarkReadOn}
       />
     </SettingsSection>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { createStoredBoolean } from "@/lib/stored-boolean";
+import { createStoredBoolean } from "@/lib/stored-preference";
 
 /**
  * Whether the sidebar shows only tags/subscriptions with unread entries

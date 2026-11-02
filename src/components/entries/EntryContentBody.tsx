@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
@@ -17,6 +17,7 @@ import { useEntryNarration } from "@/components/narration/useEntryNarration";
 import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
+import { useOnScreen } from "@/lib/hooks/useOnScreen";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { SHORTCUTS } from "@/components/keyboard/shortcuts";
@@ -119,6 +120,11 @@ export interface EntryContentBodyProps {
   beforeContent?: ReactNode;
   /** Host-supplied content rendered after the body, before the footer */
   afterContent?: ReactNode;
+  /**
+   * Called once the article is finished: its last line is on screen, or
+   * narration has said all of its text. Again on each later finish.
+   */
+  onFinished?: () => void;
 }
 
 /**
@@ -170,6 +176,7 @@ export function EntryContentBody({
   prerecordedNarration,
   beforeContent,
   afterContent,
+  onFinished,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
@@ -206,6 +213,17 @@ export function EntryContentBody({
     continued: Boolean(narrationContinued && !isAwaitingFullContent),
     next: onSwipeNext && nextEntryId ? { id: nextEntryId, open: onSwipeNext } : undefined,
   });
+
+  // Not the feed's excerpt while the full article is on its way.
+  const contentEndRef = useRef<HTMLDivElement>(null);
+  const contentEndOnScreen = useOnScreen(
+    contentEndRef,
+    Boolean(onFinished) && !isAwaitingFullContent
+  );
+  const finished = contentEndOnScreen || narration.narratedToEnd;
+  useEffect(() => {
+    if (finished) onFinished?.();
+  }, [finished, onFinished]);
 
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
@@ -261,6 +279,7 @@ export function EntryContentBody({
         footerLinkDomain={footerLinkDomain}
         unsubscribeUrl={unsubscribeUrl}
         contentRef={contentRef}
+        contentEndRef={contentEndRef}
         onContentClick={narration.onContentClick}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}

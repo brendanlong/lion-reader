@@ -115,6 +115,13 @@ export const SETTINGS_SEARCH_INDEX = [
     keywords: ["list density", "compact", "comfortable", "spacing", "preview", "snippet", "cards"],
   },
   {
+    id: "mark-read",
+    page: "/settings/appearance",
+    title: "Mark as Read",
+    description: "Mark articles read when they're opened, when they're finished, or never.",
+    keywords: ["auto mark read", "automatically", "unread", "opened", "finished", "scroll", "end"],
+  },
+  {
     id: "tags",
     page: "/settings/subscriptions",
     title: "Tags",

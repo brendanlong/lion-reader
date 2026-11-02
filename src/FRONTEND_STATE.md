@@ -294,7 +294,7 @@ nothing is written to a cache, so a failure has nothing to roll back.
 
 ### Auto-mark-read (EntryContent)
 
-Opening an entry fires `markRead` once, as soon as `entries.get` data is available (straight from cache when a prefetch warmed it, otherwise when the fetch lands) — even for an already-read entry, so its `readChangedAt` moves it to the top of Recently Read. The optimistic update shows read state instantly, and the `updatedAt` guard resolves it against any `entries.get` fetch still in flight.
+Each opening of an entry fires `markRead` at most once, when the per-device mark-read setting (`useMarkReadOn`) says: with "opened", as soon as `entries.get` data is available (straight from cache when a prefetch warmed it, otherwise when the fetch lands); with "finished", once the content's end is on screen in a foreground tab or narration reaches "End of article."; with "never", not at all. It fires even for an already-read entry, so its `readChangedAt` moves it to the top of Recently Read. The optimistic update shows read state instantly, and the `updatedAt` guard resolves it against any `entries.get` fetch still in flight.
 
 ## Mutation Response Shapes
 

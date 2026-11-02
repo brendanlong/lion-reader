@@ -74,6 +74,8 @@ interface EntryNarration {
   highlightStyles: ReactNode;
   /** For the sticky controls, once the engine has loaded. */
   floatingControls: ReactNode;
+  /** Narration has said all of the article's own text: it's on "End of article." or after. */
+  narratedToEnd: boolean;
 }
 
 /**
@@ -239,5 +241,7 @@ export function useEntryNarration({
       />
     ),
     floatingControls: narration ? <FloatingNarrationControls narration={narration} /> : undefined,
+    // The closing paragraphs are the only ones with no element (`withEndOfArticle`).
+    narratedToEnd: isNarrationActive && narrationState.currentParagraph === -1,
   };
 }

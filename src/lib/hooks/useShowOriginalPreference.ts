@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { createStoredBoolean } from "@/lib/stored-boolean";
+import { createStoredBoolean } from "@/lib/stored-preference";
 
 type StoredBoolean = ReturnType<typeof createStoredBoolean>;
 
