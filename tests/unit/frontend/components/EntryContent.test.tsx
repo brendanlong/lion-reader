@@ -6,10 +6,11 @@
  * Component integration tests for EntryContent.
  *
  * EntryContent fetches a single entry via `entries.get` (non-suspending query
- * with an inline fallback) and auto-marks it read on mount. These tests drive
- * the real tRPC wiring through the mock-link harness:
+ * with an inline fallback) and auto-marks it read as the mark-read setting
+ * says. These tests drive the real tRPC wiring through the mock-link harness:
  *   - the entry title/content render from the `entries.get` response,
- *   - the entry is auto-marked read via `entries.markRead`,
+ *   - the entry is auto-marked read via `entries.markRead` (on open, once
+ *     finished, or never),
  *   - a query error surfaces via the ErrorBoundary.
  */
 
@@ -21,6 +22,8 @@ import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
+import { useMarkReadOn, type MarkReadOn } from "@/lib/hooks/useMarkReadOn";
+import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
 import {
   renderWithTrpc,
   stubMemoryLocalStorage,
@@ -245,6 +248,166 @@ describe("EntryContent", () => {
   });
 });
 
+/** Sets the mark-read setting for one test. */
+function setMarkReadOn(value: MarkReadOn) {
+  const { result } = renderHook(() => useMarkReadOn());
+  act(() => result.current[1](value));
+  onTestFinished(() => act(() => result.current[1]("opened")));
+}
+
+/** IntersectionObservers whose targets the test moves into and out of view. */
+function stubIntersectionObservers() {
+  const observers = new Set<{ callback: IntersectionObserverCallback; targets: Set<Element> }>();
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      private readonly entry: { callback: IntersectionObserverCallback; targets: Set<Element> };
+      constructor(callback: IntersectionObserverCallback) {
+        this.entry = { callback, targets: new Set() };
+        observers.add(this.entry);
+      }
+      observe(target: Element) {
+        this.entry.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.entry.targets.delete(target);
+      }
+      disconnect() {
+        observers.delete(this.entry);
+      }
+      takeRecords() {
+        return [];
+      }
+    }
+  );
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+  /** Every observed element after the article's content comes into view. */
+  return function scrollToEnd() {
+    const content = document.querySelector(".reader-prose")!;
+    act(() => {
+      for (const { callback, targets } of observers) {
+        const after = [...targets].filter(
+          (t) => content.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+        if (after.length === 0) continue;
+        callback(
+          after.map((target) => ({ target, isIntersecting: true }) as IntersectionObserverEntry),
+          {} as IntersectionObserver
+        );
+      }
+    });
+  };
+}
+
+describe("EntryContent mark-read setting", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubMemoryLocalStorage();
+  });
+
+  it("never marks the entry read by itself with Never", async () => {
+    setMarkReadOn("never");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByText("Cleaned body content here.");
+
+    scrollToEnd();
+
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+  });
+
+  it("marks the entry read once its end is on screen with Finished, and only once", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByText("Cleaned body content here.");
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+
+    scrollToEnd();
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    expect(callsFor("entries.markRead")[0].input).toMatchObject({
+      entries: [{ id: "entry-1" }],
+      read: true,
+    });
+
+    // Marked unread, it stays unread when the end comes into view again.
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark as unread" })[0]);
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
+    scrollToEnd();
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(2);
+  });
+
+  it("with Finished, marks nothing after the user sets the read state themselves", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByText("Cleaned body content here.");
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark as read" })[0]);
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark as unread" })[0]);
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
+
+    scrollToEnd();
+
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(2);
+  });
+
+  it("with Finished, waits for an image in view to load before counting the end", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(
+      <EntryContent entryId="entry-1" />,
+      baseHandlers({
+        "entries.get": () => ({
+          entry: createEntry({
+            contentCleaned:
+              '<p>Cleaned body content here.</p><img src="https://example.com/a.png">',
+          }),
+        }),
+      })
+    );
+    await screen.findByText("Cleaned body content here.");
+    const image = document.querySelector(".reader-prose img")!;
+    let complete = false;
+    Object.defineProperty(image, "complete", { get: () => complete });
+
+    scrollToEnd();
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+
+    complete = true;
+    act(() => {
+      image.dispatchEvent(new Event("load"));
+    });
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+  });
+
+  it("doesn't count the end as seen while the tab is in the background", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    onTestFinished(() => visibility.mockRestore());
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByText("Cleaned body content here.");
+
+    scrollToEnd();
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+
+    visibility.mockReturnValue("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+  });
+});
+
 describe("EntryContent summaries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -352,6 +515,42 @@ describe("EntryContent click-to-seek narration", () => {
     await waitFor(() => expect(lastSpoken()).toBe("First"));
     return within(document.querySelector(".reader-prose") as HTMLElement);
   }
+
+  it("marks the entry read with Finished once narration has said all of its text", async () => {
+    setMarkReadOn("finished");
+    const { callsFor } = renderEntryContent(
+      <EntryContent entryId="entry-1" />,
+      baseHandlers({
+        "entries.get": () => ({
+          entry: createEntry({ contentCleaned: "<p>First</p><p>Last</p>" }),
+        }),
+      })
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(lastSpoken()).toBe("First"));
+    const finishUtterance = () =>
+      act(() => (speak.mock.lastCall?.[0] as { onend: () => void }).onend());
+
+    finishUtterance();
+    await waitFor(() => expect(lastSpoken()).toBe("Last"));
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+
+    finishUtterance();
+    await waitFor(() => expect(lastSpoken()).toBe(END_OF_ARTICLE));
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+  });
+
+  it("with Finished, doesn't count the end on screen while narration plays", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(speak).toHaveBeenCalled());
+
+    scrollToEnd();
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+  });
 
   it("narrates from the clicked paragraph", async () => {
     const content = await renderAndStartNarration();

@@ -1,5 +1,7 @@
 package com.lionreader.shared.narration
 
+import com.lionreader.shared.api.NarrationCues
+
 // The narrator's decisions, apart from the player and the coroutines they steer, so each
 // platform's narrator makes the same ones.
 
@@ -49,19 +51,31 @@ fun isWaiting(playing: Boolean, silent: Boolean, player: PlayerSnapshot?): Boole
     }
 
 /**
- * [state] with what follows from it and the rest: whether it's [waiting][isWaiting], and which ways
- * it can skip among the [spoken] paragraphs.
+ * Whether narration at [paragraph] of an article's [paragraphs] has said all of the article's own
+ * text: it's on the "End of article." the reader's narration script ends them with, or after.
+ */
+fun narratedToEnd(paragraphs: List<String>?, paragraph: Int?): Boolean {
+    val end = paragraphs?.lastIndexOf(NarrationCues.END_OF_ARTICLE) ?: return false
+    return end >= 0 && paragraph != null && paragraph >= end
+}
+
+/**
+ * [state] with what follows from it and the rest: whether it's [waiting][isWaiting], which ways it
+ * can skip among the [spoken] paragraphs, and whether it has [narratedToEnd] the article's
+ * [paragraphs].
  */
 fun derive(
     state: NarrationState,
     spoken: List<Int>?,
     silent: Boolean,
     player: PlayerSnapshot?,
+    paragraphs: List<String>? = null,
 ): NarrationState =
     state.copy(
         waiting = isWaiting(state.playing, silent, player),
         canSkipBack = spoken != null && paragraphAfter(spoken, state.paragraph, -1) != null,
         canSkipForward = spoken != null && paragraphAfter(spoken, state.paragraph, 1) != null,
+        narratedToEnd = narratedToEnd(paragraphs, state.paragraph),
     )
 
 /**

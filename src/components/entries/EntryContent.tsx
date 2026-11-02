@@ -19,7 +19,8 @@ import { useFullContent } from "@/lib/hooks/useFullContent";
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
 import { showOriginalKey, useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
 import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
-import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
+import { useCanRenderFromCache, useIsHydrated } from "@/lib/hooks/useIsHydrated";
+import { useMarkReadOn } from "@/lib/hooks/useMarkReadOn";
 import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -86,8 +87,12 @@ function EntryContentInner({
   // hydration we render a deterministic skeleton. See useIsHydrated.
   const canRenderFromCache = useCanRenderFromCache();
 
-  // Track whether we've sent the auto-mark-read mutation
-  const hasSentMarkReadMutation = useRef(false);
+  // The stored setting only once hydrated: the hydration render has the default.
+  const isHydrated = useIsHydrated();
+  const [markReadOn] = useMarkReadOn();
+  // Whether this opening is done with marking the entry read by itself: it has,
+  // or the user has set its read state, so what they chose stays.
+  const autoMarkReadDone = useRef(false);
 
   const narrationContinued = useNarrationContinuedHere(entryId);
 
@@ -220,25 +225,27 @@ function EntryContentInner({
     });
   }, [summarizationMutation, entryId, isShowingFullContent]);
 
-  // Auto-mark-read: fire the mutation once, as soon as entries.get data is
-  // available (from cache when prefetched, otherwise when the fetch lands) —
-  // even for an already-read entry, so readChangedAt moves it to the top of
-  // Recently Read. The store's `updatedAt` guard resolves it against any
-  // entries.get fetch still in flight.
-  useEffect(() => {
-    // Only fire once per entry - check this first
-    if (hasSentMarkReadMutation.current) return;
-    // Need entry data to check read status
-    if (!entry) return;
-
-    // Mark that we've done the initial check - this prevents re-triggering
-    // if the user manually marks the entry unread later
-    hasSentMarkReadMutation.current = true;
-
-    // Always mark read, even if already read, so readChangedAt is updated
-    // and the entry appears in the Recently Read list
+  // Auto-mark-read, once per opening, when the setting says: see
+  // "Auto-mark-read" in src/FRONTEND_STATE.md.
+  const autoMarkRead = useCallback(() => {
+    if (autoMarkReadDone.current) return;
+    autoMarkReadDone.current = true;
     markRead([entryId], true);
-  }, [entry, entryId, markRead]);
+  }, [entryId, markRead]);
+
+  const setReadByUser = useCallback(
+    (read: boolean) => {
+      autoMarkReadDone.current = true;
+      markRead([entryId], read);
+    },
+    [entryId, markRead]
+  );
+
+  useEffect(() => {
+    if (isHydrated && entry && markReadOn === "opened") autoMarkRead();
+  }, [isHydrated, entry, markReadOn, autoMarkRead]);
+
+  const onFinished = isHydrated && markReadOn === "finished" ? autoMarkRead : undefined;
 
   // Handle star toggle
   const handleStarToggle = () => {
@@ -249,7 +256,7 @@ function EntryContentInner({
   // Handle read toggle from entry view
   const handleReadToggle = () => {
     if (!entry) return;
-    markRead([entryId], !entry.read);
+    setReadByUser(!entry.read);
   };
 
   // Deterministic skeleton on the server + first client render so hydration
@@ -271,6 +278,7 @@ function EntryContentInner({
     return (
       <EntryContentFallback
         entryId={entryId}
+        onSetRead={setReadByUser}
         onBack={onBack}
         isSummarizationAvailable={isSummarizationAvailable}
       />
@@ -329,6 +337,7 @@ function EntryContentInner({
         prerecordedNarration={prerecordedNarration}
         beforeContent={slots?.beforeContent}
         afterContent={slots?.afterContent}
+        onFinished={onFinished}
       />
     </ScrollContainer>
   );

@@ -1,5 +1,6 @@
 package com.lionreader.shared.narration
 
+import com.lionreader.shared.api.NarrationCues
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -85,6 +86,24 @@ class NarrationRulesTest {
         assertFalse(noArticle.canSkipBack)
         assertFalse(noArticle.canSkipForward)
         assertTrue(noArticle.waiting)
+    }
+
+    @Test
+    fun itHasNarratedToTheEndOnceItsOnEndOfArticleOrPast() {
+        // "End of article." quoted earlier in the text doesn't count; the closing one does.
+        val paragraphs =
+            listOf("A", NarrationCues.END_OF_ARTICLE, "B", NarrationCues.END_OF_ARTICLE)
+        val state = NarrationState("a", "Title", paragraph = 2, playing = true)
+        assertFalse(derive(state, null, false, null, paragraphs).narratedToEnd)
+        assertTrue(derive(state.copy(paragraph = 3), null, false, null, paragraphs).narratedToEnd)
+        // Its closing cue, after.
+        val closing = paragraphs + NarrationCues.NEXT_ARTICLE
+        assertTrue(derive(state.copy(paragraph = 4), null, false, null, closing).narratedToEnd)
+        assertFalse(
+            derive(state.copy(paragraph = null), null, false, null, paragraphs).narratedToEnd
+        )
+        // The text isn't supplied yet.
+        assertFalse(derive(state.copy(paragraph = 3), null, false, null, null).narratedToEnd)
     }
 
     @Test

@@ -1,6 +1,6 @@
 "use client";
 
-import { createStoredBoolean } from "@/lib/stored-boolean";
+import { createStoredBoolean } from "@/lib/stored-preference";
 
 /**
  * Whether keyboard shortcuts are enabled globally (default: true), persisted

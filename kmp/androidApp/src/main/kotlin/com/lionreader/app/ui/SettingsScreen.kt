@@ -66,6 +66,7 @@ import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.MarkReadOn
 import com.lionreader.shared.settings.NarrationEngine
 import com.lionreader.shared.settings.ReaderFont
 import com.lionreader.shared.settings.SyncInterval
@@ -128,6 +129,22 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             }
             SettingSwitch("Justify text", settings.justify) { value ->
                 update { it.copy(justify = value) }
+            }
+            HorizontalDivider()
+            Section("Mark articles read when") {
+                Choices(MarkReadOn.entries, settings.markReadOn, { it.label }) { choice ->
+                    update { it.copy(markReadOn = choice) }
+                }
+                Text(
+                    when (settings.markReadOn) {
+                        MarkReadOn.OPENED -> "As soon as you open them."
+                        MarkReadOn.FINISHED ->
+                            "Once you've scrolled to the end, or narration has read all of the text."
+                        MarkReadOn.NEVER -> "Only when you mark them read yourself."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             HorizontalDivider()
             NarrationSettings(graph, settings, ::update)

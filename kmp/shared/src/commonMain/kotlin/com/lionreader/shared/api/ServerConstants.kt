@@ -51,12 +51,15 @@ object CloudSpeechPause {
  */
 const val MAX_CLOUD_SPEECH_STREAMS = 4
 
-/** What narration says after an article's "End of article." when it goes on through a list. */
+/** What narration says at the end of an article. */
 object NarrationCues {
-    /** It goes on to the next article. */
+    /** After an article's last paragraph (the reader's narration script adds it). */
+    const val END_OF_ARTICLE = "End of article."
+
+    /** After "End of article.", when narration goes on to the next article. */
     const val NEXT_ARTICLE = "Loading next article."
 
-    /** It would go on, but the list has ended. */
+    /** After "End of article.", when narration would go on but the list has ended. */
     const val NO_MORE_ARTICLES = "No more articles."
 
     /** What a voice's preview says. */

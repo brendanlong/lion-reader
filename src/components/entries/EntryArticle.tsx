@@ -63,6 +63,8 @@ export interface EntryArticleProps {
   isContentLoading?: boolean;
   /** Ref for the content container (for highlighting, image prefetch) */
   contentRef?: RefObject<HTMLDivElement | null>;
+  /** A marker just after the content's last line, to tell when that's on screen. */
+  contentEndRef?: RefObject<HTMLDivElement | null>;
   /** Shows a "Back to list" button calling this */
   onBack?: () => void;
   // Slots for interactive client components
@@ -98,6 +100,7 @@ export function EntryArticle({
   unsubscribeUrl,
   isContentLoading,
   contentRef,
+  contentEndRef,
   onBack,
   actionButtons,
   beforeContent,
@@ -185,6 +188,7 @@ export function EntryArticle({
           textStyle={textStyle ?? {}}
         />
       )}
+      {contentEndRef && !isContentLoading && <div ref={contentEndRef} aria-hidden="true" />}
 
       {/* After content slot (CTA buttons, etc.) */}
       {afterContent}

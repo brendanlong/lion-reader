@@ -80,6 +80,7 @@ import org.json.JSONObject
  * [onDrawn] is called once the page's next frame draws [content] (and on recomposing while it does,
  * so a new [onDrawn] hears too), so a screen can wait for the article rather than show the last
  * one. [hidden]: it's behind something else, so it's kept from accessibility services and focus.
+ * [onEndShown] is told whether the bottom of the article is on screen, as that changes.
  */
 @Composable
 fun ReaderWebView(
@@ -91,6 +92,7 @@ fun ReaderWebView(
     paging: ReaderPaging,
     hidden: Boolean,
     onDrawn: () -> Unit,
+    onEndShown: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current by rememberUpdatedState(narration)
@@ -175,6 +177,7 @@ fun ReaderWebView(
                     if (view.rendererLost) return@AndroidView
                     view.position = position
                     view.onDrawn = onDrawn
+                    view.onEndShown = onEndShown
                     view.show(shell, content, visit)
                     view.importantForAccessibility =
                         if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -338,7 +341,10 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** The content the page's next frame draws, once the WebView has said so. */
     var drawn: String? = null
-        private set
+        private set(value) {
+            field = value
+            updateEndShown()
+        }
 
     var onDrawn: () -> Unit = {}
     private var drawRequests = 0L
@@ -352,6 +358,8 @@ private class ReaderView(context: Context) : WebView(context) {
         this.content = content
         this.visit = visit
         drawn = null
+        // Until the page says otherwise of the new article.
+        pageEndShown = false
         // A draw still to be reported is of what was shown before.
         drawRequests++
         pageReady = false
@@ -426,6 +434,41 @@ private class ReaderView(context: Context) : WebView(context) {
      * page turn), its scrolling isn't the reader's.
      */
     var restoring = true
+        set(value) {
+            field = value
+            updateEndShown()
+        }
+
+    /** Told the current value at once, so a new view (after a renderer loss) clears an old one. */
+    var onEndShown: (Boolean) -> Unit = {}
+        set(value) {
+            field = value
+            value(endShown)
+        }
+
+    private var endShown = false
+
+    /** What scroll-detect.js last said of the bottom of the page being on screen. */
+    private var pageEndShown = false
+
+    /**
+     * The bottom of what's shown is on screen: it's drawn, back at the reader's place, and the page
+     * says so. The page tells as its layout changes too (images loading), so a page that grows
+     * under it stops counting.
+     */
+    private fun updateEndShown() {
+        val shown =
+            drawn != null &&
+                drawn == content &&
+                !content.isNullOrEmpty() &&
+                !restoring &&
+                !rendererLost &&
+                pageEndShown
+        if (shown == endShown) return
+        endShown = shown
+        onEndShown(shown)
+    }
+
     private var wanted: Int? = null
     private var shown: Int? = null
     private var scroll = true
@@ -509,6 +552,10 @@ private class ReaderView(context: Context) : WebView(context) {
                 highlight(wanted, scroll && position.fraction == 0f)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
+            "end" -> {
+                pageEndShown = message.optBoolean("shown")
+                updateEndShown()
+            }
         }
     }
 
