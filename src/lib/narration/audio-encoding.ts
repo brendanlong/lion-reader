@@ -112,27 +112,29 @@ export async function* resample(
     yield* pcm;
     return;
   }
-  const step = from / to;
-  // The last input sample seen, which the next piece interpolates from.
-  let previous: number | null = null;
-  // Input index of `previous`, and source position of the next output sample.
+  // Output sample `n` sits at input position n·from/to, computed from `n`
+  // each time (in integers, so exactly) rather than by adding a step, whose
+  // rounding drifts past the end of a piece.
+  let n = 0;
+  // The last input sample seen, which the next piece interpolates from, and its index.
+  let previous = 0;
   let previousIndex = -1;
-  let position = 0;
   for await (const piece of pcm) {
     if (piece.length === 0) continue;
     const firstIndex = previousIndex + 1;
     const lastIndex = firstIndex + piece.length - 1;
-    const at = (index: number) => (index < firstIndex ? previous! : piece[index - firstIndex]);
-    const count = Math.max(0, Math.floor((lastIndex - position) / step) + 1);
-    const out = new Float32Array(count);
-    for (let i = 0; i < count; i++, position += step) {
-      const lower = Math.floor(position);
-      const fraction = position - lower;
-      out[i] = fraction === 0 ? at(lower) : at(lower) + fraction * (at(lower + 1) - at(lower));
+    const at = (index: number) => (index < firstIndex ? previous : piece[index - firstIndex]);
+    const out: number[] = [];
+    for (; n * from <= lastIndex * to; n++) {
+      const lower = Math.floor((n * from) / to);
+      const remainder = n * from - lower * to;
+      out.push(
+        remainder === 0 ? at(lower) : at(lower) + (remainder / to) * (at(lower + 1) - at(lower))
+      );
     }
     previous = piece[piece.length - 1];
     previousIndex = lastIndex;
-    if (count > 0) yield out;
+    if (out.length > 0) yield Float32Array.from(out);
   }
 }
 
@@ -151,10 +153,12 @@ function createEncoder(
           fastStart: "fragmented",
           minimumFragmentDuration: FRAGMENT_SECONDS,
         }),
-        target: new mediabunny.StreamTarget(
+        // Append-only, so a write that isn't sequential throws rather than
+        // corrupting what the player has appended.
+        target: new mediabunny.AppendOnlyStreamTarget(
           new WritableStream({
-            write: (chunk) => {
-              written.push(chunk.data);
+            write: (bytes) => {
+              written.push(bytes);
               wake?.();
             },
           })
@@ -167,43 +171,54 @@ function createEncoder(
       });
       output.addAudioTrack(source);
 
+      const input = resample(pcm, pcmSampleRate, sampleRate)[Symbol.asyncIterator]();
+      let stopped = false;
       let finished = false;
-      let failure: unknown = null;
+      let failed = false;
+      let failure: unknown;
       const feeding = (async () => {
         await output.start();
-        let timestamp = 0;
-        for await (const samples of resample(pcm, pcmSampleRate, sampleRate)) {
+        let frames = 0;
+        for (let next = await input.next(); !next.done && !stopped; next = await input.next()) {
           const sample = new mediabunny.AudioSample({
-            data: samples,
+            data: next.value,
             format: "f32",
             numberOfChannels: 1,
             sampleRate,
-            timestamp,
+            timestamp: frames / sampleRate,
           });
-          timestamp += samples.length / sampleRate;
+          frames += next.value.length;
           try {
             await source.add(sample);
           } finally {
             sample.close();
           }
         }
-        await output.finalize();
+        if (!stopped) await output.finalize();
       })().then(
         () => (finished = true),
-        (error: unknown) => (failure = error)
+        (error: unknown) => {
+          failed = true;
+          failure = error;
+        }
       );
       void feeding.finally(() => wake?.());
 
       try {
         for (;;) {
           if (written.length > 0) yield concat(written.splice(0));
-          else if (failure) throw failure;
+          else if (failed) throw failure;
           else if (finished) return;
           else await new Promise<void>((resolve) => (wake = resolve));
           wake = null;
         }
       } finally {
-        if (!finished && !failure) void output.cancel().catch(() => {});
+        if (!finished && !failed) {
+          // The reader stopped early: stop pulling speech now, not when its next piece comes.
+          stopped = true;
+          void input.return?.(undefined).catch(() => {});
+          void output.cancel().catch(() => {});
+        }
       }
     },
   };

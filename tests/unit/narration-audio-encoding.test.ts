@@ -4,7 +4,7 @@
  * 26).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import { loadSpeechEncoder, resample } from "@/lib/narration/audio-encoding";
 
@@ -36,6 +36,11 @@ async function* piecesOf(samples: Float32Array, size: number): AsyncGenerator<Fl
   for (let i = 0; i < samples.length; i += size) yield samples.subarray(i, i + size);
 }
 
+/** Whether `bytes` holds an MP4 fragment (`moof`), i.e. audio, not just the init segment. */
+function hasFragment(bytes: Uint8Array): boolean {
+  return Buffer.from(bytes).includes("moof");
+}
+
 async function collect(pcm: AsyncIterable<Float32Array>): Promise<Float32Array> {
   const pieces: Float32Array[] = [];
   for await (const piece of pcm) pieces.push(piece);
@@ -45,7 +50,8 @@ async function collect(pcm: AsyncIterable<Float32Array>): Promise<Float32Array> 
 describe("loadSpeechEncoder", () => {
   it.each([
     { name: "at the encoder's rate", inputRate: ENCODER_RATE },
-    { name: "resampled", inputRate: 16_000 },
+    // Doubled, like Phonon's 24 kHz into Chrome for Android's 48 kHz-only AAC (this encoder runs at 24 kHz).
+    { name: "resampled", inputRate: 12_000 },
   ])("yields audio fragments while the speech is still arriving ($name)", async ({ inputRate }) => {
     const encoder = await loadSpeechEncoder(mediaSource);
     if (!encoder) throw new Error("no encoder");
@@ -61,8 +67,7 @@ describe("loadSpeechEncoder", () => {
     let generatedAtFirstAudio: number | null = null;
     for await (const bytes of encoder.encode(speech(), inputRate)) {
       output.push(bytes);
-      // Past the init segment: a fragment with audio in it.
-      if (output.length > 1) generatedAtFirstAudio ??= piecesGenerated;
+      if (hasFragment(bytes)) generatedAtFirstAudio ??= piecesGenerated;
     }
 
     // Within about a second of audio, not the whole 4 s.
@@ -77,25 +82,29 @@ describe("loadSpeechEncoder", () => {
     expect(duration).toBeLessThanOrEqual(spoken + 2 * aacFrame);
   });
 
-  it("stops consuming the speech when its reader stops", async () => {
+  it("stops the speech as soon as its reader stops, even mid-wait", async () => {
     const encoder = await loadSpeechEncoder(mediaSource);
     if (!encoder) throw new Error("no encoder");
 
-    let piecesGenerated = 0;
-    async function* endless(): AsyncGenerator<Float32Array> {
-      for (;;) {
-        piecesGenerated++;
+    let returned = false;
+    let release!: () => void;
+    const stalled = new Promise<void>((resolve) => (release = resolve));
+    async function* speech(): AsyncGenerator<Float32Array> {
+      try {
+        // Enough for a first fragment, then wait like Phonon between pieces.
+        for (let i = 0; i < 10; i++) yield tone(ENCODER_RATE * 0.08);
+        await stalled;
         yield tone(ENCODER_RATE * 0.08);
+      } finally {
+        returned = true;
       }
     }
 
-    for await (const bytes of encoder.encode(endless(), ENCODER_RATE)) {
-      expect(bytes.length).toBeGreaterThan(0);
-      break;
+    for await (const bytes of encoder.encode(speech(), ENCODER_RATE)) {
+      if (hasFragment(bytes)) break;
     }
-    const afterStop = piecesGenerated;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(piecesGenerated - afterStop).toBeLessThanOrEqual(1);
+    await vi.waitFor(() => expect(returned).toBe(true), { timeout: 1000 });
+    release();
   });
 });
 
@@ -114,12 +123,32 @@ describe("resample", () => {
     output.forEach((value, i) => expect(value).toBeCloseTo(i / to, 6));
   });
 
-  it("doesn't depend on how the input is split into pieces", async () => {
-    const input = tone(24_000);
-    const whole = await collect(resample(piecesOf(input, input.length), 24_000, 44_100));
-    const pieced = await collect(resample(piecesOf(input, 7), 24_000, 44_100));
-    expect(pieced).toEqual(whole);
-  });
+  it.each([
+    { from: 24_000, to: 44_100 },
+    { from: 22_050, to: 48_000 },
+    { from: 48_000, to: 44_100 },
+  ])(
+    "doesn't depend on how the input is split into pieces, $from → $to Hz",
+    async ({ from, to }) => {
+      const input = tone(from / 2);
+      const whole = await collect(resample(piecesOf(input, input.length), from, to));
+      // Seeded, so a failure reproduces.
+      let seed = 1;
+      const random = () => (seed = (seed * 48_271) % 2_147_483_647) / 2_147_483_647;
+      for (let run = 0; run < 50; run++) {
+        async function* randomPieces(): AsyncGenerator<Float32Array> {
+          for (let i = 0; i < input.length;) {
+            const size = 1 + Math.floor(random() * 300);
+            yield input.subarray(i, i + size);
+            i += size;
+          }
+        }
+        const pieced = await collect(resample(randomPieces(), from, to));
+        expect(pieced.every(Number.isFinite)).toBe(true);
+        expect(pieced).toEqual(whole);
+      }
+    }
+  );
 
   it("passes audio already at the rate through untouched", async () => {
     const input = tone(1000);

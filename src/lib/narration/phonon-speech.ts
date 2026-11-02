@@ -17,13 +17,15 @@ export interface PhononVoice {
   sentenceGapSeconds: number;
 }
 
-/** `speech`, then `seconds` of silence. */
+/** `speech`, then `seconds` of silence, unless `signal` cut the speech short. */
 async function* withTrailingSilence(
   speech: AsyncIterable<Float32Array>,
   sampleRate: number,
-  seconds: number
+  seconds: number,
+  signal: AbortSignal
 ): AsyncGenerator<Float32Array> {
   yield* speech;
+  if (signal.aborted) return;
   const silence = Math.round(seconds * sampleRate);
   if (silence > 0) yield new Float32Array(silence);
 }
@@ -48,7 +50,7 @@ export function createPhononSpeechPlayer(voice: () => PhononVoice): MediaSourceP
     synthesize: async function* (text, signal) {
       const { voice: voiceId, sentenceGapSeconds } = voice();
       const speech = await streamPhonon(text, voiceId, signal);
-      const pcm = withTrailingSilence(speech, speech.sampleRate, sentenceGapSeconds);
+      const pcm = withTrailingSilence(speech, speech.sampleRate, sentenceGapSeconds, signal);
       yield* (await getEncoder()).encode(pcm, speech.sampleRate);
     },
     // The encoder picks the format: AAC where it can, else Opus.
