@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,8 +27,9 @@ async function text(stream: ReadableStream<Uint8Array> | null): Promise<string |
   return stream ? new Response(stream).text() : null;
 }
 
-/** Lets a recording's background caching run. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+async function untilOnDisk(cacheDir: string): Promise<void> {
+  await vi.waitFor(async () => expect(await readdir(cacheDir)).toContain(KEY));
+}
 
 let root: string;
 beforeEach(async () => {
@@ -70,10 +71,10 @@ describe("prerecorded speech", () => {
   });
 
   it("serves a recording from the bucket, then from disk", async () => {
-    const { get, bucket, synthesized } = setup();
+    const { get, bucket, synthesized, cacheDir } = setup();
     bucket.set(KEY, "stored");
     expect(await text(await get(KEY))).toBe("stored");
-    await settle();
+    await untilOnDisk(cacheDir);
     bucket.clear();
     expect(await text(await get(KEY))).toBe("stored");
     expect(synthesized).toEqual([]);
@@ -89,8 +90,7 @@ describe("prerecorded speech", () => {
   it("records a missing chunk once, into the bucket and onto disk", async () => {
     const { get, bucket, synthesized } = setup();
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
-    expect(bucket.get(KEY)).toBe("audio:Hello.");
+    await vi.waitFor(() => expect(bucket.get(KEY)).toBe("audio:Hello."));
     bucket.clear();
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toEqual(["Hello."]);
@@ -110,15 +110,14 @@ describe("prerecorded speech", () => {
   it("keeps the recording when the listener leaves early", async () => {
     const { get, bucket, synthesized } = setup();
     await (await get(KEY))?.cancel();
-    await settle();
-    expect(bucket.get(KEY)).toBe("audio:Hello.");
+    await vi.waitFor(() => expect(bucket.get(KEY)).toBe("audio:Hello."));
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toEqual(["Hello."]);
   });
 
   it("keeps nothing of audio that stopped partway, and tries again", async () => {
     let attempts = 0;
-    const { get, bucket, synthesized, cacheDir } = setup({
+    const { get, synthesized } = setup({
       synthesize: async (chunk) => {
         synthesized.push(chunk.text);
         if (++attempts > 1) return streamOf("audio:", chunk.text);
@@ -131,10 +130,8 @@ describe("prerecorded speech", () => {
       },
     });
     await expect(text(await get(KEY))).rejects.toThrow("connection dropped");
-    await settle();
-    expect(bucket.has(KEY)).toBe(false);
-    expect(await readdir(cacheDir).catch(() => [])).toEqual([]);
-    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    // Requests get the failure until the failed synthesis is forgotten.
+    await vi.waitFor(async () => expect(await text(await get(KEY))).toBe("audio:Hello."));
     expect(synthesized).toEqual(["Hello.", "Hello."]);
   });
 
@@ -143,7 +140,8 @@ describe("prerecorded speech", () => {
     const { get, synthesized } = setup({
       synthesize: async (chunk) => {
         synthesized.push(chunk.text);
-        await settle();
+        // Long enough for the other requests to find this one in flight.
+        await new Promise((resolve) => setTimeout(resolve, 10));
         if (fail) throw new Error("busy");
         return streamOf("audio:", chunk.text);
       },
@@ -156,13 +154,13 @@ describe("prerecorded speech", () => {
   });
 
   it("serves from disk what the bucket refused, without paying again", async () => {
-    const { get, synthesized } = setup({
+    const { get, synthesized, cacheDir } = setup({
       store: async () => {
         throw new Error("storage down");
       },
     });
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
+    await untilOnDisk(cacheDir);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toEqual(["Hello."]);
   });
@@ -170,7 +168,7 @@ describe("prerecorded speech", () => {
   it("without a bucket, synthesizes once per disk cache", async () => {
     const first = setup({ read: async () => null, store: null });
     expect(await text(await first.get(KEY))).toBe("audio:Hello.");
-    await settle();
+    await untilOnDisk(first.cacheDir);
     expect(await text(await first.get(KEY))).toBe("audio:Hello.");
     expect(first.synthesized).toEqual(["Hello."]);
 
@@ -197,34 +195,33 @@ describe("prerecorded speech", () => {
       now: () => time,
     });
     const minutes = (count: number) => count * 60 * 1000;
+    // Requests get the write's failure until the failed fill is forgotten.
+    const untilOff = () => vi.waitFor(async () => expect(await get(KEY)).toBeNull());
 
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
-    expect(await get(KEY)).toBeNull();
+    await untilOff();
 
     time += minutes(1);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
+    await untilOff();
     time += minutes(1);
     expect(await get(KEY)).toBeNull();
     time += minutes(1);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
+    await untilOff();
     expect(synthesized).toEqual(["Hello.", "Hello.", "Hello."]);
 
     // The disk recovers: its next write succeeds and resets the pause.
     await rm(blocked);
     time += minutes(4);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
+    await vi.waitFor(() => expect(bucket.has(KEY)).toBe(true));
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toHaveLength(4);
 
     await breakDisk();
-    expect(bucket.has(KEY)).toBe(true);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
-    await settle();
-    expect(await get(KEY)).toBeNull();
+    await untilOff();
     time += minutes(1);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
   });
