@@ -137,16 +137,20 @@ describe("prerecorded speech", () => {
 
   it("gives requests waiting on a synthesis that fails its failure, not new syntheses", async () => {
     let fail = true;
+    const { promise: released, resolve: release } = Promise.withResolvers<void>();
     const { get, synthesized } = setup({
       synthesize: async (chunk) => {
         synthesized.push(chunk.text);
-        // Long enough for the other requests to find this one in flight.
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await released;
         if (fail) throw new Error("busy");
         return streamOf("audio:", chunk.text);
       },
     });
-    const results = await Promise.allSettled([get(KEY), get(KEY), get(KEY)]);
+    const first = get(KEY);
+    await vi.waitFor(() => expect(synthesized).toHaveLength(1));
+    const waiting = [get(KEY), get(KEY)];
+    release();
+    const results = await Promise.allSettled([first, ...waiting]);
     expect(results.map((result) => result.status)).toEqual(["rejected", "rejected", "rejected"]);
     expect(synthesized).toEqual(["Hello."]);
     fail = false;
