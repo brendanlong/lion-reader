@@ -121,8 +121,8 @@ export interface EntryContentBodyProps {
   /** Host-supplied content rendered after the body, before the footer */
   afterContent?: ReactNode;
   /**
-   * Called once the article is finished: its last line is on screen, or
-   * narration has said all of its text. Again on each later finish.
+   * Called as the article becomes finished: its last line is on screen, or
+   * narration has said all of its text.
    */
   onFinished?: () => void;
 }
@@ -214,11 +214,12 @@ export function EntryContentBody({
     next: onSwipeNext && nextEntryId ? { id: nextEntryId, open: onSwipeNext } : undefined,
   });
 
-  // Not the feed's excerpt while the full article is on its way.
+  // Not the feed's excerpt while the full article is on its way, nor while
+  // narration plays: its auto-scroll shows the end before it's been said.
   const contentEndRef = useRef<HTMLDivElement>(null);
   const contentEndOnScreen = useOnScreen(
     contentEndRef,
-    Boolean(onFinished) && !isAwaitingFullContent
+    Boolean(onFinished) && !isAwaitingFullContent && !narration.isPlaying
   );
   const finished = contentEndOnScreen || narration.narratedToEnd;
   useEffect(() => {

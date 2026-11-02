@@ -1,8 +1,19 @@
 // Reports the page's sideways-scrolling blocks (our stylesheet makes only
 // `pre` and `table` scroll) and which way each can still scroll, so
-// ReaderWebView can keep a drag on one from turning the page.
+// ReaderWebView can keep a drag on one from turning the page; and whether the
+// bottom of the page is on screen (`{type: "end"}`), as that changes.
 (function () {
   var last = "";
+  var lastEnd = null;
+
+  function reportEnd() {
+    if (!window.lionReader) return;
+    var root = document.documentElement;
+    var shown = window.scrollY + window.innerHeight >= root.scrollHeight - 1;
+    if (shown === lastEnd) return;
+    lastEnd = shown;
+    window.lionReader.postMessage(JSON.stringify({ type: "end", shown: shown }));
+  }
 
   function report() {
     if (!window.lionReader) return;
@@ -31,14 +42,19 @@
       last = message;
       window.lionReader.postMessage(message);
     }
+    reportEnd();
   }
 
   report();
   // Layout settles as images and fonts load; blocks reach their edges as they
   // scroll.
   new ResizeObserver(report).observe(document.body);
-  // Another article replacing this one (lionNarration.replaceArticle).
-  new MutationObserver(report).observe(document.body, { childList: true });
+  // Another article replacing this one (lionNarration.replaceArticle), which
+  // the app counts as at its top until told otherwise.
+  new MutationObserver(function () {
+    lastEnd = null;
+    report();
+  }).observe(document.body, { childList: true });
   // A wide view's body keeps its (capped) size but moves.
   window.addEventListener("resize", report);
   document.fonts.ready.then(report);
@@ -47,6 +63,7 @@
     function (event) {
       // The page scrolling doesn't move blocks within it.
       if (event.target !== document) report();
+      else reportEnd();
     },
     { capture: true, passive: true },
   );

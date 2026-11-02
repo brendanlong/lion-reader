@@ -489,7 +489,7 @@ private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000
 /**
  * How much an entry's body matters to the content budget, most first (selectMissingContent sorts
  * the same way): starred, saved and collections' articles' ([kept]); then ones [opened] in the last
- * day, as opening one marks it read and it may still be on screen; unread before read; newest
+ * day, as opening one can mark it read and it may still be on screen; unread before read; newest
  * first.
  */
 internal data class BodyRank(

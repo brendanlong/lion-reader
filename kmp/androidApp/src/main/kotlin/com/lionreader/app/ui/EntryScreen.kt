@@ -212,8 +212,12 @@ internal fun EntryScreen(
             account.reader,
             entryId,
             settings.markReadOn,
-            // Narration's end is AppGraph's to mark, on screen or not.
-            finished = started && articles.endShown(entryId),
+            // Narration's end is AppGraph's to mark, on screen or not; while it plays, it scrolls
+            // the end on screen before it's been said.
+            finished =
+                started &&
+                    articles.endShown(entryId) &&
+                    narration?.let { it.entryId == entryId && it.playing } != true,
             onShown,
         )
     }

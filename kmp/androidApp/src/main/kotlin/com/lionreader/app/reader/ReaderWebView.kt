@@ -358,6 +358,8 @@ private class ReaderView(context: Context) : WebView(context) {
         this.content = content
         this.visit = visit
         drawn = null
+        // Until the page says otherwise of the new article.
+        pageEndShown = false
         // A draw still to be reported is of what was shown before.
         drawRequests++
         pageReady = false
@@ -437,12 +439,22 @@ private class ReaderView(context: Context) : WebView(context) {
             updateEndShown()
         }
 
+    /** Told the current value at once, so a new view (after a renderer loss) clears an old one. */
     var onEndShown: (Boolean) -> Unit = {}
+        set(value) {
+            field = value
+            value(endShown)
+        }
+
     private var endShown = false
 
+    /** What scroll-detect.js last said of the bottom of the page being on screen. */
+    private var pageEndShown = false
+
     /**
-     * The bottom of what's shown is on screen: it's drawn, back at the reader's place, and can't
-     * scroll further down.
+     * The bottom of what's shown is on screen: it's drawn, back at the reader's place, and the page
+     * says so. The page tells as its layout changes too (images loading), so a page that grows
+     * under it stops counting.
      */
     private fun updateEndShown() {
         val shown =
@@ -451,7 +463,7 @@ private class ReaderView(context: Context) : WebView(context) {
                 !content.isNullOrEmpty() &&
                 !restoring &&
                 !rendererLost &&
-                !canScrollVertically(1)
+                pageEndShown
         if (shown == endShown) return
         endShown = shown
         onEndShown(shown)
@@ -486,7 +498,6 @@ private class ReaderView(context: Context) : WebView(context) {
         scrolledTo = t
         val range = computeVerticalScrollRange()
         if (!restoring && !rendererLost && range > 0) position.fraction = t.toFloat() / range
-        updateEndShown()
     }
 
     init {
@@ -541,6 +552,10 @@ private class ReaderView(context: Context) : WebView(context) {
                 highlight(wanted, scroll && position.fraction == 0f)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
+            "end" -> {
+                pageEndShown = message.optBoolean("shown")
+                updateEndShown()
+            }
         }
     }
 

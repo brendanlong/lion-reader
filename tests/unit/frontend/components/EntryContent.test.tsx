@@ -494,6 +494,18 @@ describe("EntryContent click-to-seek narration", () => {
     await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
   });
 
+  it("with Finished, doesn't count the end on screen while narration plays", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(speak).toHaveBeenCalled());
+
+    scrollToEnd();
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+  });
+
   it("narrates from the clicked paragraph", async () => {
     const content = await renderAndStartNarration();
 

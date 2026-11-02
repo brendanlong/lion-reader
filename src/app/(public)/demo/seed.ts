@@ -47,16 +47,18 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
   const listInput = buildEntriesListInput(filters, { unreadOnly, sortOrder, searchQuery });
   const listPage = procedures["entries.list"](listInput);
 
-  // An open entry is seeded the way the reader leaves it after mounting: the
-  // list was fetched with the entry unread (so unread-only views include it),
-  // then the auto-mark-read mutation ran and marked it read. Seeding that end
+  // An open entry is seeded the way the reader leaves it after mounting with
+  // the default mark-read setting: the list was fetched with the entry unread
+  // (so unread-only views include it), then the auto-mark-read mutation ran
+  // and marked it read. Seeding that end
   // state — read, but still in the list — means the read toggle and the
   // counts don't flip after hydration.
   const entryId = searchParams.get("entry");
   if (entryId) {
     // Stamped with a fixed time (the article's own date) rather than the clock,
     // so the seeded `updatedAt`/`readChangedAt` are identical on the server and
-    // the client; the reader's own mark-read on mount re-stamps them live.
+    // the client; the reader's own mark-read on mount (by default) re-stamps
+    // them live.
     const { entry } = procedures["entries.get"]({ id: entryId });
     procedures["entries.markRead"]({
       entries: [{ id: entryId, changedAt: entry.publishedAt ?? entry.fetchedAt }],
