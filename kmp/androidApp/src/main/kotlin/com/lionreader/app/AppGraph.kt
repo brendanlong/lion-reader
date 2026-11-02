@@ -27,6 +27,7 @@ import com.lionreader.shared.account.KeyValueStore
 import com.lionreader.shared.api.CloudSpeechPause
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.narration.SpeechUnavailable
+import com.lionreader.shared.narration.markReadWhenNarrated
 import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.settings.AppSettings
 import com.lionreader.shared.settings.NarrationEngine
@@ -82,7 +83,15 @@ class AppGraph(
         } else null
     }
 
-    private val narratorInstance = lazy { Narrator(context, currentSettings, ::speechEngine) }
+    private val narratorInstance: Lazy<Narrator> = lazy {
+        Narrator(context, currentSettings, ::speechEngine).also { narrator ->
+            scope.launch {
+                markReadWhenNarrated(narrator.state, { currentSettings.value.markReadOn }) { id ->
+                    accounts.account.value?.reader?.setRead(listOf(id), true)
+                }
+            }
+        }
+    }
 
     /** Text-to-speech narration; one article at a time, app-wide. */
     val narrator: Narrator by narratorInstance

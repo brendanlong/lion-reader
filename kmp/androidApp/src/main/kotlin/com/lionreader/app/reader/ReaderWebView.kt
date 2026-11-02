@@ -80,6 +80,7 @@ import org.json.JSONObject
  * [onDrawn] is called once the page's next frame draws [content] (and on recomposing while it does,
  * so a new [onDrawn] hears too), so a screen can wait for the article rather than show the last
  * one. [hidden]: it's behind something else, so it's kept from accessibility services and focus.
+ * [onEndShown] is told whether the bottom of the article is on screen, as that changes.
  */
 @Composable
 fun ReaderWebView(
@@ -91,6 +92,7 @@ fun ReaderWebView(
     paging: ReaderPaging,
     hidden: Boolean,
     onDrawn: () -> Unit,
+    onEndShown: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current by rememberUpdatedState(narration)
@@ -175,6 +177,7 @@ fun ReaderWebView(
                     if (view.rendererLost) return@AndroidView
                     view.position = position
                     view.onDrawn = onDrawn
+                    view.onEndShown = onEndShown
                     view.show(shell, content, visit)
                     view.importantForAccessibility =
                         if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -338,7 +341,10 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** The content the page's next frame draws, once the WebView has said so. */
     var drawn: String? = null
-        private set
+        private set(value) {
+            field = value
+            updateEndShown()
+        }
 
     var onDrawn: () -> Unit = {}
     private var drawRequests = 0L
@@ -426,6 +432,31 @@ private class ReaderView(context: Context) : WebView(context) {
      * page turn), its scrolling isn't the reader's.
      */
     var restoring = true
+        set(value) {
+            field = value
+            updateEndShown()
+        }
+
+    var onEndShown: (Boolean) -> Unit = {}
+    private var endShown = false
+
+    /**
+     * The bottom of what's shown is on screen: it's drawn, back at the reader's place, and can't
+     * scroll further down.
+     */
+    private fun updateEndShown() {
+        val shown =
+            drawn != null &&
+                drawn == content &&
+                !content.isNullOrEmpty() &&
+                !restoring &&
+                !rendererLost &&
+                !canScrollVertically(1)
+        if (shown == endShown) return
+        endShown = shown
+        onEndShown(shown)
+    }
+
     private var wanted: Int? = null
     private var shown: Int? = null
     private var scroll = true
@@ -455,6 +486,7 @@ private class ReaderView(context: Context) : WebView(context) {
         scrolledTo = t
         val range = computeVerticalScrollRange()
         if (!restoring && !rendererLost && range > 0) position.fraction = t.toFloat() / range
+        updateEndShown()
     }
 
     init {

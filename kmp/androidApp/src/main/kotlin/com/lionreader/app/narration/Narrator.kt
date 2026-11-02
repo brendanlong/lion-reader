@@ -622,6 +622,7 @@ class Narrator(
             spoken(),
             silent = current == Current.Silent,
             player = audio?.prepared?.let { snapshot() },
+            paragraphs = audio?.article?.paragraphs,
         )
     }
 

@@ -30,7 +30,7 @@ interface NarrationList {
  * playing or paused. The rest is derived ([derive]). [waiting]: it should be playing but has no
  * audio yet (the article's text hasn't been supplied, the engine is getting ready, or the next
  * chunk is still being synthesized). [canSkipBack] and [canSkipForward]: whether there's a
- * paragraph to skip to that way.
+ * paragraph to skip to that way. [narratedToEnd]: it has said all of the article's own text.
  */
 data class NarrationState(
     val entryId: String,
@@ -40,4 +40,5 @@ data class NarrationState(
     val waiting: Boolean = false,
     val canSkipBack: Boolean = false,
     val canSkipForward: Boolean = false,
+    val narratedToEnd: Boolean = false,
 )

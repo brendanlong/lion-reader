@@ -22,7 +22,7 @@ import {
   PHONON_MODEL_FILES,
   resolveEnhancedVoice,
 } from "../src/lib/narration/enhanced-voices";
-import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "../src/lib/narration/paragraph-map";
+import { END_OF_ARTICLE, NEXT_ARTICLE, NO_MORE_ARTICLES } from "../src/lib/narration/paragraph-map";
 import { EBOOK_UPLOAD_EXTENSIONS, SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
 import {
   DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES,
@@ -109,12 +109,15 @@ object CloudSpeechPause {
  */
 const val MAX_CLOUD_SPEECH_STREAMS = ${int(MAX_CLOUD_SPEECH_STREAMS)}
 
-/** What narration says after an article's "End of article." when it goes on through a list. */
+/** What narration says at the end of an article. */
 object NarrationCues {
-    /** It goes on to the next article. */
+    /** After an article's last paragraph (the reader's narration script adds it). */
+    const val END_OF_ARTICLE = ${string(END_OF_ARTICLE)}
+
+    /** After "End of article.", when narration goes on to the next article. */
     const val NEXT_ARTICLE = ${string(NEXT_ARTICLE)}
 
-    /** It would go on, but the list has ended. */
+    /** After "End of article.", when narration would go on but the list has ended. */
     const val NO_MORE_ARTICLES = ${string(NO_MORE_ARTICLES)}
 
     /** What a voice's preview says. */

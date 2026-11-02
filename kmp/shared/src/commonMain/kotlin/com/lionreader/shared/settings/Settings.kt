@@ -49,6 +49,16 @@ enum class SyncInterval(val minutes: Long?, val label: String) {
     NEVER(null, "Never"),
 }
 
+/**
+ * When the reader marks an article read by itself: as it opens, once it's finished (its end on
+ * screen, or narration done with its text), or never. The web's `useMarkReadOn` is the same.
+ */
+enum class MarkReadOn(val label: String) {
+    OPENED("Opened"),
+    FINISHED("Finished"),
+    NEVER("Never"),
+}
+
 /** Where narration audio comes from. */
 enum class NarrationEngine {
     DEVICE,
@@ -82,6 +92,7 @@ data class AppSettings(
     val expandedTags: Set<String> = emptySet(),
     /** Leave feeds and tags with nothing unread out of the drawer. */
     val hideEmptyLists: Boolean = false,
+    val markReadOn: MarkReadOn = MarkReadOn.OPENED,
     /** Off for e-readers, where animation only smears. */
     val animations: Boolean = true,
     /** Swipes move lists and articles a page at a time (for e-readers), rather than scrolling. */
@@ -144,6 +155,7 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         Stored(booleanPreferencesKey("hide_empty_lists"), { hideEmptyLists }) {
             copy(hideEmptyLists = it)
         },
+        enumStored("mark_read_on", { markReadOn }) { copy(markReadOn = it) },
         Stored(booleanPreferencesKey("animations"), { animations }) { copy(animations = it) },
         Stored(booleanPreferencesKey("page_scrolling"), { pageScrolling }) {
             copy(pageScrolling = it)

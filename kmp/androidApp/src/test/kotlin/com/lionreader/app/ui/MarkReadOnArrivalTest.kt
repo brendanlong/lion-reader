@@ -11,6 +11,7 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.ListSort
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
+import com.lionreader.shared.settings.MarkReadOn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -44,7 +45,9 @@ class MarkReadOnArrivalTest {
     fun anEntryMarkedUnreadStaysUnreadWhenTheScreenIsRestored() {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
         val restoration = StateRestorationTester(composeRule)
-        restoration.setContent { MarkReadOnArrival(reader, "a") {} }
+        restoration.setContent {
+            MarkReadOnArrival(reader, "a", MarkReadOn.OPENED, finished = false) {}
+        }
         composeRule.waitUntil { read("a") }
 
         runBlocking { reader.setRead(listOf("a"), false) }
@@ -57,7 +60,9 @@ class MarkReadOnArrivalTest {
     @Test
     fun arrivingAtAReadEntryMovesItToTheTopOfRecentlyRead() {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 1, 0)
-        composeRule.setContent { MarkReadOnArrival(reader, "a") {} }
+        composeRule.setContent {
+            MarkReadOnArrival(reader, "a", MarkReadOn.OPENED, finished = false) {}
+        }
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         val recentlyRead = runBlocking {
             reader
@@ -78,7 +83,9 @@ class MarkReadOnArrivalTest {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
         db.entryQueries.insertIgnore("b", "web", 0, 0, 0, 0)
         val shown = mutableStateOf("a")
-        composeRule.setContent { MarkReadOnArrival(reader, shown.value) {} }
+        composeRule.setContent {
+            MarkReadOnArrival(reader, shown.value, MarkReadOn.OPENED, finished = false) {}
+        }
         composeRule.waitUntil { read("a") }
         runBlocking { reader.setRead(listOf("a"), false) }
 
@@ -89,5 +96,39 @@ class MarkReadOnArrivalTest {
         composeRule.waitForIdle()
         composeRule.waitUntil { read("a") }
         assertTrue(read("a"))
+    }
+
+    @Test
+    fun withFinishedItsMarkedReadOnceItsEndIsShownAndOnlyOnce() {
+        db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
+        val finished = mutableStateOf(false)
+        composeRule.setContent {
+            MarkReadOnArrival(reader, "a", MarkReadOn.FINISHED, finished.value) {}
+        }
+        composeRule.waitForIdle()
+        assertFalse(read("a"))
+
+        finished.value = true
+        composeRule.waitForIdle()
+        composeRule.waitUntil { read("a") }
+
+        // Marked unread, it stays unread as the end comes back on screen.
+        runBlocking { reader.setRead(listOf("a"), false) }
+        finished.value = false
+        composeRule.waitForIdle()
+        finished.value = true
+        composeRule.waitForIdle()
+        assertFalse(read("a"))
+    }
+
+    @Test
+    fun withNeverItsNotMarkedRead() {
+        db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
+        composeRule.setContent {
+            MarkReadOnArrival(reader, "a", MarkReadOn.NEVER, finished = true) {}
+        }
+        composeRule.waitForIdle()
+        assertFalse(read("a"))
+        assertEquals(0L, db.outboxQueries.countStates().executeAsOne())
     }
 }

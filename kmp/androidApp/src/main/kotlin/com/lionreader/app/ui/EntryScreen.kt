@@ -94,6 +94,7 @@ import com.lionreader.shared.reader.ReaderHeader
 import com.lionreader.shared.reader.readerContent
 import com.lionreader.shared.reader.readerShell
 import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.MarkReadOn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -103,9 +104,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * Articles of the list they were opened from, one per page: swiping left or right moves to the next
- * or previous one, and each is marked read when it settles on screen. [opened] is the article
- * opened and the list's order then, kept fixed so entries arriving meanwhile don't shift the pages;
- * null before any is, when the pages wait, loaded but empty.
+ * or previous one, and each is marked read as the settings say ([MarkReadOnArrival]). [opened] is
+ * the article opened and the list's order then, kept fixed so entries arriving meanwhile don't
+ * shift the pages; null before any is, when the pages wait, loaded but empty.
  *
  * On a phone the screen outlives openings ([ArticleLayer]): it waits behind the list while that's
  * on screen, so opening an article swaps it into a page that's ready rather than building one. Only
@@ -206,7 +207,16 @@ internal fun EntryScreen(
             if (shown) value = account.summariesAvailable()
         }
 
-    if (shown && entryId != null) MarkReadOnArrival(account.reader, entryId, onShown)
+    if (shown && entryId != null) {
+        MarkReadOnArrival(
+            account.reader,
+            entryId,
+            settings.markReadOn,
+            // Narration's end is AppGraph's to mark, on screen or not.
+            finished = started && articles.endShown(entryId),
+            onShown,
+        )
+    }
 
     val actions: @Composable RowScope.() -> Unit = actions@{
         val current = entry ?: return@actions
@@ -433,6 +443,9 @@ internal fun EntryScreen(
                             if (onScreen && opened != null && pageId == opened.id) {
                                 { onReady(opened) }
                             } else null,
+                        onEndShown = { endShown ->
+                            pageId?.let { articles.showsEnd(it, endShown) }
+                        },
                     )
                 }
             }
@@ -484,18 +497,36 @@ internal fun NarrationFollowsPage(
 }
 
 /**
- * Marks the entry the pager settles on read, once per arrival. A restored screen (rotation, process
- * death) is still on the same arrival, so an entry the user marked unread stays unread; swiping
- * away and back is a new one.
+ * Marks the entry the pager settles on read, at most once per arrival: at once with
+ * [MarkReadOn.OPENED], once it's [finished] (its end on screen) with [MarkReadOn.FINISHED]. A
+ * restored screen (rotation, process death) is still on the same arrival, so an entry the user
+ * marked unread stays unread; swiping away and back is a new one.
  */
 @Composable
-internal fun MarkReadOnArrival(reader: Reader, entryId: String, onShown: (String) -> Unit) {
-    var marked by rememberSaveable { mutableStateOf<String?>(null) }
+internal fun MarkReadOnArrival(
+    reader: Reader,
+    entryId: String,
+    markReadOn: MarkReadOn,
+    finished: Boolean,
+    onShown: (String) -> Unit,
+) {
+    var opened by rememberSaveable(entryId) { mutableStateOf(false) }
+    var marked by rememberSaveable(entryId) { mutableStateOf(false) }
     LaunchedEffect(entryId) {
         onShown(entryId)
-        if (marked == entryId) return@LaunchedEffect
-        marked = entryId
+        if (opened) return@LaunchedEffect
+        opened = true
         reader.markOpened(entryId)
+    }
+    val due =
+        when (markReadOn) {
+            MarkReadOn.OPENED -> true
+            MarkReadOn.FINISHED -> finished
+            MarkReadOn.NEVER -> false
+        }
+    LaunchedEffect(entryId, due) {
+        if (!due || marked) return@LaunchedEffect
+        marked = true
         // Even if it's read already, like the web, so it's at the top of Recently Read.
         reader.setRead(listOf(entryId), true)
     }
@@ -523,6 +554,7 @@ private fun EntryPage(
     load: Boolean,
     prefetched: (String) -> ArticleState?,
     onReady: (() -> Unit)?,
+    onEndShown: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     // What this visit of the article (one opening) has; the page outlives it.
@@ -575,6 +607,7 @@ private fun EntryPage(
         ),
         hidden = !shown,
         onDrawn = { if (content.isNotEmpty()) onReady?.invoke() },
+        onEndShown = onEndShown,
         modifier = Modifier.fillMaxSize(),
     )
     when {
@@ -735,8 +768,8 @@ internal class BodyDownload(val failed: Boolean, val retry: () -> Unit)
 /**
  * Downloads the entry's body when it's loaded without one. Keyed on "loaded and missing", because
  * the entry is null until its query answers: keyed on a missing body alone, the effect would run
- * against the null entry and not again when it loads. Nothing else fetches it, either: opening an
- * entry marks it read, and the background download skips read entries.
+ * against the null entry and not again when it loads. Nothing else may fetch it, either: opening an
+ * entry can mark it read, and the background download skips read entries.
  */
 @Composable
 internal fun rememberBodyDownload(

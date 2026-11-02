@@ -13,12 +13,13 @@ import com.lionreader.shared.data.EntryDetail
 /**
  * What the article screen knows of each of its pages, changed only through the functions here: the
  * article as its page loaded it (so the bars can follow the page a swipe is heading to), the text
- * its reader extracted to narrate, and its summary's state.
+ * its reader extracted to narrate, whether its end is on screen, and its summary's state.
  */
 @Stable
 internal class ArticlePages(shownSummaries: Set<String> = emptySet()) {
     private val entries = mutableStateMapOf<String, EntryDetail>()
     private val spoken = mutableStateMapOf<String, List<String>>()
+    private var endsShown by mutableStateOf(emptySet<String>())
     /**
      * Summaries the user asked to see; hidden until then, like on the web. Kept across rotation.
      */
@@ -31,11 +32,14 @@ internal class ArticlePages(shownSummaries: Set<String> = emptySet()) {
 
     fun paragraphs(id: String): List<String>? = spoken[id]
 
+    fun endShown(id: String): Boolean = id in endsShown
+
     /** A page's article, or null when it's gone (and with it, its extracted text). */
     fun loaded(id: String, entry: EntryDetail?) {
         if (entry == null) {
             entries.remove(id)
             spoken.remove(id)
+            endsShown -= id
         } else {
             entries[id] = entry
         }
@@ -43,6 +47,10 @@ internal class ArticlePages(shownSummaries: Set<String> = emptySet()) {
 
     fun extracted(id: String, paragraphs: List<String>) {
         spoken[id] = paragraphs
+    }
+
+    fun showsEnd(id: String, shown: Boolean) {
+        endsShown = if (shown) endsShown + id else endsShown - id
     }
 
     fun summaryShown(id: String): Boolean = id in shownSummaries
