@@ -90,9 +90,9 @@ function EntryContentInner({
   // The stored setting only once hydrated: the hydration render has the default.
   const isHydrated = useIsHydrated();
   const [markReadOn] = useMarkReadOn();
-  // Whether this opening has marked the entry read by itself, so an entry the
-  // user then marks unread stays unread.
-  const hasAutoMarkedRead = useRef(false);
+  // Whether this opening is done with marking the entry read by itself: it has,
+  // or the user has set its read state, so what they chose stays.
+  const autoMarkReadDone = useRef(false);
 
   const narrationContinued = useNarrationContinuedHere(entryId);
 
@@ -228,10 +228,18 @@ function EntryContentInner({
   // Auto-mark-read, once per opening, when the setting says: see
   // "Auto-mark-read" in src/FRONTEND_STATE.md.
   const autoMarkRead = useCallback(() => {
-    if (hasAutoMarkedRead.current) return;
-    hasAutoMarkedRead.current = true;
+    if (autoMarkReadDone.current) return;
+    autoMarkReadDone.current = true;
     markRead([entryId], true);
   }, [entryId, markRead]);
+
+  const setReadByUser = useCallback(
+    (read: boolean) => {
+      autoMarkReadDone.current = true;
+      markRead([entryId], read);
+    },
+    [entryId, markRead]
+  );
 
   useEffect(() => {
     if (isHydrated && entry && markReadOn === "opened") autoMarkRead();
@@ -248,7 +256,7 @@ function EntryContentInner({
   // Handle read toggle from entry view
   const handleReadToggle = () => {
     if (!entry) return;
-    markRead([entryId], !entry.read);
+    setReadByUser(!entry.read);
   };
 
   // Deterministic skeleton on the server + first client render so hydration
@@ -270,6 +278,7 @@ function EntryContentInner({
     return (
       <EntryContentFallback
         entryId={entryId}
+        onSetRead={setReadByUser}
         onBack={onBack}
         isSummarizationAvailable={isSummarizationAvailable}
       />

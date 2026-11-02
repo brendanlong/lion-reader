@@ -1,15 +1,29 @@
 // Reports the page's sideways-scrolling blocks (our stylesheet makes only
 // `pre` and `table` scroll) and which way each can still scroll, so
 // ReaderWebView can keep a drag on one from turning the page; and whether the
-// bottom of the page is on screen (`{type: "end"}`), as that changes.
+// bottom of the page is on screen with no image on screen still loading (one
+// that loads can push it back off), as that changes (`{type: "end"}`). Images
+// above the screen can't: the page anchors scrolling to what's on screen.
 (function () {
   var last = "";
   var lastEnd = null;
 
+  function imageLoadingOnScreen() {
+    var images = document.images;
+    for (var i = 0; i < images.length; i++) {
+      if (images[i].complete) continue;
+      var r = images[i].getBoundingClientRect();
+      if (r.bottom >= 0 && r.top <= window.innerHeight) return true;
+    }
+    return false;
+  }
+
   function reportEnd() {
     if (!window.lionReader) return;
     var root = document.documentElement;
-    var shown = window.scrollY + window.innerHeight >= root.scrollHeight - 1;
+    var shown =
+      window.scrollY + window.innerHeight >= root.scrollHeight - 1 &&
+      !imageLoadingOnScreen();
     if (shown === lastEnd) return;
     lastEnd = shown;
     window.lionReader.postMessage(JSON.stringify({ type: "end", shown: shown }));
@@ -58,6 +72,10 @@
   // A wide view's body keeps its (capped) size but moves.
   window.addEventListener("resize", report);
   document.fonts.ready.then(report);
+  // An image that loads without changing the page's size; `load` and `error`
+  // don't bubble, but they can be captured.
+  document.addEventListener("load", reportEnd, true);
+  document.addEventListener("error", reportEnd, true);
   document.addEventListener(
     "scroll",
     function (event) {

@@ -104,7 +104,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Articles of the list they were opened from, one per page: swiping left or right moves to the next
- * or previous one, and each is marked read as the settings say ([MarkReadOnArrival]). [opened] is
+ * or previous one, and each is marked read as the settings say ([markReadOnArrival]). [opened] is
  * the article opened and the list's order then, kept fixed so entries arriving meanwhile don't
  * shift the pages; null before any is, when the pages wait, loaded but empty.
  *
@@ -207,20 +207,21 @@ internal fun EntryScreen(
             if (shown) value = account.summariesAvailable()
         }
 
-    if (shown && entryId != null) {
-        MarkReadOnArrival(
-            account.reader,
-            entryId,
-            settings.markReadOn,
-            // Narration's end is AppGraph's to mark, on screen or not; while it plays, it scrolls
-            // the end on screen before it's been said.
-            finished =
-                started &&
-                    articles.endShown(entryId) &&
-                    narration?.let { it.entryId == entryId && it.playing } != true,
-            onShown,
-        )
-    }
+    val leaveReadToUser =
+        if (shown && entryId != null) {
+            markReadOnArrival(
+                account.reader,
+                entryId,
+                settings.markReadOn,
+                finished =
+                    narration?.let { it.entryId == entryId && it.narratedToEnd } == true ||
+                        // While narration plays, it scrolls the end on screen before it's said.
+                        (started &&
+                            articles.endShown(entryId) &&
+                            narration?.let { it.entryId == entryId && it.playing } != true),
+                onShown,
+            )
+        } else null
 
     val actions: @Composable RowScope.() -> Unit = actions@{
         val current = entry ?: return@actions
@@ -280,6 +281,7 @@ internal fun EntryScreen(
         }
         IconButton(
             onClick = {
+                if (current.id == entryId) leaveReadToUser?.invoke()
                 coroutines.launch {
                     account.reader.setRead(listOf(current.id), !current.read)
                 }
@@ -502,20 +504,23 @@ internal fun NarrationFollowsPage(
 
 /**
  * Marks the entry the pager settles on read, at most once per arrival: at once with
- * [MarkReadOn.OPENED], once it's [finished] (its end on screen) with [MarkReadOn.FINISHED]. A
- * restored screen (rotation, process death) is still on the same arrival, so an entry the user
- * marked unread stays unread; swiping away and back is a new one.
+ * [MarkReadOn.OPENED], once it's [finished] (its end on screen, or narration has said all of it)
+ * with [MarkReadOn.FINISHED]. Returns what to call when the user sets its read state themselves,
+ * after which the arrival marks nothing. A restored screen (rotation, process death) is still on
+ * the same arrival, so an entry the user marked unread stays unread; swiping away and back is a new
+ * one.
  */
 @Composable
-internal fun MarkReadOnArrival(
+internal fun markReadOnArrival(
     reader: Reader,
     entryId: String,
     markReadOn: MarkReadOn,
     finished: Boolean,
     onShown: (String) -> Unit,
-) {
+): () -> Unit {
     var opened by rememberSaveable(entryId) { mutableStateOf(false) }
-    var marked by rememberSaveable(entryId) { mutableStateOf(false) }
+    // Marked, or left to the user.
+    var done by rememberSaveable(entryId) { mutableStateOf(false) }
     LaunchedEffect(entryId) {
         onShown(entryId)
         if (opened) return@LaunchedEffect
@@ -529,11 +534,12 @@ internal fun MarkReadOnArrival(
             MarkReadOn.NEVER -> false
         }
     LaunchedEffect(entryId, due) {
-        if (!due || marked) return@LaunchedEffect
-        marked = true
+        if (!due || done) return@LaunchedEffect
+        done = true
         // Even if it's read already, like the web, so it's at the top of Recently Read.
         reader.setRead(listOf(entryId), true)
     }
+    return remember(entryId) { { done = true } }
 }
 
 /**

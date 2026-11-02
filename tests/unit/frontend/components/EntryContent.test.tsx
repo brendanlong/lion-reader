@@ -342,6 +342,52 @@ describe("EntryContent mark-read setting", () => {
     expect(callsFor("entries.markRead")).toHaveLength(2);
   });
 
+  it("with Finished, marks nothing after the user sets the read state themselves", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByText("Cleaned body content here.");
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark as read" })[0]);
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark as unread" })[0]);
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
+
+    scrollToEnd();
+
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(2);
+  });
+
+  it("with Finished, waits for an image in view to load before counting the end", async () => {
+    setMarkReadOn("finished");
+    const scrollToEnd = stubIntersectionObservers();
+    const { callsFor } = renderEntryContent(
+      <EntryContent entryId="entry-1" />,
+      baseHandlers({
+        "entries.get": () => ({
+          entry: createEntry({
+            contentCleaned:
+              '<p>Cleaned body content here.</p><img src="https://example.com/a.png">',
+          }),
+        }),
+      })
+    );
+    await screen.findByText("Cleaned body content here.");
+    const image = document.querySelector(".reader-prose img")!;
+    let complete = false;
+    Object.defineProperty(image, "complete", { get: () => complete });
+
+    scrollToEnd();
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(0);
+
+    complete = true;
+    act(() => {
+      image.dispatchEvent(new Event("load"));
+    });
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+  });
+
   it("doesn't count the end as seen while the tab is in the background", async () => {
     setMarkReadOn("finished");
     const scrollToEnd = stubIntersectionObservers();

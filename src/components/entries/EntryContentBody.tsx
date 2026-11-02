@@ -17,7 +17,7 @@ import { useEntryNarration } from "@/components/narration/useEntryNarration";
 import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
-import { useOnScreen } from "@/lib/hooks/useOnScreen";
+import { useContentEndOnScreen } from "@/lib/hooks/useContentEndOnScreen";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { SHORTCUTS } from "@/components/keyboard/shortcuts";
@@ -217,8 +217,10 @@ export function EntryContentBody({
   // Not the feed's excerpt while the full article is on its way, nor while
   // narration plays: its auto-scroll shows the end before it's been said.
   const contentEndRef = useRef<HTMLDivElement>(null);
-  const contentEndOnScreen = useOnScreen(
+  const contentEndOnScreen = useContentEndOnScreen(
+    contentRef,
     contentEndRef,
+    narration.contentHtml,
     Boolean(onFinished) && !isAwaitingFullContent && !narration.isPlaying
   );
   const finished = contentEndOnScreen || narration.narratedToEnd;

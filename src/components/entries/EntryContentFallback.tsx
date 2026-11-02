@@ -26,18 +26,21 @@ import { ENTRY_ACTION_BAR_CLASSES, EntryArticle, EntryArticleSkeleton } from "./
 
 interface EntryContentFallbackProps {
   entryId: string;
+  /** The read toggle, as the loaded entry's would. */
+  onSetRead: (read: boolean) => void;
   onBack?: () => void;
   isSummarizationAvailable: boolean;
 }
 
 export function EntryContentFallback({
   entryId,
+  onSetRead,
   onBack,
   isSummarizationAvailable,
 }: EntryContentFallbackProps) {
   const cachedEntry = useLocalEntry(entryId);
   // Star/read work optimistically even while the full entry loads
-  const { markRead, setStarred } = useEntryMutations();
+  const { setStarred } = useEntryMutations();
   const [narrationSettings] = useNarrationSettings();
 
   return (
@@ -61,7 +64,7 @@ export function EntryContentFallback({
               />
               <ReadToggleButton
                 read={cachedEntry.read}
-                onToggle={() => markRead([entryId], !cachedEntry.read)}
+                onToggle={() => onSetRead(!cachedEntry.read)}
               />
               <CollectionsButton entryId={entryId} />
               {cachedEntry.url && (

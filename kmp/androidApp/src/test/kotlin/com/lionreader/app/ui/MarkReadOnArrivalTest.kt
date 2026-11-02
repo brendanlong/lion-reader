@@ -46,7 +46,7 @@ class MarkReadOnArrivalTest {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
         val restoration = StateRestorationTester(composeRule)
         restoration.setContent {
-            MarkReadOnArrival(reader, "a", MarkReadOn.OPENED, finished = false) {}
+            markReadOnArrival(reader, "a", MarkReadOn.OPENED, finished = false) {}
         }
         composeRule.waitUntil { read("a") }
 
@@ -61,7 +61,7 @@ class MarkReadOnArrivalTest {
     fun arrivingAtAReadEntryMovesItToTheTopOfRecentlyRead() {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 1, 0)
         composeRule.setContent {
-            MarkReadOnArrival(reader, "a", MarkReadOn.OPENED, finished = false) {}
+            markReadOnArrival(reader, "a", MarkReadOn.OPENED, finished = false) {}
         }
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         val recentlyRead = runBlocking {
@@ -84,7 +84,7 @@ class MarkReadOnArrivalTest {
         db.entryQueries.insertIgnore("b", "web", 0, 0, 0, 0)
         val shown = mutableStateOf("a")
         composeRule.setContent {
-            MarkReadOnArrival(reader, shown.value, MarkReadOn.OPENED, finished = false) {}
+            markReadOnArrival(reader, shown.value, MarkReadOn.OPENED, finished = false) {}
         }
         composeRule.waitUntil { read("a") }
         runBlocking { reader.setRead(listOf("a"), false) }
@@ -103,7 +103,7 @@ class MarkReadOnArrivalTest {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
         val finished = mutableStateOf(false)
         composeRule.setContent {
-            MarkReadOnArrival(reader, "a", MarkReadOn.FINISHED, finished.value) {}
+            markReadOnArrival(reader, "a", MarkReadOn.FINISHED, finished.value) {}
         }
         composeRule.waitForIdle()
         assertFalse(read("a"))
@@ -125,9 +125,27 @@ class MarkReadOnArrivalTest {
     fun withNeverItsNotMarkedRead() {
         db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
         composeRule.setContent {
-            MarkReadOnArrival(reader, "a", MarkReadOn.NEVER, finished = true) {}
+            markReadOnArrival(reader, "a", MarkReadOn.NEVER, finished = true) {}
         }
         composeRule.waitForIdle()
+        assertFalse(read("a"))
+        assertEquals(0L, db.outboxQueries.countStates().executeAsOne())
+    }
+
+    @Test
+    fun onceTheUserSetsTheReadStateFinishingMarksNothing() {
+        db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
+        val finished = mutableStateOf(false)
+        lateinit var leaveToUser: () -> Unit
+        composeRule.setContent {
+            leaveToUser = markReadOnArrival(reader, "a", MarkReadOn.FINISHED, finished.value) {}
+        }
+        composeRule.waitForIdle()
+
+        leaveToUser()
+        finished.value = true
+        composeRule.waitForIdle()
+
         assertFalse(read("a"))
         assertEquals(0L, db.outboxQueries.countStates().executeAsOne())
     }
