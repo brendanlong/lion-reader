@@ -1,8 +1,5 @@
 package com.lionreader.app.narration
 
-import android.net.Uri
-import androidx.media3.common.C
-import androidx.media3.datasource.DataSpec
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.ENHANCED_VOICES
 import com.lionreader.shared.api.EnhancedVoiceFiles
@@ -12,15 +9,11 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.file.Files
 import java.util.Collections
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -122,53 +115,20 @@ class EnhancedVoicesTest {
     }
 
     @Test
-    fun aWavStreamsWithAnOpenSizeAndEndsWithItsOwn() {
-        val file = File(root, "chunk.wav")
-        val wav = StreamingWav(file, 24_000)
-        wav.write(floatArrayOf(0f, 0.5f, -0.5f))
-        // Past the range: clipped, not wrapped.
-        wav.write(floatArrayOf(2f, -2f))
-
-        val streaming = header(file)
-        assertEquals(-1, streaming.getInt(4))
-        assertEquals(-1, streaming.getInt(40))
-
-        wav.finish(file)
-
-        val done = header(file)
-        assertEquals(file.length() - 8, done.getInt(4).toLong())
-        assertEquals(5 * 2, done.getInt(40))
-        assertEquals(24_000, done.getInt(24))
-        val samples = ByteBuffer.wrap(file.readBytes(), 44, 10).order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals(
-            listOf(
-                0,
-                Short.MAX_VALUE / 2,
-                -(Short.MAX_VALUE / 2),
-                Short.MAX_VALUE.toInt(),
-                -Short.MAX_VALUE.toInt(),
-            ),
-            List(5) { samples.getShort().toInt() },
-        )
-        // The player reads all of it: every byte written was handed over as it was.
-        assertArrayEquals(file.readBytes(), read(wav.audio.uri))
-    }
-
-    private fun header(file: File): ByteBuffer =
-        ByteBuffer.wrap(file.readBytes(), 0, 44).order(ByteOrder.LITTLE_ENDIAN)
-
-    /** What the narration player reads of a finished stream. */
-    private fun read(uri: Uri): ByteArray {
-        val source = NarrationDataSource()
-        source.open(DataSpec(uri))
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(4096)
-        while (true) {
-            val read = source.read(buffer, 0, buffer.size)
-            if (read == C.RESULT_END_OF_INPUT) break
-            out.write(buffer, 0, read)
-        }
-        source.close()
-        return out.toByteArray()
+    fun adtsHeadersMatchAReferenceEncoders() {
+        // ffmpeg's (`-c:a aac -profile:a aac_low -f adts`, 24 kHz mono) for frames of these sizes.
+        mapOf(
+                297 to "FF F1 58 40 26 1F FC",
+                359 to "FF F1 58 40 2D DF FC",
+                239 to "FF F1 58 40 1E DF FC",
+            )
+            .forEach { (payload, expected) ->
+                assertEquals(
+                    expected,
+                    StreamingAac.adtsHeader(payload, 24_000).joinToString(" ") {
+                        "%02X".format(it)
+                    },
+                )
+            }
     }
 }
