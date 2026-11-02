@@ -6,10 +6,11 @@
  *
  * AAC in MP4 is the only format every MSE implementation accepts — iOS's
  * `ManagedMediaSource` refuses MP3 and Opus-in-MP4. We prefer the browser's
- * native encoder (WebCodecs), use native Opus where AAC isn't offered but MSE
- * can play Opus (Chrome and Firefox on Linux), and only then fall back to a
- * WASM AAC encoder (~1 MB, loaded on demand; Safari before 26 has MSE but no
- * `AudioEncoder`).
+ * native encoder (WebCodecs) at the speech's own sample rate, so nothing is
+ * resampled: AAC where it takes that rate, else Opus where MSE can play it
+ * (Chrome on Android only encodes AAC at 48 kHz, but Opus at 24 kHz). Then
+ * either at a rate it does take, resampled; and only then a WASM AAC encoder
+ * (~1 MB, loaded on demand; Safari before 26 has MSE but no `AudioEncoder`).
  *
  * Mediabunny is imported lazily so it stays out of the main bundle.
  *
@@ -63,24 +64,34 @@ const OPUS: Candidate = {
  * Resolves null when there is none.
  */
 export async function loadSpeechEncoder(
-  mediaSource: typeof MediaSource
+  mediaSource: typeof MediaSource,
+  speechSampleRate: number
 ): Promise<SpeechEncoder | null> {
   const mediabunny = await import("mediabunny");
-  const canPlay = (candidate: Candidate) => mediaSource.isTypeSupported(candidate.mimeType);
+  const playable = [AAC, OPUS].filter((candidate) =>
+    mediaSource.isTypeSupported(candidate.mimeType)
+  );
+  const canEncode = (candidate: Candidate, sampleRate: number) =>
+    mediabunny.canEncodeAudio(candidate.codec, {
+      numberOfChannels: 1,
+      sampleRate,
+      quality: new mediabunny.Quality({ bitrate: BITRATE }),
+    });
 
-  for (const candidate of [AAC, OPUS]) {
-    if (!canPlay(candidate)) continue;
+  for (const candidate of playable) {
+    if (await canEncode(candidate, speechSampleRate)) {
+      return createEncoder(mediabunny, candidate, speechSampleRate);
+    }
+  }
+  for (const candidate of playable) {
     for (const sampleRate of candidate.sampleRates) {
-      const supported = await mediabunny.canEncodeAudio(candidate.codec, {
-        numberOfChannels: 1,
-        sampleRate,
-        quality: new mediabunny.Quality({ bitrate: BITRATE }),
-      });
-      if (supported) return createEncoder(mediabunny, candidate, sampleRate);
+      if (await canEncode(candidate, sampleRate)) {
+        return createEncoder(mediabunny, candidate, sampleRate);
+      }
     }
   }
 
-  if (!canPlay(AAC)) return null;
+  if (!playable.includes(AAC)) return null;
   const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
   registerAacEncoder();
   return createEncoder(mediabunny, AAC, AAC.sampleRates[0]);

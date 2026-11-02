@@ -10,7 +10,7 @@
 import { loadSpeechEncoder, type SpeechEncoder } from "./audio-encoding";
 import { getMediaSourceClass, MediaSourcePlayer, UNSUPPORTED_MESSAGE } from "./media-source-player";
 import { splitIntoSentenceChunks } from "./speech-chunks";
-import { streamPhonon } from "./phonon-tts";
+import { loadPhonon, streamPhonon } from "./phonon-tts";
 
 export interface PhononVoice {
   voice: string;
@@ -36,7 +36,9 @@ export function createPhononSpeechPlayer(voice: () => PhononVoice): MediaSourceP
   const getEncoder = () => {
     encoder ??= (async () => {
       const mediaSource = getMediaSourceClass();
-      const loaded = mediaSource ? await loadSpeechEncoder(mediaSource) : null;
+      const loaded = mediaSource
+        ? await loadSpeechEncoder(mediaSource, (await loadPhonon()).sampleRate)
+        : null;
       if (!loaded) throw new Error(UNSUPPORTED_MESSAGE);
       return loaded;
     })().catch((error: unknown) => {
@@ -53,7 +55,7 @@ export function createPhononSpeechPlayer(voice: () => PhononVoice): MediaSourceP
       const pcm = withTrailingSilence(speech, speech.sampleRate, sentenceGapSeconds, signal);
       yield* (await getEncoder()).encode(pcm, speech.sampleRate);
     },
-    // The encoder picks the format: AAC where it can, else Opus.
+    // The encoder picks the format; see `loadSpeechEncoder`.
     loadMimeType: async () => (await getEncoder()).mimeType,
     chunkParagraphs: splitIntoSentenceChunks,
     // One model in one worker: it generates one sentence at a time anyway.

@@ -50,10 +50,10 @@ async function collect(pcm: AsyncIterable<Float32Array>): Promise<Float32Array> 
 describe("loadSpeechEncoder", () => {
   it.each([
     { name: "at the encoder's rate", inputRate: ENCODER_RATE },
-    // Doubled, like Phonon's 24 kHz into Chrome for Android's 48 kHz-only AAC (this encoder runs at 24 kHz).
+    // Doubled, like Phonon's 24 kHz into an encoder that only takes 48 kHz (this one runs at 24 kHz).
     { name: "resampled", inputRate: 12_000 },
   ])("yields audio fragments while the speech is still arriving ($name)", async ({ inputRate }) => {
-    const encoder = await loadSpeechEncoder(mediaSource);
+    const encoder = await loadSpeechEncoder(mediaSource, ENCODER_RATE);
     if (!encoder) throw new Error("no encoder");
 
     const piece = inputRate * 0.08; // Phonon's 80 ms pieces
@@ -83,7 +83,7 @@ describe("loadSpeechEncoder", () => {
   });
 
   it("stops the speech as soon as its reader stops, even mid-wait", async () => {
-    const encoder = await loadSpeechEncoder(mediaSource);
+    const encoder = await loadSpeechEncoder(mediaSource, ENCODER_RATE);
     if (!encoder) throw new Error("no encoder");
 
     let returned = false;
