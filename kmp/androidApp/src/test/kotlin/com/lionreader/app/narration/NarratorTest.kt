@@ -1,5 +1,6 @@
 package com.lionreader.app.narration
 
+import android.content.Context
 import android.net.Uri
 import android.os.Looper
 import androidx.media3.common.Player
@@ -12,6 +13,7 @@ import com.lionreader.shared.narration.SpeechInterrupted
 import com.lionreader.shared.settings.AppSettings
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.time.Duration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -48,6 +50,13 @@ class NarratorTest {
     private val unsayable = mutableSetOf<String>()
     /** Synthesizes a moment of audio rather than half a minute, so narration can play through. */
     private var brief = false
+    /**
+     * Synthesis hands over finished streams: in the narrator's folder (as enhanced voices'), or,
+     * for these texts, in an engine's own cache (as cloud voices').
+     */
+    private var finishedStreams = false
+    private val cachedElsewhere = mutableSetOf<String>()
+    private val engineCache: File = Files.createTempDirectory("engine-cache").toFile()
     /** Getting the engine, and synthesis, wait on these while they're set. */
     private var engineReady: CompletableDeferred<Unit>? = null
     private var synthesisDone: CompletableDeferred<Unit>? = null
@@ -76,6 +85,16 @@ class NarratorTest {
                     return audio.uri
                 }
                 val audio = if (brief) silence(seconds = 0.2) else SILENCE
+                if (finishedStreams) {
+                    val into = if (text in cachedElsewhere) engineCache else dir
+                    val file = File(into, "$name.wav").apply { writeBytes(audio) }
+                    return StreamedAudio(file)
+                        .also {
+                            it.appended(audio.size)
+                            it.finish(file)
+                        }
+                        .uri
+                }
                 return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(audio) })
             }
         }
@@ -208,6 +227,24 @@ class NarratorTest {
         assertNull(state)
         assertEquals(listOf("One.", "Two.", "Three."), synthesized)
         assertEquals(0, narrator.player.mediaItemCount)
+    }
+
+    @Test
+    fun streamedChunksWellBehindAreDeletedButNotAnEnginesCache() {
+        brief = true
+        finishedStreams = true
+        cachedElsewhere += "Two."
+        val paragraphs = listOf("One.", "Two.") + (3..14).map { "Paragraph $it." }
+        narrator.narrate(article("a", *paragraphs.toTypedArray()))
+        idleUntil { (state?.paragraph ?: 0) >= 10 }
+        assertTrue((state?.paragraph ?: 0) >= 10)
+
+        val narration =
+            File(ApplicationProvider.getApplicationContext<Context>().cacheDir, "narration")
+        // Chunk 0 is a few past what's kept behind, so its file is gone.
+        assertFalse(File(narration, "0.wav").exists())
+        // Its cache is the engine's own.
+        assertTrue(File(engineCache, "1.wav").exists())
     }
 
     @Test

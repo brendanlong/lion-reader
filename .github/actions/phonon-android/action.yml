@@ -1,0 +1,27 @@
+name: Phonon for Android
+description: >
+  What kmp/phonon/build.sh needs to build Phonon's native library (enhanced
+  voices) for the app: cargo-ndk, Rust's Android targets (the script adds them),
+  and the runner image's NDK. The build is cached on the script and the Rust
+  pin, so most runs build nothing.
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          kmp/androidApp/build/phonon/work/target
+          ~/.cargo/registry
+          ~/.cargo/bin/cargo-ndk
+        key: phonon-android-${{ runner.os }}-${{ hashFiles('kmp/phonon/build.sh', 'rust-toolchain.toml', '.github/actions/phonon-android/action.yml') }}
+
+    - name: Install cargo-ndk
+      shell: bash
+      run: |
+        [ "$(cargo ndk --version 2>/dev/null)" = "cargo-ndk 4.1.2" ] ||
+          cargo install cargo-ndk --version 4.1.2 --locked --force
+
+    # build.sh reads ANDROID_NDK_HOME, which the runner image sets.
+    - name: Check the NDK
+      shell: bash
+      run: test -d "$ANDROID_NDK_HOME"

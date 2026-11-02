@@ -37,6 +37,7 @@ class SettingsStorageTest {
             cloudVoiceModel = "deepinfra:hexgrad/Kokoro-82M",
             cloudVoice = "af_heart",
             cloudVoicePauseSeconds = 0.5f,
+            enhancedVoice = "NbpkqMVS3CJeq2j8",
         )
 
     @Test
@@ -132,6 +133,7 @@ class SettingsStorageTest {
                 "cloud_voice_model",
                 "cloud_voice",
                 "cloud_voice_pause_seconds",
+                "enhanced_voice",
             ),
             keys,
         )

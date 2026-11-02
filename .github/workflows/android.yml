@@ -10,6 +10,8 @@ on:
       - "!kmp/**/*.md"
       - "!kmp/scripts/**"
       - ".github/workflows/android.yml"
+      - ".github/actions/phonon-android/**"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [master]
     paths:
@@ -17,6 +19,8 @@ on:
       - "!kmp/**/*.md"
       - "!kmp/scripts/**"
       - ".github/workflows/android.yml"
+      - ".github/actions/phonon-android/**"
+      - "rust-toolchain.toml"
 
 permissions:
   contents: read
@@ -45,6 +49,9 @@ jobs:
           java-version: "21"
 
       # Also validates the wrapper jar. Writes the cache only on master.
+      # kmp/phonon/build.sh, which Gradle runs, builds Phonon's native library.
+      - uses: ./.github/actions/phonon-android
+
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       # The Kotlin/Native toolchain `check` compiles :shared's iOS targets with

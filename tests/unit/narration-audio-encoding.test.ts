@@ -144,8 +144,12 @@ describe("resample", () => {
           }
         }
         const pieced = await collect(resample(randomPieces(), from, to));
-        expect(pieced.every(Number.isFinite)).toBe(true);
-        expect(pieced).toEqual(whole);
+        expect(pieced.length).toBe(whole.length);
+        // The first sample that differs (or isn't a number), if any: far cheaper than toEqual
+        // on arrays this long, which made the test slow enough to time out under load.
+        expect(pieced.findIndex((value, i) => !Number.isFinite(value) || value !== whole[i])).toBe(
+          -1
+        );
       }
     }
   );
