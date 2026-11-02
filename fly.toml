@@ -84,7 +84,7 @@ kill_timeout = 30
   # Hosts of the same model to fail over between (see .env.example). Together's
   # Kokoro is $4 per million characters, so it's only a failover; OpenRouter
   # adds latency, so it's last.
-  MODEL_FAILOVER = "deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
+  MODEL_FAILOVER = "selfhosted:kokoro,deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
 
   WORKER_CONCURRENCY = "1"
 

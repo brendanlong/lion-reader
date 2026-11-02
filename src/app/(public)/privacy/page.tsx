@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="October 31, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="November 1, 2026">
       <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -236,13 +236,15 @@ export default function PrivacyPolicyPage() {
               <LegalParagraph>
                 With browser or enhanced voices, audio is generated entirely on your device. If you
                 choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
-                sent to the provider of the speech model you picked to generate the audio: DeepInfra
-                directly (the default, Kokoro), BreezeBlue or Together AI directly, or OpenRouter,
-                which forwards it to the company hosting that model (for example DeepInfra or
-                Together). When that provider is too busy or failing, the text may instead be sent
-                to another of these providers that hosts the same voice. The generated audio is
-                streamed back to your device and not stored on our servers. We ask BreezeBlue not to
-                save the text or audio in the generation history of the account whose key was used.
+                sent to the provider of the speech model you picked to generate the audio: our own
+                speech server (see <TextLink href="#hosting">Hosting</TextLink>) or DeepInfra
+                directly (the default voice, Kokoro), BreezeBlue or Together AI directly, or
+                OpenRouter, which forwards it to the company hosting that model (for example
+                DeepInfra or Together). When that provider is too busy or failing, the text may
+                instead be sent to another of these providers that hosts the same voice. The
+                generated audio is streamed back to your device and not stored on our servers. We
+                ask BreezeBlue not to save the text or audio in the generation history of the
+                account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
@@ -328,6 +330,12 @@ export default function PrivacyPolicyPage() {
               edge region that served each request, which is a rough geographic area rather than a
               location. This is standard infrastructure monitoring that comes with the platform, and
               it is not tied to your account.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              For cost and performance reasons, some parts of the service, including the default
+              cloud narration voice, may run on the developer&apos;s personal computer rather than
+              on Fly.io. Data sent to these parts, such as the text being narrated, is processed
+              there under the same terms as the rest of this policy.
             </LegalParagraph>
           </LegalSubsection>
 

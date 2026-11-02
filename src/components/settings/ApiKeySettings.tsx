@@ -19,11 +19,12 @@ import { InlineCode } from "@/components/ui/inline-code";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import {
   AI_PROVIDER_INFO,
-  AI_PROVIDERS,
   aiProviderNames,
   SPEECH_PROVIDERS,
   TEXT_AI_PROVIDERS,
+  USER_KEY_PROVIDERS,
   type AiProvider,
+  type UserKeyProvider,
 } from "@/lib/ai/providers";
 import {
   DEFAULT_SUMMARIZATION_MODEL,
@@ -76,11 +77,11 @@ function keyRequirementText(serverFeatures: ServerAiFeatures): string {
 /**
  * Add/change/remove control for a single provider's API key.
  */
-function ProviderKeyRow({ provider }: { provider: AiProvider }) {
+function ProviderKeyRow({ provider }: { provider: UserKeyProvider }) {
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const { update, isPending } = usePreferenceMutation();
 
-  const { displayName: providerName, keyUrl, keyPlaceholder } = AI_PROVIDER_INFO[provider];
+  const { displayName: providerName, userKey } = AI_PROVIDER_INFO[provider];
   const hasKey = preferencesQuery.data?.apiKeyProviders.includes(provider) ?? false;
   const isUnreadable = preferencesQuery.data?.unreadableApiKeyProviders.includes(provider) ?? false;
 
@@ -89,7 +90,7 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
       id={`${provider}-api-key-input`}
       label={
         <>
-          <TextLink href={keyUrl} external>
+          <TextLink href={userKey.url} external>
             {providerName}
           </TextLink>{" "}
           <span className="text-muted font-normal">({providerFeatures(provider)})</span>
@@ -133,7 +134,7 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
         <Input
           {...input}
           type="password"
-          placeholder={keyPlaceholder}
+          placeholder={userKey.placeholder}
           onChange={(e) => onChange(e.target.value)}
           autoComplete="off"
         />
@@ -154,7 +155,7 @@ export function AiProviderKeySettings() {
       description={serverFeatures && keyRequirementText(serverFeatures)}
     >
       <div className="space-y-4">
-        {AI_PROVIDERS.map((provider) => (
+        {USER_KEY_PROVIDERS.map((provider) => (
           <ProviderKeyRow key={provider} provider={provider} />
         ))}
       </div>

@@ -64,15 +64,21 @@ export const DEFAULT_NARRATION_MODEL = DEFAULT_NARRATION_MODELS.cerebras;
  * `@/lib/ai/providers`). Kokoro is the default: good quality at about a cent
  * per long article.
  */
+export const SELFHOSTED_KOKORO = "selfhosted:kokoro";
 export const DEEPINFRA_KOKORO = "deepinfra:hexgrad/Kokoro-82M";
 export const OPENROUTER_KOKORO = "openrouter:hexgrad/kokoro-82m";
 
 /**
  * The default cloud voice model, in preference order: the first one the user
- * can use (its provider has a key). DeepInfra directly is several times faster
- * than OpenRouter, whose speech endpoint adds seconds to every request.
+ * can use (its provider has a key): the operator's own server, then DeepInfra
+ * directly, which is several times faster than OpenRouter, whose speech
+ * endpoint adds seconds to every request.
  */
-export const DEFAULT_CLOUD_VOICE_MODELS: string[] = [DEEPINFRA_KOKORO, OPENROUTER_KOKORO];
+export const DEFAULT_CLOUD_VOICE_MODELS: string[] = [
+  SELFHOSTED_KOKORO,
+  DEEPINFRA_KOKORO,
+  OPENROUTER_KOKORO,
+];
 
 /** The default model before the server has said which ones are available. */
 export const DEFAULT_CLOUD_VOICE_MODEL = DEFAULT_CLOUD_VOICE_MODELS[0];
@@ -82,6 +88,7 @@ export const DEFAULT_CLOUD_VOICE_MODEL = DEFAULT_CLOUD_VOICE_MODELS[0];
  * first voice they report.
  */
 export const DEFAULT_CLOUD_VOICES: Record<string, string> = {
+  [SELFHOSTED_KOKORO]: "af_heart",
   [DEEPINFRA_KOKORO]: "af_heart",
   [OPENROUTER_KOKORO]: "af_heart",
   "openrouter:mistralai/voxtral-mini-tts-2603": "en_paul_neutral",

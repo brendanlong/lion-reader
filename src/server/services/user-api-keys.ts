@@ -9,7 +9,7 @@ import * as Sentry from "@sentry/nextjs";
 import { and, eq } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import { userApiKeys } from "@/server/db/schema";
-import { isAiProvider, type AiProvider } from "@/lib/ai/providers";
+import { isUserKeyProvider, type UserKeyProvider } from "@/lib/ai/providers";
 import {
   assertEncryptionConfigured,
   decryptApiKey,
@@ -21,13 +21,13 @@ import type { AiProviderKeys } from "@/server/services/ai-providers";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 
 /** The providers `userId` has their own API key for (not the keys). */
-export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> {
+export async function getApiKeyProviders(userId: string): Promise<UserKeyProvider[]> {
   const rows = await db
     .select({ provider: userApiKeys.provider })
     .from(userApiKeys)
     .where(eq(userApiKeys.userId, userId))
     .orderBy(userApiKeys.provider);
-  return rows.map((row) => row.provider).filter(isAiProvider);
+  return rows.map((row) => row.provider).filter(isUserKeyProvider);
 }
 
 /**
@@ -49,7 +49,7 @@ export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
   }
   const keys: AiProviderKeys = {};
   for (const { provider, encryptedKey } of rows) {
-    if (!isAiProvider(provider)) continue;
+    if (!isUserKeyProvider(provider)) continue;
     try {
       keys[provider] = decryptApiKey(encryptedKey);
     } catch (err) {
@@ -69,7 +69,7 @@ export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
  * actual use — and finds none when encryption isn't configured, where the
  * settings page hides keys altogether.
  */
-export async function getUnreadableApiKeyProviders(userId: string): Promise<AiProvider[]> {
+export async function getUnreadableApiKeyProviders(userId: string): Promise<UserKeyProvider[]> {
   try {
     assertEncryptionConfigured();
   } catch {
@@ -90,7 +90,7 @@ export async function getUnreadableApiKeyProviders(userId: string): Promise<AiPr
       }
     })
     .map((row) => row.provider)
-    .filter(isAiProvider);
+    .filter(isUserKeyProvider);
 }
 
 /**
@@ -101,7 +101,7 @@ export async function getUnreadableApiKeyProviders(userId: string): Promise<AiPr
 export async function setUserApiKeys(
   tx: DbOrTx,
   userId: string,
-  apiKeys: ReadonlyArray<readonly [AiProvider, string]>
+  apiKeys: ReadonlyArray<readonly [UserKeyProvider, string]>
 ): Promise<void> {
   if (apiKeys.some(([, key]) => key !== "") && !isEncryptionConfigured()) {
     throw errors.validation(

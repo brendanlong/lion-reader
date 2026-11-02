@@ -5,18 +5,23 @@
  * do narration's JSON preprocessing), cloud voices in
  * `src/server/services/speech.ts`. Key storage, the settings page and
  * availability follow from the entry; the privacy policy needs updating too
- * (`tests/unit/privacy-policy.test.tsx` checks it links the provider).
+ * (`tests/unit/privacy-policy.test.tsx` checks it links a third party's policy).
  *
  * Shared between server services and the settings UI.
  */
 
 export interface AiProviderInfo {
   displayName: string;
-  /** Where a user gets an API key, and what one looks like. */
-  keyUrl: string;
-  keyPlaceholder: string;
-  /** Linked from our privacy policy wherever we say we send this provider data. */
-  privacyPolicyUrl: string;
+  /**
+   * Where a user gets their own API key, and what one looks like; null when
+   * only the server has one (the provider is the operator's own).
+   */
+  userKey: { url: string; placeholder: string } | null;
+  /**
+   * Linked from our privacy policy wherever we say we send this provider data;
+   * null for the operator's own.
+   */
+  privacyPolicyUrl: string | null;
   /** Used for text: summaries and narration text processing. */
   text: boolean;
   /** Used for cloud voices. */
@@ -26,49 +31,57 @@ export interface AiProviderInfo {
 export const AI_PROVIDER_INFO = {
   anthropic: {
     displayName: "Anthropic",
-    keyUrl: "https://console.anthropic.com/settings/keys",
-    keyPlaceholder: "sk-ant-...",
+    userKey: { url: "https://console.anthropic.com/settings/keys", placeholder: "sk-ant-..." },
     privacyPolicyUrl: "https://www.anthropic.com/legal/privacy",
     text: true,
     speech: false,
   },
   cerebras: {
     displayName: "Cerebras",
-    keyUrl: "https://cloud.cerebras.ai/",
-    keyPlaceholder: "csk-...",
+    userKey: { url: "https://cloud.cerebras.ai/", placeholder: "csk-..." },
     privacyPolicyUrl: "https://www.cerebras.ai/privacy-policy",
     text: true,
     speech: false,
   },
   deepinfra: {
     displayName: "DeepInfra",
-    keyUrl: "https://deepinfra.com/dash/api_keys",
-    keyPlaceholder: "Your DeepInfra API key",
+    userKey: { url: "https://deepinfra.com/dash/api_keys", placeholder: "Your DeepInfra API key" },
     privacyPolicyUrl: "https://deepinfra.com/privacy",
     text: false,
     speech: true,
   },
   openrouter: {
     displayName: "OpenRouter",
-    keyUrl: "https://openrouter.ai/settings/keys",
-    keyPlaceholder: "sk-or-...",
+    userKey: { url: "https://openrouter.ai/settings/keys", placeholder: "sk-or-..." },
     privacyPolicyUrl: "https://openrouter.ai/privacy",
     text: true,
     speech: true,
   },
   breezeblue: {
     displayName: "BreezeBlue",
-    keyUrl: "https://breezeblue.ai/app/developer/api-keys",
-    keyPlaceholder: "Your BreezeBlue API key",
+    userKey: {
+      url: "https://breezeblue.ai/app/developer/api-keys",
+      placeholder: "Your BreezeBlue API key",
+    },
     privacyPolicyUrl: "https://breezeblue.ai/legal/privacy",
     text: false,
     speech: true,
   },
   together: {
     displayName: "Together AI",
-    keyUrl: "https://api.together.ai/settings/api-keys",
-    keyPlaceholder: "Your Together AI API key",
+    userKey: {
+      url: "https://api.together.ai/settings/api-keys",
+      placeholder: "Your Together AI API key",
+    },
     privacyPolicyUrl: "https://www.together.ai/privacy",
+    text: false,
+    speech: true,
+  },
+  /** The operator's own speech server (`src/server/services/selfhosted.ts`). */
+  selfhosted: {
+    displayName: "Lion Reader",
+    userKey: null,
+    privacyPolicyUrl: null,
     text: false,
     speech: true,
   },
@@ -97,6 +110,17 @@ export function isSpeechProvider(provider: AiProvider): provider is SpeechProvid
 
 export const TEXT_AI_PROVIDERS = AI_PROVIDERS.filter(isTextAiProvider);
 export const SPEECH_PROVIDERS = AI_PROVIDERS.filter(isSpeechProvider);
+
+/** Providers a user can add their own API key for. */
+export type UserKeyProvider = {
+  [P in AiProvider]: (typeof AI_PROVIDER_INFO)[P]["userKey"] extends null ? never : P;
+}[AiProvider];
+
+export function isUserKeyProvider(value: string): value is UserKeyProvider {
+  return isAiProvider(value) && AI_PROVIDER_INFO[value].userKey !== null;
+}
+
+export const USER_KEY_PROVIDERS = AI_PROVIDERS.filter(isUserKeyProvider);
 
 export function isAiProvider(value: string): value is AiProvider {
   return Object.hasOwn(AI_PROVIDER_INFO, value);

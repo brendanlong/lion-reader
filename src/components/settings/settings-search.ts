@@ -7,7 +7,7 @@
  * a user might reach for instead of ours ("dark mode" for Theme).
  */
 
-import { AI_PROVIDER_INFO } from "@/lib/ai/providers";
+import { aiProviderName, USER_KEY_PROVIDERS } from "@/lib/ai/providers";
 
 export const SETTINGS_PAGES = [
   { href: "/settings", label: "Account" },
@@ -168,12 +168,7 @@ export const SETTINGS_SEARCH_INDEX = [
     title: "AI Provider API Keys",
     description:
       "Add an API key for an AI provider to enable summaries, narration processing, and cloud voices.",
-    keywords: [
-      ...Object.values(AI_PROVIDER_INFO).map((p) => p.displayName),
-      "api key",
-      "llm",
-      "byok",
-    ],
+    keywords: [...USER_KEY_PROVIDERS.map(aiProviderName), "api key", "llm", "byok"],
     requiresApiKeys: true,
   },
   {

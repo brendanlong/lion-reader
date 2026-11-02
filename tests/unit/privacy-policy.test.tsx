@@ -35,7 +35,10 @@ describe("privacy policy AI providers", () => {
     (headingId, providers) => {
       const links = linksInSubsection(headingId);
       for (const provider of providers) {
-        expect(links, provider).toContain(AI_PROVIDER_INFO[provider].privacyPolicyUrl);
+        const url = AI_PROVIDER_INFO[provider].privacyPolicyUrl;
+        // Ours, not a third party's.
+        if (url === null) continue;
+        expect(links, provider).toContain(url);
       }
     }
   );
