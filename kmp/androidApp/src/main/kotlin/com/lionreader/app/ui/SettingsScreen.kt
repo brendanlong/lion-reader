@@ -19,6 +19,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -29,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -53,11 +55,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
+import com.lionreader.app.narration.EnhancedVoiceModel
 import com.lionreader.app.narration.VoiceOption
+import com.lionreader.app.narration.previewEnhancedVoice
 import com.lionreader.app.openWebPage
 import com.lionreader.shared.api.CloudSpeechPause
+import com.lionreader.shared.api.ENHANCED_VOICES
+import com.lionreader.shared.api.EnhancedVoiceFiles
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
+import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.settings.AppSettings
 import com.lionreader.shared.settings.NarrationEngine
 import com.lionreader.shared.settings.ReaderFont
@@ -66,6 +73,7 @@ import com.lionreader.shared.settings.TextSize
 import com.lionreader.shared.settings.ThemeChoice
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
@@ -274,12 +282,13 @@ private fun NarrationSettings(
     val cloud = known ?: VoiceModels(emptyList(), "").takeIf { asked }
     Section("Narration voices") {
         val engines =
-            if (
-                cloud?.models.isNullOrEmpty() && settings.narrationEngine != NarrationEngine.CLOUD
-            ) {
-                listOf(NarrationEngine.DEVICE)
-            } else {
-                NarrationEngine.entries
+            NarrationEngine.entries.filter { engine ->
+                engine == settings.narrationEngine ||
+                    when (engine) {
+                        NarrationEngine.DEVICE -> true
+                        NarrationEngine.CLOUD -> !cloud?.models.isNullOrEmpty()
+                        NarrationEngine.ENHANCED -> graph.enhancedVoiceModel != null
+                    }
             }
         if (engines.size > 1) {
             Choices(engines, settings.narrationEngine, { it.label }) { engine ->
@@ -287,6 +296,7 @@ private fun NarrationSettings(
             }
         }
         when (settings.narrationEngine) {
+            NarrationEngine.ENHANCED -> EnhancedVoiceSettings(graph, settings, update)
             NarrationEngine.DEVICE -> {
                 val voices = deviceVoices
                 Picker(
@@ -416,6 +426,98 @@ private fun NarrationSettings(
     }
 }
 
+@Composable
+private fun EnhancedVoiceSettings(
+    graph: AppGraph,
+    settings: AppSettings,
+    update: ((AppSettings) -> AppSettings) -> Unit,
+) {
+    val model = graph.enhancedVoiceModel
+    if (model == null) {
+        Hint("Enhanced voices don't run on this device.")
+        return
+    }
+    val state by model.state.collectAsStateWithLifecycle()
+    LaunchedEffect(model) { model.check() }
+    val size = "${(EnhancedVoiceFiles.DOWNLOAD_BYTES / (1024.0 * 1024)).roundToInt()} MB"
+    when (val current = state) {
+        EnhancedVoiceModel.State.Checking -> Hint("Checking the download…")
+        is EnhancedVoiceModel.State.Missing -> {
+            OutlinedButton(onClick = { graph.appScope.launch { model.download() } }) {
+                Text("Download ($size)")
+            }
+            current.failure?.let {
+                Text(
+                    "The download stopped: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        is EnhancedVoiceModel.State.Downloading -> {
+            LinearProgressIndicator(
+                progress = { current.fraction },
+                modifier =
+                    Modifier.fillMaxWidth().semantics {
+                        contentDescription = "Downloading enhanced voices"
+                    },
+            )
+            Hint("Downloading… ${(current.fraction * 100).roundToInt()}%")
+        }
+        EnhancedVoiceModel.State.Downloaded -> {
+            val voice = resolveEnhancedVoice(settings.enhancedVoice)
+            val scope = rememberCoroutineScope()
+            var preview by remember { mutableStateOf<Job?>(null) }
+            DisposableEffect(Unit) { onDispose { preview?.cancel() } }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Picker(
+                    voice.name,
+                    ENHANCED_VOICES,
+                    { it.name },
+                    group = { if (it.locale == "en-GB") "British English" else "American English" },
+                ) { choice ->
+                    update { it.copy(enhancedVoice = choice.id) }
+                }
+                val playing = preview?.isActive == true
+                OutlinedButton(
+                    onClick = {
+                        preview?.cancel()
+                        preview =
+                            if (playing) null
+                            else
+                                scope.launch {
+                                    try {
+                                        previewEnhancedVoice(model, voice.id)
+                                    } finally {
+                                        preview = null
+                                    }
+                                }
+                    }
+                ) {
+                    Text(if (playing) "Stop" else "Preview")
+                }
+            }
+            Hint(voice.description)
+            TextButton(onClick = { graph.appScope.launch { model.remove() } }) {
+                Text("Delete the download ($size)")
+            }
+        }
+    }
+    Hint(
+        "Enhanced voices run on this phone, so what you listen to stays on it, and work " +
+            "offline once downloaded. The download comes from Hugging Face."
+    )
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 private const val STEPS_PER_SECOND = 1f / CloudSpeechPause.STEP_SECONDS
 
 private fun pauseLabel(seconds: Float): String =
@@ -426,6 +528,7 @@ private val NarrationEngine.label: String
         when (this) {
             NarrationEngine.DEVICE -> "Device"
             NarrationEngine.CLOUD -> "Cloud"
+            NarrationEngine.ENHANCED -> "Enhanced"
         }
 
 /** A button showing [label] that opens a menu of [options]. */

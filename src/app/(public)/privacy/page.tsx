@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="November 1, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="November 2, 2026">
       <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -294,10 +294,10 @@ export default function PrivacyPolicyPage() {
 
           <LegalSubsection id="enhanced-voices" title="Enhanced Voices (Hugging Face) — Optional">
             <LegalParagraph tight>
-              <strong>Only if you use enhanced voices.</strong> Downloading the enhanced voice
-              model, and using a voice for the first time, fetches its files directly from Hugging
-              Face. These requests go straight from your browser to Hugging Face, so it sees your IP
-              address and browser user agent, as with any download. No article text or account
+              <strong>Only if you use enhanced voices.</strong> Downloading enhanced voices, on the
+              web or in the Android app, fetches the voice model and voices directly from Hugging
+              Face. These requests go straight from your browser or the app to Hugging Face, so it
+              sees your IP address and user agent, as with any download. No article text or account
               information is sent; speech is then generated entirely on your device.
             </LegalParagraph>
             <p className="mt-2">

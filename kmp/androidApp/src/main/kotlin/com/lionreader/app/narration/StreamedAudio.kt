@@ -111,7 +111,7 @@ class StreamedAudio(file: File) {
 }
 
 /** A stream that stopped partway: the chunk has to be heard again from its start. */
-class SpeechStreamBroken(cause: Exception) : IOException("The cloud voice stopped partway", cause)
+class SpeechStreamBroken(cause: Exception) : IOException("The voice stopped partway", cause)
 
 /**
  * What the narration player reads: [StreamedAudio] by its uri (still arriving, or the file it ended

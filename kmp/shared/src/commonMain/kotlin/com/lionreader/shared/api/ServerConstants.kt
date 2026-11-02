@@ -58,4 +58,215 @@ object NarrationCues {
 
     /** It would go on, but the list has ended. */
     const val NO_MORE_ARTICLES = "No more articles."
+
+    /** What a voice's preview says. */
+    const val PREVIEW = "This is a preview of how articles will sound with this voice."
 }
+
+/**
+ * Enhanced voices (Phonon), as the web has them: the same files, by the same pinned URLs, so a
+ * voice id means the same voice on both.
+ */
+object EnhancedVoiceFiles {
+    const val WEIGHTS =
+        "https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/model.q8.gguf"
+    const val TOKENIZER =
+        "https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/tokenizer.json"
+    const val CONFIG =
+        "https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/config.json"
+
+    /** The model and every voice. */
+    const val DOWNLOAD_BYTES = 71196570L
+
+    /** Spoken when none is picked, or the picked one isn't offered. */
+    const val DEFAULT_VOICE = "bXwrkHhURL1VFJdG"
+}
+
+/** An enhanced voice: its catalog id, what it's called, and its file. */
+data class EnhancedVoice(
+    val id: String,
+    val name: String,
+    /** `en-US` or `en-GB`. */
+    val locale: String,
+    val description: String,
+    val url: String,
+)
+
+val ENHANCED_VOICES: List<EnhancedVoice> =
+    listOf(
+        EnhancedVoice(
+            "NbpkqMVS3CJeq2j8",
+            "Zoey",
+            "en-US",
+            "Playful, upbeat and Gen Z energy voice with a standard American accent. Perfect for engaging conversations!",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/NbpkqMVS3CJeq2j8.safetensors",
+        ),
+        EnhancedVoice(
+            "NIWIOv5vTi5eRMj8",
+            "Juniper",
+            "en-US",
+            "Cheerful presence with real resonance under it, personable when the copy turns intimate and decisive on the final line.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/NIWIOv5vTi5eRMj8.safetensors",
+        ),
+        EnhancedVoice(
+            "vjFyp2BcCyTlUmYb",
+            "Everly",
+            "en-US",
+            "Rounded, soft-edged tone with gentle lift at the end of phrases and an easy, relaxed delivery.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/vjFyp2BcCyTlUmYb.safetensors",
+        ),
+        EnhancedVoice(
+            "4SZHfMpw-p46Ywgs",
+            "Harper",
+            "en-US",
+            "Modern, confident and friendly voice with a standard American accent.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/4SZHfMpw-p46Ywgs.safetensors",
+        ),
+        EnhancedVoice(
+            "bXwrkHhURL1VFJdG",
+            "Hadley",
+            "en-US",
+            "Settled, even-toned and genuinely kind, with crisp consonants that hold up over a handset.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/bXwrkHhURL1VFJdG.safetensors",
+        ),
+        EnhancedVoice(
+            "nGzMHMPAWGaJFHOo",
+            "Delia",
+            "en-US",
+            "Low, grounded and quick to the point, with a sincerity that keeps an apology honest.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/nGzMHMPAWGaJFHOo.safetensors",
+        ),
+        EnhancedVoice(
+            "LMDIYE0Oa377Qh6Z",
+            "Easton",
+            "en-US",
+            "Punchy and close in, with crisp consonant attack that cuts through a music bed and pitch that lifts across each line.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/LMDIYE0Oa377Qh6Z.safetensors",
+        ),
+        EnhancedVoice(
+            "40QrMVgAxFiUnP9f",
+            "Micah",
+            "en-US",
+            "Buoyant and high in energy, with a playful lift at the ends of phrases and clean attack that survives a loud mix.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/40QrMVgAxFiUnP9f.safetensors",
+        ),
+        EnhancedVoice(
+            "0zLApsZfVLLNaEGl",
+            "Trevor",
+            "en-US",
+            "Buoyant energy over a resonant mid-low core, phrases landing softly and consonants cutting through a handset.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/0zLApsZfVLLNaEGl.safetensors",
+        ),
+        EnhancedVoice(
+            "_6Aslh2DxfmnRLmP",
+            "Russell",
+            "en-US",
+            "A high-energy American adult voice that pushes and encourages with the intensity of someone who genuinely believes in you.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/_6Aslh2DxfmnRLmP.safetensors",
+        ),
+        EnhancedVoice(
+            "qIxlZ7Ei8KvWlyQH",
+            "Preston",
+            "en-US",
+            "Trim, focused delivery with clean edges on every consonant and a steady, low-set core that carries through phone bandwidth.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/qIxlZ7Ei8KvWlyQH.safetensors",
+        ),
+        EnhancedVoice(
+            "d9XCyhjo4JhkHF1d",
+            "Miles",
+            "en-US",
+            "Resonant and decisive, with genuine dynamic range, dropping right down for one clause then driving back up.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/d9XCyhjo4JhkHF1d.safetensors",
+        ),
+        EnhancedVoice(
+            "6PWnV0Nq4wu7RVBT",
+            "Maeve",
+            "en-GB",
+            "A sparky, attentive British English adult voice that gets to the point with a smile. Ideal for fast, efficient customer support and helpful voice assistants.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/6PWnV0Nq4wu7RVBT.safetensors",
+        ),
+        EnhancedVoice(
+            "GgfEkEJtxZR7gnpy",
+            "Freya",
+            "en-GB",
+            "A young British voice, glossy and confident with fast, girly chatter and bubbly sparkle, perfect for a friendly receptionist or assistant.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/GgfEkEJtxZR7gnpy.safetensors",
+        ),
+        EnhancedVoice(
+            "uem82D50GRv2Dwma",
+            "Pippa",
+            "en-GB",
+            "A confident, upbeat British English adult voice with infectious energy. Perfect for proactive assistants and motivating customer success calls.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/uem82D50GRv2Dwma.safetensors",
+        ),
+        EnhancedVoice(
+            "y9bQqIDnyxwqK01t",
+            "Elodie-Rose",
+            "en-GB",
+            "A young British voice with sharp, enthusiastic energy and crisp articulation, sparky and to the point for customer support and care.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/y9bQqIDnyxwqK01t.safetensors",
+        ),
+        EnhancedVoice(
+            "gDT1nz7Ie36ZhL-C",
+            "Imogen",
+            "en-GB",
+            "A bubbly, friendly British English adult voice that puts callers instantly at ease. Great for onboarding assistants and warm concierge interactions.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/gDT1nz7Ie36ZhL-C.safetensors",
+        ),
+        EnhancedVoice(
+            "m9MxpY6IUGXtWp76",
+            "Lottie",
+            "en-GB",
+            "Sparky and to the point, high forward energy with clean edges on the consonants and the range to drop low for one line then climb back.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/m9MxpY6IUGXtWp76.safetensors",
+        ),
+        EnhancedVoice(
+            "X6NceqF285Gr04gb",
+            "Alfie",
+            "en-GB",
+            "Punchy and forward, with crisp consonant attack and a pitch that lifts across a line, sitting high over a music bed.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/X6NceqF285Gr04gb.safetensors",
+        ),
+        EnhancedVoice(
+            "YyKcxPG7iIgS3jsK",
+            "Hugh",
+            "en-GB",
+            "Soft and close, airy in texture, with lively pitch movement and an attentive, sincere delivery.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/YyKcxPG7iIgS3jsK.safetensors",
+        ),
+        EnhancedVoice(
+            "zUCxzrOrugTSis03",
+            "Edwin",
+            "en-GB",
+            "Efficient and firm, sincere in attention, with tidy articulation that holds up at phone bandwidth.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/zUCxzrOrugTSis03.safetensors",
+        ),
+        EnhancedVoice(
+            "JOW0vchyswkQUMDS",
+            "Spencer",
+            "en-GB",
+            "Light and airy, sitting a touch higher, with crisp consonants and a slow, patient delivery.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/JOW0vchyswkQUMDS.safetensors",
+        ),
+        EnhancedVoice(
+            "dME3IWyZBvmh1n1q",
+            "Toby",
+            "en-GB",
+            "A sparky, attentive British English adult voice that gets to the point with a smile. Ideal for fast, efficient customer support and helpful voice assistants.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/dME3IWyZBvmh1n1q.safetensors",
+        ),
+        EnhancedVoice(
+            "Zn7g6NxLqXlJb7Qi",
+            "Teddy",
+            "en-GB",
+            "Sparky and close in, quick off the mark, with firm consonants and the range to drop right down for a clause then come back up.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/Zn7g6NxLqXlJb7Qi.safetensors",
+        ),
+        EnhancedVoice(
+            "gfP44RlHwr2kEwk7",
+            "Bryony",
+            "en-GB",
+            "Full, rich mid-range tones, softly relaxed and spoken close to the mic, moving briskly with light pitch play.",
+            "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7/voices/gfP44RlHwr2kEwk7.safetensors",
+        ),
+    )

@@ -1,6 +1,6 @@
 /**
  * Writes the server's request limits, upload file types and cloud-speech settings, and
- * the web's narration cues, that the native app must agree with, as Kotlin constants, so a server change reaches
+ * the web's narration cues and enhanced voices, that the native app must agree with, as Kotlin constants, so a server change reaches
  * the app instead of a stale copy. Regenerate with `pnpm app:server-constants`;
  * a unit test fails when the committed copy is stale.
  */
@@ -13,7 +13,15 @@ import {
   MAX_CLOUD_SPEECH_CHARS,
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
   MAX_CLOUD_SPEECH_STREAMS,
+  PREVIEW_TEXT,
 } from "../src/lib/narration/constants";
+import {
+  ENHANCED_VOICES,
+  enhancedVoiceUrl,
+  PHONON_DOWNLOAD_SIZE_BYTES,
+  PHONON_MODEL_FILES,
+  resolveEnhancedVoice,
+} from "../src/lib/narration/enhanced-voices";
 import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "../src/lib/narration/paragraph-map";
 import { EBOOK_UPLOAD_EXTENSIONS, SUPPORTED_UPLOAD_EXTENSIONS } from "../src/lib/upload-file-types";
 import {
@@ -34,6 +42,12 @@ function int(value: number): string {
 
 function float(value: number): string {
   return `${value}f`;
+}
+
+/** A `const val` in an object, wrapped as ktfmt (Spotless) wraps one past 100 columns. */
+function constVal(name: string, value: string): string {
+  const line = `    const val ${name} = ${value}`;
+  return line.length > 100 ? `    const val ${name} =\n        ${value}` : line;
 }
 
 function string(value: string): string {
@@ -102,7 +116,44 @@ object NarrationCues {
 
     /** It would go on, but the list has ended. */
     const val NO_MORE_ARTICLES = ${string(NO_MORE_ARTICLES)}
+
+    /** What a voice's preview says. */
+    const val PREVIEW = ${string(PREVIEW_TEXT)}
 }
+
+/**
+ * Enhanced voices (Phonon), as the web has them: the same files, by the same pinned URLs, so a
+ * voice id means the same voice on both.
+ */
+object EnhancedVoiceFiles {
+${constVal("WEIGHTS", string(PHONON_MODEL_FILES.weights))}
+${constVal("TOKENIZER", string(PHONON_MODEL_FILES.tokenizer))}
+${constVal("CONFIG", string(PHONON_MODEL_FILES.config))}
+
+    /** The model and every voice. */
+    const val DOWNLOAD_BYTES = ${int(PHONON_DOWNLOAD_SIZE_BYTES)}L
+
+    /** Spoken when none is picked, or the picked one isn't offered. */
+    const val DEFAULT_VOICE = ${string(resolveEnhancedVoice(null).id)}
+}
+
+/** An enhanced voice: its catalog id, what it's called, and its file. */
+data class EnhancedVoice(
+    val id: String,
+    val name: String,
+    /** \`en-US\` or \`en-GB\`. */
+    val locale: String,
+    val description: String,
+    val url: String,
+)
+
+val ENHANCED_VOICES: List<EnhancedVoice> =
+    listOf(
+${ENHANCED_VOICES.map(
+  (voice) =>
+    `        EnhancedVoice(\n${[voice.id, voice.name, voice.locale, voice.description, enhancedVoiceUrl(voice.id)].map((value) => `            ${string(value)},\n`).join("")}        ),`
+).join("\n")}
+    )
 `;
 }
 

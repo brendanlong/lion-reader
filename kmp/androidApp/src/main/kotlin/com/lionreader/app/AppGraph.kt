@@ -11,7 +11,10 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.narration.CloudSpeechRequests
 import com.lionreader.app.narration.CloudVoices
 import com.lionreader.app.narration.DeviceVoices
+import com.lionreader.app.narration.EnhancedVoiceModel
+import com.lionreader.app.narration.EnhancedVoices
 import com.lionreader.app.narration.Narrator
+import com.lionreader.app.narration.PhononTts
 import com.lionreader.app.narration.SpeechEngine
 import com.lionreader.app.narration.SystemTts
 import com.lionreader.app.share.deleteSharedFileCopies
@@ -24,6 +27,7 @@ import com.lionreader.shared.account.KeyValueStore
 import com.lionreader.shared.api.CloudSpeechPause
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.narration.SpeechUnavailable
+import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.settings.AppSettings
 import com.lionreader.shared.settings.NarrationEngine
 import com.lionreader.shared.settings.SettingsRepository
@@ -53,7 +57,7 @@ private val Context.settingsStore by preferencesDataStore("settings")
  */
 class AppGraph(
     private val context: Context,
-    http: HttpClient = appHttpClient(),
+    private val http: HttpClient = appHttpClient(),
     /** How soon to ask again which account a sign-in is, at first (it backs off). */
     confirmRetryMillis: Long = 5_000,
 ) {
@@ -70,6 +74,13 @@ class AppGraph(
 
     /** The device's text-to-speech engine (voices for Settings, and narration). */
     val systemTts: SystemTts by lazy { SystemTts(context) }
+
+    /** Enhanced voices' model, downloaded on demand; null where the device can't run it. */
+    val enhancedVoiceModel: EnhancedVoiceModel? by lazy {
+        if (PhononTts.supported) {
+            EnhancedVoiceModel(File(context.filesDir, "enhanced-voices"), http)
+        } else null
+    }
 
     private val narratorInstance = lazy { Narrator(context, currentSettings, ::speechEngine) }
 
@@ -110,6 +121,16 @@ class AppGraph(
     private suspend fun speechEngine(settings: AppSettings): SpeechEngine =
         when (settings.narrationEngine) {
             NarrationEngine.DEVICE -> DeviceVoices(systemTts, settings.narrationVoice)
+            NarrationEngine.ENHANCED -> {
+                val model =
+                    enhancedVoiceModel
+                        ?: throw SpeechUnavailable("Enhanced voices don't run on this device.")
+                model.check()
+                if (model.state.value != EnhancedVoiceModel.State.Downloaded) {
+                    throw SpeechUnavailable("Download the enhanced voices in Settings first.")
+                }
+                EnhancedVoices(model, resolveEnhancedVoice(settings.enhancedVoice).id, scope)
+            }
             NarrationEngine.CLOUD -> {
                 val session =
                     accounts.account.value

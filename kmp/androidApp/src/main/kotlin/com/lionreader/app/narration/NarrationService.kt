@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.FlagSet
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
@@ -64,7 +65,9 @@ class NarrationService : MediaSessionService() {
  * What the media controls drive: the narrator's player, except that next and previous
  * (notification, lock screen, headset) move by paragraph, as in the app, not by the player's items,
  * which are chunks; and they're offered only where there's a paragraph to go to, so they grey out
- * on the first and last.
+ * on the first and last. A chunk that streamed in ([StreamedAudio]) has no length: an enhanced
+ * voice's WAV says it holds as much as a WAV can (about a day) until it's done, which the player
+ * reads once, at the start.
  *
  * Main thread only, like the player.
  */
@@ -103,6 +106,14 @@ internal class SessionPlayer(private val narrator: Narrator) : ForwardingPlayer(
     }
 
     override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
+
+    override fun getDuration(): Long = if (streamed()) C.TIME_UNSET else super.getDuration()
+
+    override fun getContentDuration(): Long =
+        if (streamed()) C.TIME_UNSET else super.getContentDuration()
+
+    private fun streamed() =
+        currentMediaItem?.localConfiguration?.uri?.scheme == StreamedAudio.SCHEME
 
     private val playerCommands =
         object : Player.Listener {
