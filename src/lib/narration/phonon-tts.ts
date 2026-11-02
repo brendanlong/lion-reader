@@ -7,7 +7,7 @@
  * @module narration/phonon-tts
  */
 
-import type { PhononTTS } from "phonon-tts";
+import type { PhononTTS, SpeechStream } from "phonon-tts";
 import { version as PHONON_TTS_VERSION } from "phonon-tts/package.json";
 import {
   ENHANCED_VOICES,
@@ -15,7 +15,6 @@ import {
   PHONON_DOWNLOAD_SIZE_BYTES,
   PHONON_MODEL_FILES,
 } from "./enhanced-voices";
-import type { PcmAudio } from "./audio-encoding";
 
 const CACHE_NAME = "lion-reader-phonon";
 /** Tells other tabs that the stored files changed. */
@@ -244,12 +243,12 @@ export async function loadPhonon(): Promise<PhononTTS> {
   return (await loading).tts;
 }
 
-export async function synthesizePhonon(
+/** `text` spoken by `voiceId`, as it's generated; aborting `signal` ends it. */
+export async function streamPhonon(
   text: string,
   voiceId: string,
-  signal?: AbortSignal
-): Promise<PcmAudio> {
+  signal: AbortSignal
+): Promise<SpeechStream> {
   const tts = await loadPhonon();
-  const samples = await tts.synth(text, { voice: voiceId, signal });
-  return { samples, sampleRate: tts.sampleRate };
+  return tts.stream(text, { voice: voiceId, signal });
 }
