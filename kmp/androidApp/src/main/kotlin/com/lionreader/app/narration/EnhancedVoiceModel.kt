@@ -129,26 +129,29 @@ class EnhancedVoiceModel(
     internal suspend fun <T> withModel(block: (PhononTts, stopped: () -> Boolean) -> T): T {
         val since = removals
         return withContext(modelThread) {
-            val model =
-                tts
-                    ?: run {
-                        if (stored() != State.Downloaded) {
-                            throw SpeechUnavailable(
-                                "Download the enhanced voices in Settings first."
-                            )
-                        }
-                        try {
-                                PhononTts(dir)
-                            } catch (e: Exception) {
-                                throw SpeechUnavailable(
-                                    "The enhanced voices couldn't load (${e.message}). Delete and " +
-                                        "download them again in Settings."
-                                )
-                            }
-                            .also { tts = it }
-                    }
+            val model = tts ?: load().also { tts = it }
             block(model) { removals != since }
         }
+    }
+
+    /** On the model thread. */
+    private fun load(): PhononTts {
+        if (stored() != State.Downloaded) {
+            throw SpeechUnavailable("Download the enhanced voices in Settings first.")
+        }
+        val failure =
+            try {
+                return PhononTts(dir)
+            } catch (e: Exception) {
+                e
+            } catch (e: LinkageError) {
+                // The native library: an Error, which callers rightly don't catch.
+                e
+            }
+        throw SpeechUnavailable(
+            "The enhanced voices couldn't load (${failure.message}). Delete and download them " +
+                "again in Settings."
+        )
     }
 
     private fun stored(): State =

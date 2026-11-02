@@ -31,6 +31,9 @@ class StreamedAudio(file: File) {
     /** Where the audio is: the file being written, then wherever [finish] moved it. */
     private var file: File = file
 
+    internal val currentFile: File
+        get() = synchronized(lock) { file }
+
     val uri: Uri = Uri.Builder().scheme(SCHEME).authority(UUID.randomUUID().toString()).build()
 
     init {

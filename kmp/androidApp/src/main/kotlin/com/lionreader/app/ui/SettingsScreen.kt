@@ -466,6 +466,7 @@ private fun EnhancedVoiceSettings(
         }
         EnhancedVoiceModel.State.Downloaded -> {
             val voice = resolveEnhancedVoice(settings.enhancedVoice)
+            val context = LocalContext.current
             val scope = rememberCoroutineScope()
             var preview by remember { mutableStateOf<Job?>(null) }
             var previewFailure by remember { mutableStateOf<String?>(null) }
@@ -489,7 +490,7 @@ private fun EnhancedVoiceSettings(
                             else
                                 scope.launch {
                                     try {
-                                        previewEnhancedVoice(model, voice.id)
+                                        previewEnhancedVoice(context, model, voice.id)
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
