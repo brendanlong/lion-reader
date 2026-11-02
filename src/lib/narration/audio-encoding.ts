@@ -97,6 +97,45 @@ function concat(pieces: Uint8Array[]): Uint8Array {
   return joined;
 }
 
+/**
+ * `pcm` at `to` Hz, piece by piece. Mediabunny's own resampler (its
+ * `transform`) holds 5 s of audio before emitting any, which would swallow
+ * most sentences whole; this is the same linear interpolation without the
+ * buffer.
+ */
+export async function* resample(
+  pcm: AsyncIterable<Float32Array>,
+  from: number,
+  to: number
+): AsyncGenerator<Float32Array> {
+  if (from === to) {
+    yield* pcm;
+    return;
+  }
+  const step = from / to;
+  // The last input sample seen, which the next piece interpolates from.
+  let previous: number | null = null;
+  // Input index of `previous`, and source position of the next output sample.
+  let previousIndex = -1;
+  let position = 0;
+  for await (const piece of pcm) {
+    if (piece.length === 0) continue;
+    const firstIndex = previousIndex + 1;
+    const lastIndex = firstIndex + piece.length - 1;
+    const at = (index: number) => (index < firstIndex ? previous! : piece[index - firstIndex]);
+    const count = Math.max(0, Math.floor((lastIndex - position) / step) + 1);
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i++, position += step) {
+      const lower = Math.floor(position);
+      const fraction = position - lower;
+      out[i] = fraction === 0 ? at(lower) : at(lower) + fraction * (at(lower + 1) - at(lower));
+    }
+    previous = piece[piece.length - 1];
+    previousIndex = lastIndex;
+    if (count > 0) yield out;
+  }
+}
+
 function createEncoder(
   mediabunny: typeof import("mediabunny"),
   candidate: Candidate,
@@ -125,7 +164,6 @@ function createEncoder(
         codec: candidate.codec,
         fullCodecString: candidate.fullCodecString,
         quality: new mediabunny.Quality({ bitrate: BITRATE }),
-        transform: { sampleRate, numberOfChannels: 1 },
       });
       output.addAudioTrack(source);
 
@@ -134,15 +172,15 @@ function createEncoder(
       const feeding = (async () => {
         await output.start();
         let timestamp = 0;
-        for await (const samples of pcm) {
+        for await (const samples of resample(pcm, pcmSampleRate, sampleRate)) {
           const sample = new mediabunny.AudioSample({
             data: samples,
             format: "f32",
             numberOfChannels: 1,
-            sampleRate: pcmSampleRate,
+            sampleRate,
             timestamp,
           });
-          timestamp += samples.length / pcmSampleRate;
+          timestamp += samples.length / sampleRate;
           try {
             await source.add(sample);
           } finally {
