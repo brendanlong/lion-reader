@@ -198,6 +198,9 @@ RUN pnpm build:discord-bot
 # Build migration bundle (single optimized JS file)
 RUN pnpm build:migrate
 
+# tailscaled, for reaching our self-hosted speech server (scripts/with-tailscale.sh).
+FROM tailscale/tailscale:v1.104.4 AS tailscale
+
 # =============================================================================
 # Stage 5: Production runner (minimal image, no pnpm needed)
 # =============================================================================
@@ -277,9 +280,12 @@ COPY --from=builder /app/dist/discord-bot.js ./dist/discord-bot.js
 # repo's root "type": "module" (see scripts/dist-cjs-marker.mjs).
 COPY --from=builder /app/dist/package.json ./dist/package.json
 
-# Copy startup script
+COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscale /usr/local/bin/
+
+# Copy startup scripts
 COPY --from=builder /app/scripts/start-all.sh ./scripts/start-all.sh
-RUN chmod +x scripts/start-all.sh
+COPY --from=builder /app/scripts/with-tailscale.sh ./scripts/with-tailscale.sh
+RUN chmod +x scripts/start-all.sh scripts/with-tailscale.sh
 
 # =============================================================================
 # Build provenance — stamped LAST, in the final layer, so it never busts an

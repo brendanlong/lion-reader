@@ -178,6 +178,48 @@ The two this guide sets as secrets are required:
 
 ---
 
+## Self-hosted voices over Tailscale
+
+lionreader.com's Kokoro server (`SELFHOSTED_BASE_URL`) is the Tailscale
+Service `svc:kokoro`. The `app` machines join the tailnet as ephemeral
+`tag:lion-reader` nodes through `scripts/with-tailscale.sh` and reach it
+through tailscaled's proxy (`SELFHOSTED_PROXY_URL` in `fly.toml`).
+
+1. In the tailnet policy, add the tag and the one grant it gets. Tests make a
+   later policy edit that widens it fail to save:
+
+   ```jsonc
+   "tagOwners": { "tag:lion-reader": ["autogroup:admin"] },
+   "grants": [
+     { "src": ["tag:lion-reader"], "dst": ["svc:kokoro"], "ip": ["tcp:443"] },
+   ],
+   "tests": [
+     {
+       "src": "tag:lion-reader",
+       "accept": ["svc:kokoro:443"],
+       // Each of your own users and tags, e.g.:
+       "deny": ["tag:computers:22", "tag:computers:443"],
+     },
+   ],
+   ```
+
+   **No other grant may match it as a source**: `"src": ["*"]` (the default
+   policy's allow-all) includes tagged devices, so give your own devices
+   `autogroup:member` instead.
+
+2. Create an OAuth client (admin console, **Trust credentials**) with only the
+   `auth_keys` write scope and the tag `tag:lion-reader`. Unlike an auth key,
+   its secret doesn't expire, and every machine start registers a new node.
+
+3. Set the secrets:
+
+   ```sh
+   flyctl secrets set -a lion-reader TAILSCALE_AUTHKEY=tskey-client-... \
+     SELFHOSTED_BASE_URL=https://kokoro.<tailnet>.ts.net/v1 SELFHOSTED_API_KEY=...
+   ```
+
+---
+
 ## GitHub Actions Setup
 
 The repository includes a CI/CD workflow that deploys to Fly.io **after CI passes on `master`** — it is not a direct push-triggered deploy.

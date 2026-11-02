@@ -4,9 +4,12 @@
  * voices) at `SELFHOSTED_BASE_URL`, e.g. `http://kokoro.internal:8880/v1`.
  * Kokoro-FastAPI checks no key itself: put it behind something that checks
  * `SELFHOSTED_API_KEY` as a bearer token, or keep it on a private network.
+ * Requests go through the HTTP proxy at `SELFHOSTED_PROXY_URL` when it's set
+ * (on lionreader.com, tailscaled's, to reach the server on our tailnet).
  */
 
 import { z } from "zod";
+import { fetch as undiciFetch, ProxyAgent, type RequestInit as UndiciRequestInit } from "undici";
 import { aiProviderName } from "@/lib/ai/providers";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
@@ -36,12 +39,28 @@ const voicesSchema = z.object({
   voices: z.array(z.union([z.string(), z.object({ id: z.string() })])),
 });
 
+let proxy: { url: string; agent: ProxyAgent } | undefined;
+
+function proxyAgent(): ProxyAgent | undefined {
+  const url = process.env.SELFHOSTED_PROXY_URL;
+  if (!url) return undefined;
+  if (proxy?.url !== url) proxy = { url, agent: new ProxyAgent(url) };
+  return proxy.agent;
+}
+
+function selfHostedFetch(path: string, init: UndiciRequestInit): Promise<Response> {
+  return undiciFetch(`${apiUrl()}${path}`, {
+    ...init,
+    dispatcher: proxyAgent(),
+  }) as unknown as Promise<Response>;
+}
+
 function headers(apiKey: string): Record<string, string> {
   return { "User-Agent": USER_AGENT, Authorization: `Bearer ${apiKey}` };
 }
 
 async function fetchVoices(apiKey: string): Promise<string[]> {
-  const response = await fetch(`${apiUrl()}/audio/voices`, {
+  const response = await selfHostedFetch("/audio/voices", {
     headers: headers(apiKey),
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
@@ -74,7 +93,7 @@ export async function selfHostedSpeech(
   input: string,
   signal: AbortSignal
 ): Promise<PcmStream> {
-  const response = await fetch(`${apiUrl()}/audio/speech`, {
+  const response = await selfHostedFetch("/audio/speech", {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
     signal,

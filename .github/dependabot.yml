@@ -54,10 +54,10 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
-  # No cooldown: the only image is the official Node one, whose releases are
-  # Node's own, and Dependabot has no advisories for images, so a cooldown would
-  # hold back Node security releases (the Dockerfile pins exact versions). Daily
-  # so those arrive the day they ship.
+  # No cooldown: the images are the official Node and Tailscale ones, whose
+  # releases are the projects' own, and Dependabot has no advisories for images,
+  # so a cooldown would hold back their security releases (the Dockerfile pins
+  # exact versions). Daily so those arrive the day they ship.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

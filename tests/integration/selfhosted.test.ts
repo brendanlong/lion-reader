@@ -1,11 +1,11 @@
 /**
  * Cloud voices from the operator's own Kokoro-FastAPI server, and falling back
- * to another host of Kokoro when it's down, against local stand-ins for it
- * and Together.
+ * to another host of Kokoro when it's down, against local stand-ins for it,
+ * Together, and the proxy that reaches it on a tailnet.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
@@ -21,6 +21,10 @@ const TOGETHER_KOKORO = "together:hexgrad/Kokoro-82M";
 
 let server: Server;
 let base: string;
+let proxy: Server;
+let proxyUrl: string;
+/** A name only the proxy can resolve, as tailscaled resolves MagicDNS names. */
+const TAILNET_HOST = "kokoro.invalid";
 const requests: Array<{ model: string; key: string; body: Record<string, unknown> }> = [];
 /** How the stand-in lists voices: Kokoro-FastAPI's older bare ids or newer objects. */
 let voiceShape: "ids" | "objects" = "objects";
@@ -87,14 +91,30 @@ beforeAll(async () => {
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { port } = server.address() as AddressInfo;
+  base = `http://127.0.0.1:${port}`;
+
+  proxy = createServer((req, res) => {
+    const target = new URL(String(req.url));
+    if (target.host !== TAILNET_HOST) return res.writeHead(502).end();
+    const upstream = request(
+      { host: "127.0.0.1", port, method: req.method, path: target.pathname, headers: req.headers },
+      (answer) => {
+        res.writeHead(answer.statusCode ?? 502, answer.headers);
+        answer.pipe(res);
+      }
+    );
+    req.pipe(upstream);
+  });
+  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+  proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
   const env: Record<string, string | undefined> = {
     TOGETHER_BASE_URL: `${base}/together`,
     MODEL_FAILOVER: `${SELFHOSTED_KOKORO},${TOGETHER_KOKORO}`,
     SERVER_KEY_MODELS: undefined,
     ...Object.fromEntries(Object.values(AI_PROVIDER_ENV_KEYS).map((name) => [name, undefined])),
   };
-  for (const name of [...Object.keys(env), "SELFHOSTED_BASE_URL"]) {
+  for (const name of [...Object.keys(env), "SELFHOSTED_BASE_URL", "SELFHOSTED_PROXY_URL"]) {
     saved.set(name, process.env[name]);
   }
   for (const [name, value] of Object.entries(env)) {
@@ -105,6 +125,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  await new Promise<void>((resolve) => proxy.close(() => resolve()));
   for (const [name, value] of saved) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -121,6 +142,7 @@ afterEach(() => {
   voiceShape = "objects";
   selfHostedFails = false;
   delete process.env.TOGETHER_API_KEY;
+  delete process.env.SELFHOSTED_PROXY_URL;
 });
 
 async function speak(model: string | null) {
@@ -165,6 +187,13 @@ describe("self-hosted voices", () => {
         }),
       },
     ]);
+  });
+
+  it("reaches the server through SELFHOSTED_PROXY_URL", async () => {
+    process.env.SELFHOSTED_PROXY_URL = proxyUrl;
+    process.env.SELFHOSTED_BASE_URL = `http://${TAILNET_HOST}/selfhosted/v1`;
+    const asked = await speak(SELFHOSTED_KOKORO);
+    expect(asked.map((request) => request.model)).toEqual([SELFHOSTED_KOKORO]);
   });
 
   it("fails over to another host of Kokoro, in the same voice, when the server fails", async () => {

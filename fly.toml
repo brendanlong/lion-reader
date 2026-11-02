@@ -39,7 +39,9 @@ kill_timeout = 30
 
 # Separate process groups for independent scaling and resource allocation
 [processes]
-  app = "node dist/server.js"
+  # Only the app speaks to our self-hosted voice server, so only it joins the
+  # tailnet.
+  app = "./scripts/with-tailscale.sh node dist/server.js"
   # Full-content fetches can link to PDFs; with a 320MB heap on a 512MB VM,
   # the PDF converter gets less than its default memory cap.
   worker = "env PDF_CONVERTER_MAX_MEMORY_MB=96 node --max-old-space-size=320 dist/worker.js"
@@ -85,6 +87,10 @@ kill_timeout = 30
   # Kokoro is $4 per million characters, so it's only a failover; OpenRouter
   # adds latency, so it's last.
   MODEL_FAILOVER = "selfhosted:kokoro,deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
+
+  # tailscaled's proxy onto our tailnet, where SELFHOSTED_BASE_URL is
+  # (scripts/with-tailscale.sh).
+  SELFHOSTED_PROXY_URL = "http://127.0.0.1:1055"
 
   WORKER_CONCURRENCY = "1"
 

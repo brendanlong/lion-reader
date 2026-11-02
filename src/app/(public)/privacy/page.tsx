@@ -324,7 +324,9 @@ export default function PrivacyPolicyPage() {
               For cost and performance reasons, some parts of the service, including the default
               cloud narration voice, may run on the developer&apos;s personal computer rather than
               on Fly.io. Data sent to these parts, such as the text being narrated, is processed
-              there under the same terms as the rest of this policy.
+              there under the same terms as the rest of this policy. It travels there over
+              Tailscale, encrypted end to end: Tailscale relays the encrypted traffic when a direct
+              connection isn&apos;t possible, but can&apos;t read it.
             </LegalParagraph>
           </LegalSubsection>
 
