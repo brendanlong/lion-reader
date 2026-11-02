@@ -21,6 +21,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { MobileIcon } from "@/components/ui/icons";
 import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
+import { ClientLink } from "@/components/ui/client-link";
 
 export function WallabagApiSettings() {
   const userQuery = trpc.auth.me.useQuery();
@@ -167,6 +168,13 @@ export function WallabagApiSettings() {
             <strong className="text-body">Password:</strong> Your Lion Reader password
           </li>
         </ul>
+        <p className="ui-text-sm text-muted mt-3">
+          Signed up with Google, Apple or Discord? Set a password under{" "}
+          <ClientLink href="/settings" className="text-accent hover:text-accent-hover font-medium">
+            Account
+          </ClientLink>{" "}
+          first.
+        </p>
       </CardSection>
 
       <CardSection>

@@ -3,18 +3,9 @@
  */
 
 /**
- * Accessibility tests for the four hand-rolled `role="switch"` toggles in
- * NarrationSettings.
- *
- * Each is a button whose only child is an `aria-hidden` knob, with its visible
- * caption in an unlinked sibling element — so a screen reader announced
- * "switch, not checked" with no indication of what it toggles. The fix links
- * the caption with `aria-labelledby`; these tests query each switch *by name*,
- * which is precisely what failed before.
- *
- * The sibling toggles in EmailSettingsContent and KeyboardShortcutsSettings are
- * covered in SettingsSwitches.test.tsx. There is no shared `Switch` primitive
- * yet (issue #1550), so each site is covered separately.
+ * Accessibility tests for the `role="switch"` toggles in NarrationSettings,
+ * queried *by name* so each must be linked to its caption (#1550). The other
+ * settings switches are covered in SettingsSwitches.test.tsx.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";

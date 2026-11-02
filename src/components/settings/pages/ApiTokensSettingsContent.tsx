@@ -121,9 +121,11 @@ export default function ApiTokensSettingsContent() {
     ) ?? [];
 
   return (
-    <div>
+    <section aria-labelledby="api-tokens-heading">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg text-body font-semibold">API Tokens</h2>
+        <h2 id="api-tokens-heading" className="ui-text-lg text-body font-semibold">
+          API Tokens
+        </h2>
         {!showCreateForm && (
           <Button onClick={() => setShowCreateForm(true)} size="sm">
             Create New Token
@@ -302,7 +304,7 @@ export default function ApiTokensSettingsContent() {
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 

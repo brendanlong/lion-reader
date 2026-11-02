@@ -127,7 +127,7 @@ export function LinkedAccounts() {
   return (
     <SettingsSection
       title="Linked Accounts"
-      description="Sign in with any of these accounts."
+      description="Link an account to sign in with it."
       isLoading={isLoading}
     >
       <div className="space-y-3">

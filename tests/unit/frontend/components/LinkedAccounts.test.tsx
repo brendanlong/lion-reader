@@ -30,7 +30,7 @@ vi.mock("sonner", () => ({
 }));
 
 const REVOKE_FAILED_MESSAGE =
-  "Google unlinked, but signing out your other devices failed. Review them under Settings → Sessions.";
+  "Google unlinked, but signing out your other devices failed. Review them under Settings → Security.";
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth?state=abc";
 

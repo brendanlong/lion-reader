@@ -50,9 +50,11 @@ export default function ConnectedAppsSettingsContent() {
   };
 
   return (
-    <div>
+    <section aria-labelledby="connected-apps-heading">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg text-body font-semibold">Connected Apps</h2>
+        <h2 id="connected-apps-heading" className="ui-text-lg text-body font-semibold">
+          Connected Apps
+        </h2>
         <span className="ui-text-sm text-muted">{appsQuery.data?.length ?? 0} authorized</span>
       </div>
 
@@ -77,7 +79,7 @@ export default function ConnectedAppsSettingsContent() {
           />
         )}
       />
-    </div>
+    </section>
   );
 }
 

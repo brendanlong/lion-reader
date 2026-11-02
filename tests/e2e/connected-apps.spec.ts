@@ -84,7 +84,10 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
   await expect(page.getByText("Read and manage your feeds and articles")).toBeVisible();
 
   page.on("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Revoke" }).click();
+  await page
+    .getByRole("region", { name: "Connected Apps" })
+    .getByRole("button", { name: "Revoke" })
+    .click();
 
   await expect(page.getByText("You haven't authorized any applications.")).toBeVisible();
 

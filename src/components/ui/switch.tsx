@@ -12,20 +12,25 @@ interface SwitchProps {
   onChange: () => void;
   /** Id of the element whose text labels the switch. */
   labelledBy: string;
+  describedBy?: string;
   disabled?: boolean;
 }
 
-/** The visible switch is 24px tall; its hit area extends to the 44px touch-target minimum. */
-function Switch({ checked, onChange, labelledBy, disabled }: SwitchProps) {
+/**
+ * The visible switch is 24px tall; its hit area extends to the 44px touch-target
+ * minimum (the pseudo-element is offset from the 20px padding box, inside the border).
+ */
+function Switch({ checked, onChange, labelledBy, describedBy, disabled }: SwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
       onClick={onChange}
       disabled={disabled}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out before:absolute before:-inset-2.5 disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out before:absolute before:-inset-3 disabled:cursor-not-allowed disabled:opacity-50 ${
         checked ? "bg-primary-solid" : "bg-fill-muted"
       }`}
     >
@@ -56,9 +61,19 @@ export function SwitchRow({ id, label, description, checked, onChange, disabled 
         <p id={id} className="ui-text-sm text-body font-medium">
           {label}
         </p>
-        {description && <p className="ui-text-sm text-muted mt-0.5">{description}</p>}
+        {description && (
+          <p id={`${id}-description`} className="ui-text-sm text-muted mt-0.5">
+            {description}
+          </p>
+        )}
       </div>
-      <Switch checked={checked} onChange={onChange} labelledBy={id} disabled={disabled} />
+      <Switch
+        checked={checked}
+        onChange={onChange}
+        labelledBy={id}
+        describedBy={description ? `${id}-description` : undefined}
+        disabled={disabled}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
 import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
+import { ClientLink } from "@/components/ui/client-link";
 import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icons";
 
 /**
@@ -91,7 +92,14 @@ export function DiscordBotSettings() {
         <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
           <li>
             <strong className="text-body">Link your account</strong> - Sign in to Lion Reader with
-            Discord, or use <InlineCode>/link</InlineCode> with an API token
+            Discord, or use <InlineCode>/link</InlineCode> with an{" "}
+            <ClientLink
+              href="/settings/security"
+              className="text-accent hover:text-accent-hover font-medium"
+            >
+              API token
+            </ClientLink>{" "}
+            that can save articles
           </li>
           <li>
             <strong className="text-body">React to messages</strong> -{" "}

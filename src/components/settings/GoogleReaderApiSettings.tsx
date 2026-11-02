@@ -12,6 +12,7 @@ import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
+import { ClientLink } from "@/components/ui/client-link";
 
 export function GoogleReaderApiSettings() {
   const baseUrl = useAppBaseUrl();
@@ -93,6 +94,13 @@ export function GoogleReaderApiSettings() {
             <strong className="text-body">Password:</strong> Your Lion Reader password
           </li>
         </ul>
+        <p className="ui-text-sm text-muted mt-3">
+          Signed up with Google, Apple or Discord? Set a password under{" "}
+          <ClientLink href="/settings" className="text-accent hover:text-accent-hover font-medium">
+            Account
+          </ClientLink>{" "}
+          first.
+        </p>
       </CardSection>
     </SettingsSection>
   );

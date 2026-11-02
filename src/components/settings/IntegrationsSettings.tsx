@@ -18,6 +18,7 @@ import { CardSection } from "@/components/ui/card";
 import { CodeBlock, CopyButton } from "@/components/ui/copy-button";
 import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
+import { ClientLink } from "@/components/ui/client-link";
 
 export function IntegrationsSettings() {
   const baseUrl = useAppBaseUrl();
@@ -50,7 +51,7 @@ export function IntegrationsSettings() {
   const createTokenMutation = trpc.apiTokens.create.useMutation({
     onSuccess: (data) => {
       setClaudeAiToken(data.token);
-      // Keep the API Tokens settings page's list in sync.
+      // Keep the Security page's API token list in sync.
       utils.apiTokens.list.invalidate();
       toast.success("MCP token created");
     },
@@ -108,7 +109,10 @@ export function IntegrationsSettings() {
             <div>
               <Alert variant="warning">
                 Copy this now: it&apos;s only shown once. You can revoke it under{" "}
-                <strong>Settings &rarr; Security</strong>.
+                <ClientLink href="/settings/security" className="font-medium underline">
+                  Settings &rarr; Security
+                </ClientLink>
+                .
               </Alert>
               <CodeBlock code={`Bearer ${claudeAiToken}`} className="mt-2" />
             </div>

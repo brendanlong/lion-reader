@@ -194,13 +194,13 @@ export function UnifiedSettingsContent() {
         <nav className="w-full shrink-0 md:w-48">
           <ul
             ref={navRef}
-            className="-mx-4 flex [scrollbar-width:none] gap-1 overflow-x-auto px-4 md:mx-0 md:flex-col md:overflow-x-visible md:px-0"
+            className="-mx-4 flex scroll-px-4 gap-1 overflow-x-auto px-4 md:mx-0 md:flex-col md:overflow-x-visible md:px-0"
           >
             {isSearching && (
               <li>
                 <span
                   aria-current="page"
-                  className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap ${ACTIVE_LINK_CLASSES}`}
+                  className={`ui-text-sm flex min-h-11 items-center rounded-md px-3 font-medium whitespace-nowrap md:block md:min-h-0 md:py-2 ${ACTIVE_LINK_CLASSES}`}
                 >
                   Search results
                 </span>
@@ -214,7 +214,7 @@ export function UnifiedSettingsContent() {
                     href={link.href}
                     aria-current={isActive ? "page" : undefined}
                     onNavigate={() => setQuery("")}
-                    className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
+                    className={`ui-text-sm flex min-h-11 items-center rounded-md px-3 font-medium whitespace-nowrap transition-colors md:block md:min-h-0 md:py-2 ${
                       isActive
                         ? ACTIVE_LINK_CLASSES
                         : "text-muted hover:bg-surface-muted hover:text-body"
