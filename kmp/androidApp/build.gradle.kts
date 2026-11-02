@@ -114,6 +114,10 @@ val buildPhonon =
         val work = layout.buildDirectory.dir("phonon/work").get().asFile
         argumentProviders.add { listOf(script.path, jniLibs.get().asFile.path, work.path, minSdk) }
         executable = "bash"
+        // GitHub's CodeQL default setup builds the app on a runner without cargo-ndk, and only
+        // analyzes the Kotlin, so it does without the library.
+        val codeql = providers.environmentVariable("CODEQL_EXTRACTOR_JAVA_ROOT")
+        onlyIf("not under CodeQL") { !codeql.isPresent }
     }
 
 androidComponents {
