@@ -126,8 +126,15 @@ androidComponents {
     beforeVariants(selector().withBuildType("release")) { variant ->
         variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
     }
+    // The release workflow builds the library in a job of its own, without the signing key
+    // (building it runs every dependency's build script), and passes it in here.
+    val prebuiltPhonon = providers.gradleProperty("phononJniLibs")
     onVariants { variant ->
-        variant.sources.jniLibs?.addGeneratedSourceDirectory(buildPhonon, BuildPhonon::jniLibs)
+        if (prebuiltPhonon.isPresent) {
+            variant.sources.jniLibs?.addStaticSourceDirectory(prebuiltPhonon.get())
+        } else {
+            variant.sources.jniLibs?.addGeneratedSourceDirectory(buildPhonon, BuildPhonon::jniLibs)
+        }
     }
     // x86_64 is for emulators; on every phone it would be 8 MB of nothing.
     onVariants(selector().withBuildType("release")) { variant ->

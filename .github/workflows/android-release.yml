@@ -23,14 +23,53 @@ concurrency:
   group: android-release-${{ inputs.version || github.ref_name }}
 
 jobs:
+  # Phonon's native library (enhanced voices), built apart from the signing key:
+  # building it runs the build scripts of a third-party crate tree.
+  phonon:
+    name: Build Phonon
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: kmp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: ./.github/actions/phonon-android
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+
+      - name: Build
+        run: ./gradlew :androidApp:buildPhonon
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: phonon-jnilibs
+          path: kmp/androidApp/build/phonon/jniLibs
+
   release:
     name: Build and release
+    needs: phonon
     # Manual releases are of master's head.
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master'
     # The signing key is a secret of this environment, which needs a
     # reviewer's approval for each run (docs/DEPLOYMENT.md).
     environment: android-release
     runs-on: ubuntu-latest
+    env:
+      # The phonon job's library, so no Rust builds here (androidApp/build.gradle.kts).
+      ORG_GRADLE_PROJECT_phononJniLibs: ${{ github.workspace }}/phonon-jnilibs
     defaults:
       run:
         working-directory: kmp
@@ -47,8 +86,10 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # kmp/phonon/build.sh, which Gradle runs, builds Phonon's native library.
-      - uses: ./.github/actions/phonon-android
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: phonon-jnilibs
+          path: ${{ github.workspace }}/phonon-jnilibs
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
