@@ -17,7 +17,7 @@ ARG ASSET_PREFIX
 # stays a deliberate edit (see the rust-base stage for why that matters). Node
 # only publishes images for recent Alpine releases: once it stops building this
 # suffix, Dependabot goes quiet and Node updates stop until Alpine is bumped.
-FROM node:26.12.1-alpine3.24 AS base
+FROM node:26.13.0-alpine3.24 AS base
 
 # Install the exact pnpm version package.json's packageManager names (Node 26
 # no longer bundles corepack, so install it with npm).
@@ -63,7 +63,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # Its own stage so CI can run the check below with `docker build --target
 # rust-base .` in seconds — otherwise the bump that breaks the pin passes CI
 # and fails the deploy build.
-FROM node:26.12.1-alpine3.24 AS rust-base
+FROM node:26.13.0-alpine3.24 AS rust-base
 
 WORKDIR /app
 
@@ -201,7 +201,7 @@ RUN pnpm build:migrate
 # =============================================================================
 # Stage 5: Production runner (minimal image, no pnpm needed)
 # =============================================================================
-FROM node:26.12.1-alpine3.24 AS runner
+FROM node:26.13.0-alpine3.24 AS runner
 
 WORKDIR /app
 
