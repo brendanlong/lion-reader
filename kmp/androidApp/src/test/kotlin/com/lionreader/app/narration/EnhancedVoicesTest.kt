@@ -6,6 +6,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.ENHANCED_VOICES
 import com.lionreader.shared.api.EnhancedVoiceFiles
+import com.lionreader.shared.narration.SpeechUnavailable
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -115,8 +116,9 @@ class EnhancedVoicesTest {
 
     @Test
     fun speakingNeedsTheDownload() = runBlocking {
+        // SpeechUnavailable: narration stops and says why, rather than skip chunk after chunk.
         val failure = runCatching { model().withModel { _, _ -> } }.exceptionOrNull()
-        assertTrue(failure is IllegalStateException)
+        assertTrue(failure is SpeechUnavailable)
     }
 
     @Test
@@ -131,7 +133,7 @@ class EnhancedVoicesTest {
         assertEquals(-1, streaming.getInt(4))
         assertEquals(-1, streaming.getInt(40))
 
-        wav.finish()
+        wav.finish(file)
 
         val done = header(file)
         assertEquals(file.length() - 8, done.getInt(4).toLong())

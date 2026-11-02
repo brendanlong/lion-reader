@@ -13,7 +13,7 @@ runs:
           kmp/androidApp/build/phonon/work/target
           ~/.cargo/registry
           ~/.cargo/bin/cargo-ndk
-        key: phonon-android-${{ runner.os }}-${{ hashFiles('kmp/phonon/build.sh', 'rust-toolchain.toml') }}
+        key: phonon-android-${{ runner.os }}-${{ hashFiles('kmp/phonon/build.sh', 'rust-toolchain.toml', '.github/actions/phonon-android/action.yml') }}
 
     - name: Install cargo-ndk
       shell: bash

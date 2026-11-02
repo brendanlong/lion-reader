@@ -107,6 +107,8 @@ val buildPhonon =
         val script = rootProject.file("phonon/build.sh")
         val minSdk = libs.versions.androidMinSdk.get()
         inputs.file(script)
+        // The Rust it builds with.
+        inputs.file(rootProject.file("../rust-toolchain.toml"))
         inputs.property("minSdk", minSdk)
         jniLibs.set(layout.buildDirectory.dir("phonon/jniLibs"))
         val work = layout.buildDirectory.dir("phonon/work").get().asFile

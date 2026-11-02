@@ -2,6 +2,7 @@ package com.lionreader.app.narration
 
 import com.lionreader.shared.api.ENHANCED_VOICES
 import com.lionreader.shared.api.EnhancedVoiceFiles
+import com.lionreader.shared.narration.SpeechUnavailable
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
@@ -72,7 +73,7 @@ class EnhancedVoiceModel(
 
     /** Reads [state] from what's stored. */
     suspend fun check() {
-        mutex.withLock { _state.value = stored() }
+        mutex.withLock { _state.value = withContext(io) { stored() } }
     }
 
     /**
@@ -122,8 +123,8 @@ class EnhancedVoiceModel(
 
     /**
      * [block] with the model loaded, on its thread. [stopped] tells [block] that a [remove] came
-     * since it started, so it can stop speaking. Throws [IllegalStateException] when it isn't
-     * downloaded.
+     * since it started, so it can stop speaking. Throws [SpeechUnavailable] when the model isn't
+     * downloaded or won't load: narration can't go on with it then (see [SpeechEngine]).
      */
     internal suspend fun <T> withModel(block: (PhononTts, stopped: () -> Boolean) -> T): T {
         val since = removals
@@ -132,9 +133,19 @@ class EnhancedVoiceModel(
                 tts
                     ?: run {
                         if (stored() != State.Downloaded) {
-                            throw IllegalStateException("The enhanced voice model isn't downloaded")
+                            throw SpeechUnavailable(
+                                "Download the enhanced voices in Settings first."
+                            )
                         }
-                        PhononTts(dir).also { tts = it }
+                        try {
+                                PhononTts(dir)
+                            } catch (e: Exception) {
+                                throw SpeechUnavailable(
+                                    "The enhanced voices couldn't load (${e.message}). Delete and " +
+                                        "download them again in Settings."
+                                )
+                            }
+                            .also { tts = it }
                     }
             block(model) { removals != since }
         }

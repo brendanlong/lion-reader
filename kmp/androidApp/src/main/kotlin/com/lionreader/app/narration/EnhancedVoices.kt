@@ -2,20 +2,24 @@ package com.lionreader.app.narration
 
 import android.net.Uri
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /**
  * Enhanced voices: Phonon on this device ([EnhancedVoiceModel]), speaking with the voice [voice].
  * Each chunk streams into a WAV file that plays from its first audio. Phonon makes one chunk at a
- * time, so the next starts as soon as one is done; one the narrator abandons (deleting its file, as
- * it does a skipped or played chunk's) stops at its next piece of audio.
+ * time, so the next starts as soon as one is done. One the narrator abandons stops at its next
+ * piece of audio: before it's handed over, when the narration asking for it is cancelled; after,
+ * when the narrator deletes its file, as it does a skipped or played chunk's. One still waiting its
+ * turn when narration moves on doesn't start.
  */
 class EnhancedVoices(
     private val model: EnhancedVoiceModel,
@@ -28,17 +32,22 @@ class EnhancedVoices(
     override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {
+        val caller = currentCoroutineContext().job
         val started = CompletableDeferred<Uri>()
         scope.launch {
             try {
                 model.withModel { tts, removed ->
+                    if (!caller.isActive) throw CancellationException("Narration moved on")
                     tts.setVoice(voice)
                     val file = File(dir, "$name.wav")
                     val writer = StreamingWav(file, PhononTts.SAMPLE_RATE)
                     var abandoned = false
                     try {
                         tts.speak(text) { pcm ->
-                            abandoned = removed() || !file.exists()
+                            abandoned =
+                                removed() ||
+                                    (!started.isCompleted && !caller.isActive) ||
+                                    !file.exists()
                             if (abandoned) return@speak false
                             writer.write(pcm)
                             started.complete(writer.audio.uri)
@@ -46,13 +55,15 @@ class EnhancedVoices(
                         }
                         if (abandoned) throw IOException("Narration moved on")
                         if (!started.isCompleted) throw IOException("The voice made no audio")
-                        writer.finish()
+                        writer.finish(file)
                     } catch (e: Exception) {
                         writer.fail(e)
                         throw e
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Errors too (a native library that won't load): this scope is app-wide, and what
+                // escaped it would end the app.
                 started.completeExceptionally(e)
             }
         }
@@ -65,9 +76,11 @@ class EnhancedVoices(
  * [finish] its header gives the most data a WAV can hold, which the player reads as "until the file
  * ends"; then it gives the real size.
  */
-internal class StreamingWav(private val file: File, private val sampleRate: Int) {
+internal class StreamingWav(file: File, private val sampleRate: Int) {
     val audio = StreamedAudio(file)
-    private val out = FileOutputStream(file)
+    // One handle for the samples and the final header, so the header goes into this file even if
+    // the name has since been given to another.
+    private val out = RandomAccessFile(file, "rw").apply { setLength(0) }
     private var dataBytes = 0L
 
     init {
@@ -85,10 +98,11 @@ internal class StreamingWav(private val file: File, private val sampleRate: Int)
         audio.appended(bytes.capacity())
     }
 
-    fun finish() {
+    fun finish(to: File) {
+        out.seek(0)
+        out.write(header(dataBytes))
         out.close()
-        RandomAccessFile(file, "rw").use { it.write(header(dataBytes)) }
-        audio.finish(file)
+        audio.finish(to)
     }
 
     fun fail(cause: Exception) {

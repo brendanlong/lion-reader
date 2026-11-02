@@ -468,6 +468,7 @@ private fun EnhancedVoiceSettings(
             val voice = resolveEnhancedVoice(settings.enhancedVoice)
             val scope = rememberCoroutineScope()
             var preview by remember { mutableStateOf<Job?>(null) }
+            var previewFailure by remember { mutableStateOf<String?>(null) }
             DisposableEffect(Unit) { onDispose { preview?.cancel() } }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Picker(
@@ -482,12 +483,17 @@ private fun EnhancedVoiceSettings(
                 OutlinedButton(
                     onClick = {
                         preview?.cancel()
+                        previewFailure = null
                         preview =
                             if (playing) null
                             else
                                 scope.launch {
                                     try {
                                         previewEnhancedVoice(model, voice.id)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        previewFailure = e.message ?: "The preview failed"
                                     } finally {
                                         preview = null
                                     }
@@ -496,6 +502,13 @@ private fun EnhancedVoiceSettings(
                 ) {
                     Text(if (playing) "Stop" else "Preview")
                 }
+            }
+            previewFailure?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             Hint(voice.description)
             TextButton(onClick = { graph.appScope.launch { model.remove() } }) {

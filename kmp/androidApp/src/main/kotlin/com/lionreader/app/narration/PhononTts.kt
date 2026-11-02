@@ -7,6 +7,7 @@ import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
+import dalvik.system.BaseDexClassLoader
 import java.io.File
 
 // Adapted from Gradium's android/PhononTTS.kt (xn-ptts, MIT OR Apache-2.0): the calls of ptts.h
@@ -108,16 +109,21 @@ internal class PhononTts(modelDir: File) : AutoCloseable {
         }
 
         /**
-         * Whether this device can run it. The library is built for 64-bit ARM with dotprod and fp16
-         * (phonon/build.sh), and kills the process with an illegal instruction where they're
-         * missing, so that's checked before it loads; and for x86_64, for emulators.
+         * Whether this device can run it: the app has the library for its ABI (64-bit ARM; x86_64
+         * in debug builds, for emulators), and for ARM the CPU has dotprod and fp16, which it's
+         * built for (phonon/build.sh). Where they're missing it would kill the process with an
+         * illegal instruction, so that's checked before it loads.
          */
         val supported: Boolean by lazy {
+            val packaged =
+                (PhononTts::class.java.classLoader as? BaseDexClassLoader)?.findLibrary(
+                    "ptts_ffi"
+                ) != null
             when {
-                !Process.is64Bit() -> false
-                Build.SUPPORTED_64_BIT_ABIS.firstOrNull() == "x86_64" -> true
-                Build.SUPPORTED_64_BIT_ABIS.firstOrNull() != "arm64-v8a" -> false
-                else -> armFeatures().containsAll(listOf("asimddp", "fphp", "asimdhp"))
+                !packaged || !Process.is64Bit() -> false
+                Build.SUPPORTED_64_BIT_ABIS.firstOrNull() == "arm64-v8a" ->
+                    armFeatures().containsAll(listOf("asimddp", "fphp", "asimdhp"))
+                else -> true
             }
         }
 
