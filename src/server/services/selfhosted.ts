@@ -44,7 +44,8 @@ let proxy: { url: string; agent: ProxyAgent } | undefined;
 function proxyAgent(): ProxyAgent | undefined {
   const url = process.env.SELFHOSTED_PROXY_URL;
   if (!url) return undefined;
-  if (proxy?.url !== url) proxy = { url, agent: new ProxyAgent(url) };
+  // Tunnel http too, so every request takes the path an https one does.
+  if (proxy?.url !== url) proxy = { url, agent: new ProxyAgent({ uri: url, proxyTunnel: true }) };
   return proxy.agent;
 }
 

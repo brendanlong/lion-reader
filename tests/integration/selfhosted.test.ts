@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { createServer, request, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer, type IncomingMessage, type Server } from "node:http";
+import { connect, type AddressInfo, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import {
@@ -94,17 +94,15 @@ beforeAll(async () => {
   const { port } = server.address() as AddressInfo;
   base = `http://127.0.0.1:${port}`;
 
-  proxy = createServer((req, res) => {
-    const target = new URL(String(req.url));
-    if (target.host !== TAILNET_HOST) return res.writeHead(502).end();
-    const upstream = request(
-      { host: "127.0.0.1", port, method: req.method, path: target.pathname, headers: req.headers },
-      (answer) => {
-        res.writeHead(answer.statusCode ?? 502, answer.headers);
-        answer.pipe(res);
-      }
-    );
-    req.pipe(upstream);
+  proxy = createServer((_req, res) => res.writeHead(405).end());
+  proxy.on("connect", (req: IncomingMessage, client: Socket, head: Buffer) => {
+    if (req.url !== `${TAILNET_HOST}:80`) return client.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    const upstream = connect(port, "127.0.0.1", () => {
+      client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      upstream.write(head);
+      upstream.pipe(client);
+      client.pipe(upstream);
+    });
   });
   await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
   proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;

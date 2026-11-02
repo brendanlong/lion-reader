@@ -90,7 +90,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - **The app machines are on our tailnet** (`scripts/with-tailscale.sh`), reachable
   only through tailscaled's proxy at `SELFHOSTED_PROXY_URL`. Only the self-hosted
   speech client (`src/server/services/selfhosted.ts`) may use it; never route a
-  user-influenced URL through it. The tailnet policy must keep `tag:lion-reader`
+  user-influenced URL through it: it also reaches the internet and Fly's private
+  network, with none of the SSRF checks. The tailnet policy must keep `tag:lion-reader`
   limited to `svc:kokoro` (docs/DEPLOYMENT.md), so a compromised app can't reach
   the rest of the tailnet.
 

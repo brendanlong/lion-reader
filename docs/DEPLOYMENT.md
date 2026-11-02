@@ -186,7 +186,8 @@ Service `svc:kokoro`. The `app` machines join the tailnet as ephemeral
 through tailscaled's proxy (`SELFHOSTED_PROXY_URL` in `fly.toml`).
 
 1. In the tailnet policy, add the tag and the one grant it gets. Tests make a
-   later policy edit that widens it fail to save:
+   later edit that opens the listed destinations to it fail to save; they check
+   only what they list, so add each new user and tag to them:
 
    ```jsonc
    "tagOwners": { "tag:lion-reader": ["autogroup:admin"] },
@@ -214,7 +215,7 @@ through tailscaled's proxy (`SELFHOSTED_PROXY_URL` in `fly.toml`).
 3. Set the secrets:
 
    ```sh
-   flyctl secrets set -a lion-reader TAILSCALE_AUTHKEY=tskey-client-... \
+   flyctl secrets set -a lion-reader TAILSCALE_OAUTH_CLIENT_SECRET=tskey-client-... \
      SELFHOSTED_BASE_URL=https://kokoro.<tailnet>.ts.net/v1 SELFHOSTED_API_KEY=...
    ```
 
