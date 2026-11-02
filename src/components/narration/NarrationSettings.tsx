@@ -9,7 +9,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import dynamic from "next/dynamic";
 import { keepPreviousData } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { CardSection } from "@/components/ui/card";
@@ -21,17 +20,11 @@ import { getMediaSourceClass } from "@/lib/narration/media-source-player";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
 import { DEFAULT_CLOUD_VOICE_MODEL, PREVIEW_TEXT } from "@/lib/narration/constants";
+import { EnhancedVoiceList } from "./EnhancedVoiceList";
 import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 import { CloudVoiceSettings } from "./CloudVoiceSettings";
 import { trpc } from "@/lib/trpc/client";
 import { Switch } from "@/components/ui/switch";
-
-// Dynamic import with ssr: false to prevent piper-tts-web from being bundled for SSR.
-// The piper library has conditional Node.js code with require('fs') that breaks the build.
-const EnhancedVoiceList = dynamic(
-  () => import("./EnhancedVoiceList").then((mod) => mod.EnhancedVoiceList),
-  { ssr: false }
-);
 
 // No-op subscribe function for static values (browser capabilities don't change)
 const noopSubscribe = () => () => {};
@@ -248,9 +241,9 @@ export function NarrationSettings() {
                 label="Browser Voices"
                 description="Uses your browser's built-in text-to-speech"
               />
-              {(canStreamAudio || settings.provider === "piper") && (
+              {(canStreamAudio || settings.provider === "phonon") && (
                 <ProviderOption
-                  value="piper"
+                  value="phonon"
                   selected={settings.provider}
                   onSelect={handleProviderChange}
                   label="Enhanced Voices"
@@ -329,8 +322,7 @@ export function NarrationSettings() {
             />
           )}
 
-          {/* Enhanced Voices List (only shown when piper provider selected) */}
-          {settings.provider === "piper" && (
+          {settings.provider === "phonon" && (
             <div className="space-y-4">
               <div>
                 <label className="ui-text-sm text-body mb-3 block font-medium">Select Voice</label>
@@ -366,7 +358,7 @@ export function NarrationSettings() {
             </div>
           </div>
 
-          {/* Pitch Slider (browser voices only - Piper doesn't support pitch control) */}
+          {/* Pitch Slider (browser voices only - Phonon has no pitch control) */}
           {settings.provider === "browser" && (
             <div>
               <label

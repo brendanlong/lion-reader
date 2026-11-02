@@ -5,10 +5,10 @@
  */
 
 /**
- * TTS backends: the browser's Web Speech API, Piper running in the browser
+ * TTS backends: the browser's Web Speech API, Phonon running in the browser
  * ("Enhanced Voices"), and server-side speech models ("Cloud Voices").
  */
-export const TTS_PROVIDER_IDS = ["browser", "piper", "cloud"] as const;
+export const TTS_PROVIDER_IDS = ["browser", "phonon", "cloud"] as const;
 
 export type TTSProviderId = (typeof TTS_PROVIDER_IDS)[number];
 

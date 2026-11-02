@@ -1,462 +1,146 @@
 /**
  * useEnhancedVoices Hook
  *
- * Manages enhanced voice state including download status,
- * downloading, and deletion of Piper TTS voices.
+ * The enhanced voice model's download state (downloading, removing it) and
+ * voice previews.
  *
  * @module components/narration/useEnhancedVoices
  */
 
 "use client";
 
-import { useState, useEffect, useCallback, useReducer, useRef, useMemo } from "react";
-import { ENHANCED_VOICES, type EnhancedVoice } from "@/lib/narration/enhanced-voices";
-import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
-import { PreviewAudio } from "@/lib/narration/preview-audio";
-import { getVoiceErrorInfo, type VoiceErrorInfo } from "@/lib/narration/errors";
-import {
-  trackEnhancedVoiceDownloadCompleted,
-  trackEnhancedVoiceDownloadFailed,
-  classifyDownloadError,
-} from "@/lib/telemetry";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import { PREVIEW_TEXT } from "@/lib/narration/constants";
+import { getVoiceErrorInfo } from "@/lib/narration/errors";
+import {
+  downloadPhononModel,
+  getPhononModelState,
+  loadPhonon,
+  removePhononModel,
+  subscribePhononModelState,
+} from "@/lib/narration/phonon-tts";
+import { PreviewAudio } from "@/lib/narration/preview-audio";
+import {
+  classifyDownloadError,
+  trackEnhancedVoiceModelDownloadCompleted,
+  trackEnhancedVoiceModelDownloadFailed,
+} from "@/lib/telemetry";
 
-/**
- * State machine for voice manager operations (preview, error).
- *
- * Download state is tracked per-voice in the voiceStates map since multiple
- * voices can be in different download states simultaneously.
- */
-type OperationState =
-  | { status: "idle" }
-  | { status: "previewing"; voiceId: string }
-  | { status: "error"; error: string; errorInfo: VoiceErrorInfo; failedVoiceId: string | null }
-  | {
-      status: "previewing_error";
-      voiceId: string;
-      error: string;
-      errorInfo: VoiceErrorInfo;
-      failedVoiceId: string | null;
-    };
+export type ModelStatus = "checking" | "not-downloaded" | "downloading" | "downloaded";
 
-type OperationAction =
-  | { type: "START_PREVIEW"; voiceId: string }
-  | { type: "STOP_PREVIEW" }
-  | { type: "SET_ERROR"; error: string; errorInfo: VoiceErrorInfo; failedVoiceId: string | null }
-  | { type: "CLEAR_ERROR" };
-
-function operationReducer(state: OperationState, action: OperationAction): OperationState {
-  switch (action.type) {
-    case "START_PREVIEW":
-      // Starting a preview clears errors
-      return { status: "previewing", voiceId: action.voiceId };
-    case "STOP_PREVIEW":
-      // Stopping preview: preserve error if we're in previewing_error state
-      if (state.status === "previewing_error") {
-        return {
-          status: "error",
-          error: state.error,
-          errorInfo: state.errorInfo,
-          failedVoiceId: state.failedVoiceId,
-        };
-      }
-      return { status: "idle" };
-    case "SET_ERROR":
-      // If previewing, keep previewing but record the error
-      if (state.status === "previewing" || state.status === "previewing_error") {
-        return {
-          status: "previewing_error",
-          voiceId: state.voiceId,
-          error: action.error,
-          errorInfo: action.errorInfo,
-          failedVoiceId: action.failedVoiceId,
-        };
-      }
-      return {
-        status: "error",
-        error: action.error,
-        errorInfo: action.errorInfo,
-        failedVoiceId: action.failedVoiceId,
-      };
-    case "CLEAR_ERROR":
-      if (state.status === "previewing_error") {
-        return { status: "previewing", voiceId: state.voiceId };
-      }
-      if (state.status === "error") {
-        return { status: "idle" };
-      }
-      return state;
-  }
-}
-
-/**
- * Download status for a voice.
- */
-export type VoiceDownloadStatus = "not-downloaded" | "downloading" | "downloaded";
-
-/**
- * State for a single enhanced voice.
- */
-export interface EnhancedVoiceState {
-  voice: EnhancedVoice;
-  status: VoiceDownloadStatus;
-  progress: number;
-  /**
-   * Error information if the download failed.
-   */
-  errorInfo?: VoiceErrorInfo;
-}
-
-/**
- * Return type for the useEnhancedVoices hook.
- */
 export interface UseEnhancedVoicesReturn {
-  /**
-   * List of voices with their current state.
-   */
-  voices: EnhancedVoiceState[];
-
-  /**
-   * Whether the voice list is loading.
-   */
-  isLoading: boolean;
-
-  /**
-   * Download a voice by ID.
-   */
-  downloadVoice: (voiceId: string) => Promise<void>;
-
-  /**
-   * Remove a downloaded voice by ID.
-   */
-  removeVoice: (voiceId: string) => Promise<void>;
-
-  /**
-   * Preview a voice by speaking sample text.
-   */
+  modelStatus: ModelStatus;
+  /** Fraction of the model downloaded, while `downloading`. */
+  progress: number;
+  downloadModel: () => Promise<void>;
+  removeModel: () => Promise<void>;
   previewVoice: (voiceId: string) => Promise<void>;
-
-  /**
-   * Stop the current preview.
-   */
   stopPreview: () => void;
-
-  /**
-   * Whether a preview is currently playing.
-   */
-  isPreviewing: boolean;
-
-  /**
-   * The ID of the voice currently being previewed.
-   */
   previewingVoiceId: string | null;
-
-  /**
-   * Error message if an operation failed.
-   */
-  error: string | null;
-
-  /**
-   * Full error information for the last failed operation.
-   */
-  lastErrorInfo: VoiceErrorInfo | null;
-
-  /**
-   * Clear the current error.
-   */
-  clearError: () => void;
-
-  /**
-   * Retry the last failed download.
-   */
-  retryDownload: () => Promise<void>;
-
-  /**
-   * Clear the error for a specific voice and retry.
-   */
-  retryVoiceDownload: (voiceId: string) => Promise<void>;
 }
 
-/**
- * Hook for managing enhanced voices.
- *
- * Provides state and operations for downloading, removing, and previewing
- * Piper TTS voices.
- *
- * @returns Object with voice states and operation handlers.
- *
- * @example
- * ```tsx
- * function VoiceList() {
- *   const { voices, downloadVoice, removeVoice, previewVoice, isPreviewing } = useEnhancedVoices();
- *
- *   return (
- *     <ul>
- *       {voices.map(({ voice, status }) => (
- *         <li key={voice.id}>
- *           {voice.displayName}
- *           {status === 'downloaded' && (
- *             <button onClick={() => previewVoice(voice.id)}>Preview</button>
- *           )}
- *         </li>
- *       ))}
- *     </ul>
- *   );
- * }
- * ```
- */
-type VoiceStateEntry = Omit<EnhancedVoiceState, "voice">;
-
-/** Every enhanced voice as downloaded (if in `stored`) or not, with no progress. */
-function initialVoiceStates(stored: ReadonlySet<string>): Map<string, VoiceStateEntry> {
-  return new Map(
-    ENHANCED_VOICES.map((voice) => [
-      voice.id,
-      { status: stored.has(voice.id) ? "downloaded" : "not-downloaded", progress: 0 },
-    ])
-  );
+function toastError(title: string, error: unknown): void {
+  const { message, suggestion } = getVoiceErrorInfo(error);
+  toast.error(title, { description: suggestion ? `${message} ${suggestion}` : message });
 }
 
 export function useEnhancedVoices(): UseEnhancedVoicesReturn {
-  const [voiceStates, setVoiceStates] = useState<Map<string, VoiceStateEntry>>(new Map());
-  const [isLoading, setIsLoading] = useState(true);
-  const [operationState, dispatch] = useReducer(operationReducer, { status: "idle" });
+  const stored = useSyncExternalStore(
+    subscribePhononModelState,
+    getPhononModelState,
+    () => "checking" as const
+  );
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const modelStatus: ModelStatus = isDownloading
+    ? "downloading"
+    : stored === "missing"
+      ? "not-downloaded"
+      : stored;
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
-  // Derive values from operation state
-  const isPreviewing =
-    operationState.status === "previewing" || operationState.status === "previewing_error";
-  const previewingVoiceId = isPreviewing ? operationState.voiceId : null;
-  const errState =
-    operationState.status === "error" || operationState.status === "previewing_error"
-      ? operationState
-      : null;
-  const failedVoiceId = errState?.failedVoiceId ?? null;
-
-  // Track if component is mounted to avoid state updates after unmount
   const isMountedRef = useRef(true);
   const previewRef = useRef<PreviewAudio | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
 
-  // Ref for self-referencing in downloadVoice callback (avoids access-before-declaration)
-  const downloadVoiceRef = useRef<(voiceId: string, isRetry?: boolean) => Promise<void>>(
-    async () => {}
-  );
-
-  const setVoiceState = useCallback((voiceId: string, state: VoiceStateEntry) => {
-    setVoiceStates((prev) => new Map(prev).set(voiceId, state));
-  }, []);
-
-  // Records a failed non-download operation (no voice to retry)
-  const reportError = useCallback((err: unknown, fallbackMessage: string) => {
-    dispatch({
-      type: "SET_ERROR",
-      error: err instanceof Error ? err.message : fallbackMessage,
-      errorInfo: getVoiceErrorInfo(err),
-      failedVoiceId: null,
-    });
-  }, []);
-
-  // Initialize voice states
   useEffect(() => {
     isMountedRef.current = true;
-
-    const loadVoiceStatus = async () => {
-      try {
-        const storedVoices = await getPiperTTSProvider().getStoredVoiceIds();
-        if (!isMountedRef.current) return;
-        setVoiceStates(initialVoiceStates(new Set(storedVoices)));
-      } catch {
-        // If storage check fails, assume not downloaded
-        if (isMountedRef.current) {
-          setVoiceStates(initialVoiceStates(new Set()));
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadVoiceStatus();
-
     return () => {
       isMountedRef.current = false;
       previewRef.current?.stop();
       previewRef.current = null;
+      previewAbortRef.current?.abort();
     };
   }, []);
 
-  // Download a voice
-  const downloadVoice = useCallback(
-    async (voiceId: string, isRetry = false) => {
-      dispatch({ type: "CLEAR_ERROR" });
+  const downloadModel = useCallback(async () => {
+    setIsDownloading(true);
+    setProgress(0);
+    try {
+      await downloadPhononModel((fraction) => {
+        if (isMountedRef.current) setProgress(fraction);
+      });
+      trackEnhancedVoiceModelDownloadCompleted();
+    } catch (err) {
+      trackEnhancedVoiceModelDownloadFailed(classifyDownloadError(err));
+      toastError("Failed to download the voice model", err);
+    } finally {
+      if (isMountedRef.current) setIsDownloading(false);
+    }
+  }, []);
 
-      // Update status to downloading and clear any previous error
-      setVoiceState(voiceId, { status: "downloading", progress: 0 });
-
-      try {
-        await getPiperTTSProvider().downloadVoice(voiceId, (progress) => {
-          if (!isMountedRef.current) return;
-          setVoiceState(voiceId, { status: "downloading", progress });
-        });
-
-        if (!isMountedRef.current) return;
-
-        setVoiceState(voiceId, { status: "downloaded", progress: 1 });
-
-        // Track successful download
-        trackEnhancedVoiceDownloadCompleted(voiceId);
-      } catch (err) {
-        if (!isMountedRef.current) return;
-
-        // Get detailed error information
-        const errorInfo = getVoiceErrorInfo(err);
-
-        // If it's a corrupted cache error and this isn't already a retry,
-        // remove the stored voice files and retry once
-        if (errorInfo.type === "corrupted_cache" && !isRetry) {
-          try {
-            await getPiperTTSProvider().removeVoice(voiceId);
-            // Retry the download via ref to avoid access-before-declaration
-            await downloadVoiceRef.current(voiceId, true);
-            return;
-          } catch {
-            // If clearing cache fails, fall through to normal error handling
-          }
-        }
-
-        setVoiceState(voiceId, { status: "not-downloaded", progress: 0, errorInfo });
-
-        // Track failed voice ID for retry
-        dispatch({
-          type: "SET_ERROR",
-          error: errorInfo.message,
-          errorInfo,
-          failedVoiceId: voiceId,
-        });
-
-        // Track failed download with error classification for telemetry
-        const telemetryErrorType = classifyDownloadError(err);
-        trackEnhancedVoiceDownloadFailed(voiceId, telemetryErrorType);
-      }
-    },
-    [setVoiceState]
-  );
-  useEffect(() => {
-    downloadVoiceRef.current = downloadVoice;
-  }, [downloadVoice]);
-
-  // Remove a downloaded voice
-  const removeVoice = useCallback(
-    async (voiceId: string) => {
-      dispatch({ type: "CLEAR_ERROR" });
-
-      try {
-        await getPiperTTSProvider().removeVoice(voiceId);
-        if (!isMountedRef.current) return;
-        setVoiceState(voiceId, { status: "not-downloaded", progress: 0 });
-      } catch (err) {
-        if (!isMountedRef.current) return;
-        reportError(err, "Failed to remove voice");
-      }
-    },
-    [setVoiceState, reportError]
-  );
-
-  // Stop current preview
   const stopPreview = useCallback(() => {
     previewRef.current?.stop();
     previewRef.current = null;
-    if (isMountedRef.current) dispatch({ type: "STOP_PREVIEW" });
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
+    if (isMountedRef.current) setPreviewingVoiceId(null);
   }, []);
 
-  // Preview a voice
+  const removeModel = useCallback(async () => {
+    stopPreview();
+    try {
+      await removePhononModel();
+    } catch (err) {
+      toastError("Failed to remove the voice model", err);
+    }
+  }, [stopPreview]);
+
   const previewVoice = useCallback(
     async (voiceId: string) => {
       previewRef.current?.stop();
+      previewAbortRef.current?.abort();
       const preview = new PreviewAudio();
+      const abort = new AbortController();
       previewRef.current = preview;
-      dispatch({ type: "START_PREVIEW", voiceId });
+      previewAbortRef.current = abort;
+      setPreviewingVoiceId(voiceId);
 
+      const fail = (err: unknown) => {
+        stopPreview();
+        toastError("Failed to preview voice", err);
+      };
       try {
-        const clip = await getPiperTTSProvider().synthesize(PREVIEW_TEXT, voiceId);
+        const tts = await loadPhonon();
+        const clip = await tts.synthWav(PREVIEW_TEXT, { voice: voiceId, signal: abort.signal });
         // Superseded by another preview, a stop, or unmount.
         if (previewRef.current !== preview) return;
-        preview.play(clip, 1.0, (error) => {
-          stopPreview();
-          if (error) reportError(error, "Failed to preview voice");
-        });
+        preview.play(clip, 1.0, (error) => (error ? fail(error) : stopPreview()));
       } catch (err) {
-        if (previewRef.current !== preview) return;
-        stopPreview();
-        reportError(err, "Failed to preview voice");
+        if (previewRef.current === preview) fail(err);
       }
     },
-    [reportError, stopPreview]
-  );
-
-  // Clear error
-  const clearError = useCallback(() => {
-    dispatch({ type: "CLEAR_ERROR" });
-    // Also clear error info from voice states
-    setVoiceStates((prev) => {
-      const newStates = new Map(prev);
-      for (const [voiceId, state] of prev) {
-        if (state.errorInfo) {
-          newStates.set(voiceId, { ...state, errorInfo: undefined });
-        }
-      }
-      return newStates;
-    });
-  }, []);
-
-  // Retry the last failed download
-  const retryDownload = useCallback(async () => {
-    if (failedVoiceId) {
-      await downloadVoice(failedVoiceId);
-    }
-  }, [failedVoiceId, downloadVoice]);
-
-  // Clear the error for a specific voice and retry
-  const retryVoiceDownload = useCallback(
-    async (voiceId: string) => {
-      // Clear the error for this specific voice
-      setVoiceStates((prev) => {
-        const current = prev.get(voiceId);
-        return current ? new Map(prev).set(voiceId, { ...current, errorInfo: undefined }) : prev;
-      });
-      // Clear global error if this was the failed voice
-      if (failedVoiceId === voiceId) {
-        dispatch({ type: "CLEAR_ERROR" });
-      }
-      // Retry the download
-      await downloadVoice(voiceId);
-    },
-    [failedVoiceId, downloadVoice]
-  );
-
-  // Build the voices array with current state (memoized to avoid rebuilding on every render)
-  const voices: EnhancedVoiceState[] = useMemo(
-    () =>
-      ENHANCED_VOICES.map((voice) => ({
-        voice,
-        ...(voiceStates.get(voice.id) ?? { status: "not-downloaded", progress: 0 }),
-      })),
-    [voiceStates]
+    [stopPreview]
   );
 
   return {
-    voices,
-    isLoading,
-    downloadVoice: (voiceId: string) => downloadVoice(voiceId, false),
-    removeVoice,
+    modelStatus,
+    progress,
+    downloadModel,
+    removeModel,
     previewVoice,
     stopPreview,
-    isPreviewing,
     previewingVoiceId,
-    error: errState?.error ?? null,
-    lastErrorInfo: errState?.errorInfo ?? null,
-    clearError,
-    retryDownload,
-    retryVoiceDownload,
   };
 }

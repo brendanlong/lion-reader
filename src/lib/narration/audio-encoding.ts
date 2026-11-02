@@ -1,5 +1,5 @@
 /**
- * Turns speech synthesized in the browser (Piper) into self-contained
+ * Turns speech synthesized in the browser (Phonon) into self-contained
  * fragmented-MP4 segments that {@link MediaSourcePlayer} appends to one Media
  * Source Extensions stream. Cloud voices arrive from the server already in
  * that form, as AAC.
@@ -34,9 +34,6 @@ export interface SegmentEncoder {
 
 /** Plenty for mono speech; keeps an hour of narration around 20 MB. */
 const BITRATE = 48_000;
-
-/** An AAC rate every encoder we've seen accepts. */
-const DECODE_SAMPLE_RATE = 24_000;
 
 interface Candidate {
   codec: AudioCodec;
@@ -125,22 +122,6 @@ function createEncoder(
       return new Uint8Array(target.buffer);
     },
   };
-}
-
-/**
- * Decodes a compressed clip (Piper's WAV) to mono samples with
- * the browser's own decoder. An `OfflineAudioContext` needs no user gesture,
- * unlike a realtime `AudioContext`.
- */
-export async function decodeToPcm(bytes: Uint8Array): Promise<PcmAudio> {
-  const context = new OfflineAudioContext(1, 1, DECODE_SAMPLE_RATE);
-  const buffer = await context.decodeAudioData(bytes.slice().buffer);
-  const samples = new Float32Array(buffer.length);
-  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-    const data = buffer.getChannelData(channel);
-    for (let i = 0; i < data.length; i++) samples[i] += data[i] / buffer.numberOfChannels;
-  }
-  return { samples, sampleRate: buffer.sampleRate };
 }
 
 export function withTrailingSilence(audio: PcmAudio, seconds: number): PcmAudio {

@@ -19,21 +19,17 @@ function telemetryRequest(body: unknown): Request {
 const knownVoiceId = ENHANCED_VOICES[0].id;
 
 describe("POST /api/v1/telemetry voiceId validation", () => {
-  it.each([
-    { event: "enhanced_voice_selected" },
-    { event: "enhanced_voice_download_completed" },
-    { event: "enhanced_voice_download_failed", errorType: "network" },
-  ])("accepts a known voice for $event", async (fields) => {
-    const response = await POST(telemetryRequest({ ...fields, voiceId: knownVoiceId }));
+  it("accepts a known voice", async () => {
+    const response = await POST(
+      telemetryRequest({ event: "enhanced_voice_selected", voiceId: knownVoiceId })
+    );
     expect(response.status).toBe(200);
   });
 
-  it.each([
-    { event: "enhanced_voice_selected" },
-    { event: "enhanced_voice_download_completed" },
-    { event: "enhanced_voice_download_failed", errorType: "network" },
-  ])("rejects an unknown voice for $event", async (fields) => {
-    const response = await POST(telemetryRequest({ ...fields, voiceId: "attacker-chosen-label" }));
+  it("rejects an unknown voice", async () => {
+    const response = await POST(
+      telemetryRequest({ event: "enhanced_voice_selected", voiceId: "attacker-chosen-label" })
+    );
     expect(response.status).toBe(400);
   });
 });

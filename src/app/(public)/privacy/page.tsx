@@ -292,28 +292,17 @@ export default function PrivacyPolicyPage() {
             </LegalSubsection>
           </Card>
 
-          <LegalSubsection
-            id="enhanced-voices"
-            title="Enhanced Voices (Hugging Face, jsDelivr) — Optional"
-          >
+          <LegalSubsection id="enhanced-voices" title="Enhanced Voices (Hugging Face) — Optional">
             <LegalParagraph tight>
-              <strong>Only if you use enhanced (Piper) voices.</strong> Downloading an enhanced
-              voice fetches the voice model directly from Hugging Face, and using one fetches the
-              speech engine&apos;s files from the jsDelivr CDN. These requests go straight from your
-              browser to those services, so they see your IP address and browser user agent, as with
-              any download. No article text or account information is sent; speech is then generated
-              entirely on your device.
+              <strong>Only if you use enhanced voices.</strong> Downloading the enhanced voice
+              model, and using a voice for the first time, fetches its files directly from Hugging
+              Face. These requests go straight from your browser to Hugging Face, so it sees your IP
+              address and browser user agent, as with any download. No article text or account
+              information is sent; speech is then generated entirely on your device.
             </LegalParagraph>
-            <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            <p className="mt-2">
               <TextLink href="https://huggingface.co/privacy" external className="ui-text-sm">
                 Hugging Face&apos;s Privacy Policy &rarr;
-              </TextLink>
-              <TextLink
-                href="https://www.jsdelivr.com/terms/privacy-policy"
-                external
-                className="ui-text-sm"
-              >
-                jsDelivr&apos;s Privacy Policy &rarr;
               </TextLink>
             </p>
           </LegalSubsection>
@@ -567,9 +556,9 @@ export default function PrivacyPolicyPage() {
             read items, sort order), and keyboard shortcut preferences
           </li>
           <li>
-            <strong>Origin private file system:</strong> Enhanced narration voices (if you download
-            optional high-quality voices using Piper TTS). These voice files are stored locally on
-            your device and never sent to our servers.
+            <strong>Cache storage:</strong> The enhanced narration voice model and voices (if you
+            download them). These files are stored locally on your device and never sent to our
+            servers.
           </li>
         </LegalList>
         <LegalParagraph>

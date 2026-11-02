@@ -32,7 +32,7 @@ export interface NarrationSettings {
   /**
    * Which TTS provider to use.
    * - "browser": Native Web Speech API voices (default)
-   * - "piper": Enhanced voices via Piper TTS (requires download)
+   * - "phonon": Enhanced voices via Phonon (requires download)
    * - "cloud": Cloud voices (server-side speech models)
    */
   provider: TTSProviderId;
@@ -47,7 +47,7 @@ export interface NarrationSettings {
    * The voice ID to use for narration.
    *
    * For browser provider: this is the voiceURI (SpeechSynthesisVoice.voiceURI).
-   * For Piper provider: this is the model ID (e.g., "en_US-lessac-medium").
+   * For Phonon: a voice id from `ENHANCED_VOICES`.
    * For cloud voices: a voice name the speech model lists (e.g., "af_heart").
    *
    * Null means use the provider's default voice.
@@ -88,7 +88,7 @@ export interface NarrationSettings {
    */
   useLlmNormalization: boolean;
 
-  /** Silence between sentences with Piper voices, in seconds (0 to 1). */
+  /** Silence between sentences with enhanced voices, in seconds (0 to 1). */
   sentenceGapSeconds: number;
 
   /** Silence after each chunk of cloud speech, in seconds. */

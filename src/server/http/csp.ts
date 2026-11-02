@@ -34,16 +34,13 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  *
  * - `script-src`: the nonce + `'strict-dynamic'` is the modern CSP3 pattern —
  *   only nonce'd scripts run, and trust propagates to scripts they load
- *   (Next.js chunk loading, dynamic `import()` of the ONNX runtime). `'self'`
- *   is a fallback for pre-CSP3 browsers, which ignore `'strict-dynamic'`.
- *   `'wasm-unsafe-eval'` is required to compile WebAssembly (ONNX runtime and
- *   Piper phonemizer for TTS narration) but deliberately NOT `'unsafe-eval'`:
- *   runtime `eval`/`new Function` stays blocked. onnxruntime-web is pinned to
- *   its CPU-only `./wasm` build (a bundler alias in `next.config.ts`) precisely
- *   because the default WebGPU/WebNN "JSEP" build's Embind init calls
- *   `new Function`, which would trip this policy; do not "fix" a resulting CSP
- *   eval warning by adding `'unsafe-eval'`. Dev additionally needs
- *   `'unsafe-eval'` for React Refresh / HMR.
+ *   (Next.js chunk loading). `'self'` is a fallback for pre-CSP3 browsers,
+ *   which ignore `'strict-dynamic'`. `'wasm-unsafe-eval'` is required to
+ *   compile WebAssembly (the audio encoder, and Phonon for enhanced voices)
+ *   but deliberately NOT `'unsafe-eval'`: runtime `eval`/`new Function` stays
+ *   blocked; do not "fix" a resulting CSP eval warning by adding
+ *   `'unsafe-eval'`. Dev additionally needs `'unsafe-eval'` for React
+ *   Refresh / HMR.
  * - `style-src 'unsafe-inline'`: inline styles are pervasive (React `style`
  *   props, next-themes, sonner, `NarrationHighlightStyles`, sanitized entry
  *   `style` attributes) and inline-style injection is far lower risk than
@@ -54,10 +51,11 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  *   `SANITIZE_OPTIONS.allowedSchemesByTag`), and TTS uses a `data:` silent
  *   audio unlock. `http:` also covers plain-HTTP local dev.
  * - `connect-src`: same-origin covers tRPC, SSE, and the Sentry `/monitoring`
- *   tunnel. The external hosts are the TTS narration downloads: Piper voice
- *   models from Hugging Face and the Piper phonemizer wasm/data from jsdelivr
- *   (`customWasmPaths` in `src/lib/narration/piper-tts-provider.ts`). CSP
- *   checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
+ *   tunnel. The external hosts are the enhanced voice downloads: the Phonon
+ *   model and voices from Hugging Face (`src/lib/narration/enhanced-voices.ts`).
+ *   `blob:` is how the page hands those stored files to Phonon's worker
+ *   (`src/lib/narration/phonon-tts.ts`).
+ *   CSP checks every hop of a redirect chain, and `huggingface.co/…/resolve/…`
  *   302s to its storage CDNs — `cdn-lfs*.huggingface.co` historically, Xet
  *   hosts like `cas-bridge.xethub.hf.co` today. A CSP host wildcard
  *   suffix-matches subdomains at ANY depth (unlike TLS certs), so
@@ -65,8 +63,8 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  *   HMR. The analytics beacon destination is also allowed when configured —
  *   we load no third-party analytics *script*, so this is the only directive
  *   analytics touches (see `src/lib/analytics/beacon.ts`).
- * - `worker-src`: the service worker is same-origin; the ONNX runtime spawns
- *   its threading helper workers from `blob:` URLs.
+ * - `worker-src`: the service worker and Phonon's worker (`/phonon/`) are
+ *   same-origin; Sentry Session Replay's compression worker is a `blob:` URL.
  * - `frame-src`: exactly the sanitizer's allow-listed embed providers — every
  *   iframe that survives sanitization is rewritten to one of these canonical
  *   hosts (`EMBED_CANONICAL_HOSTNAMES`), so the CSP double-enforces that list.
@@ -140,7 +138,7 @@ function buildPolicy(scriptSrcExtra: string): string {
     "img-src 'self' data: blob: http: https:",
     "media-src 'self' data: blob: http: https:",
     `font-src 'self'${cdn} data:`,
-    `connect-src 'self'${cdn} https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net${gcConnect}${
+    `connect-src 'self'${cdn} blob: https://huggingface.co https://*.huggingface.co https://*.hf.co${gcConnect}${
       isDev ? " ws:" : ""
     }`,
     "worker-src 'self' blob:",

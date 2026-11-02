@@ -2,7 +2,7 @@
  * useNarration Hook
  *
  * Manages article narration state using the Web Speech API (browser voices),
- * Piper TTS (enhanced voices), or server-synthesized cloud voices. Handles
+ * Phonon (enhanced voices, in the browser), or server-synthesized cloud voices. Handles
  * narration generation, playback controls, and Media Session integration.
  *
  * Only `NarrationEngine` calls it, so this module and its players load lazily;
@@ -37,8 +37,9 @@ import {
 import { getMediaSourceClass } from "@/lib/narration/media-source-player";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 import type { NarrationSettings } from "@/lib/narration/settings";
-import { createPiperSpeechPlayer } from "@/lib/narration/piper-speech";
-import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
+import { createPhononSpeechPlayer } from "@/lib/narration/phonon-speech";
+import { getPhononModelState, subscribePhononModelState } from "@/lib/narration/phonon-tts";
+import { resolveEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
   htmlToClientNarration,
   type ParagraphMapEntry,
@@ -100,7 +101,7 @@ interface PlayerState extends Omit<UseNarrationState, "status"> {
  * Handles:
  * - Generating narration text via the API
  * - Managing the ArticleNarrator instance (for browser voices)
- * - Managing Piper TTS playback (for enhanced voices)
+ * - Managing Phonon playback (for enhanced voices)
  * - Integrating with Media Session API
  * - Using user's voice/rate/pitch preferences
  *
@@ -135,8 +136,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // Refs
   const narratorRef = useRef<ArticleNarrator | null>(null);
 
-  // Piper and cloud voices each stream through their own Media Source player.
-  const piperPlayerRef = useRef<MediaSourcePlayer | null>(null);
+  // Phonon and cloud voices each stream through their own Media Source player.
+  const phononPlayerRef = useRef<MediaSourcePlayer | null>(null);
   const cloudPlayerRef = useRef<MediaSourcePlayer | null>(null);
   // Bumped by pause/stop/article changes, so a play() still generating
   // narration when the user moves on doesn't store or start it (see play()).
@@ -155,12 +156,17 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     [storedSettings, prerecordedVoice]
   );
 
-  // Determine if we should use Piper provider
-  const usePiper =
-    settings.provider === "piper" && settings.voiceId && isEnhancedVoice(settings.voiceId);
+  // Until the model is downloaded (in settings, with its progress), browser
+  // voices read instead of a silent model download on play.
+  const phononState = useSyncExternalStore(
+    subscribePhononModelState,
+    getPhononModelState,
+    () => "checking" as const
+  );
+  const usePhonon = settings.provider === "phonon" && phononState === "downloaded";
   const useCloud = settings.provider === "cloud";
-  // Piper and cloud voices drive their own player; browser voices use ArticleNarrator.
-  const usesBufferedPlayer = usePiper || useCloud;
+  // Phonon and cloud voices drive their own player; browser voices use ArticleNarrator.
+  const usesBufferedPlayer = usePhonon || useCloud;
 
   // tRPC mutation for generating narration
   const generateMutation = trpc.narration.generate.useMutation();
@@ -227,7 +233,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // Apply user settings when they change
   useEffect(() => {
-    piperPlayerRef.current?.setRate(settings.rate);
+    phononPlayerRef.current?.setRate(settings.rate);
     cloudPlayerRef.current?.setRate(settings.rate);
     if (!narratorRef.current || usesBufferedPlayer) return;
 
@@ -253,7 +259,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     updateVoice();
   }, [isSupported, settings.voiceId, usesBufferedPlayer]);
 
-  // State updates from the Piper and cloud players (same callback shape).
+  // State updates from the Phonon and cloud players (same callback shape).
   const bufferedPlayerCallbacks = useMemo(
     (): PlayerCallbacks => ({
       onStatusChange: (status: PlaybackStatus) => {
@@ -293,15 +299,15 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     []
   );
 
-  const getOrCreatePiperPlayer = useCallback((): MediaSourcePlayer => {
-    if (!piperPlayerRef.current) {
-      piperPlayerRef.current = createPiperSpeechPlayer(() => ({
-        voice: voiceRef.current.voice,
+  const getOrCreatePhononPlayer = useCallback((): MediaSourcePlayer => {
+    if (!phononPlayerRef.current) {
+      phononPlayerRef.current = createPhononSpeechPlayer(() => ({
+        voice: resolveEnhancedVoice(voiceRef.current.voice).id,
         sentenceGapSeconds: voiceRef.current.sentenceGapSeconds,
       }));
-      piperPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
+      phononPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
-    return piperPlayerRef.current;
+    return phononPlayerRef.current;
   }, [bufferedPlayerCallbacks]);
 
   const getOrCreateCloudPlayer = useCallback((): MediaSourcePlayer => {
@@ -341,10 +347,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
     // Start the audio element within this user gesture, before any async
     // narration generation, so the browser grants it while the gesture's
-    // autoplay activation is still valid (issue #410): Piper and cloud voices
+    // autoplay activation is still valid (issue #410): Phonon and cloud voices
     // prime their own player's element, browser voices the media session's
     // silent audio. It's released below if generation fails.
-    const player = usePiper ? getOrCreatePiperPlayer() : useCloud ? getOrCreateCloudPlayer() : null;
+    const player = usePhonon
+      ? getOrCreatePhononPlayer()
+      : useCloud
+        ? getOrCreateCloudPlayer()
+        : null;
     // Both primed elements are shared across requests, so each release only
     // takes effect if no newer play() has primed since.
     let playerLease: number | null = null;
@@ -455,7 +465,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     });
   }, [
     isSupported,
-    usePiper,
+    usePhonon,
     useCloud,
     playerState.status,
     playerState.totalParagraphs,
@@ -471,15 +481,15 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     following,
     showFullContent,
     showOriginal,
-    getOrCreatePiperPlayer,
+    getOrCreatePhononPlayer,
     getOrCreateCloudPlayer,
     prerecordedVoice,
   ]);
 
-  // The active Piper or cloud player, if either is in use.
+  // The active Phonon or cloud player, if either is in use.
   const bufferedPlayer = useCallback(
-    () => (usePiper ? piperPlayerRef.current : useCloud ? cloudPlayerRef.current : null),
-    [usePiper, useCloud]
+    () => (usePhonon ? phononPlayerRef.current : useCloud ? cloudPlayerRef.current : null),
+    [usePhonon, useCloud]
   );
 
   const pause = useCallback(() => {
@@ -544,7 +554,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // its paragraph map are variant-specific: replaying a cached "cleaned"
   // narration while the DOM now shows "full"/"original" would highlight the
   // wrong elements. Resetting forces the next play to re-narrate what's on screen.
-  const narrationResetKey = `${id}:${settings.provider}:${settings.cloudModelId}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
+  // `usePhonon` too: deleting the model (maybe in another tab) moves narration
+  // to browser voices, which must not leave the Phonon player playing.
+  const narrationResetKey = `${id}:${settings.provider}:${usePhonon}:${settings.cloudModelId}:${settings.voiceId}:${showFullContent ?? false}:${showOriginal ?? false}`;
   const [prevNarrationResetKey, setPrevNarrationResetKey] = useState(narrationResetKey);
   if (narrationResetKey !== prevNarrationResetKey) {
     setPrevNarrationResetKey(narrationResetKey);
@@ -569,8 +581,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       // variant. Unloading rather than stopping, so the state it reports holds
       // none of the old variant's paragraphs.
       narratorRef.current?.loadArticle("");
-      piperPlayerRef.current?.stop();
-      piperPlayerRef.current?.clearCache();
+      phononPlayerRef.current?.stop();
+      phononPlayerRef.current?.clearCache();
       cancelPendingPlay(playRequestRef);
       cloudPlayerRef.current?.stop();
       cloudPlayerRef.current?.clearCache();
@@ -578,6 +590,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   }, [
     id,
     settings.provider,
+    usePhonon,
     settings.cloudModelId,
     settings.voiceId,
     showFullContent,

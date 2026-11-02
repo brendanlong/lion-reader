@@ -19,15 +19,14 @@ const voiceIdSchema = z.string().refine(isEnhancedVoice, { message: "Unknown voi
 
 const voiceDownloadErrorTypeSchema = z.enum(["network", "storage", "unknown"]);
 
-/** Why an enhanced voice download failed: a `fetch`, or the origin private file system or quota. */
+/** Why the enhanced voice model download failed: a `fetch`, or browser storage or its quota. */
 export type VoiceDownloadErrorType = z.infer<typeof voiceDownloadErrorTypeSchema>;
 
 export const telemetryEventSchema = z.discriminatedUnion("event", [
   z.object({ event: z.literal("enhanced_voice_selected"), voiceId: voiceIdSchema }),
-  z.object({ event: z.literal("enhanced_voice_download_completed"), voiceId: voiceIdSchema }),
+  z.object({ event: z.literal("enhanced_voice_model_download_completed") }),
   z.object({
-    event: z.literal("enhanced_voice_download_failed"),
-    voiceId: voiceIdSchema,
+    event: z.literal("enhanced_voice_model_download_failed"),
     errorType: voiceDownloadErrorTypeSchema,
   }),
   z.object({ event: z.literal("narration_playback_started"), provider: z.enum(TTS_PROVIDER_IDS) }),
@@ -55,15 +54,12 @@ export function trackEnhancedVoiceSelected(voiceId: string): void {
   void sendTelemetryEvent({ event: "enhanced_voice_selected", voiceId });
 }
 
-export function trackEnhancedVoiceDownloadCompleted(voiceId: string): void {
-  void sendTelemetryEvent({ event: "enhanced_voice_download_completed", voiceId });
+export function trackEnhancedVoiceModelDownloadCompleted(): void {
+  void sendTelemetryEvent({ event: "enhanced_voice_model_download_completed" });
 }
 
-export function trackEnhancedVoiceDownloadFailed(
-  voiceId: string,
-  errorType: VoiceDownloadErrorType
-): void {
-  void sendTelemetryEvent({ event: "enhanced_voice_download_failed", voiceId, errorType });
+export function trackEnhancedVoiceModelDownloadFailed(errorType: VoiceDownloadErrorType): void {
+  void sendTelemetryEvent({ event: "enhanced_voice_model_download_failed", errorType });
 }
 
 export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {

@@ -43,7 +43,7 @@ export interface UseMediaSessionParams {
   status: NarrationStatus;
   /** Playback controls invoked by OS media buttons. */
   controls: MediaSessionControls;
-  /** Whether narration plays through its own media element (Piper and cloud voices). */
+  /** Whether narration plays through its own media element (enhanced and cloud voices). */
   ownsMediaElement: boolean;
   /** Whether there's a paragraph before / after this one (else the OS button greys out). */
   canSkipBackward: boolean;

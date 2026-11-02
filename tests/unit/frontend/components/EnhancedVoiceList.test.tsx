@@ -3,120 +3,127 @@
  */
 
 /**
- * Accessibility tests for the enhanced (Piper) voice picker.
- *
- * The list used to fake a radio group: `role="radio"` on each card with no
- * owning `radiogroup`, no accessible name on the radio itself, and
- * `tabIndex={0}` on every card (so every voice was its own tab stop). It is now
- * a `role="radiogroup"` of real `<input type="radio">`s sharing one `name`,
- * matching the sibling browser-voice panel — which is what gives it a single
- * tab stop and browser-native arrow-key navigation.
- *
- * Arrow-key traversal itself is browser behavior that jsdom does not implement,
- * so what is asserted here is the markup that earns it: one named radiogroup,
- * one shared radio `name`, real radio elements, and selection through them.
+ * The enhanced voice picker: one shared model download gates every voice, and
+ * the voices are a real radio group (one named `radiogroup` of `<input
+ * type="radio">`s sharing a `name`), which is what gives it a single tab stop
+ * and browser-native arrow-key navigation. jsdom doesn't implement that
+ * traversal, so the markup that earns it is what's asserted.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  createMemoryCacheStorage,
+  type MemoryCacheStorage,
+} from "../../../utils/memory-cache-storage";
 
-// The Piper module is a browser-only dependency (OPFS/WASM). Stubbing `stored()`
-// is what lets the list render voices in the "downloaded" (selectable) state.
-const { mockStored } = vi.hoisted(() => ({ mockStored: vi.fn() }));
-
-vi.mock("@mintplex-labs/piper-tts-web", () => ({
-  TtsSession: { create: vi.fn() },
-  download: vi.fn(),
-  remove: vi.fn(),
-  stored: mockStored,
-  flush: vi.fn(),
-}));
+// The package runs a wasm model in a worker, which jsdom can't.
+vi.mock("phonon-tts", () => ({ PhononTTS: { load: vi.fn() } }));
 
 import { EnhancedVoiceList } from "@/components/narration/EnhancedVoiceList";
 import { DEFAULT_NARRATION_SETTINGS, type NarrationSettings } from "@/lib/narration/settings";
-import { ENHANCED_VOICES } from "@/lib/narration/enhanced-voices";
+import { ENHANCED_VOICES, resolveEnhancedVoice } from "@/lib/narration/enhanced-voices";
+import { removePhononModel } from "@/lib/narration/phonon-tts";
 
-const FIRST = ENHANCED_VOICES[0];
-const SECOND = ENHANCED_VOICES[1];
+const DEFAULT_VOICE = resolveEnhancedVoice(null);
+const OTHER = ENHANCED_VOICES.find((voice) => voice.id !== DEFAULT_VOICE.id)!;
 
 function renderList(overrides: Partial<NarrationSettings> = {}) {
   const setSettings = vi.fn();
   const settings: NarrationSettings = {
     ...DEFAULT_NARRATION_SETTINGS,
-    provider: "piper",
+    provider: "phonon",
     ...overrides,
   };
   const result = render(<EnhancedVoiceList settings={settings} setSettings={setSettings} />);
-  return { ...result, setSettings, settings };
+  return { ...result, setSettings };
 }
 
-describe("EnhancedVoiceList radio group", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Both voices downloaded, so both are selectable.
-    mockStored.mockResolvedValue([FIRST.id, SECOND.id]);
+async function downloadModel() {
+  fireEvent.click(await screen.findByRole("button", { name: "Download" }));
+  await screen.findByText("Downloaded");
+}
+
+describe("EnhancedVoiceList", () => {
+  let storage: MemoryCacheStorage;
+
+  beforeEach(async () => {
+    storage = createMemoryCacheStorage();
+    vi.stubGlobal("caches", storage);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("model bytes"))
+    );
+    await removePhononModel();
   });
 
-  it("gives every voice a real radio with the voice's name", async () => {
-    renderList();
-
-    const radio = await screen.findByRole("radio", { name: FIRST.displayName });
-    expect(radio.tagName).toBe("INPUT");
-    expect(radio).toHaveAttribute("type", "radio");
-    expect(screen.getByRole("radio", { name: SECOND.displayName })).toBeInTheDocument();
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("puts every radio in one native group, which is what makes it a single tab stop", async () => {
+  it("puts every voice in one native radio group, named for its voice", async () => {
     renderList();
 
     await screen.findByRole("radiogroup", { name: "Enhanced voices" });
     const radios = screen.getAllByRole("radio") as HTMLInputElement[];
     expect(radios).toHaveLength(ENHANCED_VOICES.length);
-
-    const names = new Set(radios.map((r) => r.name));
-    expect(names.size).toBe(1);
-
-    // The old markup put `tabIndex={0}` on each card; nothing may override the
-    // radio group's native roving tab behavior.
+    expect(new Set(radios.map((r) => r.name)).size).toBe(1);
     for (const radio of radios) {
+      expect(radio.tagName).toBe("INPUT");
       expect(radio).not.toHaveAttribute("tabindex");
     }
+    expect(screen.getByRole("radio", { name: OTHER.name })).toBeInTheDocument();
   });
 
-  it("marks the selected voice checked", async () => {
-    renderList({ voiceId: SECOND.id });
-
-    await waitFor(() =>
-      expect(screen.getByRole("radio", { name: SECOND.displayName })).toBeChecked()
-    );
-    expect(screen.getByRole("radio", { name: FIRST.displayName })).not.toBeChecked();
-  });
-
-  it("selects a voice through the radio itself", async () => {
-    const { setSettings } = renderList();
-
-    const radio = await screen.findByRole("radio", { name: SECOND.displayName });
-    fireEvent.click(radio);
-
-    expect(setSettings).toHaveBeenCalledWith(expect.objectContaining({ voiceId: SECOND.id }));
-  });
-
-  it("selects a voice when its label is clicked", async () => {
-    const { setSettings } = renderList();
-
-    await screen.findByRole("radio", { name: FIRST.displayName });
-    fireEvent.click(screen.getByText(FIRST.displayName));
-
-    expect(setSettings).toHaveBeenCalledWith(expect.objectContaining({ voiceId: FIRST.id }));
-  });
-
-  it("disables voices that are not downloaded yet", async () => {
-    mockStored.mockResolvedValue([FIRST.id]);
+  it("disables every voice until the model is downloaded", async () => {
     renderList();
 
-    await waitFor(() =>
-      expect(screen.getByRole("radio", { name: FIRST.displayName })).toBeEnabled()
+    expect(await screen.findByRole("radio", { name: OTHER.name })).toBeDisabled();
+    await downloadModel();
+    expect(screen.getByRole("radio", { name: OTHER.name })).toBeEnabled();
+  });
+
+  it("remembers the download across renders", async () => {
+    const { unmount } = renderList();
+    await downloadModel();
+    unmount();
+
+    renderList();
+    expect(await screen.findByText("Downloaded")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: OTHER.name })).toBeEnabled();
+  });
+
+  it("checks the default voice when none is picked, and the picked one otherwise", async () => {
+    const { unmount } = renderList({ voiceId: null });
+    expect(await screen.findByRole("radio", { name: DEFAULT_VOICE.name })).toBeChecked();
+    unmount();
+
+    renderList({ voiceId: OTHER.id });
+    expect(await screen.findByRole("radio", { name: OTHER.name })).toBeChecked();
+    expect(screen.getByRole("radio", { name: DEFAULT_VOICE.name })).not.toBeChecked();
+  });
+
+  it("selects a voice through its radio or its label", async () => {
+    const { setSettings } = renderList();
+    await downloadModel();
+
+    fireEvent.click(screen.getByRole("radio", { name: OTHER.name }));
+    expect(setSettings).toHaveBeenLastCalledWith(expect.objectContaining({ voiceId: OTHER.id }));
+
+    fireEvent.click(screen.getByText(DEFAULT_VOICE.name));
+    expect(setSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ voiceId: DEFAULT_VOICE.id })
     );
-    expect(screen.getByRole("radio", { name: SECOND.displayName })).toBeDisabled();
+  });
+
+  it("deletes the model's files and disables the voices again", async () => {
+    renderList();
+    await downloadModel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete voice model" }));
+
+    expect(await screen.findByRole("button", { name: "Download" })).toBeInTheDocument();
+    expect(storage.storedUrls()).toEqual([]);
+    expect(screen.getByRole("radio", { name: OTHER.name })).toBeDisabled();
   });
 });

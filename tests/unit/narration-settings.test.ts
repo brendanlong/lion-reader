@@ -67,14 +67,14 @@ describe("loadNarrationSettings", () => {
       expect(settings.provider).toBe(DEFAULT_NARRATION_SETTINGS.provider);
     });
 
-    it("accepts piper as valid provider", () => {
+    it("accepts phonon as valid provider", () => {
       localStorageMock.setItem(
         "lion-reader-narration-settings",
-        JSON.stringify({ provider: "piper" })
+        JSON.stringify({ provider: "phonon" })
       );
 
       const settings = loadNarrationSettings();
-      expect(settings.provider).toBe("piper");
+      expect(settings.provider).toBe("phonon");
     });
   });
 
@@ -173,9 +173,9 @@ describe("saveNarrationSettings", () => {
   it("roundtrips settings correctly", () => {
     const originalSettings: NarrationSettings = {
       enabled: false,
-      provider: "piper",
+      provider: "phonon",
       cloudModelId: null,
-      voiceId: "en_US-lessac-medium",
+      voiceId: "bXwrkHhURL1VFJdG",
       rate: 1.75,
       pitch: 0.9,
       highlightEnabled: true,

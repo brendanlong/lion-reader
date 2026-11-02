@@ -266,8 +266,8 @@ const eslintConfig = defineConfig([
     // Build output
     "dist/**",
     "terraform/build/**",
-    // Vendored ONNX Runtime WASM/JS files
-    "public/onnx/**",
+    // phonon-tts runtime, copied from node_modules
+    "public/phonon/**",
     // Generated PWA service worker (next-pwa output from `pnpm build`)
     "public/sw.js",
     "public/workbox-*.js",

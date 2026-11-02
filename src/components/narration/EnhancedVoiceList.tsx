@@ -1,8 +1,8 @@
 /**
  * EnhancedVoiceList Component
  *
- * Displays a list of enhanced Piper TTS voices with download status,
- * progress indicators, and preview/delete controls.
+ * The enhanced voice model's download controls, and the voices it speaks
+ * with, each with a preview.
  *
  * @module components/narration/EnhancedVoiceList
  */
@@ -14,381 +14,237 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   CheckIcon,
-  AlertCircleIcon,
   SpinnerIcon,
   StopIcon,
   PlayIcon,
   TrashIcon,
-  RefreshIcon,
   DownloadIcon,
-  CloseIcon,
 } from "@/components/ui/icons";
+import {
+  ENHANCED_VOICES,
+  PHONON_DOWNLOAD_SIZE_BYTES,
+  resolveEnhancedVoice,
+  type EnhancedVoice,
+} from "@/lib/narration/enhanced-voices";
 import type { NarrationSettings } from "@/lib/narration/settings";
-import { useEnhancedVoices, type EnhancedVoiceState } from "./useEnhancedVoices";
 import { trackEnhancedVoiceSelected } from "@/lib/telemetry";
+import { useEnhancedVoices, type UseEnhancedVoicesReturn } from "./useEnhancedVoices";
 
-/**
- * Props for the EnhancedVoiceList component.
- */
 interface EnhancedVoiceListProps {
-  /**
-   * Current narration settings.
-   */
   settings: NarrationSettings;
-
-  /**
-   * Callback to update settings.
-   */
   setSettings: (settings: NarrationSettings) => void;
 }
 
-/**
- * Formats bytes to a human-readable size string in MB.
- *
- * @param bytes - Size in bytes.
- * @returns Formatted size string (e.g., "50 MB").
- */
-function formatSize(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  return `${Math.round(mb)} MB`;
+function megabytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
-/**
- * Progress bar component for download progress.
- */
-function ProgressBar({ progress, size }: { progress: number; size: number }) {
-  const percent = Math.round(progress * 100);
-  const downloadedMB = Math.round((progress * size) / (1024 * 1024));
-  const totalMB = Math.round(size / (1024 * 1024));
-
+function ModelDownload({
+  modelStatus,
+  progress,
+  downloadModel,
+  removeModel,
+}: Pick<UseEnhancedVoicesReturn, "modelStatus" | "progress" | "downloadModel" | "removeModel">) {
   return (
-    <div className="mt-2">
-      <div className="bg-fill-muted h-2 w-full overflow-hidden rounded-full">
-        <div
-          className="bg-control-selected h-full rounded-full transition-all duration-200"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      <p className="ui-text-xs text-muted mt-1 tabular-nums">
-        {percent}% ({downloadedMB} MB / {totalMB} MB)
-      </p>
-    </div>
-  );
-}
-
-/**
- * Single voice item in the list.
- */
-function VoiceItem({
-  voiceState,
-  isSelected,
-  onSelect,
-  onDownload,
-  onRetry,
-  onPreview,
-  onStopPreview,
-  onDelete,
-  isPreviewing,
-  isThisVoicePreviewing,
-}: {
-  voiceState: EnhancedVoiceState;
-  isSelected: boolean;
-  onSelect: () => void;
-  onDownload: () => void;
-  onRetry: () => void;
-  onPreview: () => void;
-  onStopPreview: () => void;
-  onDelete: () => void;
-  isPreviewing: boolean;
-  isThisVoicePreviewing: boolean;
-}) {
-  const { voice, status, progress, errorInfo } = voiceState;
-  const isDownloading = status === "downloading";
-  const isDownloaded = status === "downloaded";
-  const hasError = errorInfo !== undefined;
-
-  const inputId = `enhanced-voice-${voice.id}`;
-
-  // Clicking anywhere on the card is a shortcut for the radio; the radio itself
-  // owns the keyboard behavior (arrow keys / Space), so there is no key handler.
-  const handleClick = useCallback(() => {
-    if (isDownloaded) {
-      onSelect();
-    }
-  }, [isDownloaded, onSelect]);
-
-  return (
-    <div
-      className={`relative rounded-lg border p-4 transition-colors ${
-        isSelected
-          ? "border-control-selected bg-surface-selected"
-          : isDownloaded
-            ? "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted cursor-pointer"
-            : "border-edge-strong epaper:border-fill-muted"
-      }`}
-      onClick={handleClick}
-    >
-      <div className="flex items-start justify-between gap-3">
-        {/* Left side: radio button + voice info */}
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          {/*
-            A real radio, so the group gets native arrow-key navigation, a single
-            tab stop, and the global focus outline. `appearance-none` +
-            `bg-clip-content` paints the same 8px inner dot the custom markup did.
-          */}
-          <input
-            type="radio"
-            id={inputId}
-            name="enhanced-voice"
-            value={voice.id}
-            checked={isSelected}
-            disabled={!isDownloaded}
-            onChange={() => onSelect()}
-            className={`mt-0.5 h-4 w-4 flex-shrink-0 appearance-none rounded-full border bg-clip-content p-[3px] ${
-              isSelected
-                ? "border-control-selected bg-control-selected"
-                : isDownloaded
-                  ? "border-edge-emphasis bg-transparent"
-                  : "border-edge-input bg-transparent"
-            }`}
-          />
-
-          {/* Voice info */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <label htmlFor={inputId} className="ui-text-sm text-body font-medium">
-                {voice.displayName}
-              </label>
-              <span className="ui-text-xs text-muted">- {voice.description}</span>
-            </div>
-
-            {/* Status line */}
-            {isDownloading ? (
-              <ProgressBar progress={progress} size={voice.sizeBytes} />
-            ) : isDownloaded ? (
-              <div className="ui-text-xs text-success mt-1 flex items-center gap-1">
-                <CheckIcon className="h-3.5 w-3.5" />
-                Downloaded
-              </div>
-            ) : hasError ? (
-              <div className="mt-1 space-y-1">
-                <div className="ui-text-xs text-danger flex items-center gap-1">
-                  <AlertCircleIcon className="h-3.5 w-3.5" />
-                  {errorInfo.message}
-                </div>
-                {errorInfo.suggestion && (
-                  <p className="ui-text-xs text-muted">{errorInfo.suggestion}</p>
-                )}
-              </div>
-            ) : (
-              <p className="ui-text-xs text-muted mt-1">{formatSize(voice.sizeBytes)}</p>
-            )}
-          </div>
+    <div className="border-edge-strong epaper:border-fill-muted rounded-lg border p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="ui-text-sm text-body font-medium">Voice model</p>
+          <p className="ui-text-xs text-muted">
+            {megabytes(PHONON_DOWNLOAD_SIZE_BYTES)}, for every voice below
+          </p>
         </div>
-
-        {/* Right side: action buttons */}
         <div className="flex flex-shrink-0 items-center gap-2">
-          {isDownloading ? (
-            // Cancel button during download (optional - just showing spinner for now)
+          {modelStatus === "checking" ? (
+            <SpinnerIcon className="text-faint h-4 w-4" />
+          ) : modelStatus === "downloading" ? (
             <div className="ui-text-xs text-muted flex items-center gap-2">
               <SpinnerIcon className="h-4 w-4" />
               Downloading...
             </div>
-          ) : isDownloaded ? (
+          ) : modelStatus === "downloaded" ? (
             <>
-              {/* Preview button */}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isThisVoicePreviewing) {
-                    onStopPreview();
-                  } else {
-                    onPreview();
-                  }
-                }}
-                disabled={isPreviewing && !isThisVoicePreviewing}
-              >
-                {isThisVoicePreviewing ? (
-                  <>
-                    <StopIcon className="mr-1 h-3.5 w-3.5" />
-                    Stop
-                  </>
-                ) : (
-                  <>
-                    <PlayIcon className="mr-1 h-3.5 w-3.5" />
-                    Preview
-                  </>
-                )}
-              </Button>
-
-              {/* Delete button */}
+              <span className="ui-text-xs text-success flex items-center gap-1">
+                <CheckIcon className="h-3.5 w-3.5" />
+                Downloaded
+              </span>
               <IconButton
                 icon={<TrashIcon className="h-4 w-4" />}
-                aria-label={`Delete ${voice.displayName}`}
-                title="Delete voice"
+                aria-label="Delete voice model"
+                title="Delete voice model"
                 variant="subtle"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete();
-                }}
+                onClick={() => void removeModel()}
               />
             </>
-          ) : hasError && errorInfo.retryable ? (
-            /* Retry button for retryable errors */
-            <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
-              <RefreshIcon className="mr-1 h-3.5 w-3.5" />
-              Retry
-            </Button>
           ) : (
-            /* Download button */
-            <Button type="button" variant="secondary" size="sm" onClick={onDownload}>
+            <Button type="button" variant="secondary" size="sm" onClick={downloadModel}>
               <DownloadIcon className="mr-1 h-3.5 w-3.5" />
               Download
             </Button>
           )}
         </div>
       </div>
+      {modelStatus === "downloading" && (
+        <div className="mt-2">
+          <div className="bg-fill-muted h-2 w-full overflow-hidden rounded-full">
+            <div
+              className="bg-control-selected h-full rounded-full"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+          <p className="ui-text-xs text-muted mt-1 tabular-nums">
+            {Math.round(progress * 100)}% ({megabytes(progress * PHONON_DOWNLOAD_SIZE_BYTES)} /{" "}
+            {megabytes(PHONON_DOWNLOAD_SIZE_BYTES)})
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
-/**
- * Enhanced voice list component.
- *
- * Displays all available enhanced voices with their download status
- * and provides controls for downloading, previewing, and deleting voices.
- *
- * @param props - Component props.
- * @returns The enhanced voice list component.
- *
- * @example
- * ```tsx
- * function Settings() {
- *   const [settings, setSettings] = useNarrationSettings();
- *
- *   return (
- *     <EnhancedVoiceList
- *       settings={settings}
- *       setSettings={setSettings}
- *     />
- *   );
- * }
- * ```
- */
+function VoiceItem({
+  voice,
+  isSelected,
+  isAvailable,
+  isPreviewing,
+  isAnyPreviewing,
+  onSelect,
+  onPreview,
+  onStopPreview,
+}: {
+  voice: EnhancedVoice;
+  isSelected: boolean;
+  isAvailable: boolean;
+  isPreviewing: boolean;
+  isAnyPreviewing: boolean;
+  onSelect: () => void;
+  onPreview: () => void;
+  onStopPreview: () => void;
+}) {
+  const inputId = `enhanced-voice-${voice.id}`;
+
+  return (
+    <div
+      className={`rounded-lg border p-3 transition-colors ${
+        isSelected
+          ? "border-control-selected bg-surface-selected"
+          : isAvailable
+            ? "border-edge-strong epaper:border-fill-muted hover:bg-surface-muted cursor-pointer"
+            : "border-edge-strong epaper:border-fill-muted"
+      }`}
+      // Clicking anywhere on the card is a shortcut for the radio; the radio
+      // itself owns the keyboard behavior, so there is no key handler.
+      onClick={isAvailable ? onSelect : undefined}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <input
+            type="radio"
+            id={inputId}
+            name="enhanced-voice"
+            value={voice.id}
+            checked={isSelected}
+            disabled={!isAvailable}
+            onChange={onSelect}
+            className={`mt-0.5 h-4 w-4 flex-shrink-0 appearance-none rounded-full border bg-clip-content p-[3px] ${
+              isSelected
+                ? "border-control-selected bg-control-selected"
+                : isAvailable
+                  ? "border-edge-emphasis bg-transparent"
+                  : "border-edge-input bg-transparent"
+            }`}
+          />
+          <div className="min-w-0 flex-1">
+            <label htmlFor={inputId} className="ui-text-sm text-body font-medium">
+              {voice.name}
+            </label>
+            <p className="ui-text-xs text-muted line-clamp-2">{voice.description}</p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isPreviewing) onStopPreview();
+            else onPreview();
+          }}
+          disabled={!isAvailable || (isAnyPreviewing && !isPreviewing)}
+        >
+          {isPreviewing ? (
+            <>
+              <StopIcon className="mr-1 h-3.5 w-3.5" />
+              Stop
+            </>
+          ) : (
+            <>
+              <PlayIcon className="mr-1 h-3.5 w-3.5" />
+              Preview
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const LOCALES = [
+  { locale: "en-US", label: "American English" },
+  { locale: "en-GB", label: "British English" },
+] as const;
+
 export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListProps) {
   const {
-    voices,
-    isLoading,
-    downloadVoice,
-    removeVoice,
+    modelStatus,
+    progress,
+    downloadModel,
+    removeModel,
     previewVoice,
     stopPreview,
-    isPreviewing,
     previewingVoiceId,
-    error,
-    lastErrorInfo,
-    clearError,
-    retryDownload,
-    retryVoiceDownload,
   } = useEnhancedVoices();
+  const isAvailable = modelStatus === "downloaded";
+  const selectedId = resolveEnhancedVoice(settings.voiceId).id;
 
-  // Handle voice selection
   const handleSelectVoice = useCallback(
     (voiceId: string) => {
-      setSettings({
-        ...settings,
-        voiceId,
-      });
-      // Track voice selection for metrics
+      setSettings({ ...settings, voiceId });
       trackEnhancedVoiceSelected(voiceId);
     },
     [settings, setSettings]
   );
 
-  // Handle voice deletion
-  const handleDeleteVoice = useCallback(
-    async (voiceId: string) => {
-      await removeVoice(voiceId);
-      // If the deleted voice was selected, clear the selection
-      if (settings.voiceId === voiceId) {
-        setSettings({
-          ...settings,
-          voiceId: null,
-        });
-      }
-    },
-    [removeVoice, settings, setSettings]
-  );
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <SpinnerIcon className="text-faint h-6 w-6" />
-        <span className="ui-text-sm text-muted ml-2">Loading voices...</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-3">
-      {/* Error message */}
-      {error && (
-        <div className="control-outline bg-danger-subtle rounded-md p-3">
-          <div className="ui-text-xs text-danger-subtle-foreground flex items-start gap-2">
-            <AlertCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <div className="flex-1 space-y-1">
-              <p>{error}</p>
-              {lastErrorInfo?.suggestion && (
-                <p className="text-danger">{lastErrorInfo.suggestion}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {lastErrorInfo?.retryable && (
-                <button
-                  type="button"
-                  onClick={retryDownload}
-                  className="text-danger hover:text-danger-hover underline"
-                >
-                  Retry
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={clearError}
-                className="text-danger hover:text-danger-hover inline-flex min-h-11 min-w-11 items-center justify-center"
-                aria-label="Dismiss error"
-              >
-                <CloseIcon className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="space-y-4">
+      <ModelDownload
+        modelStatus={modelStatus}
+        progress={progress}
+        downloadModel={downloadModel}
+        removeModel={removeModel}
+      />
 
-      {/* Voice list */}
-      <div role="radiogroup" aria-label="Enhanced voices" className="space-y-3">
-        {voices.map((voiceState) => (
-          <VoiceItem
-            key={voiceState.voice.id}
-            voiceState={voiceState}
-            isSelected={settings.voiceId === voiceState.voice.id}
-            onSelect={() => handleSelectVoice(voiceState.voice.id)}
-            onDownload={() => downloadVoice(voiceState.voice.id)}
-            onRetry={() => retryVoiceDownload(voiceState.voice.id)}
-            onPreview={() => previewVoice(voiceState.voice.id)}
-            onStopPreview={stopPreview}
-            onDelete={() => handleDeleteVoice(voiceState.voice.id)}
-            isPreviewing={isPreviewing}
-            isThisVoicePreviewing={previewingVoiceId === voiceState.voice.id}
-          />
+      <div role="radiogroup" aria-label="Enhanced voices" className="space-y-4">
+        {LOCALES.map(({ locale, label }) => (
+          <div key={locale} className="space-y-2">
+            <h4 className="ui-text-xs text-muted font-medium">{label}</h4>
+            {ENHANCED_VOICES.filter((voice) => voice.locale === locale).map((voice) => (
+              <VoiceItem
+                key={voice.id}
+                voice={voice}
+                isSelected={selectedId === voice.id}
+                isAvailable={isAvailable}
+                isPreviewing={previewingVoiceId === voice.id}
+                isAnyPreviewing={previewingVoiceId !== null}
+                onSelect={() => handleSelectVoice(voice.id)}
+                onPreview={() => void previewVoice(voice.id)}
+                onStopPreview={stopPreview}
+              />
+            ))}
+          </div>
         ))}
       </div>
 
-      {/* Info text */}
       <p className="ui-text-xs text-muted">
         Enhanced voices run entirely in your browser. Once downloaded, they work offline.
       </p>

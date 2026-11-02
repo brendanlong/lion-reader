@@ -7,10 +7,7 @@ work. Each phase below adds the server pieces it needs alongside its client code
 
 ## Remaining phases
 
-1. **Narration**: AI-normalized text (device and cloud voices are done). Piper voices wait on sherpa-onnx 2.0,
-   which drops espeak-ng (GPL-3.0, compiled into today's library), and on
-   licensing: of the web's four voices only `en_GB-alba-medium` (CC BY 4.0) is
-   clear for any use. The runtime also adds about 24 MB per ABI.
+1. **Narration**: AI-normalized text and enhanced voices (device and cloud voices are done).
 2. **Release**: the Play Console listing and its 14-day closed test (new
    personal developer accounts need one before production); signed builds on
    `android-v*` tags are set up (see `docs/DEPLOYMENT.md`).
@@ -41,11 +38,11 @@ reader assets (scripts, fonts, `appearance.json`) are bundled from
 How narration works in the app is in `Narrator`'s and `SpeechEngine`'s KDoc;
 what's left:
 
-- **Piper voices**: a `SpeechEngine` over sherpa-onnx (its static-link AAR,
-  from JitPack) and its converted Piper models from the `tts-models` release
-  (int8, about 21 MB a voice, plus espeak-ng data shared by all), downloaded on
-  demand. Keep the web's voice ids so settings mean the same thing everywhere,
-  though sherpa-onnx's builds aren't the web's model files.
+- **Enhanced voices**: a `SpeechEngine` over Phonon's Android CPU library
+  (`libptts_ffi.so`, built from source with the NDK; it isn't published), with
+  the web's model and voice files (`src/lib/narration/enhanced-voices.ts`),
+  downloaded on demand. Keep the web's voice ids so settings mean the same
+  thing everywhere.
 - **AI-normalized text** (`narration.generate`): token access, fetched on
   demand; offline it falls back to the reader's own paragraphs. Its paragraph
   map indexes the same elements, so highlighting is unchanged.

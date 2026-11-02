@@ -36,11 +36,6 @@ export interface VoiceErrorInfo {
    * Optional suggestion for resolving the error.
    */
   suggestion?: string;
-
-  /**
-   * Whether the error is retryable.
-   */
-  retryable: boolean;
 }
 
 /**
@@ -48,34 +43,28 @@ export interface VoiceErrorInfo {
  */
 const ERROR_INFO: Record<VoiceErrorType, Omit<VoiceErrorInfo, "type">> = {
   quota_exceeded: {
-    message: "Not enough storage space to download this voice.",
-    suggestion: "Try deleting unused voices to free up space.",
-    retryable: false,
+    message: "Not enough storage space to download the voice model.",
+    suggestion: "Try deleting other sites' data in your browser to free up space.",
   },
   network_error: {
     message: "Download failed due to a network error.",
     suggestion: "Check your internet connection and try again.",
-    retryable: true,
   },
   voice_not_found: {
     message: "This voice is not available.",
     suggestion: "The voice may have been removed. Please select a different voice.",
-    retryable: false,
   },
   corrupted_cache: {
-    message: "The cached voice data appears to be corrupted.",
-    suggestion: "The cache will be cleared automatically. Try downloading again.",
-    retryable: true,
+    message: "The downloaded voice model appears to be corrupted.",
+    suggestion: "Delete the voice model and download it again.",
   },
   download_interrupted: {
     message: "The download was interrupted.",
     suggestion: "Try downloading again when you have a stable connection.",
-    retryable: true,
   },
   unknown: {
-    message: "Failed to download voice.",
+    message: "Something went wrong with the voice model.",
     suggestion: "Try again or use a browser voice instead.",
-    retryable: true,
   },
 };
 
@@ -87,18 +76,6 @@ const ERROR_INFO: Record<VoiceErrorType, Omit<VoiceErrorInfo, "type">> = {
  *
  * @param error - The error to classify.
  * @returns The error type classification.
- *
- * @example
- * ```ts
- * try {
- *   await downloadVoice(voiceId, onProgress);
- * } catch (error) {
- *   const errorType = classifyVoiceError(error);
- *   if (errorType === "quota_exceeded") {
- *     showStorageWarning();
- *   }
- * }
- * ```
  */
 export function classifyVoiceError(error: unknown): VoiceErrorType {
   if (!(error instanceof Error)) {
@@ -172,27 +149,10 @@ export function classifyVoiceError(error: unknown): VoiceErrorType {
 /**
  * Gets full error information for a classified error.
  *
- * Returns the error type, user-friendly message, optional suggestion,
- * and whether the error is retryable.
+ * Returns the error type, user-friendly message, and optional suggestion.
  *
  * @param error - The error to get information for.
  * @returns Complete error information including message and suggestion.
- *
- * @example
- * ```ts
- * try {
- *   await downloadVoice(voiceId, onProgress);
- * } catch (error) {
- *   const errorInfo = getVoiceErrorInfo(error);
- *   showError(errorInfo.message);
- *   if (errorInfo.suggestion) {
- *     showHint(errorInfo.suggestion);
- *   }
- *   if (errorInfo.retryable) {
- *     showRetryButton();
- *   }
- * }
- * ```
  */
 export function getVoiceErrorInfo(error: unknown): VoiceErrorInfo {
   const type = classifyVoiceError(error);

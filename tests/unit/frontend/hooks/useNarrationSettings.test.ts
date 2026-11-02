@@ -49,7 +49,7 @@ describe("useNarrationSettings", () => {
     it("reads existing settings from localStorage", () => {
       const storedSettings = {
         enabled: false,
-        provider: "piper",
+        provider: "phonon",
         cloudModelId: null,
         voiceId: "test-voice",
         rate: 1.5,
@@ -60,7 +60,7 @@ describe("useNarrationSettings", () => {
       const { result } = renderHook(() => useNarrationSettings());
 
       expect(result.current[0].enabled).toBe(false);
-      expect(result.current[0].provider).toBe("piper");
+      expect(result.current[0].provider).toBe("phonon");
       expect(result.current[0].voiceId).toBe("test-voice");
       expect(result.current[0].rate).toBe(1.5);
       expect(result.current[0].pitch).toBe(0.8);
@@ -229,7 +229,7 @@ describe("useNarrationSettings", () => {
     it("correctly roundtrips all settings", () => {
       const customSettings: NarrationSettings = {
         enabled: false,
-        provider: "piper",
+        provider: "phonon",
         cloudModelId: null,
         voiceId: "custom-voice",
         rate: 1.75,

@@ -15,7 +15,7 @@ import { split, SentenceSplitterSyntax } from "sentence-splitter";
 /**
  * Maximum number of characters in a single TTS synthesis chunk.
  *
- * Neural TTS (Piper) synthesizes one chunk in a single pass, and very long
+ * Neural TTS synthesizes one chunk in a single pass, and very long
  * chunks get rushed and muddled (the model compresses too much speech into one
  * breath). We therefore split sentences longer than this at clause boundaries
  * so each chunk stays a comfortable, natural length. Chosen so ordinary

@@ -23,7 +23,7 @@
  * Known coverage gaps (policy allows these, but the e2e env never exercises
  * them): Sentry Session Replay (prod-DSN only; needs `worker-src blob:` +
  * the same-origin `/monitoring` tunnel) and the TTS narration downloads
- * (Hugging Face voice models via `*.hf.co` redirect hops, jsdelivr wasm).
+ * (Hugging Face voice model files via `*.hf.co` redirect hops).
  */
 
 import { test, expect, type Page } from "@playwright/test";

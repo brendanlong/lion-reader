@@ -1,142 +1,261 @@
 /**
- * Enhanced voice definitions for Piper TTS.
- *
- * This module provides a curated list of high-quality Piper voices
- * with metadata for display in the UI.
+ * Enhanced voices: Phonon 31m (Apache-2.0), run in the browser by
+ * `./phonon-tts`. One download holds the model and every voice, each a small
+ * embedding.
  *
  * @module narration/enhanced-voices
  */
 
+const MODEL_REPO =
+  "https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d";
+const VOICES_REPO =
+  "https://huggingface.co/gradium/phonon-voices/resolve/0ee17205f254b5abc43b266c8a0f215565c352f7";
+
 /**
- * Represents an enhanced voice available for download.
- *
- * Enhanced voices are high-quality Piper TTS voices that can be
- * downloaded and used offline.
+ * The model's files, pinned to a commit: they're cached by URL, so a new
+ * commit is a new download rather than a stale file.
  */
+export const PHONON_MODEL_FILES = {
+  weights: `${MODEL_REPO}/model.q8.gguf`,
+  tokenizer: `${MODEL_REPO}/tokenizer.json`,
+  config: `${MODEL_REPO}/config.json`,
+};
+
+/** Every catalog voice embedding is this size (one 1×512×125 float32 tensor). */
+const VOICE_SIZE_BYTES = 256_136;
+
 export interface EnhancedVoice {
-  /**
-   * Unique identifier for the voice model.
-   * Matches the Piper voice file naming convention (e.g., "en_US-lessac-medium").
-   */
+  /** The voice's id in the `gradium/phonon-voices` catalog. */
   id: string;
-
-  /**
-   * Human-readable name for display in the UI (e.g., "Alex (US)").
-   */
-  displayName: string;
-
-  /**
-   * Short description of the voice characteristics.
-   */
+  name: string;
+  locale: "en-US" | "en-GB";
+  gender: "female" | "male";
+  /** The catalog's description of the voice. */
   description: string;
-
-  /**
-   * Language code in BCP 47 format (e.g., "en-US", "en-GB").
-   */
-  language: string;
-
-  /**
-   * Voice gender.
-   */
-  gender: "male" | "female";
-
-  /**
-   * Quality level of the voice model.
-   * Higher quality means larger file size and better audio.
-   */
-  quality: "low" | "medium" | "high";
-
-  /**
-   * Approximate size of the voice model in bytes.
-   * Used for displaying download size to users.
-   */
-  sizeBytes: number;
-
-  /**
-   * Optional URL to a sample audio file for preview.
-   */
-  sampleUrl?: string;
 }
 
-/**
- * Curated list of enhanced voices available for download.
- *
- * These voices were selected for:
- * - High quality audio output
- * - Variety of accents (US, UK, AU)
- * - Mix of male and female voices
- * - Reasonable download sizes
- */
+/** The catalog's English voices, minus its theatrical character voices. */
 export const ENHANCED_VOICES: readonly EnhancedVoice[] = [
   {
-    id: "en_US-lessac-medium",
-    displayName: "Alex (US)",
-    description: "Clear, natural American voice",
-    language: "en-US",
+    id: "NbpkqMVS3CJeq2j8",
+    name: "Zoey",
+    locale: "en-US",
     gender: "female",
-    quality: "medium",
-    sizeBytes: 50 * 1024 * 1024, // ~50 MB
+    description:
+      "Playful, upbeat and Gen Z energy voice with a standard American accent. Perfect for engaging conversations!",
   },
   {
-    id: "en_US-amy-low",
-    displayName: "Amy (US)",
-    description: "Fast, smaller download",
-    language: "en-US",
+    id: "NIWIOv5vTi5eRMj8",
+    name: "Juniper",
+    locale: "en-US",
     gender: "female",
-    quality: "low",
-    sizeBytes: 17 * 1024 * 1024, // ~17 MB
+    description:
+      "Cheerful presence with real resonance under it, personable when the copy turns intimate and decisive on the final line.",
   },
   {
-    id: "en_US-ryan-medium",
-    displayName: "Ryan (US)",
-    description: "Natural male American voice",
-    language: "en-US",
+    id: "vjFyp2BcCyTlUmYb",
+    name: "Everly",
+    locale: "en-US",
+    gender: "female",
+    description:
+      "Rounded, soft-edged tone with gentle lift at the end of phrases and an easy, relaxed delivery.",
+  },
+  {
+    id: "4SZHfMpw-p46Ywgs",
+    name: "Harper",
+    locale: "en-US",
+    gender: "female",
+    description: "Modern, confident and friendly voice with a standard American accent.",
+  },
+  {
+    id: "bXwrkHhURL1VFJdG",
+    name: "Hadley",
+    locale: "en-US",
+    gender: "female",
+    description:
+      "Settled, even-toned and genuinely kind, with crisp consonants that hold up over a handset.",
+  },
+  {
+    id: "nGzMHMPAWGaJFHOo",
+    name: "Delia",
+    locale: "en-US",
+    gender: "female",
+    description:
+      "Low, grounded and quick to the point, with a sincerity that keeps an apology honest.",
+  },
+  {
+    id: "LMDIYE0Oa377Qh6Z",
+    name: "Easton",
+    locale: "en-US",
     gender: "male",
-    quality: "medium",
-    sizeBytes: 50 * 1024 * 1024, // ~50 MB
+    description:
+      "Punchy and close in, with crisp consonant attack that cuts through a music bed and pitch that lifts across each line.",
   },
   {
-    id: "en_GB-alba-medium",
-    displayName: "Alba (UK)",
-    description: "British accent",
-    language: "en-GB",
-    gender: "female",
-    quality: "medium",
-    sizeBytes: 50 * 1024 * 1024, // ~50 MB
+    id: "40QrMVgAxFiUnP9f",
+    name: "Micah",
+    locale: "en-US",
+    gender: "male",
+    description:
+      "Buoyant and high in energy, with a playful lift at the ends of phrases and clean attack that survives a loud mix.",
   },
-] as const;
+  {
+    id: "0zLApsZfVLLNaEGl",
+    name: "Trevor",
+    locale: "en-US",
+    gender: "male",
+    description:
+      "Buoyant energy over a resonant mid-low core, phrases landing softly and consonants cutting through a handset.",
+  },
+  {
+    id: "_6Aslh2DxfmnRLmP",
+    name: "Russell",
+    locale: "en-US",
+    gender: "male",
+    description:
+      "A high-energy American adult voice that pushes and encourages with the intensity of someone who genuinely believes in you.",
+  },
+  {
+    id: "qIxlZ7Ei8KvWlyQH",
+    name: "Preston",
+    locale: "en-US",
+    gender: "male",
+    description:
+      "Trim, focused delivery with clean edges on every consonant and a steady, low-set core that carries through phone bandwidth.",
+  },
+  {
+    id: "d9XCyhjo4JhkHF1d",
+    name: "Miles",
+    locale: "en-US",
+    gender: "male",
+    description:
+      "Resonant and decisive, with genuine dynamic range, dropping right down for one clause then driving back up.",
+  },
+  {
+    id: "6PWnV0Nq4wu7RVBT",
+    name: "Maeve",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "A sparky, attentive British English adult voice that gets to the point with a smile. Ideal for fast, efficient customer support and helpful voice assistants.",
+  },
+  {
+    id: "GgfEkEJtxZR7gnpy",
+    name: "Freya",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "A young British voice, glossy and confident with fast, girly chatter and bubbly sparkle, perfect for a friendly receptionist or assistant.",
+  },
+  {
+    id: "uem82D50GRv2Dwma",
+    name: "Pippa",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "A confident, upbeat British English adult voice with infectious energy. Perfect for proactive assistants and motivating customer success calls.",
+  },
+  {
+    id: "y9bQqIDnyxwqK01t",
+    name: "Elodie-Rose",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "A young British voice with sharp, enthusiastic energy and crisp articulation, sparky and to the point for customer support and care.",
+  },
+  {
+    id: "gDT1nz7Ie36ZhL-C",
+    name: "Imogen",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "A bubbly, friendly British English adult voice that puts callers instantly at ease. Great for onboarding assistants and warm concierge interactions.",
+  },
+  {
+    id: "m9MxpY6IUGXtWp76",
+    name: "Lottie",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "Sparky and to the point, high forward energy with clean edges on the consonants and the range to drop low for one line then climb back.",
+  },
+  {
+    id: "X6NceqF285Gr04gb",
+    name: "Alfie",
+    locale: "en-GB",
+    gender: "male",
+    description:
+      "Punchy and forward, with crisp consonant attack and a pitch that lifts across a line, sitting high over a music bed.",
+  },
+  {
+    id: "YyKcxPG7iIgS3jsK",
+    name: "Hugh",
+    locale: "en-GB",
+    gender: "male",
+    description:
+      "Soft and close, airy in texture, with lively pitch movement and an attentive, sincere delivery.",
+  },
+  {
+    id: "zUCxzrOrugTSis03",
+    name: "Edwin",
+    locale: "en-GB",
+    gender: "male",
+    description:
+      "Efficient and firm, sincere in attention, with tidy articulation that holds up at phone bandwidth.",
+  },
+  {
+    id: "JOW0vchyswkQUMDS",
+    name: "Spencer",
+    locale: "en-GB",
+    gender: "male",
+    description:
+      "Light and airy, sitting a touch higher, with crisp consonants and a slow, patient delivery.",
+  },
+  {
+    id: "dME3IWyZBvmh1n1q",
+    name: "Toby",
+    locale: "en-GB",
+    gender: "male",
+    description:
+      "A sparky, attentive British English adult voice that gets to the point with a smile. Ideal for fast, efficient customer support and helpful voice assistants.",
+  },
+  {
+    id: "Zn7g6NxLqXlJb7Qi",
+    name: "Teddy",
+    locale: "en-GB",
+    gender: "male",
+    description:
+      "Sparky and close in, quick off the mark, with firm consonants and the range to drop right down for a clause then come back up.",
+  },
+  {
+    id: "gfP44RlHwr2kEwk7",
+    name: "Bryony",
+    locale: "en-GB",
+    gender: "female",
+    description:
+      "Full, rich mid-range tones, softly relaxed and spoken close to the mic, moving briskly with light pitch play.",
+  },
+];
 
-/**
- * Finds an enhanced voice by its ID.
- *
- * @param voiceId - The voice ID to search for.
- * @returns The enhanced voice if found, undefined otherwise.
- *
- * @example
- * ```ts
- * const voice = findEnhancedVoice("en_US-lessac-medium");
- * if (voice) {
- *   console.log(voice.displayName); // "Alex (US)"
- * }
- * ```
- */
-export function findEnhancedVoice(voiceId: string): EnhancedVoice | undefined {
-  return ENHANCED_VOICES.find((v) => v.id === voiceId);
+export function enhancedVoiceUrl(voiceId: string): string {
+  return `${VOICES_REPO}/voices/${voiceId}.safetensors`;
 }
 
-/**
- * Checks if a voice ID is a valid enhanced voice.
- *
- * @param voiceId - The voice ID to check.
- * @returns true if the voice ID is in the ENHANCED_VOICES list.
- *
- * @example
- * ```ts
- * if (isEnhancedVoice("en_US-lessac-medium")) {
- *   // This is an enhanced voice that can be downloaded
- * }
- * ```
- */
+/** Everything the enhanced voices download, for progress and the UI. */
+export const PHONON_DOWNLOAD_SIZE_BYTES =
+  64_512_352 + 277_967 + 2_851 + ENHANCED_VOICES.length * VOICE_SIZE_BYTES;
+
+/** Even-toned, which suits reading articles better than the catalog's first, Zoey. */
+const DEFAULT_VOICE_ID = "bXwrkHhURL1VFJdG";
+
+/** The voice `voiceId` names, or the default for null or a voice we don't offer. */
+export function resolveEnhancedVoice(voiceId: string | null): EnhancedVoice {
+  return (
+    ENHANCED_VOICES.find((v) => v.id === voiceId) ??
+    ENHANCED_VOICES.find((v) => v.id === DEFAULT_VOICE_ID)!
+  );
+}
+
 export function isEnhancedVoice(voiceId: string): boolean {
   return ENHANCED_VOICES.some((v) => v.id === voiceId);
 }

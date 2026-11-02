@@ -44,7 +44,7 @@ const EXEMPT_PREFIXES = [
   "/_next",
   "/privacy",
   "/terms",
-  "/onnx",
+  "/phonon",
   "/icons",
 ];
 
