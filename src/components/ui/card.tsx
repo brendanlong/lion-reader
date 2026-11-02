@@ -30,7 +30,8 @@ export function Card({ children, padding = "lg", className = "" }: CardProps) {
     none: "",
     sm: "p-3",
     md: "p-4",
-    lg: "p-6",
+    // Phones can't spare 24px a side inside the page's own padding.
+    lg: "p-4 sm:p-6",
   };
 
   return (

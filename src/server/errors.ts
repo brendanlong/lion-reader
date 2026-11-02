@@ -176,7 +176,7 @@ export const errors = {
   sessionRevokeFailed: (change: string) =>
     createError(
       "SESSION_REVOKE_FAILED",
-      `${change}, but signing out your other devices failed. Review them under Settings → Sessions.`
+      `${change}, but signing out your other devices failed. Review them under Settings → Security.`
     ),
 
   internal: (message = "An unexpected error occurred") => createError("INTERNAL_ERROR", message),

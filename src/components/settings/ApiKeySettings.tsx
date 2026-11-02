@@ -19,7 +19,6 @@ import { InlineCode } from "@/components/ui/inline-code";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import {
   AI_PROVIDER_INFO,
-  aiProviderNames,
   SPEECH_PROVIDERS,
   TEXT_AI_PROVIDERS,
   USER_KEY_PROVIDERS,
@@ -230,12 +229,7 @@ export function SummarizationSettings() {
   return (
     <SettingsSection
       title="Summaries"
-      description={
-        <>
-          AI-powered article summaries. Requires an API key from any provider above; models from
-          every configured provider are selectable.
-        </>
-      }
+      description={"Summarize articles on demand. Needs an API key from any provider above."}
     >
       <div className="space-y-4">
         {/* Model Selection */}
@@ -256,15 +250,14 @@ export function SummarizationSettings() {
             onChange={handleModelChange}
           />
           <p className="ui-text-xs text-muted mt-1.5">
-            Choose the model used for generating article summaries. Type to search every model from
-            providers with a configured API key.
+            Type to search every model from the providers you have keys for.
           </p>
         </div>
 
         <EditablePreferenceField
           id="summarization-max-words"
           label="Max words"
-          hint="Maximum number of words for generated summaries."
+          hint="Longest summary to generate."
           status={
             <span className="ui-text-sm text-muted">
               {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
@@ -310,7 +303,7 @@ export function SummarizationSettings() {
         <EditablePreferenceField
           id="summarization-prompt"
           label="Custom prompt"
-          hint="Override the default prompt sent to the AI model when generating summaries."
+          hint="Replace the prompt used to generate summaries."
           status={
             <span className="ui-text-sm text-muted">
               {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
@@ -349,9 +342,9 @@ export function SummarizationSettings() {
                 className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2 font-mono disabled:cursor-not-allowed disabled:opacity-50"
               />
               <p className="ui-text-xs text-muted">
-                Available template variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
+                Variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
                 <InlineCode>{"{{title}}"}</InlineCode>, <InlineCode>{"{{maxWords}}"}</InlineCode>.
-                The response should be wrapped in <InlineCode>{"<summary>"}</InlineCode> tags.
+                Ask for the summary inside <InlineCode>{"<summary>"}</InlineCode> tags.
               </p>
             </>
           )}
@@ -362,9 +355,11 @@ export function SummarizationSettings() {
 }
 
 /**
- * Narration text processing model settings.
+ * The model that prepares article text for narration, shown under narration's
+ * "Use AI text processing" switch. Hidden where the server can't store API keys,
+ * since then only the default model is available.
  */
-export function NarrationAiSettings() {
+export function NarrationModelField() {
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const modelsQuery = trpc.narration.listModels.useQuery(undefined, {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -385,35 +380,25 @@ export function NarrationAiSettings() {
     [update]
   );
 
+  if (!preferencesQuery.data?.canConfigureApiKeys) return null;
+
   return (
-    <SettingsSection
-      title="AI Text Processing"
-      description={
-        <>
-          AI-powered text processing for narration. This improves narration quality by expanding
-          abbreviations and formatting content for text-to-speech. Requires an API key from{" "}
-          {aiProviderNames(NARRATION_PROVIDERS)} (configured above).
-        </>
-      }
-    >
-      <div>
-        <label htmlFor="narration-model" className="ui-text-sm text-body mb-1.5 block font-medium">
-          Model
-        </label>
-        <FeatureModelPicker
-          id="narration-model"
-          currentModel={currentModel}
-          defaultModelId={defaultModelId}
-          models={models}
-          suggestedModelIds={SUGGESTED_NARRATION_MODELS}
-          isLoading={modelsQuery.isLoading}
-          onChange={handleModelChange}
-        />
-        <p className="ui-text-xs text-muted mt-1.5">
-          Choose the model used to prepare article text for narration. Only models that support JSON
-          output are listed.
-        </p>
-      </div>
-    </SettingsSection>
+    <div>
+      <label htmlFor="narration-model" className="ui-text-sm text-body mb-1.5 block font-medium">
+        Text processing model
+      </label>
+      <FeatureModelPicker
+        id="narration-model"
+        currentModel={currentModel}
+        defaultModelId={defaultModelId}
+        models={models}
+        suggestedModelIds={SUGGESTED_NARRATION_MODELS}
+        isLoading={modelsQuery.isLoading}
+        onChange={handleModelChange}
+      />
+      <p className="ui-text-xs text-muted mt-1.5">
+        Only models that support JSON output are listed.
+      </p>
+    </div>
   );
 }

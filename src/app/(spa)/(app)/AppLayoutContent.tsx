@@ -127,11 +127,11 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                             Settings
                           </ClientLink>
                           <ClientLink
-                            href="/settings/sessions"
+                            href="/settings/security"
                             onNavigate={() => setUserMenuOpen(false)}
                             className="ui-text-sm text-body hover:bg-surface-muted active:bg-surface-pressed flex min-h-[44px] items-center px-4"
                           >
-                            Sessions
+                            Security
                           </ClientLink>
                           <button
                             onClick={() => {

@@ -42,10 +42,6 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
     () => import("./KeyboardShortcutsSettings").then((m) => m.KeyboardShortcutsSettings),
     { loading: SectionSkeleton }
   ),
-  "privacy-legal": dynamic(
-    () => import("./pages/AccountSettingsContent").then((m) => m.PrivacyLegalSection),
-    { loading: SectionSkeleton }
-  ),
   about: dynamic(() => import("./AboutSection").then((m) => m.AboutSection), {
     loading: SectionSkeleton,
   }),
@@ -58,7 +54,7 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   "entry-list": dynamic(() => import("./AppearanceSettings").then((m) => m.EntryListSettings), {
     loading: SectionSkeleton,
   }),
-  "mark-read": dynamic(() => import("./AppearanceSettings").then((m) => m.MarkReadSettings), {
+  "mark-read": dynamic(() => import("./MarkReadSettings").then((m) => m.MarkReadSettings), {
     loading: SectionSkeleton,
   }),
   tags: dynamic(() => import("./TagManagement").then((m) => m.TagManagement), {
@@ -84,10 +80,6 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   summaries: dynamic(() => import("./ApiKeySettings").then((m) => m.SummarizationSettings), {
     loading: SectionSkeleton,
   }),
-  "ai-text-processing": dynamic(
-    () => import("./ApiKeySettings").then((m) => m.NarrationAiSettings),
-    { loading: SectionSkeleton }
-  ),
   narration: dynamic(
     () => import("@/components/narration/NarrationSettings").then((m) => m.NarrationSettings),
     { loading: SectionSkeleton }
@@ -124,9 +116,10 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   "connected-apps": dynamic(() => import("./pages/ConnectedAppsSettingsContent"), {
     loading: SectionSkeleton,
   }),
-  "delete-account": dynamic(() => import("./pages/DeleteAccountSettingsContent"), {
-    loading: SectionSkeleton,
-  }),
+  "delete-account": dynamic(
+    () => import("./DeleteAccountSection").then((m) => m.DeleteAccountSection),
+    { loading: SectionSkeleton }
+  ),
 };
 
 function SearchResult({

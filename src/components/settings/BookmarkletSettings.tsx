@@ -11,7 +11,6 @@ import { useState, useEffect, useRef } from "react";
 import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
-import { NoteBox } from "@/components/ui/note-box";
 import { CodeBlock } from "@/components/ui/copy-button";
 import { BookmarkIcon, ChevronRightIcon, ChromeIcon, FirefoxIcon } from "@/components/ui/icons";
 
@@ -33,14 +32,11 @@ export function BookmarkletSettings() {
   return (
     <SettingsSection
       title="Save to Lion Reader"
-      description="Save any webpage to Lion Reader with one click. The article will be added to your Saved section where you can read it later."
+      description="Save any webpage to your Saved list to read later."
     >
       {/* Browser Extensions */}
-      <div className="mt-6">
+      <div>
         <h3 className="ui-text-sm text-body font-medium">Browser Extensions</h3>
-        <p className="ui-text-sm text-muted mt-1">
-          The easiest way to save articles from your browser.
-        </p>
         <div className="mt-3 flex flex-wrap gap-3">
           <a
             href="https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl"
@@ -65,49 +61,26 @@ export function BookmarkletSettings() {
 
       {/* Bookmarklet Section */}
       <CardSection>
-        <h3 className="ui-text-sm text-body font-medium">Bookmarklet (Other Browsers)</h3>
+        <h3 className="ui-text-sm text-body font-medium">Bookmarklet</h3>
         <p className="ui-text-sm text-muted mt-1">
-          For Safari and other browsers, use the bookmarklet.
+          For other browsers, drag this button to your bookmarks bar, then click it on any page you
+          want to save.
         </p>
-      </CardSection>
-
-      {/* Draggable Bookmarklet Link */}
-      <div className="mt-4">
-        <p className="ui-text-sm text-body mb-3">Drag this button to your bookmarks bar:</p>
         <a
           ref={bookmarkletRef}
           href="#"
           onClick={(e) => e.preventDefault()}
           draggable
-          className="ui-text-sm border-warning-border bg-warning-subtle text-warning-subtle-foreground hover:border-warning hover:bg-warning-subtle inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition hover:shadow active:scale-95"
+          className="ui-text-sm border-warning-border bg-warning-subtle text-warning-subtle-foreground hover:border-warning hover:bg-warning-subtle mt-3 inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-medium shadow-sm transition hover:shadow active:scale-95"
         >
           <BookmarkIcon className="h-4 w-4" />
           Save to Lion Reader
         </a>
-      </div>
 
-      {/* Installation Instructions */}
-      <NoteBox className="mt-6">
-        <h3 className="ui-text-sm text-body font-medium">Installation Instructions</h3>
-        <ol className="ui-text-sm text-muted mt-2 list-inside list-decimal space-y-2">
-          <li>Make sure your browser&apos;s bookmarks bar is visible</li>
-          <li>
-            Drag the <strong className="text-body">&quot;Save to Lion Reader&quot;</strong> button
-            above to your bookmarks bar
-          </li>
-          <li>
-            When you find an article you want to save, click the bookmarklet in your bookmarks bar
-          </li>
-          <li>A popup will appear confirming the article has been saved</li>
-        </ol>
-      </NoteBox>
-
-      {/* Show/Hide Code Section */}
-      <CardSection>
         <button
           type="button"
           onClick={() => setShowCode(!showCode)}
-          className="ui-text-sm text-body hover:text-body inline-flex items-center gap-2 font-medium transition-colors"
+          className="ui-text-sm text-body hover:text-body mt-3 flex min-h-11 items-center gap-2 font-medium transition-colors"
         >
           <ChevronRightIcon
             className={`h-4 w-4 transition-transform ${showCode ? "rotate-90" : ""}`}
@@ -116,17 +89,14 @@ export function BookmarkletSettings() {
         </button>
 
         {showCode && (
-          <div className="mt-4">
+          <div className="mt-2">
             <p className="ui-text-sm text-muted mb-2">
-              If you prefer, you can manually create a bookmark with this JavaScript code:
+              Or create a bookmark manually with this as its URL:
             </p>
             <CodeBlock code={bookmarkletHref} />
           </div>
         )}
       </CardSection>
-
-      {/* Note about app URL */}
-      {appUrl && <p className="ui-text-xs text-faint mt-4">Bookmarklet configured for: {appUrl}</p>}
     </SettingsSection>
   );
 }

@@ -650,10 +650,7 @@ export default function PrivacyPolicyPage() {
           <li>
             <strong>Delete:</strong> Delete your account and all associated data at any time from
             your{" "}
-            <PageLink
-              href="/settings/delete-account"
-              className="text-accent hover:text-accent-hover font-medium"
-            >
+            <PageLink href="/settings" className="text-accent hover:text-accent-hover font-medium">
               account settings
             </PageLink>
             . Account deletion is permanent and cannot be undone.

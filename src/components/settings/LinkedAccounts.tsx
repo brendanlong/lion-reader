@@ -127,7 +127,7 @@ export function LinkedAccounts() {
   return (
     <SettingsSection
       title="Linked Accounts"
-      description="Connect your account with third-party providers for easy sign-in."
+      description="Link an account to sign in with it."
       isLoading={isLoading}
     >
       <div className="space-y-3">
@@ -160,7 +160,7 @@ export function LinkedAccounts() {
 
       {!hasPassword && linkedAccounts.length > 0 && (
         <p className="ui-text-xs text-muted mt-4">
-          Tip: Add a password to your account so you can unlink OAuth providers if needed.
+          Set a password if you want to be able to unlink these.
         </p>
       )}
     </SettingsSection>

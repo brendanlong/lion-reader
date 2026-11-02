@@ -1,10 +1,10 @@
 /**
- * About section for the settings page
- *
- * Displays attribution and links in a card format.
+ * About section for the settings page: attribution, source, contact, and the
+ * legal pages.
  */
 
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { PageLink } from "@/components/ui/page-link";
 import { CONTACT_EMAIL } from "@/lib/contact";
 
 export function AboutSection() {
@@ -50,6 +50,20 @@ export function AboutSection() {
         </a>
         .
       </p>
+      <div className="mt-4 flex flex-wrap gap-x-6">
+        <PageLink
+          href="/privacy"
+          className="ui-text-sm text-accent hover:text-accent-hover inline-flex min-h-11 items-center font-medium"
+        >
+          Privacy Policy
+        </PageLink>
+        <PageLink
+          href="/terms"
+          className="ui-text-sm text-accent hover:text-accent-hover inline-flex min-h-11 items-center font-medium"
+        >
+          Terms of Service
+        </PageLink>
+      </div>
     </SettingsSection>
   );
 }

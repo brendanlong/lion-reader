@@ -468,7 +468,7 @@ async function handleLinkCommand(
     await interaction.reply({
       content:
         "Invalid API token. Please check your token and try again.\n\n" +
-        "To get a token: Lion Reader → Settings → API Tokens → Create with 'Save articles' scope.",
+        "To get a token: Lion Reader → Settings → Security → API Tokens → Create with 'Save articles' scope.",
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -484,7 +484,7 @@ async function handleLinkCommand(
     await interaction.reply({
       content:
         "That API token doesn't have permission to save articles.\n\n" +
-        "Create a token with the 'Save articles' scope: Lion Reader → Settings → API Tokens.",
+        "Create a token with the 'Save articles' scope: Lion Reader → Settings → Security → API Tokens.",
       flags: MessageFlags.Ephemeral,
     });
     return;

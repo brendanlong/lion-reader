@@ -20,8 +20,8 @@ import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { MobileIcon } from "@/components/ui/icons";
 import { InlineCode } from "@/components/ui/inline-code";
-import { NoteBox } from "@/components/ui/note-box";
 import { TextLink } from "@/components/ui/text-link";
+import { ClientLink } from "@/components/ui/client-link";
 
 export function WallabagApiSettings() {
   const userQuery = trpc.auth.me.useQuery();
@@ -66,20 +66,19 @@ export function WallabagApiSettings() {
 
   return (
     <SettingsSection
-      title="Wallabag API (Save Articles)"
+      title="Wallabag API"
       description={
         <>
-          Lion Reader exposes a{" "}
+          Save articles from your phone by sharing them to a{" "}
           <TextLink href="https://doc.wallabag.org/developer/api/methods/" external>
-            Wallabag-compatible API
+            Wallabag
           </TextLink>{" "}
-          so you can use the Wallabag app on your phone or tablet to save articles directly to Lion
-          Reader.
+          app, which can also read, star, archive and delete your saved articles.
         </>
       }
     >
       {/* Supported Clients */}
-      <div className="mt-6">
+      <div>
         <h3 className="ui-text-sm text-body font-medium">Compatible Apps</h3>
         <ul className="ui-text-sm text-muted mt-2 list-inside list-disc space-y-1">
           <li>
@@ -105,9 +104,9 @@ export function WallabagApiSettings() {
         <CardSection>
           <h3 className="ui-text-sm text-body font-medium">Quick Setup</h3>
           <p className="ui-text-sm text-muted mt-1">
-            Scan this QR code with your phone or tap the button below to auto-configure the Wallabag
-            Android app. You&apos;ll need to enter your password, and fix the username if the{" "}
-            <InlineCode>@</InlineCode> shows as <InlineCode>%40</InlineCode>.
+            Scan the code or tap the button to fill in the Android app&apos;s server and username.
+            Then enter your password, and fix the username if its <InlineCode>@</InlineCode> shows
+            as <InlineCode>%40</InlineCode>.
           </p>
 
           <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
@@ -125,9 +124,8 @@ export function WallabagApiSettings() {
                 <MobileIcon className="h-4 w-4" />
                 Open in Wallabag App
               </a>
-              <p className="ui-text-xs text-faint max-w-xs">
-                The QR code and button pre-fill the server URL and your email address. Client ID and
-                secret are both <InlineCode>wallabag</InlineCode>.
+              <p className="ui-text-xs text-muted max-w-xs">
+                Client ID and secret are both <InlineCode>wallabag</InlineCode>.
               </p>
             </div>
           </div>
@@ -137,9 +135,7 @@ export function WallabagApiSettings() {
       {/* Manual Setup Instructions */}
       <CardSection>
         <h3 className="ui-text-sm text-body font-medium">Manual Setup</h3>
-        <p className="ui-text-sm text-muted mt-1">
-          In the Wallabag app, go to Settings and enter the following:
-        </p>
+        <p className="ui-text-sm text-muted mt-1">In the Wallabag app&apos;s settings, enter:</p>
         <ul className="ui-text-sm text-muted mt-3 space-y-2">
           <li>
             <strong className="text-body">Server URL:</strong> <InlineCode>{serverUrl}</InlineCode>
@@ -172,13 +168,20 @@ export function WallabagApiSettings() {
             <strong className="text-body">Password:</strong> Your Lion Reader password
           </li>
         </ul>
+        <p className="ui-text-sm text-muted mt-3">
+          Signed up with Google, Apple or Discord? Set a password under{" "}
+          <ClientLink href="/settings" className="text-accent hover:text-accent-hover font-medium">
+            Account
+          </ClientLink>{" "}
+          first.
+        </p>
       </CardSection>
 
       <CardSection>
         <h3 className="ui-text-sm text-body font-medium">Sign Out Apps</h3>
         <p className="ui-text-sm text-muted mt-1">
-          Disconnect every Wallabag app signed in to your account. Changing your password does this
-          too.
+          Disconnect every Wallabag app signed in to your account. Changing your password also does
+          this.
         </p>
         <Button
           variant="ghost"
@@ -190,17 +193,6 @@ export function WallabagApiSettings() {
           Sign out all Wallabag apps
         </Button>
       </CardSection>
-
-      {/* How it works */}
-      <NoteBox className="mt-6">
-        <p className="ui-text-sm text-muted">
-          When you share a URL to the Wallabag app, it will save it to your Lion Reader account as a
-          saved article. You can also view, archive, star, and delete saved articles from the app.
-        </p>
-      </NoteBox>
-
-      {/* API base URL note */}
-      {baseUrl && <p className="ui-text-xs text-faint mt-4">API endpoint: {serverUrl}</p>}
     </SettingsSection>
   );
 }

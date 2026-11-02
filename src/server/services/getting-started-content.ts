@@ -45,7 +45,7 @@ Welcome! This article is starred, so you can always find it again under [Starred
 
 Everything lands in [All](/all), and each feed and [tag](/settings/subscriptions) has its own view in the sidebar.
 
-- **Keyboard first.** \`j\` / \`k\` move between entries, \`o\` opens one, \`s\` stars, \`m\` toggles read, \`u\` shows or hides read entries, \`/\` searches, and \`?\` lists every shortcut. You can turn shortcuts off in [Settings](/settings).
+- **Keyboard first.** \`j\` / \`k\` move between entries, \`o\` opens one, \`s\` stars, \`m\` toggles read, \`u\` shows or hides read entries, \`/\` searches, and \`?\` lists every shortcut. You can turn shortcuts off in [Settings → Reading](/settings/reading).
 - **On a phone or tablet**, swipe left and right inside an article to move to the next or previous one.
 - **Feed only giving you a teaser?** Turn on full-content fetching for that subscription and we'll pull the whole article in for you.
 

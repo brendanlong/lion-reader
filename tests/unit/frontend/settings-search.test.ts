@@ -39,7 +39,7 @@ describe("searchSettings", () => {
   it("ranks a title match above a keyword match", () => {
     const results = ids("narration");
     expect(results[0]).toBe("narration");
-    expect(results).toContain("ai-text-processing");
+    expect(results).toContain("mark-read");
   });
 
   it("requires every query word to match", () => {

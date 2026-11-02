@@ -18,6 +18,7 @@ import { CardSection } from "@/components/ui/card";
 import { CodeBlock, CopyButton } from "@/components/ui/copy-button";
 import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
+import { ClientLink } from "@/components/ui/client-link";
 
 export function IntegrationsSettings() {
   const baseUrl = useAppBaseUrl();
@@ -50,7 +51,7 @@ export function IntegrationsSettings() {
   const createTokenMutation = trpc.apiTokens.create.useMutation({
     onSuccess: (data) => {
       setClaudeAiToken(data.token);
-      // Keep the API Tokens settings page's list in sync.
+      // Keep the Security page's API token list in sync.
       utils.apiTokens.list.invalidate();
       toast.success("MCP token created");
     },
@@ -64,30 +65,37 @@ export function IntegrationsSettings() {
       title="AI Integrations"
       description={
         <>
-          Connect Lion Reader to AI assistants via{" "}
+          Let Claude and other AI assistants read, search, and manage your feeds over{" "}
           <TextLink href="https://modelcontextprotocol.io/" external>
-            MCP (Model Context Protocol)
+            MCP
           </TextLink>
-          . This lets Claude read, search, and manage your feeds directly.
+          .
         </>
       }
     >
+      {baseUrl && (
+        <p className="ui-text-sm text-muted">
+          <strong className="text-body">MCP server URL:</strong> <InlineCode>{mcpUrl}</InlineCode>
+          <CopyButton value={mcpUrl} className="ml-2 px-1.5 py-0.5" title="Copy MCP server URL" />
+        </p>
+      )}
+
       {/* Claude Code */}
-      <div className="mt-6">
+      <CardSection>
         <h3 className="ui-text-sm text-body font-medium">Claude Code</h3>
-        <p className="ui-text-sm text-muted mt-1">Run this command in your terminal:</p>
+        <p className="ui-text-sm text-muted mt-1">Run this in your terminal:</p>
         <CodeBlock code={claudeCodeCommand} className="mt-3" />
-      </div>
+      </CardSection>
 
       {/* Claude.ai */}
       <CardSection>
         <h3 className="ui-text-sm text-body font-medium">Claude.ai</h3>
         <p className="ui-text-sm text-muted mt-1">
-          The claude.ai connector&rsquo;s sign-in flow is currently{" "}
+          Claude.ai&rsquo;s connector sign-in is{" "}
           <TextLink href="https://github.com/brendanlong/lion-reader/issues/986" external>
-            broken on claude.ai&rsquo;s side
+            broken on their side
           </TextLink>
-          , so connect with an MCP token instead:
+          , so connect with a token instead:
         </p>
         <div className="mt-3">
           {claudeAiToken === null ? (
@@ -100,8 +108,11 @@ export function IntegrationsSettings() {
           ) : (
             <div>
               <Alert variant="warning">
-                Copy this now — the token is only shown once. You can revoke it later under{" "}
-                <strong>Settings &rarr; API Tokens</strong>.
+                Copy this now: it&apos;s only shown once. You can revoke it under{" "}
+                <ClientLink href="/settings/security" className="font-medium underline">
+                  Settings &rarr; Security
+                </ClientLink>
+                .
               </Alert>
               <CodeBlock code={`Bearer ${claudeAiToken}`} className="mt-2" />
             </div>
@@ -116,10 +127,7 @@ export function IntegrationsSettings() {
           <li>
             Name: <strong className="text-body">Lion Reader</strong>
           </li>
-          <li>
-            Remote MCP server URL: <InlineCode>{mcpUrl}</InlineCode>
-            <CopyButton value={mcpUrl} className="ml-2 px-1.5 py-0.5" title="Copy MCP server URL" />
-          </li>
+          <li>Remote MCP server URL: the URL above</li>
           <li>
             Authentication: <strong className="text-body">None</strong>
           </li>
@@ -139,9 +147,6 @@ export function IntegrationsSettings() {
         </p>
         <CodeBlock code={claudeDesktopConfig} className="mt-3" />
       </CardSection>
-
-      {/* Note about MCP URL */}
-      {baseUrl && <p className="ui-text-xs text-faint mt-4">MCP server URL: {mcpUrl}</p>}
     </SettingsSection>
   );
 }

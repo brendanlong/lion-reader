@@ -17,7 +17,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MarkAllReadButton } from "@/components/entries/MarkAllReadButton";
-import DeleteAccountSettingsContent from "@/components/settings/pages/DeleteAccountSettingsContent";
+import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
 import { renderWithTrpc } from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({
@@ -58,7 +58,7 @@ describe("confirmation dialog initial focus", () => {
   });
 
   it("focuses Cancel, not the confirmation input, when the delete-account dialog opens", () => {
-    renderWithTrpc(<DeleteAccountSettingsContent />);
+    renderWithTrpc(<DeleteAccountSection />);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
 

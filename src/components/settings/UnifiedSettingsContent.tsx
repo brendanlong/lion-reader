@@ -51,19 +51,19 @@ const EmailSettingsContent = dynamic(() => import("./pages/EmailSettingsContent"
 const AiSettingsContent = dynamic(() => import("./pages/AiSettingsContent"), {
   loading: SettingsPageSkeleton,
 });
+const ReadingSettingsContent = dynamic(() => import("./pages/ReadingSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
 const IntegrationsSettingsContent = dynamic(() => import("./pages/IntegrationsSettingsContent"), {
   loading: SettingsPageSkeleton,
 });
 const FeedHealthSettingsContent = dynamic(() => import("./pages/FeedHealthSettingsContent"), {
   loading: SettingsPageSkeleton,
 });
-const SessionsSettingsContent = dynamic(() => import("./pages/SessionsSettingsContent"), {
+const SecuritySettingsContent = dynamic(() => import("./pages/SecuritySettingsContent"), {
   loading: SettingsPageSkeleton,
 });
-const ConnectedAppsSettingsContent = dynamic(() => import("./pages/ConnectedAppsSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const DeleteAccountSettingsContent = dynamic(() => import("./pages/DeleteAccountSettingsContent"), {
+const AboutSettingsContent = dynamic(() => import("./AboutSection").then((m) => m.AboutSection), {
   loading: SettingsPageSkeleton,
 });
 
@@ -126,6 +126,8 @@ function SettingsContentRouter() {
       return <AccountSettingsContent />;
     case "/settings/appearance":
       return <AppearanceSettingsContent />;
+    case "/settings/reading":
+      return <ReadingSettingsContent />;
     case "/settings/subscriptions":
       return <SubscriptionsSettingsContent />;
     case "/settings/email":
@@ -136,12 +138,10 @@ function SettingsContentRouter() {
       return <IntegrationsSettingsContent />;
     case "/settings/feed-health":
       return <FeedHealthSettingsContent />;
-    case "/settings/sessions":
-      return <SessionsSettingsContent />;
-    case "/settings/connected-apps":
-      return <ConnectedAppsSettingsContent />;
-    case "/settings/delete-account":
-      return <DeleteAccountSettingsContent />;
+    case "/settings/security":
+      return <SecuritySettingsContent />;
+    case "/settings/about":
+      return <AboutSettingsContent />;
     default:
       // Default to account settings for unknown paths
       return <AccountSettingsContent />;
@@ -165,9 +165,9 @@ export function UnifiedSettingsContent() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:py-8">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6 md:mb-8">
         <ClientLink
           href="/all"
           className="ui-text-sm text-muted hover:text-body mb-4 inline-flex items-center"
@@ -181,15 +181,16 @@ export function UnifiedSettingsContent() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-8 md:flex-row">
+      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
         {/* Sidebar Navigation */}
         <nav className="w-full shrink-0 md:w-48">
-          <ul className="flex flex-wrap gap-1 overflow-x-auto md:flex-col md:flex-nowrap md:overflow-x-visible">
+          {/* Phones wrap the tabs so every one stays visible. */}
+          <ul className="flex flex-wrap gap-x-1 md:flex-col md:flex-nowrap md:gap-1">
             {isSearching && (
               <li>
                 <span
                   aria-current="page"
-                  className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap ${ACTIVE_LINK_CLASSES}`}
+                  className={`ui-text-sm flex min-h-11 items-center rounded-md px-3 font-medium whitespace-nowrap md:block md:min-h-0 md:py-2 ${ACTIVE_LINK_CLASSES}`}
                 >
                   Search results
                 </span>
@@ -203,7 +204,7 @@ export function UnifiedSettingsContent() {
                     href={link.href}
                     aria-current={isActive ? "page" : undefined}
                     onNavigate={() => setQuery("")}
-                    className={`ui-text-sm block rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors ${
+                    className={`ui-text-sm flex min-h-11 items-center rounded-md px-3 font-medium whitespace-nowrap transition-colors md:block md:min-h-0 md:py-2 ${
                       isActive
                         ? ACTIVE_LINK_CLASSES
                         : "text-muted hover:bg-surface-muted hover:text-body"

@@ -1,8 +1,7 @@
 /**
  * Account Settings Content
  *
- * Main account settings page content showing user info, linked accounts,
- * change password form, and OPML import/export functionality.
+ * Account settings: user info, linked accounts, password, and account deletion.
  *
  * Each section handles its own loading state to show static content (titles,
  * descriptions) immediately while dynamic content loads.
@@ -22,10 +21,8 @@ import { Alert } from "@/components/ui/alert";
 import { CheckIcon } from "@/components/ui/icons";
 import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
-import { KeyboardShortcutsSettings } from "@/components/settings/KeyboardShortcutsSettings";
-import { AboutSection } from "@/components/settings/AboutSection";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { TextLink } from "@/components/ui/text-link";
+import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
 
 function isOAuthProvider(provider: string): provider is OAuthProvider {
   return provider in providerNames;
@@ -54,7 +51,7 @@ function OAuthMessages() {
       provider_already_linked:
         "A different account from this provider is already linked. Unlink it first.",
       session_revoke_failed:
-        "Signing out your other devices failed. Review them under Settings → Sessions.",
+        "Signing out your other devices failed. Review them under Settings → Security.",
     };
 
     return errorMessages[linkError] || "An error occurred while linking your account.";
@@ -244,9 +241,7 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
     <SettingsSection
       title={isSetMode ? "Set Password" : "Change Password"}
       description={
-        isSetMode
-          ? "Your account was created with OAuth. Set a password to also log in with your email and password."
-          : undefined
+        isSetMode ? "Set a password to also sign in with your email address." : undefined
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -298,24 +293,6 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
   );
 }
 
-export function PrivacyLegalSection() {
-  return (
-    <SettingsSection
-      title="Privacy & Legal"
-      description="Learn more about how we collect, use, and protect your data."
-    >
-      <div className="flex gap-4">
-        <TextLink href="/privacy" className="ui-text-sm">
-          View Privacy Policy &rarr;
-        </TextLink>
-        <TextLink href="/terms" className="ui-text-sm">
-          View Terms of Service &rarr;
-        </TextLink>
-      </div>
-    </SettingsSection>
-  );
-}
-
 export default function AccountSettingsContent() {
   return (
     <div className="space-y-8">
@@ -333,14 +310,7 @@ export default function AccountSettingsContent() {
       {/* Password Section - shows title immediately, content loads inline */}
       <PasswordSection />
 
-      {/* Keyboard Shortcuts Section - fully static */}
-      <KeyboardShortcutsSettings />
-
-      {/* Privacy & Legal Section - fully static */}
-      <PrivacyLegalSection />
-
-      {/* About Section - fully static */}
-      <AboutSection />
+      <DeleteAccountSection />
     </div>
   );
 }

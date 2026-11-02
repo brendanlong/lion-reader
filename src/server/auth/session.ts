@@ -369,7 +369,7 @@ async function revokeOtherUserSessions(userId: string, exceptSessionId: string):
  * revoke failed would leave a provider account the user believes is compromised
  * still able to sign in. The cost is that retrying the action won't retry the
  * revoke: callers gate it on a credential having actually changed, so the second
- * attempt is a no-op. That's why the error names Settings → Sessions, where the
+ * attempt is a no-op. That's why the error names Settings → Security, where the
  * user can revoke the survivors by hand.
  *
  * @param change - what already happened, for the error message the user reads

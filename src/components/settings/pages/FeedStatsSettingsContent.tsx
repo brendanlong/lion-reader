@@ -108,7 +108,7 @@ export default function FeedStatsSettingsContent() {
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Feed Statistics</h2>
         <p className="ui-text-sm text-muted mt-1">
-          View fetch status and statistics for all your subscribed feeds.
+          Fetch status and history for each feed you subscribe to.
         </p>
       </div>
 
@@ -238,7 +238,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
           )}
 
           {/* Stats Grid - Fetch timing */}
-          <div className="ui-text-sm mt-3 grid grid-cols-3 gap-x-6 gap-y-2">
+          <div className="ui-text-sm mt-3 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-3 sm:gap-y-2">
             <StatItem
               icon={<ClockIcon />}
               label="Last fetch"
@@ -263,7 +263,7 @@ function FeedStatsRow({ feed }: FeedStatsRowProps) {
           </div>
 
           {/* Stats Grid - Entry and size stats */}
-          <div className="ui-text-sm mt-2 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+          <div className="ui-text-sm mt-1 grid grid-cols-1 gap-x-6 gap-y-1 sm:mt-2 sm:grid-cols-4 sm:gap-y-2">
             <StatItem
               icon={<DocumentIcon />}
               label="Total entries"

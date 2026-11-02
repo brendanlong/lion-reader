@@ -24,7 +24,8 @@ import { EnhancedVoiceList } from "./EnhancedVoiceList";
 import { EnhancedVoicesHelp } from "./EnhancedVoicesHelp";
 import { CloudVoiceSettings } from "./CloudVoiceSettings";
 import { trpc } from "@/lib/trpc/client";
-import { Switch } from "@/components/ui/switch";
+import { SwitchRow } from "@/components/ui/switch";
+import { NarrationModelField } from "@/components/settings/ApiKeySettings";
 
 // No-op subscribe function for static values (browser capabilities don't change)
 const noopSubscribe = () => () => {};
@@ -213,19 +214,13 @@ export function NarrationSettings() {
   return (
     <SettingsSection title="Narration">
       {/* Enable/Disable Toggle */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 id="narration-enabled-label" className="ui-text-sm text-body font-medium">
-            Enable narration
-          </h3>
-          <p className="ui-text-sm text-muted mt-1">Listen to articles using text-to-speech.</p>
-        </div>
-        <Switch
-          checked={settings.enabled}
-          onChange={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
-          labelledBy="narration-enabled-label"
-        />
-      </div>
+      <SwitchRow
+        id="narration-enabled-label"
+        label="Enable narration"
+        description="Listen to articles with text-to-speech."
+        checked={settings.enabled}
+        onChange={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
+      />
 
       {/* Voice Settings (only shown when enabled) */}
       {settings.enabled && (
@@ -247,7 +242,7 @@ export function NarrationSettings() {
                   selected={settings.provider}
                   onSelect={handleProviderChange}
                   label="Enhanced Voices"
-                  description="Higher quality voices (requires download)"
+                  description="Higher-quality voices that run on your device (one-time download)"
                 />
               )}
               {((canStreamAudio && cloudVoiceModels.length > 0) ||
@@ -306,8 +301,7 @@ export function NarrationSettings() {
                 </Button>
               </div>
               <p className="ui-text-xs text-muted mt-1.5">
-                Voices are provided by your browser. Chrome and Safari typically offer higher
-                quality voices.
+                Voices come from your browser; Chrome and Safari usually have the best ones.
               </p>
             </div>
           )}
@@ -389,93 +383,53 @@ export function NarrationSettings() {
           {/* Processing Settings - only shown if AI text processing is available */}
           {isAiTextProcessingAvailable && (
             <div className="space-y-4">
-              <h3 className="ui-text-sm text-body font-medium">Processing</h3>
-
-              {/* LLM Normalization Toggle */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <p id="narration-llm-label" className="ui-text-sm text-body">
-                    Use AI text processing
-                  </p>
-                  <p className="ui-text-xs text-muted">
-                    Improves narration quality by expanding abbreviations and formatting content
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.useLlmNormalization}
-                  onChange={() =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      useLlmNormalization: !prev.useLlmNormalization,
-                    }))
-                  }
-                  labelledBy="narration-llm-label"
-                />
-              </div>
+              <SwitchRow
+                id="narration-llm-label"
+                label="Use AI text processing"
+                description="Expand abbreviations and clean up text before reading it aloud."
+                checked={settings.useLlmNormalization}
+                onChange={() =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    useLlmNormalization: !prev.useLlmNormalization,
+                  }))
+                }
+              />
+              {settings.useLlmNormalization && <NarrationModelField />}
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <div>
-              <p id="narration-continue-label" className="ui-text-sm text-body">
-                Continue to the next article
-              </p>
-              <p className="ui-text-xs text-muted">
-                When an article ends, open the next one in the list and keep listening
-              </p>
-            </div>
-            <Switch
-              checked={settings.continueToNextArticle}
-              onChange={() =>
-                setSettings((prev) => ({
-                  ...prev,
-                  continueToNextArticle: !prev.continueToNextArticle,
-                }))
-              }
-              labelledBy="narration-continue-label"
-            />
-          </div>
+          <SwitchRow
+            id="narration-continue-label"
+            label="Continue to the next article"
+            description="When an article ends, open the next one and keep listening."
+            checked={settings.continueToNextArticle}
+            onChange={() =>
+              setSettings((prev) => ({
+                ...prev,
+                continueToNextArticle: !prev.continueToNextArticle,
+              }))
+            }
+          />
 
-          {/* Highlighting Settings */}
-          <div className="space-y-4">
-            <h3 className="ui-text-sm text-body font-medium">Highlighting</h3>
+          <SwitchRow
+            id="narration-highlight-label"
+            label="Highlight current paragraph"
+            checked={settings.highlightEnabled}
+            onChange={() =>
+              setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
+            }
+          />
 
-            {/* Highlight Current Paragraph Toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p id="narration-highlight-label" className="ui-text-sm text-body">
-                  Highlight current paragraph
-                </p>
-                <p className="ui-text-xs text-muted">Visually highlight the paragraph being read</p>
-              </div>
-              <Switch
-                checked={settings.highlightEnabled}
-                onChange={() =>
-                  setSettings((prev) => ({ ...prev, highlightEnabled: !prev.highlightEnabled }))
-                }
-                labelledBy="narration-highlight-label"
-              />
-            </div>
-
-            {/* Auto-scroll to Current Paragraph Toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p id="narration-autoscroll-label" className="ui-text-sm text-body">
-                  Auto-scroll to current paragraph
-                </p>
-                <p className="ui-text-xs text-muted">
-                  Automatically scroll the page to keep the current paragraph visible
-                </p>
-              </div>
-              <Switch
-                checked={settings.autoScrollEnabled}
-                onChange={() =>
-                  setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
-                }
-                labelledBy="narration-autoscroll-label"
-              />
-            </div>
-          </div>
+          <SwitchRow
+            id="narration-autoscroll-label"
+            label="Auto-scroll to current paragraph"
+            description="Keep the paragraph being read on screen."
+            checked={settings.autoScrollEnabled}
+            onChange={() =>
+              setSettings((prev) => ({ ...prev, autoScrollEnabled: !prev.autoScrollEnabled }))
+            }
+          />
 
           {/* Firefox Warning */}
           {isFirefoxBrowser && (
@@ -495,10 +449,7 @@ export function NarrationSettings() {
         <CardSection>
           <div className="ui-text-xs text-muted flex items-start gap-2">
             <InfoCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <span>
-              Your browser supports media controls. You can control playback using your keyboard
-              media keys or lock screen controls.
-            </span>
+            <span>Media keys and lock-screen controls also control playback.</span>
           </div>
         </CardSection>
       )}

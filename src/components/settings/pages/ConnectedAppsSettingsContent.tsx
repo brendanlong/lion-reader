@@ -50,15 +50,17 @@ export default function ConnectedAppsSettingsContent() {
   };
 
   return (
-    <div>
+    <section aria-labelledby="connected-apps-heading">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="ui-text-lg text-body font-semibold">Connected Apps</h2>
+        <h2 id="connected-apps-heading" className="ui-text-lg text-body font-semibold">
+          Connected Apps
+        </h2>
         <span className="ui-text-sm text-muted">{appsQuery.data?.length ?? 0} authorized</span>
       </div>
 
       <p className="ui-text-sm text-muted mb-6">
-        These applications can access your account without asking again. Revoking signs an
-        application out and makes it request your permission the next time it connects.
+        Apps you&apos;ve allowed to access your account. Revoking one signs it out until you approve
+        it again.
       </p>
 
       <SettingsListContainer
@@ -77,7 +79,7 @@ export default function ConnectedAppsSettingsContent() {
           />
         )}
       />
-    </div>
+    </section>
   );
 }
 

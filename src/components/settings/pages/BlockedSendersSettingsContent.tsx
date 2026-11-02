@@ -48,8 +48,7 @@ export default function BlockedSendersSettingsContent() {
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Blocked Senders</h2>
         <p className="ui-text-sm text-muted mt-1">
-          You blocked these senders when unsubscribing from their newsletters. Emails from blocked
-          senders are automatically rejected.
+          Senders you blocked when unsubscribing. Their emails are rejected.
         </p>
       </div>
 
@@ -79,8 +78,7 @@ function EmptyState() {
       </div>
       <h3 className="ui-text-sm text-body mt-4 font-medium">No blocked senders</h3>
       <p className="ui-text-sm text-muted mt-1">
-        When you unsubscribe from a newsletter, the sender will be added here to prevent future
-        emails.
+        Senders you block when unsubscribing from a newsletter show up here.
       </p>
     </div>
   );

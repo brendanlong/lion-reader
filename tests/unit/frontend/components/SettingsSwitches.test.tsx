@@ -3,16 +3,12 @@
  */
 
 /**
- * Accessibility tests for the hand-rolled `role="switch"` toggles in settings.
+ * Accessibility tests for the `role="switch"` toggles in settings.
  *
- * Each toggle is a button whose only child is an `aria-hidden` knob, with its
- * visible caption in an unlinked sibling heading — so a screen reader announced
- * "switch, not checked" with no indication of what it toggles. The fix links
- * the heading with `aria-labelledby`; these tests query each switch *by name*,
- * which is precisely what failed before.
- *
- * There is no shared `Switch` primitive yet (issue #1550), so each site is
- * covered here.
+ * A switch's only child is an `aria-hidden` knob, so it is named only by the
+ * caption `SwitchRow` links with `aria-labelledby`. Without that link a screen
+ * reader announced "switch, not checked" with no indication of what it toggles
+ * (#1550); these tests query each switch *by name*.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
