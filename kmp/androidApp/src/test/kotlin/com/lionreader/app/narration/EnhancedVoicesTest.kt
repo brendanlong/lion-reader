@@ -136,31 +136,42 @@ class EnhancedVoicesTest {
 
     @Test
     fun streamedSpeechPlaysBackAsWrittenWithItsTiming() {
-        // Pieces of uneven length, as Phonon makes them, over several fragments: each sample's
-        // time comes out where its audio is, and the audio is what went in.
-        val pieces =
-            List(8) { listOf(1920, 37, 5000, 700) }
-                .flatten()
-                .map { n ->
-                    FloatArray(n) { ((it % 200) - 100) / 128f }
-                }
-        val file = File(root, "chunk.mp4")
-        val writer = StreamingFmp4(file, PhononTts.SAMPLE_RATE)
-        pieces.forEach { writer.write(it) }
-        assertTrue("A fragment is out before the end", file.length() > 0)
-        writer.finish(file)
+        // Pieces of uneven length, as Phonon makes them, ending partway through a sample, at every
+        // place in a fragment: each sample's time comes out where its audio is, and the audio is
+        // what went in, then silence to the end of the last sample.
+        val sampleFrames = PhononTts.SAMPLE_RATE * StreamingFmp4.SAMPLE_MS / 1000
+        for (samples in 40..80) {
+            val length = samples * sampleFrames - sampleFrames / 3
+            val audio = FloatArray(length) { ((it % 200) - 100) / 128f }
+            val file = File(root, "chunk-$samples.mp4")
+            val writer = StreamingFmp4(file, PhononTts.SAMPLE_RATE)
+            var at = 0
+            for (piece in
+                generateSequence(0) { it + 1 }.map { listOf(1920, 37, 5000, 700)[it % 4] }) {
+                if (at == length) break
+                val end = minOf(length, at + piece)
+                writer.write(audio.copyOfRange(at, end))
+                at = end
+            }
+            assertTrue(
+                "A fragment is out before the end",
+                "moof" in file.readText(Charsets.ISO_8859_1),
+            )
+            writer.finish(file)
 
-        val samples = extractSamples(file)
-        var frames = 0L
-        for ((timeUs, size) in samples.timesAndSizes) {
-            assertEquals(frames * 1_000_000 / PhononTts.SAMPLE_RATE, timeUs)
-            frames += size / 2
-        }
-        val expected = pieces.flatMap { it.asList() }
-        assertEquals(expected.size.toLong(), frames)
-        val decoded = ByteBuffer.wrap(samples.bytes.toByteArray()).order(ByteOrder.LITTLE_ENDIAN)
-        expected.forEachIndexed { i, sample ->
-            assertEquals("sample $i", (sample * Short.MAX_VALUE).toInt(), decoded.short.toInt())
+            val extracted = extractSamples(file)
+            var frames = 0L
+            for ((timeUs, size) in extracted.timesAndSizes) {
+                assertEquals(frames * 1_000_000 / PhononTts.SAMPLE_RATE, timeUs)
+                frames += size / 2
+            }
+            assertEquals(samples.toLong() * sampleFrames, frames)
+            val decoded =
+                ByteBuffer.wrap(extracted.bytes.toByteArray()).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until frames.toInt()) {
+                val expected = if (i < length) (audio[i] * Short.MAX_VALUE).toInt() else 0
+                assertEquals("sample $i of $samples", expected, decoded.short.toInt())
+            }
         }
     }
 

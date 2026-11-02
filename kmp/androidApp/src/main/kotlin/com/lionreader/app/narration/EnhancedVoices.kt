@@ -107,7 +107,9 @@ internal class StreamingFmp4(file: File, private val sampleRate: Int) {
                 .setChannelCount(1)
                 .build()
         )
-    private var pending = newSample()
+    /** The sample being filled; the muxer copies each one it's given. */
+    private val pending =
+        ByteBuffer.allocate(sampleRate * SAMPLE_MS / 1000 * 2).order(ByteOrder.LITTLE_ENDIAN)
     private var frames = 0L
 
     /** Adds [pcm] (floats in [-1, 1]). */
@@ -120,13 +122,10 @@ internal class StreamingFmp4(file: File, private val sampleRate: Int) {
 
     /** Writes what's left and ends the stream. */
     fun finish(to: File) {
-        if (pending.position() > 0) writePending()
-        // Gives the last sample its length: the muxer otherwise repeats the one before's.
-        muxer.writeSampleData(
-            track,
-            ByteBuffer.allocateDirect(0),
-            BufferInfo(timeUs(), 0, C.BUFFER_FLAG_END_OF_STREAM),
-        )
+        if (pending.position() > 0) {
+            while (pending.hasRemaining()) pending.put(0)
+            writePending()
+        }
         muxer.close()
         out.close()
         audio.finish(to)
@@ -142,21 +141,19 @@ internal class StreamingFmp4(file: File, private val sampleRate: Int) {
         pending.flip()
         muxer.writeSampleData(track, pending, BufferInfo(timeUs(), size, C.BUFFER_FLAG_KEY_FRAME))
         frames += size / 2
-        pending = newSample()
+        pending.clear()
     }
 
     private fun timeUs() = frames * 1_000_000 / sampleRate
 
-    private fun newSample() =
-        ByteBuffer.allocateDirect(sampleRate * SAMPLE_MS / 1000 * 2).order(ByteOrder.LITTLE_ENDIAN)
-
-    private companion object {
+    companion object {
         /** How much the player waits for before it can play the start of a chunk. */
-        const val FRAGMENT_MS = 250L
+        private const val FRAGMENT_MS = 250L
 
         /**
-         * Samples are all this long: the muxer takes each one's length from when the next starts,
-         * and the last in a fragment's from the one before it.
+         * Samples are all this long, the last padded with silence: the muxer takes each one's
+         * length from when the next starts, and the last in a fragment's from the one before it.
+         * (Its end-of-stream sample, which would time the last, fails when it ends a fragment.)
          */
         const val SAMPLE_MS = 20
     }
