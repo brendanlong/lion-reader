@@ -539,7 +539,9 @@ describe("a fan-out that loses a deadlock (#1846)", () => {
     // row, the fetch's fan-out (memberships first) waits on it, then the
     // other waits on the fan-out's membership. The fetch waited first, so it's
     // the victim; a fetch never fans the same entries out again, so it must
-    // retry.
+    // retry. The retry can retake the membership before other's waiting insert
+    // does, deadlocking again with other as the victim this time; either way
+    // the fan-out's entries must land.
     const [first, second] = await createUsers(2);
     const [feedId] = await subscribeAll([first, second], 1);
     const entryId = await createTestEntry(feedId);
@@ -558,13 +560,23 @@ describe("a fan-out that loses a deadlock (#1846)", () => {
       ]);
       const fanout = createUserEntriesForFeed(db, feedId, [entryId], null);
       await waitUntilBlockedBy(other);
-      await other.query(
-        `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-         SELECT $1, user_id, entry_id, published_or_fetched_at FROM user_entries
-         WHERE user_id = $2 AND entry_id = $3`,
-        [firstSub, first, entryId]
-      );
-      await other.query("COMMIT");
+      const write = await other
+        .query(
+          `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+           SELECT $1, user_id, entry_id, published_or_fetched_at FROM user_entries
+           WHERE user_id = $2 AND entry_id = $3`,
+          [firstSub, first, entryId]
+        )
+        .then(
+          () => null,
+          (err: unknown) => err
+        );
+      if (write === null) {
+        await other.query("COMMIT");
+      } else {
+        expect(write).toMatchObject({ code: "40P01" });
+        await other.query("ROLLBACK");
+      }
       await fanout;
     } finally {
       await other.end();
