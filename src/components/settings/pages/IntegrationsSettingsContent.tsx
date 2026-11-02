@@ -1,8 +1,8 @@
 /**
  * Integrations Settings Content
  *
- * Page for browser extensions, bookmarklets, Discord bot, AI integrations,
- * and API token management.
+ * Page for browser extensions, bookmarklets, third-party app APIs, AI
+ * assistants, and the Discord bot.
  */
 
 "use client";
@@ -12,7 +12,6 @@ import { DiscordBotSettings } from "@/components/settings/DiscordBotSettings";
 import { GoogleReaderApiSettings } from "@/components/settings/GoogleReaderApiSettings";
 import { WallabagApiSettings } from "@/components/settings/WallabagApiSettings";
 import { IntegrationsSettings } from "@/components/settings/IntegrationsSettings";
-import ApiTokensSettingsContent from "./ApiTokensSettingsContent";
 
 export default function IntegrationsSettingsContent() {
   return (
@@ -31,9 +30,6 @@ export default function IntegrationsSettingsContent() {
 
       {/* Discord Bot */}
       <DiscordBotSettings />
-
-      {/* API Tokens */}
-      <ApiTokensSettingsContent />
     </div>
   );
 }

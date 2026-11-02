@@ -60,7 +60,7 @@ export default function SessionsSettingsContent() {
 
   const revokeSessionMutation = trpc.users["me.revokeSession"].useMutation({
     onSuccess: () => {
-      toast.success("Session revoked successfully");
+      toast.success("Session revoked");
       utils.users["me.sessions"].invalidate();
     },
     onError: (error) => {
@@ -82,8 +82,7 @@ export default function SessionsSettingsContent() {
       </div>
 
       <p className="ui-text-sm text-muted mb-6">
-        These are the devices that are currently logged into your account. You can revoke any
-        session that you do not recognize.
+        Devices signed in to your account. Revoke any you don&apos;t recognize.
       </p>
 
       <SettingsListContainer

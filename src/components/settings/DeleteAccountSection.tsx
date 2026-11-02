@@ -1,8 +1,6 @@
 /**
- * Delete Account Settings Content
- *
- * Allows users to permanently delete their account.
- * Requires typing "delete" as confirmation to prevent accidental deletion.
+ * Delete Account section of the account settings. Requires typing "delete" as
+ * confirmation to prevent accidental deletion.
  */
 
 "use client";
@@ -20,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export default function DeleteAccountSettingsContent() {
+export function DeleteAccountSection() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
@@ -54,25 +52,20 @@ export default function DeleteAccountSettingsContent() {
   };
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h2 className="ui-text-lg text-danger mb-4 font-semibold">Delete Account</h2>
-        <div className="bg-surface border-danger-border rounded-lg border p-6">
-          <p className="ui-text-sm text-muted">
-            Permanently delete your account and all associated data. This action cannot be undone.
-          </p>
-          <p className="ui-text-sm text-muted mt-2">
-            This will delete your subscriptions, reading history, starred items, tags, saved
-            articles, email ingest addresses, AI summaries, sessions, API tokens, and all other
-            account data.
-          </p>
-          <div className="mt-4">
-            <Button variant="danger" onClick={handleOpenDialog}>
-              Delete account
-            </Button>
-          </div>
+    <section>
+      <h2 className="ui-text-lg text-danger mb-4 font-semibold">Delete Account</h2>
+      <div className="bg-surface border-danger-border rounded-lg border p-4 sm:p-6">
+        <p className="ui-text-sm text-muted">
+          Permanently delete your account and everything in it: subscriptions, saved articles,
+          reading history, tags, newsletter addresses, API tokens, and settings. This can&apos;t be
+          undone.
+        </p>
+        <div className="mt-4">
+          <Button variant="danger" onClick={handleOpenDialog}>
+            Delete account
+          </Button>
         </div>
-      </section>
+      </div>
 
       <Dialog
         isOpen={isDialogOpen}
@@ -82,8 +75,7 @@ export default function DeleteAccountSettingsContent() {
       >
         <DialogTitle id="delete-account-title">Delete account?</DialogTitle>
         <DialogDescription>
-          This action is permanent and cannot be undone. All your data will be deleted, including
-          subscriptions, reading history, starred items, saved articles, and account settings.
+          All your data will be permanently deleted. This can&apos;t be undone.
         </DialogDescription>
 
         <DialogBody className="mt-4">
@@ -121,6 +113,6 @@ export default function DeleteAccountSettingsContent() {
           </Button>
         </DialogFooter>
       </Dialog>
-    </div>
+    </section>
   );
 }

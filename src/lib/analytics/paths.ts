@@ -47,14 +47,14 @@ const STATIC_ROUTES = {
   // App — everything else
   "/subscribe": "/app/subscribe",
   "/settings": "/app/settings",
+  "/settings/about": "/app/settings/about",
   "/settings/ai": "/app/settings/ai",
   "/settings/appearance": "/app/settings/appearance",
-  "/settings/connected-apps": "/app/settings/connected-apps",
-  "/settings/delete-account": "/app/settings/delete-account",
   "/settings/email": "/app/settings/email",
   "/settings/feed-health": "/app/settings/feed-health",
   "/settings/integrations": "/app/settings/integrations",
-  "/settings/sessions": "/app/settings/sessions",
+  "/settings/reading": "/app/settings/reading",
+  "/settings/security": "/app/settings/security",
   "/settings/subscriptions": "/app/settings/subscriptions",
 } as const;
 

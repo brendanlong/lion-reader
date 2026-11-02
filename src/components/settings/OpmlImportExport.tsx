@@ -253,7 +253,7 @@ function ImportSection() {
     <Card>
       <h3 className="ui-text-sm text-body mb-2 font-medium">Import from OPML</h3>
       <p className="ui-text-sm text-muted mb-4">
-        Import your feed subscriptions from another RSS reader by uploading an OPML file.
+        Bring your subscriptions over from another RSS reader.
       </p>
 
       {error && (
@@ -534,7 +534,7 @@ function ExportSection() {
     <Card>
       <h3 className="ui-text-sm text-body mb-2 font-medium">Export to OPML</h3>
       <p className="ui-text-sm text-muted mb-4">
-        Download your subscriptions as an OPML file to import into another RSS reader.
+        Download your subscriptions to import into another RSS reader.
       </p>
 
       <Button onClick={handleExport} loading={isExporting} variant="secondary">
@@ -555,9 +555,8 @@ function LibraryExportSection() {
     <Card>
       <h3 className="ui-text-sm text-body mb-2 font-medium">Export your library</h3>
       <p className="ui-text-sm text-muted mb-4">
-        Download a zip of your saved articles, uploads, newsletters and starred entries, with a page
-        for each article, a bookmarks file browsers and bookmark managers can import, and your
-        subscriptions as OPML.
+        A zip of your saved articles, uploads, newsletters and starred entries, plus a bookmarks
+        file your browser can import and your subscriptions as OPML.
       </p>
 
       <a href="/api/v1/export" download className={buttonClassName({ variant: "secondary" })}>

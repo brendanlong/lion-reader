@@ -45,14 +45,11 @@ export function DiscordBotSettings() {
   return (
     <SettingsSection
       title="Discord Bot"
-      description="Save articles to Lion Reader by reacting to Discord messages, or by sending a link to the bot in a DM. When you react to (or DM the bot) a message containing a URL, the article will be saved to your account."
+      description="Save links from Discord by reacting to a message, or by sending the link to the bot in a DM."
     >
       {/* Invite Button */}
-      <div className="mt-6">
+      <div>
         <h3 className="ui-text-sm text-body font-medium">Add Bot to Server</h3>
-        <p className="ui-text-sm text-muted mt-1">
-          Invite the Lion Reader bot to your Discord server to enable saving articles.
-        </p>
         <div className="mt-3 flex flex-wrap gap-3">
           <a
             href={botConfig.inviteUrl ?? "#"}
@@ -74,8 +71,7 @@ export function DiscordBotSettings() {
         <div className="mt-6">
           <h3 className="ui-text-sm text-body font-medium">No Server With the Bot?</h3>
           <p className="ui-text-sm text-muted mt-1">
-            Discord only lets you message a bot you share a server with. Join the Lion Reader server
-            and you can save links by messaging the bot directly.
+            Discord only lets you DM a bot you share a server with, so join ours.
           </p>
           <TextLink
             external
@@ -106,8 +102,7 @@ export function DiscordBotSettings() {
             ) : (
               "Add the configured emoji reaction to any message containing a URL"
             )}
-            . You can also send or forward a message with a link directly to the bot in a DM, if you
-            share a server with it.
+            , or DM the link to the bot.
           </li>
           <li>
             <strong className="text-body">Look for the reaction</strong> -{" "}
@@ -124,10 +119,6 @@ export function DiscordBotSettings() {
             ) : (
               "The bot will react to confirm the save succeeded or failed"
             )}
-          </li>
-          <li>
-            <strong className="text-body">Check your Saved</strong> - The article will appear in
-            your Saved section
           </li>
         </ol>
       </CardSection>

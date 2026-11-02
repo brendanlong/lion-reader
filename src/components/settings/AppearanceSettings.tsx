@@ -6,7 +6,7 @@
  * - Text size for entry content
  * - Text justification for entry content
  * - Font family for entry content
- * - When an opened article is marked read
+ * - Entry list density
  */
 
 "use client";
@@ -16,70 +16,13 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useIsEInkDisplay } from "@/lib/theme/eink";
 import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
 import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
-import { useMarkReadOn, type MarkReadOn } from "@/lib/hooks/useMarkReadOn";
+import { OptionGroup } from "@/components/settings/OptionGroup";
 import type {
   TextSize,
   TextJustification,
   FontFamily,
   ListDensity,
 } from "@/lib/appearance/settings";
-
-interface OptionButtonProps {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}
-
-function OptionButton({ selected, onClick, children }: OptionButtonProps) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onClick}
-      className={`ui-text-sm rounded-md px-4 py-2 font-medium transition-colors ${
-        selected
-          ? "bg-primary-solid text-primary-solid-foreground"
-          : "control-outline bg-surface-muted text-body hover:bg-fill-muted"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-interface OptionGroupProps<T extends string> {
-  label: string;
-  description?: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}
-
-function OptionGroup<T extends string>({
-  label,
-  description,
-  value,
-  options,
-  onChange,
-}: OptionGroupProps<T>) {
-  return (
-    <div>
-      <label className="ui-text-sm text-body block font-medium">{label}</label>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {options.map((option) => (
-          <OptionButton
-            key={option.value}
-            selected={value === option.value}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </OptionButton>
-        ))}
-      </div>
-      {description && <p className="ui-text-sm text-muted mt-1">{description}</p>}
-    </div>
-  );
-}
 
 /** Theme options for next-themes (uses "system" instead of "auto") */
 const THEME_OPTIONS: { value: string; label: string }[] = [
@@ -114,21 +57,6 @@ const LIST_DENSITY_OPTIONS: { value: ListDensity; label: string }[] = [
   { value: "compact", label: "Compact" },
 ];
 
-const MARK_READ_ON_OPTIONS: { value: MarkReadOn; label: string; description: string }[] = [
-  {
-    value: "opened",
-    label: "Opened",
-    description: "Articles are marked read as soon as you open them.",
-  },
-  {
-    value: "finished",
-    label: "Finished",
-    description:
-      "Articles are marked read once you've scrolled to the end of the text, or narration has read all of it.",
-  },
-  { value: "never", label: "Never", description: "Articles are only marked read when you say so." },
-];
-
 /**
  * Preview text for demonstrating text appearance settings.
  * Uses the same styling as actual article content.
@@ -154,7 +82,6 @@ export function AppearanceSettings() {
       <ThemeSettings />
       <ArticleTextSettings />
       <EntryListSettings />
-      <MarkReadSettings />
     </div>
   );
 }
@@ -180,7 +107,7 @@ export function ThemeSettings() {
             : theme === "system"
               ? "Following system preference"
               : theme === "epaper"
-                ? "Pure white background with high-contrast colors designed for e-ink screens"
+                ? "High contrast on pure white, for e-ink screens"
                 : undefined
         }
         value={theme || "system"}
@@ -195,10 +122,7 @@ export function ArticleTextSettings() {
   const { settings, updateSettings } = useAppearance();
 
   return (
-    <SettingsSection
-      title="Article Text"
-      description="These settings affect how article content is displayed in the entry view."
-    >
+    <SettingsSection title="Article Text" description="How articles look when you open them.">
       <div className="space-y-6">
         <OptionGroup
           label="Text Size"
@@ -231,38 +155,17 @@ export function EntryListSettings() {
   const { settings, updateSettings } = useAppearance();
 
   return (
-    <SettingsSection
-      title="Entry List"
-      description="Controls how densely entries are packed in the article list."
-    >
+    <SettingsSection title="Entry List">
       <OptionGroup
         label="List Density"
         description={
           settings.listDensity === "compact"
-            ? "A single divided list with tighter spacing and no preview — best for scanning many entries."
-            : "Roomy bordered cards with a preview snippet — best for relaxed reading."
+            ? "Tighter rows without previews, for scanning many entries."
+            : "Cards with a preview snippet."
         }
         value={settings.listDensity}
         options={LIST_DENSITY_OPTIONS}
         onChange={(listDensity) => updateSettings({ listDensity })}
-      />
-    </SettingsSection>
-  );
-}
-
-export function MarkReadSettings() {
-  const [markReadOn, setMarkReadOn] = useMarkReadOn();
-
-  return (
-    <SettingsSection title="Mark as Read" description="Applies to this browser only.">
-      <OptionGroup
-        label="Mark Articles Read When"
-        description={
-          MARK_READ_ON_OPTIONS.find((option) => option.value === markReadOn)?.description
-        }
-        value={markReadOn}
-        options={MARK_READ_ON_OPTIONS}
-        onChange={setMarkReadOn}
       />
     </SettingsSection>
   );

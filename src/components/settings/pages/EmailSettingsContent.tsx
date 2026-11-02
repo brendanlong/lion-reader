@@ -15,7 +15,6 @@ import { trpc } from "@/lib/trpc/client";
 import { usePreferenceMutation } from "@/lib/hooks/usePreferenceMutation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogHeader,
@@ -26,7 +25,8 @@ import {
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { PlusIcon, EditIcon } from "@/components/ui/icons";
 import BlockedSendersSettingsContent from "./BlockedSendersSettingsContent";
-import { Switch } from "@/components/ui/switch";
+import { SwitchRow } from "@/components/ui/switch";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 
 // ============================================================================
 // Types
@@ -47,15 +47,6 @@ interface IngestAddress {
 export default function EmailSettingsContent() {
   return (
     <div className="space-y-8">
-      {/* Page Header */}
-      <div>
-        <h2 className="ui-text-lg text-body font-semibold">Email Subscriptions</h2>
-        <p className="ui-text-sm text-muted mt-1">
-          Create ingest addresses to subscribe to email newsletters. Emails sent to these addresses
-          will appear as entries in your feeds.
-        </p>
-      </div>
-
       {/* Ingest Addresses Section */}
       <IngestAddressesSection />
 
@@ -104,21 +95,23 @@ export function IngestAddressesSection() {
 
   if (addressesQuery.data?.enabled === false) {
     return (
-      <section>
-        <h3 className="ui-text-sm text-body font-medium">Ingest Addresses</h3>
-        <p className="ui-text-sm text-muted mt-2">
+      <SettingsSection title="Newsletter Addresses">
+        <p className="ui-text-sm text-muted">
           Email newsletters aren&apos;t set up on this server.
         </p>
-      </section>
+      </SettingsSection>
     );
   }
 
   return (
     <section>
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="ui-text-sm text-body font-medium">Ingest Addresses</h3>
+      <div className="mb-2 flex items-baseline justify-between gap-4">
+        <h2 className="ui-text-lg text-body font-semibold">Newsletter Addresses</h2>
         <span className="ui-text-sm text-muted tabular-nums">{addresses.length} / 5</span>
       </div>
+      <p className="ui-text-sm text-muted mb-4">
+        Subscribe to newsletters with these addresses and they arrive as feeds, one per sender.
+      </p>
 
       <SettingsListContainer
         items={addresses}
@@ -133,7 +126,7 @@ export function IngestAddressesSection() {
           ) : (
             <div className="p-6 text-center">
               <p className="ui-text-sm text-muted">
-                No ingest addresses yet. Create one to start receiving newsletter emails.
+                No addresses yet. Create one to start receiving newsletters.
               </p>
             </div>
           )
@@ -368,26 +361,15 @@ export function SpamPreferenceSection() {
   };
 
   return (
-    <section>
-      <h3 className="ui-text-sm text-body mb-4 font-medium">Preferences</h3>
-      <Card>
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 id="show-spam-label" className="ui-text-sm text-body font-medium">
-              Show spam entries
-            </h4>
-            <p className="ui-text-sm text-muted mt-1">
-              Display entries that were flagged as spam by our email provider.
-            </p>
-          </div>
-          <Switch
-            checked={showSpam}
-            onChange={handleToggle}
-            labelledBy="show-spam-label"
-            disabled={preferencesQuery.isLoading || isPending}
-          />
-        </div>
-      </Card>
-    </section>
+    <SettingsSection title="Spam">
+      <SwitchRow
+        id="show-spam-label"
+        label="Show spam entries"
+        description="Show newsletter emails our email provider flagged as spam."
+        checked={showSpam}
+        onChange={handleToggle}
+        disabled={preferencesQuery.isLoading || isPending}
+      />
+    </SettingsSection>
   );
 }

@@ -50,7 +50,7 @@ function TagManagementContent() {
   return (
     <SettingsSection
       title="Tags"
-      description="Create and manage tags to organize your feed subscriptions."
+      description="Group your subscriptions into tags, which appear in the sidebar."
     >
       {/* Create new tag form */}
       <CreateTagForm />

@@ -57,8 +57,8 @@ export default function ConnectedAppsSettingsContent() {
       </div>
 
       <p className="ui-text-sm text-muted mb-6">
-        These applications can access your account without asking again. Revoking signs an
-        application out and makes it request your permission the next time it connects.
+        Apps you&apos;ve allowed to access your account. Revoking one signs it out until you approve
+        it again.
       </p>
 
       <SettingsListContainer

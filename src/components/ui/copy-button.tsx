@@ -87,8 +87,9 @@ interface CodeBlockProps {
 export function CodeBlock({ code, className = "" }: CodeBlockProps) {
   return (
     <div className={`relative ${className}`}>
-      {/* On touch the copy button is 44px; keep a one-line block tall enough to hold it. */}
-      <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body hover-none:min-h-15 overflow-x-auto rounded-md border p-3 pr-20 font-mono">
+      {/* On touch the copy button is 44px; keep a one-line block tall enough to hold it.
+          Wrap rather than scroll, so no text hides under the button on a narrow screen. */}
+      <pre className="ui-text-xs border-edge-strong bg-surface-muted text-body hover-none:min-h-15 rounded-md border p-3 pr-20 font-mono break-all whitespace-pre-wrap">
         <code>{code}</code>
       </pre>
       <CopyButton value={code} className="absolute top-2 right-2 px-2 py-1" />

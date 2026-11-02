@@ -132,18 +132,16 @@ export default function ApiTokensSettingsContent() {
       </div>
 
       <p className="ui-text-sm text-muted mb-6">
-        API tokens allow you to connect third-party applications like Claude Desktop, browser
-        extensions, and other integrations. Tokens are only shown once when created.
+        Tokens let scripts and other apps (MCP clients, browser extensions, the Discord bot) access
+        your account. Each token is shown only once, when you create it.
       </p>
 
       {/* Newly Created Token Alert */}
       {newlyCreatedToken && (
         <Alert variant="success" className="mb-6">
           <div className="space-y-3">
-            <p className="font-medium">Token created successfully!</p>
-            <p className="ui-text-sm">
-              Copy this token now - you won&apos;t be able to see it again.
-            </p>
+            <p className="font-medium">Token created</p>
+            <p className="ui-text-sm">Copy it now: you won&apos;t be able to see it again.</p>
             <div className="flex gap-2">
               <Input
                 value={newlyCreatedToken}
@@ -179,12 +177,9 @@ export default function ApiTokensSettingsContent() {
                 value={tokenName}
                 onChange={(e) => setTokenName(e.target.value)}
                 error={errors.name}
-                placeholder="e.g., Claude Desktop, Browser Extension"
+                placeholder="e.g., Claude Desktop"
                 className="w-full"
               />
-              <p className="ui-text-xs text-muted mt-1">
-                A descriptive name to help you identify this token
-              </p>
             </div>
 
             {/* Scopes */}
@@ -215,18 +210,15 @@ export default function ApiTokensSettingsContent() {
             <div>
               <Input
                 id="api-token-expires-in-days"
-                label="Expiration (Optional)"
+                label="Expires after (days)"
                 type="number"
                 value={expiresInDays}
                 onChange={(e) => setExpiresInDays(e.target.value)}
                 error={errors.expiresInDays}
-                placeholder="Days until expiration (leave empty for no expiration)"
+                placeholder="Never"
                 className="w-full"
                 min="1"
               />
-              <p className="ui-text-xs text-muted mt-1">
-                Leave empty for a token that never expires
-              </p>
             </div>
 
             {/* Actions */}

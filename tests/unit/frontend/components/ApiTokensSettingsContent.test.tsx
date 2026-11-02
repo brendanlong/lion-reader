@@ -5,7 +5,7 @@
 /**
  * Accessibility tests for the API tokens create-token form.
  *
- * The "Token Name" and "Expiration" captions used to be hand-rolled `<label>`s
+ * The "Token Name" and expiration captions used to be hand-rolled `<label>`s
  * with no `htmlFor` next to an `<Input>` with no `id`, so both fields were
  * announced as unlabelled text boxes. These tests query the fields by their
  * accessible name, which is exactly what was missing.
@@ -41,7 +41,7 @@ describe("ApiTokensSettingsContent create form labels", () => {
     fireEvent.change(screen.getByLabelText("Token Name"), {
       target: { value: "Claude Desktop" },
     });
-    fireEvent.change(screen.getByLabelText("Expiration (Optional)"), {
+    fireEvent.change(screen.getByLabelText("Expires after (days)"), {
       target: { value: "30" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create Token" }));

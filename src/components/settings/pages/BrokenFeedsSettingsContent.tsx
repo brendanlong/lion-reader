@@ -77,8 +77,7 @@ export default function BrokenFeedsSettingsContent() {
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Broken Feeds</h2>
         <p className="ui-text-sm text-muted mt-1">
-          These feeds have failed to fetch recently. You can retry fetching immediately or wait for
-          the next scheduled attempt.
+          Feeds that failed to fetch recently. Retry now, or wait for the next scheduled attempt.
         </p>
       </div>
 

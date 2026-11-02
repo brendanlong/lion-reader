@@ -1,9 +1,11 @@
 /**
  * Switch Component
  *
- * An on/off toggle (`role="switch"`) for settings. Label it with the id of the
- * visible text that names it.
+ * An on/off toggle (`role="switch"`) for settings, in the usual label +
+ * description + switch row.
  */
+
+import type { ReactNode } from "react";
 
 interface SwitchProps {
   checked: boolean;
@@ -13,7 +15,8 @@ interface SwitchProps {
   disabled?: boolean;
 }
 
-export function Switch({ checked, onChange, labelledBy, disabled }: SwitchProps) {
+/** The visible switch is 24px tall; its hit area extends to the 44px touch-target minimum. */
+function Switch({ checked, onChange, labelledBy, disabled }: SwitchProps) {
   return (
     <button
       type="button"
@@ -22,7 +25,7 @@ export function Switch({ checked, onChange, labelledBy, disabled }: SwitchProps)
       aria-labelledby={labelledBy}
       onClick={onChange}
       disabled={disabled}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out before:absolute before:-inset-2.5 disabled:cursor-not-allowed disabled:opacity-50 ${
         checked ? "bg-primary-solid" : "bg-fill-muted"
       }`}
     >
@@ -33,5 +36,29 @@ export function Switch({ checked, onChange, labelledBy, disabled }: SwitchProps)
         }`}
       />
     </button>
+  );
+}
+
+interface SwitchRowProps {
+  /** Id for the label, which names the switch. */
+  id: string;
+  label: ReactNode;
+  description?: ReactNode;
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}
+
+export function SwitchRow({ id, label, description, checked, onChange, disabled }: SwitchRowProps) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <p id={id} className="ui-text-sm text-body font-medium">
+          {label}
+        </p>
+        {description && <p className="ui-text-sm text-muted mt-0.5">{description}</p>}
+      </div>
+      <Switch checked={checked} onChange={onChange} labelledBy={id} disabled={disabled} />
+    </div>
   );
 }

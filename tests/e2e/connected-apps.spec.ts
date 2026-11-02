@@ -78,7 +78,7 @@ test("lists an authorized OAuth app and revokes its access", async ({ page, cont
   });
 
   await loginAs(context, user, baseURL!);
-  await page.goto("/settings/connected-apps");
+  await page.goto("/settings/security");
 
   await expect(page.getByText(clientName)).toBeVisible();
   await expect(page.getByText("Read and manage your feeds and articles")).toBeVisible();

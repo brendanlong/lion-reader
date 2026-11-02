@@ -2,7 +2,6 @@
  * GoogleReaderApiSettings Component
  *
  * Settings section explaining the Google Reader-compatible API.
- * This is informational only — no configuration needed.
  */
 
 "use client";
@@ -12,33 +11,28 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { InlineCode } from "@/components/ui/inline-code";
-import { NoteBox } from "@/components/ui/note-box";
 import { TextLink } from "@/components/ui/text-link";
 
 export function GoogleReaderApiSettings() {
   const baseUrl = useAppBaseUrl();
-
-  const apiBase = `${baseUrl}/api/greader.php/reader/api/0`;
 
   return (
     <SettingsSection
       title="Google Reader API"
       description={
         <>
-          Lion Reader exposes a{" "}
+          Use another RSS app with your Lion Reader account. Subscriptions, tags, read state and
+          stars stay in sync. Any app that supports the{" "}
           <TextLink href="https://feedhq.readthedocs.io/en/latest/api/" external>
-            Google Reader-compatible API
+            Google Reader API
           </TextLink>{" "}
-          so you can use third-party RSS reader apps to sync with your Lion Reader account.
+          should work.
         </>
       }
     >
       {/* Supported Clients */}
-      <div className="mt-6">
+      <div>
         <h3 className="ui-text-sm text-body font-medium">Compatible Apps</h3>
-        <p className="ui-text-sm text-muted mt-1">
-          Any app that supports the Google Reader API should work, including:
-        </p>
         <ul className="ui-text-sm text-muted mt-2 list-inside list-disc space-y-1">
           <li>
             <TextLink href="https://reederapp.com/classic/" external>
@@ -80,8 +74,7 @@ export function GoogleReaderApiSettings() {
       <CardSection>
         <h3 className="ui-text-sm text-body font-medium">Setup</h3>
         <p className="ui-text-sm text-muted mt-1">
-          In your app&apos;s account settings, choose &ldquo;FreshRSS&rdquo; as the service type,
-          then enter:
+          In your app, add a &ldquo;FreshRSS&rdquo; account and enter:
         </p>
         <ul className="ui-text-sm text-muted mt-3 space-y-2">
           <li>
@@ -101,17 +94,6 @@ export function GoogleReaderApiSettings() {
           </li>
         </ul>
       </CardSection>
-
-      {/* Note */}
-      <NoteBox className="mt-6">
-        <p className="ui-text-sm text-muted">
-          The API uses your regular Lion Reader credentials for authentication. All your
-          subscriptions, tags, read state, and starred articles sync automatically.
-        </p>
-      </NoteBox>
-
-      {/* API base URL note */}
-      {baseUrl && <p className="ui-text-xs text-faint mt-4">API endpoint: {apiBase}</p>}
     </SettingsSection>
   );
 }

@@ -230,12 +230,7 @@ export function SummarizationSettings() {
   return (
     <SettingsSection
       title="Summaries"
-      description={
-        <>
-          AI-powered article summaries. Requires an API key from any provider above; models from
-          every configured provider are selectable.
-        </>
-      }
+      description={"Summarize articles on demand. Needs an API key from any provider above."}
     >
       <div className="space-y-4">
         {/* Model Selection */}
@@ -256,15 +251,14 @@ export function SummarizationSettings() {
             onChange={handleModelChange}
           />
           <p className="ui-text-xs text-muted mt-1.5">
-            Choose the model used for generating article summaries. Type to search every model from
-            providers with a configured API key.
+            Type to search every model from the providers you have keys for.
           </p>
         </div>
 
         <EditablePreferenceField
           id="summarization-max-words"
           label="Max words"
-          hint="Maximum number of words for generated summaries."
+          hint="Longest summary to generate."
           status={
             <span className="ui-text-sm text-muted">
               {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
@@ -310,7 +304,7 @@ export function SummarizationSettings() {
         <EditablePreferenceField
           id="summarization-prompt"
           label="Custom prompt"
-          hint="Override the default prompt sent to the AI model when generating summaries."
+          hint="Replace the prompt used to generate summaries."
           status={
             <span className="ui-text-sm text-muted">
               {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
@@ -349,9 +343,9 @@ export function SummarizationSettings() {
                 className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2 font-mono disabled:cursor-not-allowed disabled:opacity-50"
               />
               <p className="ui-text-xs text-muted">
-                Available template variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
+                Variables: <InlineCode>{"{{content}}"}</InlineCode>,{" "}
                 <InlineCode>{"{{title}}"}</InlineCode>, <InlineCode>{"{{maxWords}}"}</InlineCode>.
-                The response should be wrapped in <InlineCode>{"<summary>"}</InlineCode> tags.
+                Ask for the summary inside <InlineCode>{"<summary>"}</InlineCode> tags.
               </p>
             </>
           )}
@@ -390,9 +384,8 @@ export function NarrationAiSettings() {
       title="AI Text Processing"
       description={
         <>
-          AI-powered text processing for narration. This improves narration quality by expanding
-          abbreviations and formatting content for text-to-speech. Requires an API key from{" "}
-          {aiProviderNames(NARRATION_PROVIDERS)} (configured above).
+          Expands abbreviations and cleans up text before narration reads it aloud. Needs an API key
+          from {aiProviderNames(NARRATION_PROVIDERS)}.
         </>
       }
     >
@@ -410,8 +403,7 @@ export function NarrationAiSettings() {
           onChange={handleModelChange}
         />
         <p className="ui-text-xs text-muted mt-1.5">
-          Choose the model used to prepare article text for narration. Only models that support JSON
-          output are listed.
+          Only models that support JSON output are listed.
         </p>
       </div>
     </SettingsSection>
