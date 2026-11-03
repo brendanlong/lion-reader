@@ -3,7 +3,9 @@ package com.lionreader.app.narration
 import android.content.Context
 import android.net.Uri
 import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.Player
+import androidx.media3.common.util.Clock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.NarrationCues
@@ -128,6 +130,15 @@ class NarratorTest {
             },
             // Robolectric can't bind media3's session service.
             connectSession = { {} },
+            // Media3's default clock times playback with System.nanoTime, which Robolectric leaves
+            // on the real clock: playback would go at real speed however far a test idles (#2251).
+            configurePlayer = {
+                setClock(
+                    object : Clock by Clock.DEFAULT {
+                        override fun nanoTime(): Long = SystemClock.elapsedRealtimeNanos()
+                    }
+                )
+            },
         )
 
     /** Stops [audio] partway, as CloudVoices does: the half-written file goes too. */
@@ -138,9 +149,6 @@ class NarratorTest {
 
     /**
      * Lets the player, which plays and reports errors from its own thread, catch up until [done].
-     * Bounded by wall-clock time, not a count of polls: in some runs its position follows the real
-     * clock rather than Robolectric's, so playing takes real time however far each poll idles
-     * (#2251).
      */
     private fun idleUntil(done: () -> Boolean) {
         val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()

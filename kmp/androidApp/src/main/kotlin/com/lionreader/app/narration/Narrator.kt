@@ -95,6 +95,8 @@ class Narrator(
     },
     /** How long the player can run dry, the engine unreachable, before narration pauses. */
     private val pauseAfterMillis: Long = 60_000,
+    /** Tests set the player's clock here. */
+    private val configurePlayer: ExoPlayer.Builder.() -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val dir = File(context.cacheDir, "narration")
@@ -169,6 +171,7 @@ class Narrator(
                 /* handleAudioFocus= */ true,
             )
             .setHandleAudioBecomingNoisy(true)
+            .apply(configurePlayer)
             .build()
             .also { it.addListener(listener) }
 
