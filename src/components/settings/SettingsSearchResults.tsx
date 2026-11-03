@@ -2,19 +2,39 @@
  * SettingsSearchResults Component
  *
  * The "Search results" settings tab: the live sections matching the query,
- * best match first, each labeled with the page it lives on. Sections load
- * lazily, so only the matching sections' modules are downloaded.
+ * best match first, each labeled with the page it lives on.
  */
 
 "use client";
 
 import { useDeferredValue, useMemo, type ComponentType } from "react";
-import dynamic from "next/dynamic";
 import { trpc } from "@/lib/trpc/client";
 import { ClientLink } from "@/components/ui/client-link";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { SettingsListSkeleton } from "./SettingsListSkeleton";
+import { AccountInfoSection, PasswordSection } from "./pages/AccountSettingsContent";
+import { LinkedAccounts } from "./LinkedAccounts";
+import { KeyboardShortcutsSettings } from "./KeyboardShortcutsSettings";
+import { AboutSection } from "./AboutSection";
+import { ArticleTextSettings, EntryListSettings, ThemeSettings } from "./AppearanceSettings";
+import { MarkReadSettings } from "./MarkReadSettings";
+import { TagManagement } from "./TagManagement";
+import { OpmlImportExport } from "./OpmlImportExport";
+import { IngestAddressesSection, SpamPreferenceSection } from "./pages/EmailSettingsContent";
+import BlockedSendersSettingsContent from "./pages/BlockedSendersSettingsContent";
+import { AiProviderKeySettings, SummarizationSettings } from "./ApiKeySettings";
+import { NarrationSettings } from "@/components/narration/NarrationSettings";
+import { BookmarkletSettings } from "./BookmarkletSettings";
+import { GoogleReaderApiSettings } from "./GoogleReaderApiSettings";
+import { WallabagApiSettings } from "./WallabagApiSettings";
+import { IntegrationsSettings } from "./IntegrationsSettings";
+import { DiscordBotSettings } from "./DiscordBotSettings";
+import ApiTokensSettingsContent from "./pages/ApiTokensSettingsContent";
+import BrokenFeedsSettingsContent from "./pages/BrokenFeedsSettingsContent";
+import FeedStatsSettingsContent from "./pages/FeedStatsSettingsContent";
+import SessionsSettingsContent from "./pages/SessionsSettingsContent";
+import ConnectedAppsSettingsContent from "./pages/ConnectedAppsSettingsContent";
+import { DeleteAccountSection } from "./DeleteAccountSection";
 import {
   MIN_QUERY_LENGTH,
   SETTINGS_PAGE_LABELS,
@@ -23,103 +43,35 @@ import {
   type SettingsSectionId,
 } from "./settings-search";
 
-function SectionSkeleton() {
-  return <SettingsListSkeleton variant="card" count={1} height="h-32" />;
-}
-
 const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
-  "account-info": dynamic(
-    () => import("./pages/AccountSettingsContent").then((m) => m.AccountInfoSection),
-    { loading: SectionSkeleton }
-  ),
-  "linked-accounts": dynamic(() => import("./LinkedAccounts").then((m) => m.LinkedAccounts), {
-    loading: SectionSkeleton,
-  }),
-  password: dynamic(() => import("./pages/AccountSettingsContent").then((m) => m.PasswordSection), {
-    loading: SectionSkeleton,
-  }),
-  "keyboard-shortcuts": dynamic(
-    () => import("./KeyboardShortcutsSettings").then((m) => m.KeyboardShortcutsSettings),
-    { loading: SectionSkeleton }
-  ),
-  about: dynamic(() => import("./AboutSection").then((m) => m.AboutSection), {
-    loading: SectionSkeleton,
-  }),
-  theme: dynamic(() => import("./AppearanceSettings").then((m) => m.ThemeSettings), {
-    loading: SectionSkeleton,
-  }),
-  "article-text": dynamic(() => import("./AppearanceSettings").then((m) => m.ArticleTextSettings), {
-    loading: SectionSkeleton,
-  }),
-  "entry-list": dynamic(() => import("./AppearanceSettings").then((m) => m.EntryListSettings), {
-    loading: SectionSkeleton,
-  }),
-  "mark-read": dynamic(() => import("./MarkReadSettings").then((m) => m.MarkReadSettings), {
-    loading: SectionSkeleton,
-  }),
-  tags: dynamic(() => import("./TagManagement").then((m) => m.TagManagement), {
-    loading: SectionSkeleton,
-  }),
-  "import-export": dynamic(() => import("./OpmlImportExport").then((m) => m.OpmlImportExport), {
-    loading: SectionSkeleton,
-  }),
-  "ingest-addresses": dynamic(
-    () => import("./pages/EmailSettingsContent").then((m) => m.IngestAddressesSection),
-    { loading: SectionSkeleton }
-  ),
-  spam: dynamic(() => import("./pages/EmailSettingsContent").then((m) => m.SpamPreferenceSection), {
-    loading: SectionSkeleton,
-  }),
-  "blocked-senders": dynamic(() => import("./pages/BlockedSendersSettingsContent"), {
-    loading: SectionSkeleton,
-  }),
-  "ai-provider-keys": dynamic(
-    () => import("./ApiKeySettings").then((m) => m.AiProviderKeySettings),
-    { loading: SectionSkeleton }
-  ),
-  summaries: dynamic(() => import("./ApiKeySettings").then((m) => m.SummarizationSettings), {
-    loading: SectionSkeleton,
-  }),
-  narration: dynamic(
-    () => import("@/components/narration/NarrationSettings").then((m) => m.NarrationSettings),
-    { loading: SectionSkeleton }
-  ),
-  "save-to-lion-reader": dynamic(
-    () => import("./BookmarkletSettings").then((m) => m.BookmarkletSettings),
-    { loading: SectionSkeleton }
-  ),
-  "google-reader-api": dynamic(
-    () => import("./GoogleReaderApiSettings").then((m) => m.GoogleReaderApiSettings),
-    { loading: SectionSkeleton }
-  ),
-  "wallabag-api": dynamic(
-    () => import("./WallabagApiSettings").then((m) => m.WallabagApiSettings),
-    { loading: SectionSkeleton }
-  ),
-  "ai-integrations": dynamic(
-    () => import("./IntegrationsSettings").then((m) => m.IntegrationsSettings),
-    { loading: SectionSkeleton }
-  ),
-  "discord-bot": dynamic(() => import("./DiscordBotSettings").then((m) => m.DiscordBotSettings), {
-    loading: SectionSkeleton,
-  }),
-  "api-tokens": dynamic(() => import("./pages/ApiTokensSettingsContent"), {
-    loading: SectionSkeleton,
-  }),
-  "broken-feeds": dynamic(() => import("./pages/BrokenFeedsSettingsContent"), {
-    loading: SectionSkeleton,
-  }),
-  "feed-statistics": dynamic(() => import("./pages/FeedStatsSettingsContent"), {
-    loading: SectionSkeleton,
-  }),
-  sessions: dynamic(() => import("./pages/SessionsSettingsContent"), { loading: SectionSkeleton }),
-  "connected-apps": dynamic(() => import("./pages/ConnectedAppsSettingsContent"), {
-    loading: SectionSkeleton,
-  }),
-  "delete-account": dynamic(
-    () => import("./DeleteAccountSection").then((m) => m.DeleteAccountSection),
-    { loading: SectionSkeleton }
-  ),
+  "account-info": AccountInfoSection,
+  "linked-accounts": LinkedAccounts,
+  password: PasswordSection,
+  "keyboard-shortcuts": KeyboardShortcutsSettings,
+  about: AboutSection,
+  theme: ThemeSettings,
+  "article-text": ArticleTextSettings,
+  "entry-list": EntryListSettings,
+  "mark-read": MarkReadSettings,
+  tags: TagManagement,
+  "import-export": OpmlImportExport,
+  "ingest-addresses": IngestAddressesSection,
+  spam: SpamPreferenceSection,
+  "blocked-senders": BlockedSendersSettingsContent,
+  "ai-provider-keys": AiProviderKeySettings,
+  summaries: SummarizationSettings,
+  narration: NarrationSettings,
+  "save-to-lion-reader": BookmarkletSettings,
+  "google-reader-api": GoogleReaderApiSettings,
+  "wallabag-api": WallabagApiSettings,
+  "ai-integrations": IntegrationsSettings,
+  "discord-bot": DiscordBotSettings,
+  "api-tokens": ApiTokensSettingsContent,
+  "broken-feeds": BrokenFeedsSettingsContent,
+  "feed-statistics": FeedStatsSettingsContent,
+  sessions: SessionsSettingsContent,
+  "connected-apps": ConnectedAppsSettingsContent,
+  "delete-account": DeleteAccountSection,
 };
 
 function SearchResult({
