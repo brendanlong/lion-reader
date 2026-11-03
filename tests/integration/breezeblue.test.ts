@@ -3,6 +3,7 @@
  * voices stay with that key, and speech streams through to fMP4.
  */
 
+import { PLAN_LIMITS, PLAN_QUOTA_NAMES } from "../../src/lib/plans";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -21,7 +22,7 @@ import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route"
 import { createSession } from "../../src/server/auth/session";
 import { db } from "../../src/server/db";
 import { users } from "../../src/server/db/schema";
-import { createTestUser } from "./helpers";
+import { createTestUser, withPlanLimits } from "./helpers";
 
 let server: Server;
 const speechRequests: Array<{ path: string; key: string; body: unknown }> = [];
@@ -135,7 +136,7 @@ afterAll(async () => {
 });
 
 async function breezeBlueVoices(key: string): Promise<Array<{ id: string; name: string }>> {
-  const { models } = await listSpeechModels({ breezeblue: key });
+  const { models } = await listSpeechModels({ breezeblue: key, plan: null });
   const model = models.find((candidate) => candidate.id === "breezeblue:breeze-tts-2");
   if (!model) throw new Error("No BreezeBlue model");
   return model.voices;
@@ -171,7 +172,7 @@ describe("BreezeBlue voices", () => {
     const picked = `library-${randomUUID()}`;
     const list = async (voice: string, model: string | null = "breezeblue:breeze-tts-2") => {
       const { models, unavailable } = await listSpeechModels(
-        { breezeblue: key },
+        { breezeblue: key, plan: null },
         { model, voice, userId }
       );
       expect(unavailable).toEqual([]);
@@ -195,7 +196,7 @@ describe("BreezeBlue voices", () => {
   it("lists the catalog without the voice when its lookup fails", async () => {
     const voice = `broken-${randomUUID()}`;
     const { models, unavailable } = await listSpeechModels(
-      { breezeblue: randomUUID() },
+      { breezeblue: randomUUID(), plan: null },
       { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() }
     );
     expect(unavailable).toEqual([]);
@@ -207,7 +208,7 @@ describe("BreezeBlue voices", () => {
     // A Kokoro voice, picked with a model of a provider this user has no key for.
     const voice = `library-${randomUUID()}`;
     await listSpeechModels(
-      { breezeblue: randomUUID() },
+      { breezeblue: randomUUID(), plan: null },
       { model: "deepinfra:hexgrad/Kokoro-82M", voice, userId: randomUUID() }
     );
     expect(lookupsOf(voice)).toBe(0);
@@ -219,7 +220,10 @@ describe("BreezeBlue voices", () => {
     process.env.SERVER_KEY_MODELS = "deepinfra:*";
     try {
       const voice = `library-${randomUUID()}`;
-      await listSpeechModels({}, { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() });
+      await listSpeechModels(
+        { plan: null },
+        { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() }
+      );
       expect(lookupsOf(voice)).toBe(0);
     } finally {
       delete process.env.BREEZEBLUE_API_KEY;
@@ -234,7 +238,7 @@ describe("BreezeBlue voices", () => {
     const [first, second] = [`library-${randomUUID()}`, `library-${randomUUID()}`];
     for (const voice of [first, first, second, first]) {
       await listSpeechModels(
-        { breezeblue: key },
+        { breezeblue: key, plan: null },
         { model: "breezeblue:breeze-tts-2", voice, userId }
       );
     }
@@ -247,7 +251,10 @@ describe("BreezeBlue voices", () => {
     const voice = `library-${randomUUID()}`;
     const lists = await Promise.all(
       Array.from({ length: 5 }, () =>
-        listSpeechModels({ breezeblue: key }, { model: "breezeblue:breeze-tts-2", voice, userId })
+        listSpeechModels(
+          { breezeblue: key, plan: null },
+          { model: "breezeblue:breeze-tts-2", voice, userId }
+        )
       )
     );
     expect(lookupsOf(voice)).toBe(1);
@@ -258,7 +265,7 @@ describe("BreezeBlue voices", () => {
     const before = voiceLookups.length;
     for (const voice of [".", ".."]) {
       await listSpeechModels(
-        { breezeblue: randomUUID() },
+        { breezeblue: randomUUID(), plan: null },
         { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() }
       );
     }
@@ -272,7 +279,7 @@ describe("BreezeBlue voices", () => {
     const voices = Array.from({ length: capacity + 5 }, () => `library-${randomUUID()}`);
     for (const voice of voices) {
       await listSpeechModels(
-        { breezeblue: key },
+        { breezeblue: key, plan: null },
         { model: "breezeblue:breeze-tts-2", voice, userId }
       );
     }
@@ -281,7 +288,7 @@ describe("BreezeBlue voices", () => {
     // Another user's lookup isn't held up by the first one's.
     const other = `library-${randomUUID()}`;
     await listSpeechModels(
-      { breezeblue: key },
+      { breezeblue: key, plan: null },
       { model: "breezeblue:breeze-tts-2", voice: other, userId: randomUUID() }
     );
     expect(lookupsOf(other)).toBe(1);
@@ -292,7 +299,7 @@ describe("BreezeBlue speech", () => {
   it("streams the chosen voice as fragmented MP4", async () => {
     const key = randomUUID();
     const stream = await streamSpeech(
-      { breezeblue: key },
+      { breezeblue: key, plan: null },
       {
         model: "breezeblue:breeze-tts-2",
         userId: randomUUID(),
@@ -314,7 +321,7 @@ describe("BreezeBlue speech", () => {
     const key = randomUUID();
     const duration = async (pauseSeconds: number) => {
       const stream = await streamSpeech(
-        { breezeblue: key },
+        { breezeblue: key, plan: null },
         {
           model: "breezeblue:breeze-tts-2",
           userId: randomUUID(),
@@ -338,7 +345,7 @@ describe("BreezeBlue speech", () => {
     busyAnswers = 2;
     const before = speechRequests.length;
     const stream = await streamSpeech(
-      { breezeblue: randomUUID() },
+      { breezeblue: randomUUID(), plan: null },
       { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: null, text: "Busy." }
     );
     const audio = Buffer.from(await new Response(stream).arrayBuffer());
@@ -349,7 +356,7 @@ describe("BreezeBlue speech", () => {
 
   it("sends square brackets as parentheses", async () => {
     const stream = await streamSpeech(
-      { breezeblue: randomUUID() },
+      { breezeblue: randomUUID(), plan: null },
       {
         model: "breezeblue:breeze-tts-2",
         userId: randomUUID(),
@@ -364,7 +371,7 @@ describe("BreezeBlue speech", () => {
   it("speaks a picked voice that has left the list", async () => {
     const picked = `library-${randomUUID()}`;
     const stream = await streamSpeech(
-      { breezeblue: randomUUID() },
+      { breezeblue: randomUUID(), plan: null },
       { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: picked, text: "Hi." }
     );
     await new Response(stream).arrayBuffer();
@@ -374,7 +381,7 @@ describe("BreezeBlue speech", () => {
   it("speaks in the default voice when the key has no such voice", async () => {
     const key = randomUUID();
     const stream = await streamSpeech(
-      { breezeblue: key },
+      { breezeblue: key, plan: null },
       { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: "gone", text: "Hi." }
     );
     await new Response(stream).arrayBuffer();
@@ -385,7 +392,7 @@ describe("BreezeBlue speech", () => {
     const before = speechRequests.length;
     const speak = (voice: string, userId: string) =>
       streamSpeech(
-        { breezeblue: randomUUID() },
+        { breezeblue: randomUUID(), plan: null },
         { model: "breezeblue:breeze-tts-2", userId, voice, text: "Hi." }
       );
     await expect(speak(`broken-${randomUUID()}`, randomUUID())).rejects.toThrow(
@@ -396,7 +403,7 @@ describe("BreezeBlue speech", () => {
     const userId = randomUUID();
     for (let i = 0; i < 10; i++) {
       await listSpeechModels(
-        { breezeblue: randomUUID() },
+        { breezeblue: randomUUID(), plan: null },
         { model: "breezeblue:breeze-tts-2", voice: `library-${randomUUID()}`, userId }
       );
     }
@@ -407,7 +414,7 @@ describe("BreezeBlue speech", () => {
   it("says why BreezeBlue refused the user's own key", async () => {
     const speak = (key: string) =>
       streamSpeech(
-        { breezeblue: key },
+        { breezeblue: key, plan: null },
         { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: null, text: "Hi." }
       );
     for (const [key, reason] of [
@@ -422,7 +429,7 @@ describe("BreezeBlue speech", () => {
 
   it("errors the audio, rather than ending it, when BreezeBlue stops partway", async () => {
     const stream = await streamSpeech(
-      { breezeblue: randomUUID() },
+      { breezeblue: randomUUID(), plan: null },
       {
         model: "breezeblue:breeze-tts-2",
         userId: randomUUID(),
@@ -435,6 +442,49 @@ describe("BreezeBlue speech", () => {
 });
 
 describe("the speech route", () => {
+  async function speak(token: string, text: string): Promise<Response> {
+    return speechPost(
+      new Request("http://localhost:3000/api/v1/narration/speech", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: `session=${token}` },
+        body: JSON.stringify({ model: null, voice: null, text }),
+      })
+    );
+  }
+
+  it("counts the server's key's characters against the plan, answering 429 past it (#2225)", async () => {
+    process.env.BREEZEBLUE_API_KEY = `server-${randomUUID()}`;
+    const userId = await createTestUser({ emailPrefix: "breezeblue", plan: "paid" });
+    const text = "x".repeat(500);
+    try {
+      const { token } = await createSession(db, { userId });
+      await withPlanLimits(
+        "paid",
+        {
+          quotas: {
+            ...PLAN_LIMITS.paid.quotas,
+            speechCharacters: { burst: text.length, perDay: 1 },
+          },
+        },
+        async () => {
+          const first = await speak(token, text);
+          expect(first.status).toBe(200);
+          await first.body?.cancel();
+
+          const second = await speak(token, text);
+          expect(second.status).toBe(429);
+          expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
+          const body = await second.json();
+          expect(body.data.appErrorCode).toBe("QUOTA_EXCEEDED");
+          expect(body.message).toContain(PLAN_QUOTA_NAMES.speechCharacters.toLowerCase());
+        }
+      );
+    } finally {
+      delete process.env.BREEZEBLUE_API_KEY;
+      await db.delete(users).where(eq(users.id, userId));
+    }
+  });
+
   it("answers the server's key being refused with a 422 that keeps the reason private", async () => {
     process.env.BREEZEBLUE_API_KEY = `refused-${randomUUID()}`;
     const userId = await createTestUser({ emailPrefix: "breezeblue" });

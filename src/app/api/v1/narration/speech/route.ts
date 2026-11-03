@@ -118,9 +118,12 @@ export async function POST(req: Request): Promise<Response> {
     });
   } catch (error) {
     const answer = speechErrorAnswer(error, { model: input.model });
-    return errorResponse(answer.status, answer.code, answer.message, {
-      ...limitHeaders,
-      ...answer.headers,
-    });
+    return errorResponse(
+      answer.status,
+      answer.code,
+      answer.message,
+      { ...limitHeaders, ...answer.headers },
+      answer.appErrorCode
+    );
   }
 }

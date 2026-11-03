@@ -23,7 +23,13 @@ import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
-import { PLAN_NAMES, PLAN_QUOTAS, PLAN_QUOTA_NAMES, type QuotaRate } from "@/lib/plans";
+import {
+  AI_PLAN_QUOTAS,
+  PLAN_NAMES,
+  PLAN_QUOTAS,
+  PLAN_QUOTA_NAMES,
+  type QuotaLimit,
+} from "@/lib/plans";
 
 function isOAuthProvider(provider: string): provider is OAuthProvider {
   return provider in providerNames;
@@ -141,10 +147,10 @@ function formatUsage(used: number, limit: number | null): string {
     : `${used.toLocaleString()} of ${limit.toLocaleString()}`;
 }
 
-function formatQuota(rate: QuotaRate | null): string {
-  return rate === null
-    ? "No limit"
-    : `${rate.perDay.toLocaleString()} a day, up to ${rate.burst.toLocaleString()} at once`;
+function formatQuota(limit: QuotaLimit): string {
+  if (limit === null) return "No limit";
+  if (limit === "excluded") return "Not included";
+  return `${limit.perDay.toLocaleString()} a day, up to ${limit.burst.toLocaleString()} at once`;
 }
 
 export function PlanSection() {
@@ -181,11 +187,21 @@ export function PlanSection() {
             <div key={quota}>
               <dt className="ui-text-sm text-muted font-medium">{PLAN_QUOTA_NAMES[quota]}</dt>
               <dd className="ui-text-sm text-body mt-1 tabular-nums">
-                {formatQuota(data.limits.quotas[quota])}
+                {AI_PLAN_QUOTAS.has(quota) &&
+                (data.limits.serverKeyModels?.length === 0 ||
+                  data.limits.quotas[quota] === "excluded")
+                  ? "With your own API key only"
+                  : formatQuota(data.limits.quotas[quota])}
               </dd>
             </div>
           ))}
         </dl>
+      )}
+      {data && (
+        <p className="ui-text-sm text-muted mt-4">
+          AI limits count only what runs on Lion Reader&apos;s keys. Your own API keys aren&apos;t
+          limited.
+        </p>
       )}
     </SettingsSection>
   );

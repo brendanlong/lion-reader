@@ -57,6 +57,7 @@ const errorCodeToTRPCCode = {
   UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
   SERVER_BUSY: "TOO_MANY_REQUESTS",
   QUOTA_EXCEEDED: "TOO_MANY_REQUESTS",
+  NOT_IN_PLAN: "FORBIDDEN",
   AI_PROVIDER_BUSY: "TOO_MANY_REQUESTS",
   // Only for a call made with the user's own key: their key, credit, or model
   // choice is the problem, not our server.
@@ -191,6 +192,12 @@ export const errors = {
     );
   },
 
+  notInPlan: (quotaName: string) =>
+    createError(
+      "NOT_IN_PLAN",
+      `Your plan doesn't include ${quotaName.toLowerCase()} on Lion Reader's keys. Add your own API key in Settings to use it.`
+    ),
+
   serverBusy: (work: string) =>
     createError("SERVER_BUSY", `Too many ${work} in progress. Please try again shortly.`),
 
@@ -292,6 +299,13 @@ export function getAppErrorCode(error: unknown): string | undefined {
   return cause && typeof cause === "object" && "code" in cause
     ? (cause as { code: string }).code
     : undefined;
+}
+
+/** A quota error's `retryAfter` (seconds), as {@link errors.quotaExceeded} sets it. */
+export function getRetryAfterSeconds(error: unknown): number | undefined {
+  if (!(error instanceof TRPCError)) return undefined;
+  const details = (error.cause as { details?: { retryAfter?: unknown } } | undefined)?.details;
+  return typeof details?.retryAfter === "number" ? details.retryAfter : undefined;
 }
 
 /**

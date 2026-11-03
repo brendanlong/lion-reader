@@ -13,7 +13,7 @@ import { createCaller } from "../../src/server/trpc/root";
 import { getUserApiKeys } from "../../src/server/services/user-api-keys";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { UNREADABLE_API_KEY } from "../../src/server/services/unreadable-api-key";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestUser, withPlanLimits } from "./helpers";
 
 const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
 
@@ -77,7 +77,8 @@ it("leaves other providers' keys alone", async () => {
 
   await caller.users["me.updatePreferences"]({ apiKeys: { cerebras: "" } });
 
-  expect(await getUserApiKeys(userId)).toEqual({ openrouter: "sk-b" });
+  expect(await getUserApiKeys(userId)).toMatchObject({ openrouter: "sk-b" });
+  expect((await getUserApiKeys(userId)).cerebras).toBeUndefined();
 });
 
 describe("without server keys", () => {
@@ -154,7 +155,7 @@ describe("a saved key that no longer decrypts", () => {
       apiKeys: { openrouter: "sk-new" },
     });
 
-    expect(await getUserApiKeys(userId)).toEqual({
+    expect(await getUserApiKeys(userId)).toMatchObject({
       cerebras: UNREADABLE_API_KEY,
       openrouter: "sk-new",
     });
@@ -240,6 +241,19 @@ describe("users.me.serverAiFeatures", () => {
       summaries: false,
       narrationTextProcessing: false,
       cloudVoices: false,
+    });
+  });
+
+  it("counts no server key for a plan without models on it", async () => {
+    const caller = createCaller(await createAuthContext(await createTestUser({ plan: "free" })));
+    process.env.CEREBRAS_API_KEY = "csk-server";
+
+    await withPlanLimits("free", { serverKeyModels: [] }, async () => {
+      expect(await caller.users["me.serverAiFeatures"]()).toEqual({
+        summaries: false,
+        narrationTextProcessing: false,
+        cloudVoices: false,
+      });
     });
   });
 });

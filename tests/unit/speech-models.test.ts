@@ -69,7 +69,7 @@ const openRouterModels = (keys: Parameters<typeof pickableSpeechModels>[1]) =>
 
 describe("OpenRouter speech models", () => {
   it("lists every model with voices on the user's own key, priced per character", () => {
-    const models = openRouterModels({ openrouter: "o" });
+    const models = openRouterModels({ openrouter: "o", plan: null });
     expect(models.map((model) => model.id)).toEqual([
       "openrouter:hexgrad/kokoro-82m",
       "openrouter:minimax/speech-2.8-hd",
@@ -79,20 +79,20 @@ describe("OpenRouter speech models", () => {
   });
 
   it("omits the per-character price for models that also bill generated audio", () => {
-    const [, , gemini] = openRouterModels({ openrouter: "o" });
+    const [, , gemini] = openRouterModels({ openrouter: "o", plan: null });
     expect(gemini.pricePerMillionCharacters).toBeUndefined();
   });
 
   it("lists every model with voices on the server's key by default", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
-    expect(openRouterModels({})).toHaveLength(3);
+    expect(openRouterModels({ plan: null })).toHaveLength(3);
   });
 
   it("limits the server's key to models within the speech price cap", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MAX_SPEECH_PRICE = "5";
     // Gemini's per-character cost is unknown, so it's left out too.
-    expect(openRouterModels({}).map((model) => model.id)).toEqual([
+    expect(openRouterModels({ plan: null }).map((model) => model.id)).toEqual([
       "openrouter:hexgrad/kokoro-82m",
     ]);
   });
@@ -100,7 +100,7 @@ describe("OpenRouter speech models", () => {
 
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
-    const [kokoro, minimax] = openRouterModels({ openrouter: "o" });
+    const [kokoro, minimax] = openRouterModels({ openrouter: "o", plan: null });
     expect(defaultVoiceFor(kokoro)).toBe(DEFAULT_CLOUD_VOICES[OPENROUTER_KOKORO]);
     expect(defaultVoiceFor(minimax)).toBe("English_expressive_narrator");
   });
@@ -120,7 +120,7 @@ const deepInfraModels = (keys: Parameters<typeof pickableSpeechModels>[1]) =>
 
 describe("DeepInfra speech models", () => {
   it("lists every model on the user's own key, named like OpenRouter's", () => {
-    const models = deepInfraModels({ deepinfra: "d" });
+    const models = deepInfraModels({ deepinfra: "d", plan: null });
     expect(models.map((model) => [model.id, model.displayName, model.provider])).toEqual([
       ["deepinfra:hexgrad/Kokoro-82M", "hexgrad: Kokoro 82M", "deepinfra"],
       ["deepinfra:inworld-ai/realtime-tts-2", "inworld ai: realtime tts 2", "deepinfra"],
@@ -131,19 +131,21 @@ describe("DeepInfra speech models", () => {
   it("limits the server's key to the listed models", () => {
     process.env.DEEPINFRA_API_KEY = "server";
     process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
-    expect(deepInfraModels({}).map((model) => model.id)).toEqual(["deepinfra:hexgrad/Kokoro-82M"]);
+    expect(deepInfraModels({ plan: null }).map((model) => model.id)).toEqual([
+      "deepinfra:hexgrad/Kokoro-82M",
+    ]);
   });
 
   it("isn't unlocked by an OpenRouter key", () => {
     process.env.DEEPINFRA_API_KEY = "server";
     process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
-    expect(deepInfraModels({ openrouter: "o" })).toHaveLength(1);
+    expect(deepInfraModels({ openrouter: "o", plan: null })).toHaveLength(1);
   });
 });
 
 describe("defaultSpeechModelId", () => {
-  const openRouter = openRouterModels({ openrouter: "o" });
-  const deepInfra = deepInfraModels({ deepinfra: "d" });
+  const openRouter = openRouterModels({ openrouter: "o", plan: null });
+  const deepInfra = deepInfraModels({ deepinfra: "d", plan: null });
 
   it("prefers DeepInfra's Kokoro, then OpenRouter's", () => {
     expect(defaultSpeechModelId([...openRouter, ...deepInfra])).toBe(DEEPINFRA_KOKORO);
@@ -252,7 +254,7 @@ describe("resolveSpeechModel", () => {
 
   it("uses the default model and voice when nothing is chosen", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
-    expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, null, null)).toEqual({
+    expect(resolveSpeechModel(catalog([deepInfraKokoro]), { plan: null }, null, null)).toEqual({
       model: deepInfraKokoro,
       voice: DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO],
     });
@@ -262,7 +264,7 @@ describe("resolveSpeechModel", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
     delete process.env.OPENROUTER_API_KEY;
     expect(
-      resolveSpeechModel(catalog([deepInfraKokoro]), {}, OPENROUTER_KOKORO, "bm_george")
+      resolveSpeechModel(catalog([deepInfraKokoro]), { plan: null }, OPENROUTER_KOKORO, "bm_george")
     ).toEqual({
       model: deepInfraKokoro,
       voice: "bm_george",
@@ -272,14 +274,16 @@ describe("resolveSpeechModel", () => {
   it("falls back from a model the server's key doesn't allow", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
     process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
-    expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, qwen.id, "Vivian")).toEqual({
+    expect(
+      resolveSpeechModel(catalog([deepInfraKokoro]), { plan: null }, qwen.id, "Vivian")
+    ).toEqual({
       model: deepInfraKokoro,
       voice: DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO],
     });
   });
 
   it("keeps a model chosen on the user's own key, even if it's no longer listed", () => {
-    const keys = { deepinfra: "d" };
+    const keys = { deepinfra: "d", plan: null };
     expect(resolveSpeechModel(catalog([deepInfraKokoro, qwen]), keys, qwen.id, null).model).toBe(
       qwen
     );
@@ -290,15 +294,15 @@ describe("resolveSpeechModel", () => {
 
   it("fails retryably when the chosen model's provider couldn't be listed", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
-    const keys = { openrouter: "o" };
+    const keys = { openrouter: "o", plan: null };
     expect(() =>
       resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
     ).toThrow(
       new SpeechUnavailableError("Couldn't get OpenRouter's cloud voices; try again shortly")
     );
-    expect(() => resolveSpeechModel(catalog([], ["deepinfra"]), {}, null, null)).toThrow(
-      SpeechUnavailableError
-    );
+    expect(() =>
+      resolveSpeechModel(catalog([], ["deepinfra"]), { plan: null }, null, null)
+    ).toThrow(SpeechUnavailableError);
   });
 
   describe("a provider refusing", () => {
@@ -314,25 +318,25 @@ describe("resolveSpeechModel", () => {
     };
 
     it("says it was the user's own key, and why", () => {
-      const message = refusal({ openrouter: "o" });
+      const message = refusal({ openrouter: "o", plan: null });
       expect(message).toContain("your API key");
       expect(message).toContain("Insufficient credits");
     });
 
     it("says it was the server's key, keeping the operator's account private", () => {
       process.env.OPENROUTER_API_KEY = "or-server";
-      const message = refusal({});
+      const message = refusal({ plan: null });
       expect(message).toContain("server's OpenRouter API key");
       expect(message).not.toContain("Insufficient credits");
     });
 
     it("doesn't blame a key for a refused request", () => {
-      expect(refusal({ openrouter: "o" }, 400)).not.toContain("key");
+      expect(refusal({ openrouter: "o", plan: null }, 400)).not.toContain("key");
     });
   });
 
   it("needs a provider, and names them", () => {
-    expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
+    expect(() => resolveSpeechModel(catalog([]), { plan: null }, null, null)).toThrow(
       "Cloud voices require an API key from DeepInfra, OpenRouter, BreezeBlue, or Together AI"
     );
   });
@@ -342,7 +346,7 @@ describe("resolveSpeechModel", () => {
     expect(() =>
       resolveSpeechModel(
         catalog([deepInfraKokoro]),
-        { openrouter: UNREADABLE_API_KEY },
+        { openrouter: UNREADABLE_API_KEY, plan: null },
         OPENROUTER_KOKORO,
         null
       )
@@ -394,6 +398,6 @@ describe("targetSpeechModelId", () => {
       OPENROUTER_KOKORO,
     ],
   ] as const)("for %s", (_, models, keys, requested, expected) => {
-    expect(targetSpeechModelId(models, keys, requested)).toBe(expected);
+    expect(targetSpeechModelId(models, { ...keys, plan: null }, requested)).toBe(expected);
   });
 });

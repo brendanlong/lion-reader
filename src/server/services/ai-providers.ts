@@ -32,10 +32,13 @@ import {
 import {
   hasServerKeyPriceCaps,
   isAllowedOnServerKey,
+  modelListIncludes,
   serverKeyTokenPriceCaps,
   type ModelPrice,
 } from "@/server/services/server-key-models";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import type { PlanLimits, PlanQuota } from "@/lib/plans";
+import { consumeQuota } from "@/server/services/plans";
 import { failoverModels } from "@/server/services/model-failover";
 import {
   classifyProviderStatus,
@@ -44,10 +47,24 @@ import {
 } from "@/server/services/provider-errors";
 
 /**
- * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
- * null entry falls back to the server's key; {@link UNREADABLE_API_KEY} doesn't.
+ * Whose AI calls these are, and what they may run on the server's keys: the
+ * user's plan (`@/lib/plans`), whose quotas their calls on the server's keys
+ * count against.
  */
-export type AiProviderKeys = Partial<Record<AiProvider, string | null | typeof UNREADABLE_API_KEY>>;
+export interface AiPlanAccess {
+  userId: string;
+  limits: PlanLimits;
+}
+
+/**
+ * Per-user provider API keys, as `getUserApiKeys` returns them, with the
+ * user's {@link AiPlanAccess}. A missing or null key falls back to the
+ * server's; {@link UNREADABLE_API_KEY} doesn't. `plan` is null only for the
+ * operator's own calls (the demo's recordings), which no plan limits.
+ */
+export type AiProviderKeys = Partial<
+  Record<AiProvider, string | null | typeof UNREADABLE_API_KEY>
+> & { plan: AiPlanAccess | null };
 
 /** A call to a provider whose saved key can't be read. */
 export class UnreadableApiKeyError extends Error {
@@ -101,7 +118,47 @@ export function isModelAllowed(
 ): boolean {
   const { provider } = parseModelRef(modelRef);
   if (!isProviderAvailable(provider, keys)) return false;
-  return isOnUserKey(provider, keys) || isAllowedOnServerKey(modelRef, price);
+  if (isOnUserKey(provider, keys)) return true;
+  return planAllowsOnServerKey(keys, modelRef) && isAllowedOnServerKey(modelRef, price);
+}
+
+/**
+ * Whether the user's plan lets the model run on the server's keys
+ * (`PlanLimits.serverKeyModels`), the instance's own policy aside.
+ */
+export function planAllowsOnServerKey(keys: AiProviderKeys | undefined, modelRef: string): boolean {
+  const models = keys?.plan?.limits.serverKeyModels ?? null;
+  return models === null || modelListIncludes(models, modelRef);
+}
+
+/**
+ * Whether a call to `provider` for `quota`'s feature is one the user's plan
+ * includes: on their own key always; on the server's, unless the plan
+ * excludes the feature.
+ */
+export function planIncludesFeature(
+  keys: AiProviderKeys | undefined,
+  provider: AiProvider,
+  quota: PlanQuota
+): boolean {
+  return (
+    !keys?.plan || isOnUserKey(provider, keys) || keys.plan.limits.quotas[quota] !== "excluded"
+  );
+}
+
+/**
+ * Takes `cost` of the user's `quota` for a call on the server's key (a call
+ * on their own key costs us nothing, so the caller doesn't charge it). Throws
+ * `QUOTA_EXCEEDED` when the quota is spent. The operator's own calls
+ * (`plan: null`) aren't counted.
+ */
+export async function chargeServerKeyUse(
+  keys: AiProviderKeys,
+  quota: PlanQuota,
+  cost = 1
+): Promise<void> {
+  if (!keys.plan) return;
+  await consumeQuota(keys.plan.userId, keys.plan.limits, quota, cost);
 }
 
 /** {@link isModelAllowed} for a text model, looking up its price if that's what decides. */
@@ -324,13 +381,20 @@ async function textCall(
  * The other hosts of `first`'s model to fail over to ({@link failoverModels}),
  * in order: those the server has a key for that can do what's asked. A
  * user's own key is only used the way they picked, but the server's back
- * them up, whether or not users may pick that host (`model-failover.ts`).
+ * them up, whether or not users may pick that host (`model-failover.ts`),
+ * as far as the user's plan lets the model run on the server's keys.
  */
-function textFailovers(first: TextCall, options: ChatCompletionOptions): TextCall[] {
-  return failoverModels(formatModelRef(first.provider, first.model)).flatMap((id) => {
+function textFailovers(
+  first: TextCall,
+  keys: AiProviderKeys,
+  options: ChatCompletionOptions
+): TextCall[] {
+  const firstRef = formatModelRef(first.provider, first.model);
+  return failoverModels(firstRef).flatMap((id) => {
     const { provider, model } = parseModelRef(id);
     const apiKey = getProviderApiKey(provider);
     if (!apiKey || !isTextAiProvider(provider)) return [];
+    if (!planAllowsOnServerKey(keys, firstRef) && !planAllowsOnServerKey(keys, id)) return [];
     if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) return [];
     return [{ provider, model, apiKey, onUserKey: false }];
   });
@@ -341,6 +405,7 @@ function textFailovers(first: TextCall, options: ChatCompletionOptions): TextCal
  * response text (empty string if the model produced no text — callers decide
  * how to handle that). If the provider fails (a key that's out of credit
  * too), the model's other hosts are tried in turn ({@link textFailovers}).
+ * A call on the server's keys counts against the user's `quota`, once.
  *
  * @throws Error if the provider is not configured, the model isn't allowed
  *   on the server's key, or the provider can't do what's asked
@@ -349,13 +414,30 @@ function textFailovers(first: TextCall, options: ChatCompletionOptions): TextCal
  */
 export async function generateChatCompletion(
   ref: ModelRef,
-  keys: AiProviderKeys | undefined,
+  keys: AiProviderKeys,
+  quota: PlanQuota,
   options: ChatCompletionOptions
 ): Promise<string> {
   const first = await textCall(ref, keys, options);
-  const calls = [first, ...textFailovers(first, options)];
+  // Counted once, before the first call on the server's keys: up front, or
+  // when the user's own key fails over to them. Out of quota, a failover
+  // isn't tried, and the user's own key's failure is what they hear.
+  let charged = false;
+  if (!first.onUserKey) {
+    await chargeServerKeyUse(keys, quota);
+    charged = true;
+  }
+  const calls = [first, ...textFailovers(first, keys, options)];
   let firstError: TextGenerationError | null = null;
   for (const [index, call] of calls.entries()) {
+    if (!call.onUserKey && !charged) {
+      try {
+        await chargeServerKeyUse(keys, quota);
+      } catch {
+        break;
+      }
+      charged = true;
+    }
     try {
       const text = await TEXT_PROVIDER_ADAPTERS[call.provider].complete(call, call.model, {
         ...options,

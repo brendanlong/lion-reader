@@ -31,7 +31,7 @@ describe("generateNarration fallback paragraph map", () => {
   });
 
   it("aligns the map with the split for clean per-<p> content", async () => {
-    const result = await generateNarration("<p>First.</p><p>Second.</p>");
+    const result = await generateNarration("<p>First.</p><p>Second.</p>", { keys: { plan: null } });
 
     expect(result.source).toBe("fallback");
     const segments = splitNarrationParagraphs(result.text);
@@ -47,7 +47,7 @@ describe("generateNarration fallback paragraph map", () => {
     // Source newlines around <br><br> put a blank line inside a single block's
     // narration text — the shape that desynced highlighting.
     const html = ["<p>Intro.</p>", "<p>Line one.", "<br /><br />", "Line two.</p>"].join("\n");
-    const result = await generateNarration(html);
+    const result = await generateNarration(html, { keys: { plan: null } });
 
     const segments = splitNarrationParagraphs(result.text);
     // The second <p> (element index 1) becomes two player paragraphs.

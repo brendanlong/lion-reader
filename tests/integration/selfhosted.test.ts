@@ -126,7 +126,7 @@ afterEach(() => {
 async function speak(model: string | null) {
   const before = requests.length;
   const audio = await streamSpeech(
-    {},
+    { plan: null },
     { model, voice: "af_bella", text: "Hello.", userId: randomUUID() }
   );
   const input = new Input({
@@ -145,7 +145,7 @@ describe("self-hosted voices", () => {
     "lists Kokoro with the server's voices (%s)",
     async (shape) => {
       voiceShape = shape;
-      const { models } = await listSpeechModels({});
+      const { models } = await listSpeechModels({ plan: null });
       expect(models.map((model) => model.id)).toEqual([SELFHOSTED_KOKORO]);
       expect(models[0].voices.map((voice) => voice.id)).toEqual(["af_heart", "af_bella"]);
     }

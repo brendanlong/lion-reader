@@ -24,6 +24,8 @@ import {
 import { jittered } from "@/lib/jitter";
 import { logger } from "@/lib/logger";
 import {
+  chargeServerKeyUse,
+  planAllowsOnServerKey,
   getProviderApiKey,
   isModelAllowed,
   isOnUserKey,
@@ -50,6 +52,7 @@ import {
   type BreezeBlueCatalog,
 } from "@/server/services/breezeblue";
 import { checkRateLimit } from "@/server/rate-limit";
+import { getAppErrorCode, getRetryAfterSeconds } from "@/server/errors";
 import {
   listOpenRouterModels,
   openRouterSpeech,
@@ -192,7 +195,7 @@ export function pickableSpeechModels(
  * model's voices while the provider has it ({@link keepPickedVoice}).
  */
 export async function listSpeechModels(
-  keys?: AiProviderKeys,
+  keys: AiProviderKeys,
   picked?: SpeechChoice
 ): Promise<SpeechCatalog> {
   const unavailable: SpeechCatalog["unavailable"] = [];
@@ -420,8 +423,10 @@ export interface SpeechErrorAnswer {
   code: string;
   /** For showing the user. */
   message: string;
-  /** With a 503, `Retry-After`: when to ask again. */
+  /** With a 503 or 429, `Retry-After`: when to ask again. */
   headers: Record<string, string>;
+  /** The app error code tRPC would carry, if any. */
+  appErrorCode?: string;
 }
 
 function retryAfter(seconds: number): Record<string, string> {
@@ -445,6 +450,15 @@ export function speechErrorAnswer(
   logContext: Record<string, unknown>
 ): SpeechErrorAnswer {
   const message = error instanceof Error ? error.message : String(error);
+  if (getAppErrorCode(error) === "QUOTA_EXCEEDED") {
+    return {
+      status: 429,
+      code: "TOO_MANY_REQUESTS",
+      message,
+      headers: retryAfter(getRetryAfterSeconds(error) ?? BUSY_RETRY_AFTER_SECONDS),
+      appErrorCode: "QUOTA_EXCEEDED",
+    };
+  }
   if (error instanceof ProviderBusyError) {
     logger.warn("Speech provider busy", { ...logContext, error: message });
     return {
@@ -575,23 +589,31 @@ interface SpeechCandidate {
   model: SpeechModel;
   voice: string;
   apiKey: string;
+  /** The key is the user's own, so the call doesn't count against their plan. */
+  onUserKey: boolean;
 }
 
 /**
  * Where to say a chunk when `first` fails: the other hosts of its model
  * ({@link failoverModels}) that have the same voice, in order, on the
- * server's keys. A user's own key is only used the way they picked, but the
- * server's back them up. A host whose catalog can't be fetched is passed over.
+ * server's keys, as far as the user's plan lets the model run on them. A
+ * user's own key is only used the way they picked, but the server's back
+ * them up. A host whose catalog can't be fetched is passed over.
  */
-async function failoverCandidates(first: SpeechModel, voice: string): Promise<SpeechCandidate[]> {
+async function failoverCandidates(
+  first: SpeechModel,
+  voice: string,
+  keys: AiProviderKeys
+): Promise<SpeechCandidate[]> {
   const candidates = await Promise.all(
     failoverModels(first.id).map(async (id): Promise<SpeechCandidate[]> => {
       const { provider } = parseModelRef(id);
       const apiKey = getProviderApiKey(provider);
       if (!apiKey || !isSpeechProvider(provider)) return [];
+      if (!planAllowsOnServerKey(keys, first.id) && !planAllowsOnServerKey(keys, id)) return [];
       const models = await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey).catch(() => []);
       const model = models.find((candidate) => candidate.id === id);
-      return model && hasVoice(model, voice) ? [{ model, voice, apiKey }] : [];
+      return model && hasVoice(model, voice) ? [{ model, voice, apiKey, onUserKey: false }] : [];
     })
   );
   return candidates.flat();
@@ -606,12 +628,21 @@ async function failoverCandidates(first: SpeechModel, voice: string): Promise<Sp
 async function speakWithFirstFree(
   candidates: SpeechCandidate[],
   text: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  chargeServerKey: () => Promise<void>
 ): Promise<PcmStream> {
   let firstError: unknown = null;
   for (const [index, candidate] of candidates.entries()) {
     signal.throwIfAborted();
     const { model, voice, apiKey } = candidate;
+    // Out of quota, the user's own key's failure is what they hear.
+    if (!candidate.onUserKey && index > 0) {
+      try {
+        await chargeServerKey();
+      } catch {
+        break;
+      }
+    }
     try {
       const pcm = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
         apiKey,
@@ -680,13 +711,24 @@ export async function streamSpeech(
   if (!apiKey) {
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
-  const candidates = [{ model, voice, apiKey }, ...(await failoverCandidates(model, voice))];
+  // Counted once per request, before the first call on the server's keys
+  // (up front, or when the user's own key fails over to them), however many
+  // times a busy provider is asked again.
+  let charge: Promise<void> | null = null;
+  const chargeServerKey = () =>
+    (charge ??= chargeServerKeyUse(keys, "speechCharacters", options.text.length));
+  const onUserKey = isOnUserKey(model.provider, keys);
+  if (!onUserKey) await chargeServerKey();
+  const candidates = [
+    { model, voice, apiKey, onUserKey },
+    ...(await failoverCandidates(model, voice, keys)),
+  ];
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let pcm: PcmStream;
   try {
     pcm = await speakWhenFree(
-      () => speakWithFirstFree(candidates, options.text, combined),
+      () => speakWithFirstFree(candidates, options.text, combined, chargeServerKey),
       combined
     );
   } catch (error) {

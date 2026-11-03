@@ -13,6 +13,8 @@
  *
  * Only OpenRouter (text and speech), DeepInfra and Together (speech) report
  * prices, so other providers' models have to be listed.
+ *
+ * A user's plan can narrow this further (`PlanLimits.serverKeyModels`).
  */
 
 import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
@@ -86,10 +88,18 @@ function withinPriceCaps(policy: ServerKeyModelPolicy, price: ModelPrice): boole
   );
 }
 
-function isListed(policy: ServerKeyModelPolicy, modelRef: string): boolean {
+/** Whether `models` (`provider:model` refs, or `provider:*`) lists the model. */
+export function modelListIncludes(models: readonly string[], modelRef: string): boolean {
   const ref = normalizeModelRef(modelRef);
   const wildcard = `${parseModelRef(ref).provider}:*`;
-  return policy.models.some((model) => model === ref || model === wildcard);
+  return models.some((model) => {
+    const listed = normalizeModelRef(model);
+    return listed === ref || listed === wildcard;
+  });
+}
+
+function isListed(policy: ServerKeyModelPolicy, modelRef: string): boolean {
+  return modelListIncludes(policy.models, modelRef);
 }
 
 /**

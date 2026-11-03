@@ -14,7 +14,7 @@ import {
   expensiveScopedProtectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { errors, markReported } from "@/server/errors";
+import { errors, getAppErrorCode, markReported } from "@/server/errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -37,7 +37,11 @@ import {
   UnreadableApiKeyError,
 } from "@/server/services/ai-providers";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
-import { getApiKeyProviders, getUserApiKeys } from "@/server/services/user-api-keys";
+import {
+  getApiKeyProviders,
+  getUserAiPlanAccess,
+  getUserApiKeys,
+} from "@/server/services/user-api-keys";
 import { aiProviderName } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -55,6 +59,9 @@ import * as Sentry from "@sentry/nextjs";
  * call — on the server's key it may describe the operator's account.
  */
 function summaryFailure(error: unknown): { error: TRPCError; report: boolean } {
+  if (getAppErrorCode(error) === "QUOTA_EXCEEDED") {
+    return { error: error as TRPCError, report: false };
+  }
   if (error instanceof UnreadableApiKeyError) {
     // Reported when the key failed to decrypt.
     return { error: errors.aiProviderKeyUnreadable(error.message), report: false };
@@ -339,12 +346,13 @@ export const summarizationRouter = createTRPCRouter({
           settingsChanged: false,
         };
       } catch (error) {
-        logger.error("Summary generation failed", {
-          contentHash,
-          error: error instanceof Error ? error.message : String(error),
-        });
-
         const failure = summaryFailure(error);
+        if (failure.report || getAppErrorCode(error) !== "QUOTA_EXCEEDED") {
+          logger.error("Summary generation failed", {
+            contentHash,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         if (failure.report) {
           // The tRPC error carries only our code; the provider's error is here.
           Sentry.captureException(error, {
@@ -376,8 +384,14 @@ export const summarizationRouter = createTRPCRouter({
     .output(z.object({ available: z.boolean() }))
     .query(async ({ ctx }) => {
       // Availability only needs to know which keys exist, not decrypt them.
-      const providers = await getApiKeyProviders(ctx.session.user.id);
-      const keys = Object.fromEntries(providers.map((provider) => [provider, "configured"]));
+      const [providers, plan] = await Promise.all([
+        getApiKeyProviders(ctx.session.user.id),
+        getUserAiPlanAccess(ctx.session.user.id),
+      ]);
+      const keys = {
+        ...Object.fromEntries(providers.map((provider) => [provider, "configured"])),
+        plan,
+      };
       return {
         available: await isSummarizationAvailable(keys, ctx.session.user.summarizationModel),
       };

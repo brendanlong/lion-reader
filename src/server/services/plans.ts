@@ -47,8 +47,19 @@ export async function consumePlanQuota(
   quota: PlanQuota,
   cost = 1
 ): Promise<void> {
-  const rate = (await getUserPlanLimits(db, userId)).quotas[quota];
+  await consumeQuota(userId, await getUserPlanLimits(db, userId), quota, cost);
+}
+
+/** {@link consumePlanQuota} with the user's plan limits already loaded. */
+export async function consumeQuota(
+  userId: string,
+  limits: PlanLimits,
+  quota: PlanQuota,
+  cost = 1
+): Promise<void> {
+  const rate = limits.quotas[quota];
   if (rate === null) return;
+  if (rate === "excluded") throw errors.notInPlan(PLAN_QUOTA_NAMES[quota]);
   const result = await consumeBucket(
     planQuotaKey(quota, userId),
     { capacity: rate.burst, refillRate: rate.perDay / SECONDS_PER_DAY },
