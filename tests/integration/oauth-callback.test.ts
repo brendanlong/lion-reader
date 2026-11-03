@@ -14,6 +14,7 @@ import {
   sessions,
   oauthAccounts,
   apiTokens,
+  oauthAuthorizationCodes,
   oauthConsentGrants,
   oauthTokenGrants,
 } from "../../src/server/db/schema";
@@ -21,6 +22,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processOAuthCallback } from "../../src/server/auth/oauth/callback";
 import { createSession } from "../../src/server/auth/session";
 import { createApiToken } from "../../src/server/auth/api-token";
+import { createAuthorizationCode } from "../../src/server/oauth/service";
 import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { createTestOAuthLink, createTestTokenGrant, createTestUser, deleteUsers } from "./helpers";
 
@@ -198,6 +200,13 @@ describe("processOAuthCallback email verification", () => {
       await createTestOAuthLink(userId, "discord", { providerAccountId: "attacker-discord-id" });
       await createTestTokenGrant(userId);
       await createTestTokenGrant(userId, { clientId: WALLABAG_CLIENT_ID });
+      await createAuthorizationCode({
+        clientId: "test-client",
+        userId,
+        redirectUri: "https://example.com/callback",
+        scopes: ["mcp"],
+        codeChallenge: "challenge",
+      });
 
       const result = await signInByEmail("victim-google-id");
 
@@ -216,6 +225,12 @@ describe("processOAuthCallback email verification", () => {
       ).toEqual([]);
       expect(
         await db.select().from(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId))
+      ).toEqual([]);
+      expect(
+        await db
+          .select()
+          .from(oauthAuthorizationCodes)
+          .where(eq(oauthAuthorizationCodes.userId, userId))
       ).toEqual([]);
     });
 

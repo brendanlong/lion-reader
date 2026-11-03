@@ -1,10 +1,10 @@
 /**
  * OAuth Account Links Service
  *
- * Linking/unlinking a social provider (Google/Apple/Discord) to an *existing*
- * signed-in account. The login/signup side of OAuth — where the provider
- * identity decides which account you get — lives in
- * `src/server/auth/oauth/callback.ts` instead.
+ * Adding and removing a social provider (Google/Apple/Discord) link on an
+ * existing account: from Settings, or when a sign-in matched the account by
+ * email. Deciding which account a sign-in gets — or creating one — lives in
+ * `src/server/auth/oauth/callback.ts`.
  *
  * Linking and unlinking add or remove a way to sign in, so both revoke the user's
  * other sessions (SECURITY.md §4) via `revokeOtherUserSessionsOrReport`, which owns
@@ -19,6 +19,7 @@ import type { Database, DbOrTx } from "@/server/db";
 import {
   apiTokens,
   oauthAccounts,
+  oauthAuthorizationCodes,
   oauthConsentGrants,
   oauthTokenGrants,
   sessions,
@@ -118,10 +119,13 @@ export async function attachOAuthAccount(
  * owns that address. Whoever created the account may have registered someone
  * else's email to wait for its owner to sign in (pre-account takeover), so the
  * provider identity wins: every way in the account had is removed (password,
- * other provider links, sessions, API tokens, OAuth grants), the email becomes
- * verified, and only this provider account stays linked. The account's data is
- * kept. A link from Settings never comes here, since the session already
- * established who the user is (`linkOAuthAccount`).
+ * other provider links, sessions, API tokens, OAuth grants and unredeemed
+ * codes), the email becomes verified, and only this provider account stays
+ * linked. The account's data is kept, including its AI provider keys and
+ * newsletter addresses: an unverified account can't create those, so they only
+ * exist on accounts from before verification, whose owners we invited. A link
+ * from Settings never comes here, since the session already established who
+ * the user is (`linkOAuthAccount`).
  *
  * If the email was verified in the meantime, this is an ordinary attach.
  */
@@ -132,6 +136,16 @@ export async function claimUnverifiedAccount(
   const { userId } = params;
   await db.transaction(async (tx) => {
     const now = new Date();
+    const stillUnverified = sql`EXISTS (
+      SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} AND ${users.emailVerifiedAt} IS NULL
+    )`;
+
+    // Sessions before the user row, the order `updateLastActiveAt` takes them in.
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now })
+      .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), stillUnverified));
+
     const claimed = await tx
       .update(users)
       .set({ passwordHash: null, emailVerifiedAt: now, updatedAt: now })
@@ -141,13 +155,11 @@ export async function claimUnverifiedAccount(
     if (claimed.length > 0) {
       await tx.delete(oauthAccounts).where(eq(oauthAccounts.userId, userId));
       await tx
-        .update(sessions)
-        .set({ revokedAt: now })
-        .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
-      await tx
         .update(apiTokens)
         .set({ revokedAt: now })
         .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
+      // A code redeems against any consent the user later gives its client.
+      await tx.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.userId, userId));
       await tx.delete(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId));
       await deleteTokenGrants(eq(oauthTokenGrants.userId, userId), tx);
     }
