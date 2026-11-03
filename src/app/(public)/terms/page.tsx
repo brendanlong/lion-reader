@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function TermsOfServicePage() {
   return (
-    <LegalPage title="Terms of Service" lastUpdated="October 2026">
+    <LegalPage title="Terms of Service" lastUpdated="November 2026">
       <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is a free, open-source feed reader service. By creating an account or using
@@ -88,7 +88,8 @@ export default function TermsOfServicePage() {
         <Card padding="md" className="mt-4">
           <ul className="text-muted list-disc space-y-2 pl-6">
             <li>
-              <strong>Subscriptions:</strong> Up to 500 active feed subscriptions per account
+              <strong>Subscriptions, newsletter addresses, saves and uploads:</strong> Limited by
+              your account&apos;s plan, shown under Settings → Account
             </li>
             <li>
               <strong>Feed size:</strong> Individual feed responses are limited to 10 MB

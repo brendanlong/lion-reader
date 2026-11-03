@@ -13,6 +13,7 @@ import { getRedisClient } from "@/server/redis";
 import { getClientIp } from "@/server/http/client-ip";
 import {
   type RateLimitType,
+  type RateLimitConfig,
   type ConsumeResult,
   type BucketState,
   RATE_LIMIT_CONFIGS,
@@ -24,7 +25,7 @@ import {
 import { logger } from "@/lib/logger";
 
 // Re-export types and helpers
-export { type RateLimitType, RATE_LIMIT_CONFIGS, getRateLimitHeaders };
+export { type RateLimitType, type RateLimitConfig, RATE_LIMIT_CONFIGS, getRateLimitHeaders };
 
 /**
  * Behavior when the Redis-backed limiter is unavailable (Redis down or the eval
@@ -51,14 +52,8 @@ type RateLimitFallback = "open" | "memory";
 const inMemoryBuckets = new Map<string, BucketState>();
 const IN_MEMORY_MAX_KEYS = 10_000;
 
-function checkInMemoryRateLimit(
-  identifier: string,
-  type: RateLimitType,
-  cost: number
-): ConsumeResult {
-  const config = RATE_LIMIT_CONFIGS[type];
+function checkInMemoryRateLimit(key: string, config: RateLimitConfig, cost: number): ConsumeResult {
   const nowMs = Date.now();
-  const key = getRateLimitKey(identifier, type);
 
   const existing = inMemoryBuckets.get(key);
   const bucket = existing ?? createBucket(config, nowMs);
@@ -149,27 +144,46 @@ return {allowed, remaining, reset_ms, retry_after_seconds}
  *
  * @param identifier - User ID or IP address
  * @param type - Type of rate limit to apply
- * @param options.cost - Tokens the request takes (1 unless the limit is
- *   counted in some other unit, like characters for speech)
  * @returns ConsumeResult with allowed status and rate limit info
  */
 export async function checkRateLimit(
   identifier: string,
   type: RateLimitType = "default",
-  options: { fallback?: RateLimitFallback; cost?: number } = {}
+  options: RateLimitOptions = {}
+): Promise<ConsumeResult> {
+  return consumeBucket(getRateLimitKey(identifier, type), RATE_LIMIT_CONFIGS[type], options);
+}
+
+interface RateLimitOptions {
+  fallback?: RateLimitFallback;
+  /**
+   * Tokens the request takes (1 unless the limit is counted in some other
+   * unit, like characters for speech)
+   */
+  cost?: number;
+}
+
+/**
+ * Takes `options.cost` tokens from the bucket at `key`, for a limit whose
+ * config isn't one of {@link RATE_LIMIT_CONFIGS} (a plan's quotas, which
+ * differ per user). {@link checkRateLimit} is this for the fixed limits.
+ */
+export async function consumeBucket(
+  key: string,
+  config: RateLimitConfig,
+  options: RateLimitOptions = {}
 ): Promise<ConsumeResult> {
   const redis = getRedisClient();
-  const config = RATE_LIMIT_CONFIGS[type];
   const fallback = options.fallback ?? "open";
   const cost = options.cost ?? 1;
   // A negative cost would add tokens; one above capacity could never pass.
   if (!Number.isInteger(cost) || cost < 1 || cost > config.capacity) {
-    throw new Error(`Invalid rate-limit cost ${cost} for "${type}"`);
+    throw new Error(`Invalid rate-limit cost ${cost} for "${key}"`);
   }
 
   const applyFallback = (): ConsumeResult => {
     if (fallback === "memory") {
-      return checkInMemoryRateLimit(identifier, type, cost);
+      return checkInMemoryRateLimit(key, config, cost);
     }
     // Permissive mode: favor availability when the limiter is degraded.
     return {
@@ -185,7 +199,6 @@ export async function checkRateLimit(
     return applyFallback();
   }
 
-  const key = getRateLimitKey(identifier, type);
   const nowMs = Date.now();
 
   try {
@@ -211,7 +224,7 @@ export async function checkRateLimit(
     // Redis error - fall back per the configured policy.
     logger.error("Rate limit check failed", {
       error: err instanceof Error ? err.message : String(err),
-      type,
+      key,
       fallback,
     });
     return applyFallback();

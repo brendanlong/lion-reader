@@ -1303,6 +1303,13 @@
       "when": 1793664000000,
       "tag": "0186_websub_hub_stats_rate_limited",
       "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1793750400000,
+      "tag": "0187_users_plan",
+      "breakpoints": true
     }
   ]
 }

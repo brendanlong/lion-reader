@@ -13,6 +13,8 @@ import { retryFeed } from "@/server/services/feeds";
 import { createInvite, listInvites, revokeInvite } from "@/server/services/invites";
 import { listAdminFeeds } from "@/server/services/admin-feeds";
 import { ADMIN_USER_SORTS, listAdminUsers } from "@/server/services/admin-users";
+import { setUserPlan } from "@/server/services/plans";
+import { PLAN_IDS } from "@/lib/plans";
 import { getAdminOverview } from "@/server/services/admin-stats";
 import {
   getMaintenanceRaw,
@@ -276,6 +278,7 @@ const userEndpoints = {
             id: z.string(),
             email: z.string(),
             createdAt: z.date(),
+            plan: z.enum(PLAN_IDS),
             providers: z.array(z.string()),
             subscriptionCount: z.number(),
             entryCount: z.number(),
@@ -294,6 +297,28 @@ const userEndpoints = {
         sort: input?.sort ?? "activity",
       })
     ),
+
+  /** Change a user's plan, which sets their quotas. */
+  setUserPlan: adminProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/admin/users/{userId}/plan",
+        tags: ["Admin"],
+        summary: "Set a user's plan",
+      },
+    })
+    .input(
+      z.object({
+        userId: z.string().uuid("Invalid user ID"),
+        plan: z.enum(PLAN_IDS),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await setUserPlan(ctx.db, input.userId, input.plan);
+      return { success: true };
+    }),
 } as const;
 
 // ============================================================================

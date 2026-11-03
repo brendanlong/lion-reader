@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { and, asc, count, desc, eq, gt, ilike, isNotNull, isNull, lt, max, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
+import type { PlanId } from "@/lib/plans";
 import {
   apiTokens,
   oauthAccessTokens,
@@ -61,6 +62,7 @@ interface AdminUser {
   id: string;
   email: string;
   createdAt: Date;
+  plan: PlanId;
   providers: string[];
   subscriptionCount: number;
   entryCount: number;
@@ -195,6 +197,7 @@ export async function listAdminUsers(
       id: users.id,
       email: users.email,
       createdAt: users.createdAt,
+      plan: users.plan,
       providers: sql<string[]>`(${providersSq})`.as("providers"),
       subscriptionCount: sql<number>`(${subscriptionCountSq})`.as("subscription_count"),
       entryCount: sql<number>`(${entryCountSq})`.as("entry_count"),
@@ -222,6 +225,7 @@ export async function listAdminUsers(
       id: row.id,
       email: row.email,
       createdAt: row.createdAt,
+      plan: row.plan,
       providers: Array.isArray(row.providers) ? (row.providers as string[]) : ([] as string[]),
       subscriptionCount: Number(row.subscriptionCount),
       entryCount: Number(row.entryCount),

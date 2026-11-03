@@ -12,7 +12,7 @@ import { trpc } from "@/lib/trpc/client";
 import { ClientLink } from "@/components/ui/client-link";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { AccountInfoSection, PasswordSection } from "./pages/AccountSettingsContent";
+import { AccountInfoSection, PasswordSection, PlanSection } from "./pages/AccountSettingsContent";
 import { LinkedAccounts } from "./LinkedAccounts";
 import { KeyboardShortcutsSettings } from "./KeyboardShortcutsSettings";
 import { AboutSection } from "./AboutSection";
@@ -45,6 +45,7 @@ import {
 
 const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   "account-info": AccountInfoSection,
+  plan: PlanSection,
   "linked-accounts": LinkedAccounts,
   password: PasswordSection,
   "keyboard-shortcuts": KeyboardShortcutsSettings,

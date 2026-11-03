@@ -23,6 +23,7 @@ import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
+import { PLAN_NAMES, PLAN_QUOTAS, PLAN_QUOTA_NAMES, type QuotaRate } from "@/lib/plans";
 
 function isOAuthProvider(provider: string): provider is OAuthProvider {
   return provider in providerNames;
@@ -128,6 +129,62 @@ export function AccountInfoSection() {
               )}
             </dd>
           </div>
+        </dl>
+      )}
+    </SettingsSection>
+  );
+}
+
+function formatUsage(used: number, limit: number | null): string {
+  return limit === null
+    ? `${used.toLocaleString()} (no limit)`
+    : `${used.toLocaleString()} of ${limit.toLocaleString()}`;
+}
+
+function formatQuota(rate: QuotaRate | null): string {
+  return rate === null
+    ? "No limit"
+    : `${rate.perDay.toLocaleString()} a day, up to ${rate.burst.toLocaleString()} at once`;
+}
+
+export function PlanSection() {
+  // Usage changes on other pages (subscribing, adding an address), so read it
+  // fresh whenever the section is shown instead of patching it from each.
+  const planQuery = trpc.users["me.plan"].useQuery(undefined, { refetchOnMount: "always" });
+  const data = planQuery.data;
+
+  return (
+    <SettingsSection title="Plan">
+      {planQuery.isLoading ? (
+        <div className="bg-fill-muted h-5 w-48 animate-pulse rounded" />
+      ) : planQuery.error || !data ? (
+        <p className="ui-text-sm text-danger">Failed to load your plan</p>
+      ) : (
+        <dl className="space-y-4">
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Plan</dt>
+            <dd className="ui-text-sm text-body mt-1">{PLAN_NAMES[data.plan]}</dd>
+          </div>
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Subscriptions and collections</dt>
+            <dd className="ui-text-sm text-body mt-1 tabular-nums">
+              {formatUsage(data.usage.subscriptions, data.limits.maxSubscriptions)}
+            </dd>
+          </div>
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Newsletter email addresses</dt>
+            <dd className="ui-text-sm text-body mt-1 tabular-nums">
+              {formatUsage(data.usage.ingestAddresses, data.limits.maxIngestAddresses)}
+            </dd>
+          </div>
+          {PLAN_QUOTAS.map((quota) => (
+            <div key={quota}>
+              <dt className="ui-text-sm text-muted font-medium">{PLAN_QUOTA_NAMES[quota]}</dt>
+              <dd className="ui-text-sm text-body mt-1 tabular-nums">
+                {formatQuota(data.limits.quotas[quota])}
+              </dd>
+            </div>
+          ))}
         </dl>
       )}
     </SettingsSection>
@@ -303,6 +360,8 @@ export default function AccountSettingsContent() {
 
       {/* Account Information Section - shows title immediately, content loads inline */}
       <AccountInfoSection />
+
+      <PlanSection />
 
       {/* Linked Accounts Section - uses SettingsSection which shows title during load */}
       <LinkedAccounts />

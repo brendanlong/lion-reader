@@ -3,6 +3,7 @@
  * an uploaded article in it, positioned in reading order.
  */
 
+import { consumePlanQuota } from "@/server/services/plans";
 import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
@@ -121,6 +122,7 @@ export async function importEbook(
     file.length,
     maxEbookUploadBytes(usageLimitsConfig.maxSavedArticleSizeBytes)
   );
+  await consumePlanQuota(db, userId, "fileConversions");
   const book = await openEbook(file);
   const name = (book.title || titleFromFilename(params.filename) || "Untitled Ebook").slice(
     0,

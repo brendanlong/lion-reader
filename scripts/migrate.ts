@@ -13,7 +13,7 @@
 import Redis from "ioredis";
 
 import { runMigrations } from "./run-migrations";
-import { clearRedisCacheExceptSiteStatus } from "@/server/redis/clear-cache";
+import { clearRedisCacheExceptDurableKeys } from "@/server/redis/clear-cache";
 
 async function runDatabaseMigrations(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -33,7 +33,7 @@ async function clearRedisCache(): Promise<void> {
     return;
   }
 
-  console.log("Clearing Redis cache (preserving site-status keys)...");
+  console.log("Clearing Redis cache (preserving durable keys)...");
 
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
@@ -42,9 +42,9 @@ async function clearRedisCache(): Promise<void> {
 
   try {
     await redis.connect();
-    const { deleted, preserved } = await clearRedisCacheExceptSiteStatus(redis);
+    const { deleted, preserved } = await clearRedisCacheExceptDurableKeys(redis);
     console.log(
-      `Redis cache cleared: deleted ${deleted} key(s), preserved ${preserved} site-status key(s)`
+      `Redis cache cleared: deleted ${deleted} key(s), preserved ${preserved} durable key(s)`
     );
   } finally {
     await redis.quit();

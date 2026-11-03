@@ -13,7 +13,12 @@ import { and, eq, gte, isNull } from "drizzle-orm";
 import * as Sentry from "@sentry/nextjs";
 
 import { users, invites } from "@/server/db/schema";
-import { signupConfig, announcementFeedConfig, type SignupProvider } from "@/server/config/env";
+import {
+  signupConfig,
+  announcementFeedConfig,
+  planConfig,
+  type SignupProvider,
+} from "@/server/config/env";
 import { resolveSignupProviderAccess } from "@/server/auth/signup-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { errors } from "@/server/errors";
@@ -92,6 +97,7 @@ export async function createUser(
     email,
     passwordHash,
     emailVerifiedAt: emailVerified ? now : null,
+    plan: planConfig.defaultPlan,
     createdAt: now,
     updatedAt: now,
   });

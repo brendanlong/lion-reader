@@ -5,6 +5,7 @@
  */
 
 import { DEFAULT_MAX_SAVED_ARTICLE_SIZE_BYTES } from "@/lib/upload-limits";
+import { isPlanId, type PlanId } from "@/lib/plans";
 
 /**
  * Valid signup provider types.
@@ -339,15 +340,29 @@ function positiveIntegerFromEnv(name: string, defaultValue: number): number {
   return value;
 }
 
+function defaultPlanFromEnv(): PlanId {
+  const raw = process.env.DEFAULT_PLAN;
+  if (raw === undefined || raw === "") return "unlimited";
+  if (!isPlanId(raw)) {
+    throw new Error(`DEFAULT_PLAN must be a known plan, got ${JSON.stringify(raw)}`);
+  }
+  return raw;
+}
+
+export const planConfig = {
+  /**
+   * The plan new accounts get (`DEFAULT_PLAN`, default `unlimited`). An unknown
+   * value fails startup rather than granting some other plan.
+   */
+  defaultPlan: defaultPlanFromEnv(),
+};
+
 /**
  * Usage limits configuration.
  * These limits protect against abuse and prevent OOM from oversized content.
  * All limits are configurable via environment variables.
  */
 export const usageLimitsConfig = {
-  /** Maximum number of active subscriptions per user (default: 500). */
-  maxSubscriptionsPerUser: parseInt(process.env.MAX_SUBSCRIPTIONS_PER_USER || "500", 10),
-
   /** Maximum feed response size in bytes (default: 10MB). Checked during streaming to avoid OOM. */
   maxFeedSizeBytes: parseInt(process.env.MAX_FEED_SIZE_BYTES || String(10 * 1024 * 1024), 10),
 

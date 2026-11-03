@@ -15,6 +15,7 @@ import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
 import { users, invites } from "../../src/server/db/schema";
 import { createUser } from "../../src/server/auth/signup";
+import { planConfig } from "../../src/server/config/env";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -105,6 +106,23 @@ describe("createUser with an invite", () => {
 
     const [userRow] = await db.select().from(users).where(eq(users.id, user.userId));
     expect(userRow.inviteId).toBe(invite.id);
+  });
+
+  it("gives the new user the instance's default plan", async () => {
+    const invite = await createInvite();
+    const original = planConfig.defaultPlan;
+    // Not the column's default, so this shows signup sets it.
+    planConfig.defaultPlan = "free";
+    try {
+      const user = await signUp({
+        email: `invite-plan-${generateUuidv7()}@example.com`,
+        inviteToken: invite.token,
+      });
+      const [userRow] = await db.select().from(users).where(eq(users.id, user.userId));
+      expect(userRow.plan).toBe("free");
+    } finally {
+      planConfig.defaultPlan = original;
+    }
   });
 
   it("rejects a missing invite token without creating a user", async () => {

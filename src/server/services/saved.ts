@@ -6,6 +6,7 @@
  * and deriving its stored fields is in `saved-content.ts`.
  */
 
+import { consumePlanQuota } from "@/server/services/plans";
 import { z } from "zod";
 import { eq, and, inArray, isNull, ne, notExists, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -597,6 +598,7 @@ async function saveArticleContent(
     return toExistingSavedArticle(existingEntry);
   }
 
+  await consumePlanQuota(db, userId, "pageFetches");
   const bundle = await acquireSavedArticleContent(userId, params);
   const entryId = existingEntry?.entry.id ?? generateUuidv7();
 
@@ -1072,6 +1074,7 @@ export async function uploadFile(
     const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
     if (existing) return existing;
 
+    await consumePlanQuota(db, userId, "fileConversions");
     const converted = await convertUpload(file, filename);
     const entryId = generateUuidv7();
     const fields = await buildArticleFields(
@@ -1119,6 +1122,7 @@ export async function uploadArticle(
     const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
     if (existing) return existing.article;
 
+    await consumePlanQuota(db, userId, "fileConversions");
     // Convert markdown to HTML (with frontmatter title/summary/author); Readability
     // is skipped downstream because preCleanedContent is set.
     const markdownResult = await processMarkdown(params.content);

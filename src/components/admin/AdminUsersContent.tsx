@@ -3,7 +3,7 @@
  *
  * Displays a paginated list of all users in the system with search by email.
  * Shows user details including OAuth providers, subscription/entry counts,
- * and last activity.
+ * last activity and plan, which admins can change here.
  * Uses infinite scroll for pagination and debounced search for filtering.
  */
 
@@ -19,6 +19,8 @@ import { GoogleIcon, AppleIcon, DiscordIcon } from "@/components/ui/icons";
 import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
 import { AdminQueryFallback } from "@/components/admin/AdminQueryFallback";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { PLAN_IDS, PLAN_NAMES, type PlanId } from "@/lib/plans";
+import { toast } from "sonner";
 
 // ============================================================================
 // Constants
@@ -102,6 +104,7 @@ interface User {
   id: string;
   email: string;
   createdAt: Date;
+  plan: PlanId;
   lastActiveAt: Date | null;
   lastTokenUsedAt: Date | null;
   providers: string[];
@@ -145,6 +148,44 @@ function UserRow({ user }: { user: User }) {
         </span>
         <span>Entries: {user.entryCount.toLocaleString()}</span>
       </div>
+
+      <PlanPicker userId={user.id} email={user.email} plan={user.plan} />
+    </div>
+  );
+}
+
+function PlanPicker({ userId, email, plan }: { userId: string; email: string; plan: PlanId }) {
+  const utils = trpc.useUtils();
+  const setPlan = trpc.admin.setUserPlan.useMutation({
+    onSuccess: () => {
+      utils.admin.listUsers.invalidate();
+      toast.success("Plan changed");
+    },
+    onError: (error) => {
+      toast.error("Failed to change plan", { description: error.message });
+    },
+  });
+  const selectId = `plan-${userId}`;
+
+  return (
+    <div className="flex items-center gap-2">
+      <label htmlFor={selectId} className="ui-text-xs text-muted">
+        Plan
+      </label>
+      <select
+        id={selectId}
+        aria-label={`Plan for ${email}`}
+        value={setPlan.isPending ? setPlan.variables.plan : plan}
+        disabled={setPlan.isPending}
+        onChange={(e) => setPlan.mutate({ userId, plan: e.target.value as PlanId })}
+        className="ui-text-sm bg-surface text-body border-edge-input block rounded-md border px-2 py-1"
+      >
+        {PLAN_IDS.map((id) => (
+          <option key={id} value={id}>
+            {PLAN_NAMES[id]}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

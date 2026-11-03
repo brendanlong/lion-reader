@@ -116,8 +116,15 @@ class ShareActivity : ComponentActivity() {
                     info.outputData.getString(SaveWorker.ERROR)
                         ?: "Lion Reader couldn't save this $what."
                 )
-            WorkInfo.State.ENQUEUED if info.runAttemptCount > 0 ->
-                Message("Couldn't reach Lion Reader. It'll keep trying in the background.")
+            WorkInfo.State.ENQUEUED if info.runAttemptCount > 0 -> {
+                val reason by
+                    remember(info.id) { SaveWorker.retryMessage(info.id) }
+                        .collectAsStateWithLifecycle(null)
+                Message(
+                    reason?.let { "$it Lion Reader will keep trying in the background." }
+                        ?: "Couldn't reach Lion Reader. It'll keep trying in the background."
+                )
+            }
             WorkInfo.State.ENQUEUED if !isOnline() ->
                 Message("You're offline. The $what will be saved when you're back online.")
             WorkInfo.State.CANCELLED -> LaunchedEffect(Unit) { finish() }

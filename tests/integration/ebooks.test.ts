@@ -3,6 +3,7 @@
  * chapter, read in the book's order.
  */
 
+import { PLAN_LIMITS } from "../../src/lib/plans";
 import { randomBytes } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
@@ -16,7 +17,7 @@ import { maxEbookUploadBytes } from "../../src/lib/upload-limits";
 import { getAppErrorCode } from "../../src/server/errors";
 import { buildEpub, chapterXhtml } from "../utils/epub";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
-import { createTestUser } from "./helpers";
+import { createTestUser, withPlanLimits } from "./helpers";
 
 const createdUserIds: string[] = [];
 let s3: FakeS3;
@@ -163,16 +164,27 @@ describe("importEbook", () => {
 
   it("saves no chapters when the user can't create the collection", async () => {
     const userId = await createUser();
-    const cap = usageLimitsConfig.maxSubscriptionsPerUser;
-    usageLimitsConfig.maxSubscriptionsPerUser = 0;
-    try {
-      await expect(upload(userId)).rejects.toSatisfy(
+    await withPlanLimits("unlimited", { maxSubscriptions: 0 }, () =>
+      expect(upload(userId)).rejects.toSatisfy(
         (error) => getAppErrorCode(error) === "MAX_SUBSCRIPTIONS_REACHED"
-      );
-    } finally {
-      usageLimitsConfig.maxSubscriptionsPerUser = cap;
-    }
+      )
+    );
     expect(await savedEntryCount(userId)).toBe(0);
+  });
+
+  it("takes one of the plan's file uploads", async () => {
+    const userId = await createTestUser({ emailPrefix: "ebook", plan: "free" });
+    createdUserIds.push(userId);
+    await withPlanLimits(
+      "free",
+      { quotas: { ...PLAN_LIMITS.free.quotas, fileConversions: { burst: 1, perDay: 1 } } },
+      async () => {
+        await upload(userId);
+        await expect(upload(userId)).rejects.toSatisfy(
+          (error) => getAppErrorCode(error) === "QUOTA_EXCEEDED"
+        );
+      }
+    );
   });
 
   it("is refused on a server without object storage", async () => {

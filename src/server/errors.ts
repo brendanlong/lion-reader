@@ -56,6 +56,7 @@ const errorCodeToTRPCCode = {
   STORAGE_FAILED: "BAD_GATEWAY",
   UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
   SERVER_BUSY: "TOO_MANY_REQUESTS",
+  QUOTA_EXCEEDED: "TOO_MANY_REQUESTS",
   AI_PROVIDER_BUSY: "TOO_MANY_REQUESTS",
   // Only for a call made with the user's own key: their key, credit, or model
   // choice is the problem, not our server.
@@ -180,6 +181,15 @@ export const errors = {
     ),
 
   internal: (message = "An unexpected error occurred") => createError("INTERNAL_ERROR", message),
+
+  quotaExceeded: (quotaName: string, retryAfterSeconds: number) => {
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    return createError(
+      "QUOTA_EXCEEDED",
+      `You've used your plan's ${quotaName.toLowerCase()} for now. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+      { retryAfter: retryAfterSeconds }
+    );
+  },
 
   serverBusy: (work: string) =>
     createError("SERVER_BUSY", `Too many ${work} in progress. Please try again shortly.`),

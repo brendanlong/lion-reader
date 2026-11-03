@@ -8,7 +8,6 @@
 
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { randomBytes } from "crypto";
 
 import {
   createTRPCRouter,
@@ -18,23 +17,8 @@ import {
 import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { ingestAddresses } from "@/server/db/schema";
-import { generateUuidv7 } from "@/lib/uuidv7";
 import { ingestConfig } from "@/server/config/env";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Maximum number of ingest addresses a user can create.
- */
-const MAX_ADDRESSES_PER_USER = 5;
-
-/**
- * Length of the random token in bytes (16 bytes = 128 bits).
- * Encoded as base64url, this produces a 22-character string.
- */
-const TOKEN_BYTES = 16;
+import { createIngestAddress } from "@/server/services/ingest-addresses";
 
 // ============================================================================
 // Validation Schemas
@@ -63,17 +47,6 @@ const ingestAddressOutputSchema = z.object({
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Generates a secure random token for email addresses.
- * Uses base64url encoding (URL-safe, no padding), lowercased for
- * case-insensitive matching with email addresses.
- *
- * @returns A random token string (lowercase)
- */
-function generateToken(): string {
-  return randomBytes(TOKEN_BYTES).toString("base64url").toLowerCase();
-}
 
 function requireIngestDomain(): string {
   const domain = ingestConfig.enabledDomain;
@@ -138,7 +111,7 @@ export const ingestAddressesRouter = createTRPCRouter({
    * Create a new ingest address.
    *
    * Generates a secure random token and creates a new ingest address.
-   * Enforces a maximum of 5 addresses per user.
+   * Enforces the plan's limit on addresses.
    *
    * @param label - Optional user-provided name for the address
    * @returns The created ingest address with computed email
@@ -169,41 +142,9 @@ export const ingestAddressesRouter = createTRPCRouter({
       const domain = requireIngestDomain();
       const userId = ctx.session.user.id;
 
-      // Check current address count
-      const countResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(ingestAddresses)
-        .where(and(eq(ingestAddresses.userId, userId), isNull(ingestAddresses.deletedAt)));
+      const address = await createIngestAddress(ctx.db, userId, input.label ?? null);
 
-      const currentCount = countResult[0]?.count ?? 0;
-
-      if (currentCount >= MAX_ADDRESSES_PER_USER) {
-        throw errors.maxIngestAddressesReached(MAX_ADDRESSES_PER_USER);
-      }
-
-      // Generate a unique token
-      const token = generateToken();
-      const addressId = generateUuidv7();
-      const now = new Date();
-
-      // Create the ingest address
-      await ctx.db.insert(ingestAddresses).values({
-        id: addressId,
-        userId,
-        token,
-        label: input.label ?? null,
-        createdAt: now,
-      });
-
-      return {
-        address: {
-          id: addressId,
-          token,
-          email: `${token}@${domain}`,
-          label: input.label ?? null,
-          createdAt: now,
-        },
-      };
+      return { address: { ...address, email: `${address.token}@${domain}` } };
     }),
 
   /**

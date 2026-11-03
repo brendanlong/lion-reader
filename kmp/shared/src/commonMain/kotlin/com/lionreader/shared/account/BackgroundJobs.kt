@@ -41,8 +41,11 @@ sealed interface SaveOutcome {
     /** Saved; the caller syncs to bring it onto the device. */
     data class Saved(val title: String?) : SaveOutcome
 
-    /** Try again later, after a backoff. */
-    data object Retry : SaveOutcome
+    /**
+     * Try again later, after a backoff. [message] is the server's reason to wait, when it gave one
+     * (a plan quota's "try again in N minutes").
+     */
+    data class Retry(val message: String?) : SaveOutcome
 
     /** Give up, saying why. */
     data class Failed(val message: String) : SaveOutcome
@@ -91,7 +94,7 @@ private suspend fun ServerConnection.save(
         when (val why = e.apiFailure()) {
             ApiFailure.SignedOut -> SaveOutcome.Failed(SIGN_IN_TO_SAVE)
             is ApiFailure.Rejected -> SaveOutcome.Failed(why.message ?: rejected)
-            else -> SaveOutcome.Retry
+            else -> SaveOutcome.Retry(why.message)
         }
     }
 }
