@@ -19,7 +19,7 @@ import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import type { OAuthProviderName } from "@/server/auth/oauth/config";
 import { oauthTokenColumns, type ProviderIdentity } from "@/server/auth/oauth/token-exchange";
-import { attachOAuthAccount } from "@/server/services/oauth-accounts";
+import { attachOAuthAccount, claimUnverifiedAccount } from "@/server/services/oauth-accounts";
 
 /**
  * Parameters for processing an OAuth callback.
@@ -66,8 +66,6 @@ export async function processOAuthCallback(
 ): Promise<ProcessOAuthCallbackResult> {
   const { provider, providerAccountId, email: rawEmail, emailVerified, inviteToken } = params;
   const tokenColumns = oauthTokenColumns(params);
-
-  const now = new Date();
 
   // Check if OAuth account already exists
   const existingOAuthAccount = await db
@@ -132,36 +130,30 @@ export async function processOAuthCallback(
   const existingUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
   if (existingUser.length > 0) {
-    // Link OAuth to existing user account.
-    //
     // This adds a way to sign in, which SECURITY.md §4 would otherwise have
     // revoke the user's other sessions — `linkOAuthAccount` does exactly that
     // for a link from the settings page (which identifies the account by
-    // session instead). It deliberately doesn't here: this branch *is* an
-    // ordinary first social sign-in, so revoking would log every device out of
-    // an account whose owner just proved control of its verified email address
-    // and is signing in on this one. The link itself is the same one-per-provider
-    // attach, so a user who already linked another account of this provider is
-    // refused rather than given a second one.
-    const userId = existingUser[0].id;
-    await attachOAuthAccount(db, { ...params, userId });
-
-    // Mark email as verified if not already (OAuth provider verified it)
-    if (!existingUser[0].emailVerifiedAt) {
-      await db
-        .update(users)
-        .set({
-          emailVerifiedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(users.id, userId));
+    // session instead). It deliberately doesn't here for a verified account:
+    // this branch *is* an ordinary first social sign-in, so revoking would log
+    // every device out of an account whose owner just proved control of its
+    // verified email address and is signing in on this one. The link itself is
+    // the same one-per-provider attach, so a user who already linked another
+    // account of this provider is refused rather than given a second one.
+    //
+    // An account whose email nobody verified is claimed instead, which does
+    // revoke everything (`claimUnverifiedAccount` says why).
+    const user = existingUser[0];
+    if (user.emailVerifiedAt) {
+      await attachOAuthAccount(db, { ...params, userId: user.id });
+    } else {
+      await claimUnverifiedAccount(db, { ...params, userId: user.id });
     }
 
     return {
-      userId,
-      email: existingUser[0].email,
-      createdAt: existingUser[0].createdAt,
-      signupConfirmed: isSignupConfirmed(existingUser[0]),
+      userId: user.id,
+      email: user.email,
+      createdAt: user.createdAt,
+      signupConfirmed: isSignupConfirmed(user),
     };
   }
 

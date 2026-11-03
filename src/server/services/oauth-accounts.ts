@@ -13,15 +13,23 @@
  * really changed — see each function for what doesn't count.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
-import type { Database } from "@/server/db";
-import { oauthAccounts, users } from "@/server/db/schema";
+import type { Database, DbOrTx } from "@/server/db";
+import {
+  apiTokens,
+  oauthAccounts,
+  oauthConsentGrants,
+  oauthTokenGrants,
+  sessions,
+  users,
+} from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/errors";
 import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
 import { oauthTokenColumns, type OAuthTokens } from "@/server/auth/oauth/token-exchange";
+import { deleteTokenGrants } from "@/server/oauth/service";
 
 export interface AttachOAuthAccountParams extends OAuthTokens {
   /** The user the provider account is being attached to. */
@@ -48,7 +56,7 @@ export interface AttachOAuthAccountParams extends OAuthTokens {
  * @throws `oauthCallbackFailed` when this provider account belongs to another user
  */
 export async function attachOAuthAccount(
-  db: Database,
+  db: DbOrTx,
   params: AttachOAuthAccountParams
 ): Promise<"linked" | "updated"> {
   const { userId, provider, providerAccountId } = params;
@@ -102,6 +110,49 @@ export async function attachOAuthAccount(
       throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
     }
     return "linked";
+  });
+}
+
+/**
+ * A sign-in whose verified provider email matches an account nobody has proven
+ * owns that address. Whoever created the account may have registered someone
+ * else's email to wait for its owner to sign in (pre-account takeover), so the
+ * provider identity wins: every way in the account had is removed (password,
+ * other provider links, sessions, API tokens, OAuth grants), the email becomes
+ * verified, and only this provider account stays linked. The account's data is
+ * kept. A link from Settings never comes here, since the session already
+ * established who the user is (`linkOAuthAccount`).
+ *
+ * If the email was verified in the meantime, this is an ordinary attach.
+ */
+export async function claimUnverifiedAccount(
+  db: Database,
+  params: AttachOAuthAccountParams
+): Promise<void> {
+  const { userId } = params;
+  await db.transaction(async (tx) => {
+    const now = new Date();
+    const claimed = await tx
+      .update(users)
+      .set({ passwordHash: null, emailVerifiedAt: now, updatedAt: now })
+      .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
+      .returning({ id: users.id });
+
+    if (claimed.length > 0) {
+      await tx.delete(oauthAccounts).where(eq(oauthAccounts.userId, userId));
+      await tx
+        .update(sessions)
+        .set({ revokedAt: now })
+        .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+      await tx
+        .update(apiTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
+      await tx.delete(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId));
+      await deleteTokenGrants(eq(oauthTokenGrants.userId, userId), tx);
+    }
+
+    await attachOAuthAccount(tx, params);
   });
 }
 

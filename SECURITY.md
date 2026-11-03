@@ -114,6 +114,10 @@ fetches user-influenced URLs and must never be usable to reach internal services
   and linking/unlinking a social provider (`src/server/services/oauth-accounts.ts`
   says why a failed revoke doesn't undo the change). The one exception is the
   email-match link inside `processOAuthCallback`, an ordinary sign-in; it says why.
+- **A verified provider sign-in that matches an unverified account claims it**:
+  `claimUnverifiedAccount` removes every other way in (password, links, sessions,
+  tokens, grants), so whoever registered the address first can't keep access
+  once its owner signs in (pre-account takeover).
 - **Setting or changing the password deletes the user's Wallabag token grants** in
   the same transaction.
 - **A long-lived authenticated connection re-checks its credential periodically**
