@@ -9,63 +9,31 @@
  * content based on the current pathname, or shows search results while there
  * is a search query.
  *
- * Each settings page is its own chunk, so opening settings doesn't download
- * every page's dependencies (narration voices, OPML, QR codes, ...). The
- * sidebar renders immediately; the page shows a skeleton until its chunk loads.
+ * Pages are imported statically, not as per-page chunks: a lazy page would
+ * suspend on each tab's first visit (see "Suspense vs. inline loading" in
+ * src/CLAUDE.md). AppRouter splits Settings as a whole from the entry lists.
  */
 
 "use client";
 
 import { useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { ClientLink } from "@/components/ui/client-link";
 import { ChevronLeftIcon, CloseIcon, SearchIcon } from "@/components/ui/icons";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
-import { SettingsListSkeleton } from "./SettingsListSkeleton";
+import AccountSettingsContent from "./pages/AccountSettingsContent";
+import { AppearanceSettings as AppearanceSettingsContent } from "./AppearanceSettings";
+import ReadingSettingsContent from "./pages/ReadingSettingsContent";
+import SubscriptionsSettingsContent from "./pages/SubscriptionsSettingsContent";
+import EmailSettingsContent from "./pages/EmailSettingsContent";
+import AiSettingsContent from "./pages/AiSettingsContent";
+import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
+import FeedHealthSettingsContent from "./pages/FeedHealthSettingsContent";
+import SecuritySettingsContent from "./pages/SecuritySettingsContent";
+import { AboutSection as AboutSettingsContent } from "./AboutSection";
 import { SettingsSearchResults } from "./SettingsSearchResults";
 import { SETTINGS_PAGES } from "./settings-search";
-
-function SettingsPageSkeleton() {
-  return (
-    <div className="space-y-6">
-      <SettingsListSkeleton variant="card" count={2} height="h-40" />
-    </div>
-  );
-}
-
-const AccountSettingsContent = dynamic(() => import("./pages/AccountSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const AppearanceSettingsContent = dynamic(
-  () => import("./AppearanceSettings").then((m) => m.AppearanceSettings),
-  { loading: SettingsPageSkeleton }
-);
-const SubscriptionsSettingsContent = dynamic(() => import("./pages/SubscriptionsSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const EmailSettingsContent = dynamic(() => import("./pages/EmailSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const AiSettingsContent = dynamic(() => import("./pages/AiSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const ReadingSettingsContent = dynamic(() => import("./pages/ReadingSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const IntegrationsSettingsContent = dynamic(() => import("./pages/IntegrationsSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const FeedHealthSettingsContent = dynamic(() => import("./pages/FeedHealthSettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const SecuritySettingsContent = dynamic(() => import("./pages/SecuritySettingsContent"), {
-  loading: SettingsPageSkeleton,
-});
-const AboutSettingsContent = dynamic(() => import("./AboutSection").then((m) => m.AboutSection), {
-  loading: SettingsPageSkeleton,
-});
 
 const ACTIVE_LINK_CLASSES = "bg-primary-solid text-primary-solid-foreground";
 
