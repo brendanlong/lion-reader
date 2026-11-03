@@ -9,11 +9,9 @@
  * content based on the current pathname, or shows search results while there
  * is a search query.
  *
- * The pages are deliberately not split into per-page chunks: a lazy page
- * suspends on its first visit, and React holds a revealed Suspense fallback
- * for at least 300ms, so every tab would take ~300ms to appear however fast its
- * chunk loaded. AppRouter already splits Settings as a whole from the entry
- * lists.
+ * Pages are imported statically, not as per-page chunks: a lazy page would
+ * suspend on each tab's first visit (see "Suspense vs. inline loading" in
+ * src/CLAUDE.md). AppRouter splits Settings as a whole from the entry lists.
  */
 
 "use client";
