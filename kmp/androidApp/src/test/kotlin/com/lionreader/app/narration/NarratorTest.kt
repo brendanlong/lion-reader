@@ -136,10 +136,15 @@ class NarratorTest {
         stream.second.delete()
     }
 
-    /** Lets the player, which reports errors from its own thread, catch up until [done]. */
+    /**
+     * Lets the player, which plays and reports errors from its own thread, catch up until [done].
+     * Bounded by wall-clock time, not a count of polls: in some runs its position follows the real
+     * clock rather than Robolectric's, so playing takes real time however far each poll idles
+     * (#2251).
+     */
     private fun idleUntil(done: () -> Boolean) {
-        repeat(100) {
-            if (done()) return
+        val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
+        while (!done() && System.nanoTime() < deadline) {
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
             Thread.sleep(10)
         }
