@@ -16,7 +16,7 @@ import { maxEbookUploadBytes } from "../../src/lib/upload-limits";
 import { getAppErrorCode } from "../../src/server/errors";
 import { buildEpub, chapterXhtml } from "../utils/epub";
 import { useFakeS3, type FakeS3 } from "../utils/fake-s3";
-import { createTestUser } from "./helpers";
+import { createTestUser, withPlanLimits } from "./helpers";
 
 const createdUserIds: string[] = [];
 let s3: FakeS3;
@@ -163,15 +163,11 @@ describe("importEbook", () => {
 
   it("saves no chapters when the user can't create the collection", async () => {
     const userId = await createUser();
-    const cap = usageLimitsConfig.maxSubscriptionsPerUser;
-    usageLimitsConfig.maxSubscriptionsPerUser = 0;
-    try {
-      await expect(upload(userId)).rejects.toSatisfy(
+    await withPlanLimits("paid", { maxSubscriptions: 0 }, () =>
+      expect(upload(userId)).rejects.toSatisfy(
         (error) => getAppErrorCode(error) === "MAX_SUBSCRIPTIONS_REACHED"
-      );
-    } finally {
-      usageLimitsConfig.maxSubscriptionsPerUser = cap;
-    }
+      )
+    );
     expect(await savedEntryCount(userId)).toBe(0);
   });
 

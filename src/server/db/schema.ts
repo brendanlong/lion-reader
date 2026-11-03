@@ -25,6 +25,7 @@ import type { ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 import { replaceNul } from "./nul";
 import { temporalTimestamp } from "./temporal";
 import { SUBSCRIPTION_TYPES, type EntryType } from "@/lib/entry-types";
+import { PLAN_IDS } from "@/lib/plans";
 
 /**
  * Postgres citext (case-insensitive text). Behaves as a plain string in
@@ -140,6 +141,10 @@ export const users = pgTable(
     // expired sessions (the previous MAX(sessions.last_active_at) source).
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
 
+    // Sets the user's quotas (`@/lib/plans`). The column default only covers
+    // rows the previous release inserts; signup sets the instance's default plan.
+    plan: text("plan", { enum: PLAN_IDS }).notNull().default("paid"),
+
     // Trigger-maintained unread counters (spam excluded; rules in migration
     // 0133, kept by `apply_unread_memberships` / `recompute_list_counters`):
     // starred = starred unread articles; uncategorized = distinct unread
@@ -172,6 +177,7 @@ export const users = pgTable(
     index("idx_users_getting_started_pending")
       .on(table.id)
       .where(sql`getting_started_at IS NULL`),
+    check("users_plan_known", sql`${table.plan} IN ('free', 'paid', 'unlimited')`),
   ]
 );
 

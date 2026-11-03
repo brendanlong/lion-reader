@@ -19,7 +19,6 @@ import {
   userEntries,
   users,
 } from "../../src/server/db/schema";
-import { usageLimitsConfig } from "../../src/server/config/env";
 import { createSubscription } from "../../src/server/services/subscribe";
 import { exportSubscriptionsOpml } from "../../src/server/services/subscriptions";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
@@ -43,6 +42,7 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  withPlanLimits,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -169,19 +169,15 @@ describe("the saved subscription (#1846)", () => {
     expect((await caller.tags.list()).uncategorized.feedCount).toBe(1);
     expect((await exportSubscriptionsOpml(db, userId)).feedCount).toBe(1);
 
-    const cap = usageLimitsConfig.maxSubscriptionsPerUser;
-    usageLimitsConfig.maxSubscriptionsPerUser = 2;
-    try {
-      const result = await createSubscription(
+    const result = await withPlanLimits("paid", { maxSubscriptions: 2 }, () =>
+      createSubscription(
         db,
         userId,
         { url: "https://example.com/second.xml" },
         { skipInitialPopulate: true }
-      );
-      expect(result.alreadyActive).toBe(false);
-    } finally {
-      usageLimitsConfig.maxSubscriptionsPerUser = cap;
-    }
+      )
+    );
+    expect(result.alreadyActive).toBe(false);
   });
 
   it("is Google Reader's Saved stream, at the saved feed's stream id", async () => {

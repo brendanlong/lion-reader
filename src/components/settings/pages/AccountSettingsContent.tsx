@@ -23,6 +23,7 @@ import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
+import { PLAN_NAMES } from "@/lib/plans";
 
 function isOAuthProvider(provider: string): provider is OAuthProvider {
   return provider in providerNames;
@@ -126,6 +127,46 @@ export function AccountInfoSection() {
               ) : (
                 <span className="text-muted">Not verified</span>
               )}
+            </dd>
+          </div>
+        </dl>
+      )}
+    </SettingsSection>
+  );
+}
+
+function formatUsage(used: number, limit: number | null): string {
+  return limit === null
+    ? used.toLocaleString()
+    : `${used.toLocaleString()} of ${limit.toLocaleString()}`;
+}
+
+export function PlanSection() {
+  const planQuery = trpc.users["me.plan"].useQuery();
+  const data = planQuery.data;
+
+  return (
+    <SettingsSection title="Plan">
+      {planQuery.isLoading ? (
+        <div className="bg-fill-muted h-5 w-48 animate-pulse rounded" />
+      ) : planQuery.error || !data ? (
+        <p className="ui-text-sm text-danger">Failed to load your plan</p>
+      ) : (
+        <dl className="space-y-4">
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Plan</dt>
+            <dd className="ui-text-sm text-body mt-1">{PLAN_NAMES[data.plan]}</dd>
+          </div>
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Subscriptions and collections</dt>
+            <dd className="ui-text-sm text-body mt-1 tabular-nums">
+              {formatUsage(data.usage.subscriptions, data.limits.maxSubscriptions)}
+            </dd>
+          </div>
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Newsletter email addresses</dt>
+            <dd className="ui-text-sm text-body mt-1 tabular-nums">
+              {formatUsage(data.usage.ingestAddresses, data.limits.maxIngestAddresses)}
             </dd>
           </div>
         </dl>
@@ -303,6 +344,8 @@ export default function AccountSettingsContent() {
 
       {/* Account Information Section - shows title immediately, content loads inline */}
       <AccountInfoSection />
+
+      <PlanSection />
 
       {/* Linked Accounts Section - uses SettingsSection which shows title during load */}
       <LinkedAccounts />

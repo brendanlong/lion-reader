@@ -225,7 +225,12 @@ export async function getSavedSubscriptionId(db: DbOrTx, userId: string): Promis
  */
 export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string): Promise<number> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
-  const [{ activeCount }] = await tx
+  return countActiveSubscriptions(tx, userId);
+}
+
+/** The user's active subscriptions that count toward the plan's limit. */
+export async function countActiveSubscriptions(db: DbOrTx, userId: string): Promise<number> {
+  const [{ activeCount }] = await db
     .select({ activeCount: sql<number>`count(*)::int` })
     .from(subscriptions)
     .where(

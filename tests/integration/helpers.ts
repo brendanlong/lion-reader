@@ -17,6 +17,7 @@
  * `afterAll` (deleting a user cascades to its subscriptions and user_entries).
  */
 
+import { PLAN_LIMITS, type PlanId, type PlanLimits } from "../../src/lib/plans";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { PgInsertValue } from "drizzle-orm/pg-core";
 import type pg from "pg";
@@ -82,6 +83,24 @@ export async function createTestUser(options: CreateTestUserOptions = {}): Promi
     ...overrides,
   });
   return userId;
+}
+
+/**
+ * Runs `fn` with `plan`'s limits overridden, so a test can reach a limit
+ * without creating hundreds of rows. Restores them afterwards.
+ */
+export async function withPlanLimits<T>(
+  plan: PlanId,
+  overrides: Partial<PlanLimits>,
+  fn: () => Promise<T>
+): Promise<T> {
+  const original = PLAN_LIMITS[plan];
+  PLAN_LIMITS[plan] = { ...original, ...overrides };
+  try {
+    return await fn();
+  } finally {
+    PLAN_LIMITS[plan] = original;
+  }
 }
 
 /**

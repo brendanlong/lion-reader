@@ -1040,7 +1040,9 @@ CREATE TABLE public.users (
     narration_model text,
     getting_started_at timestamp with time zone,
     uncategorized_unread_count integer DEFAULT 0 NOT NULL,
-    all_unread_count integer DEFAULT 0 NOT NULL
+    all_unread_count integer DEFAULT 0 NOT NULL,
+    plan text DEFAULT 'paid'::text NOT NULL,
+    CONSTRAINT users_plan_known CHECK ((plan = ANY (ARRAY['free'::text, 'paid'::text, 'unlimited'::text])))
 );
 
 CREATE VIEW public.visible_entries AS

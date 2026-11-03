@@ -70,6 +70,10 @@ kill_timeout = 30
   NODE_ENV = "production"
   PORT = "3000"
 
+  # lionreader.com only. The plan new accounts get (src/lib/plans.ts); paid
+  # keeps new signups on the same limits as existing users for now.
+  DEFAULT_PLAN = "paid"
+
   # lionreader.com only.
   FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
 

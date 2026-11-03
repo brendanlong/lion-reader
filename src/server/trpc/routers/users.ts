@@ -25,6 +25,8 @@ import { deleteUser } from "@/server/services/users";
 import { isSummarizationAvailable } from "@/server/services/summarization";
 import { isNarrationLlmAvailable } from "@/server/services/narration";
 import { listSpeechModels } from "@/server/services/speech";
+import { getPlanUsage } from "@/server/services/plans";
+import { PLAN_IDS } from "@/lib/plans";
 import {
   getApiKeyProviders,
   getUnreadableApiKeyProviders,
@@ -384,6 +386,23 @@ export const usersRouter = createTRPCRouter({
       ]);
       return { summaries, narrationTextProcessing, cloudVoices: speech.models.length > 0 };
     }),
+
+  /** The user's plan, its limits (`null` = no limit), and current usage of each. */
+  "me.plan": protectedProcedure
+    .output(
+      z.object({
+        plan: z.enum(PLAN_IDS),
+        limits: z.object({
+          maxSubscriptions: z.number().nullable(),
+          maxIngestAddresses: z.number().nullable(),
+        }),
+        usage: z.object({
+          subscriptions: z.number(),
+          ingestAddresses: z.number(),
+        }),
+      })
+    )
+    .query(({ ctx }) => getPlanUsage(ctx.db, ctx.session.user.id)),
 
   /**
    * Update user preferences.

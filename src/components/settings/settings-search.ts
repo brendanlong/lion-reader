@@ -43,6 +43,13 @@ export const SETTINGS_SEARCH_INDEX = [
     keywords: ["email address", "member since", "verified", "user"],
   },
   {
+    id: "plan",
+    page: "/settings",
+    title: "Plan",
+    description: "Your plan and how much of each of its limits you're using.",
+    keywords: ["quota", "limit", "usage", "subscription limit", "paid", "free", "upgrade"],
+  },
+  {
     id: "linked-accounts",
     page: "/settings",
     title: "Linked Accounts",

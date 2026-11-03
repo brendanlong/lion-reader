@@ -10,7 +10,7 @@ import type { db as dbType, DbOrTx } from "@/server/db";
 import { feeds, subscriptions, subscriptionTags, type Feed } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
-import { usageLimitsConfig } from "@/server/config/env";
+import { getUserPlanLimits } from "@/server/services/plans";
 import { ensureFeedJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { feedDefaultsToFullContent, getFeedHooks } from "@/server/plugins";
@@ -185,7 +185,7 @@ export async function createSubscription(
   // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
   //       transaction, so a crash can't leave a half-created subscription;
   //       lockAndCountActiveSubscriptions serializes the cap check (#952).
-  const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
+  const { maxSubscriptions } = await getUserPlanLimits(db, userId);
 
   // The row is read inside the transaction, so a concurrent unsubscribe can't
   // make a subscribe that went through report "not found".
@@ -217,7 +217,7 @@ export async function createSubscription(
       and(eq(subscriptions.feedId, feedId), isNotNull(subscriptions.unsubscribedAt))
     );
 
-    if (activeCount >= maxSubs) {
+    if (maxSubscriptions !== null && activeCount >= maxSubscriptions) {
       // Over cap — check if we're already subscribed to this specific feed
       const [existingSub] = await selectActiveSubscription();
       if (existingSub) {
@@ -227,7 +227,7 @@ export async function createSubscription(
         };
       }
 
-      throw errors.maxSubscriptionsReached(maxSubs);
+      throw errors.maxSubscriptionsReached(maxSubscriptions);
     }
 
     // 4. Upsert subscription — insert new or reactivate soft-deleted

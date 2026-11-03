@@ -19,7 +19,7 @@ import {
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
-import { usageLimitsConfig } from "@/server/config/env";
+import { getUserPlanLimits } from "@/server/services/plans";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-events";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -115,9 +115,9 @@ export async function createCollection(
         const activeCount = await lockAndCountActiveSubscriptions(tx, userId);
         const existingId = await findActiveCollectionByName(tx, userId, name);
         if (existingId) return { existingId };
-        const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
-        if (activeCount >= maxSubs) {
-          throw errors.maxSubscriptionsReached(maxSubs);
+        const { maxSubscriptions } = await getUserPlanLimits(tx, userId);
+        if (maxSubscriptions !== null && activeCount >= maxSubscriptions) {
+          throw errors.maxSubscriptionsReached(maxSubscriptions);
         }
         return { created: await insertCollection(tx, userId, name) };
       });

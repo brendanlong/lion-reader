@@ -20,15 +20,11 @@ import { uuidSchema } from "../validation";
 import { ingestAddresses } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { ingestConfig } from "@/server/config/env";
+import { countIngestAddresses, getUserPlanLimits } from "@/server/services/plans";
 
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * Maximum number of ingest addresses a user can create.
- */
-const MAX_ADDRESSES_PER_USER = 5;
 
 /**
  * Length of the random token in bytes (16 bytes = 128 bits).
@@ -169,16 +165,10 @@ export const ingestAddressesRouter = createTRPCRouter({
       const domain = requireIngestDomain();
       const userId = ctx.session.user.id;
 
-      // Check current address count
-      const countResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(ingestAddresses)
-        .where(and(eq(ingestAddresses.userId, userId), isNull(ingestAddresses.deletedAt)));
-
-      const currentCount = countResult[0]?.count ?? 0;
-
-      if (currentCount >= MAX_ADDRESSES_PER_USER) {
-        throw errors.maxIngestAddressesReached(MAX_ADDRESSES_PER_USER);
+      const currentCount = await countIngestAddresses(ctx.db, userId);
+      const { maxIngestAddresses } = await getUserPlanLimits(ctx.db, userId);
+      if (maxIngestAddresses !== null && currentCount >= maxIngestAddresses) {
+        throw errors.maxIngestAddressesReached(maxIngestAddresses);
       }
 
       // Generate a unique token
