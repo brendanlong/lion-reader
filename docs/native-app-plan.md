@@ -7,7 +7,7 @@ work. Each phase below adds the server pieces it needs alongside its client code
 
 ## Remaining phases
 
-1. **Narration**: AI-normalized text (device, cloud and enhanced voices are done).
+1. **Narration**: AI-normalized text (built-in, cloud and downloaded voices are done).
 2. **Release**: the Play Console listing and its 14-day closed test (new
    personal developer accounts need one before production); signed builds on
    `android-v*` tags are set up (see `docs/DEPLOYMENT.md`).

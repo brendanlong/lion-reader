@@ -64,7 +64,7 @@ KDoc of the class doing it.
 Run from `kmp/`. Gradle provisions its own JDK, so any JDK can launch
 `./gradlew`; versions live only in `gradle/libs.versions.toml`. The Android SDK
 comes from `sdk.dir` in `local.properties` (gitignored) or `ANDROID_HOME`.
-Building the app also builds Phonon's native library (enhanced voices) from
+Building the app also builds Phonon's native library (downloaded voices) from
 pinned source (`phonon/build.sh`), which needs rustup, `cargo-ndk` and an NDK
 at `ANDROID_NDK_HOME`.
 

@@ -124,7 +124,7 @@ class AppGraph(
             NarrationEngine.ENHANCED -> {
                 val model =
                     enhancedVoiceModel
-                        ?: throw SpeechUnavailable("Enhanced voices don't run on this device.")
+                        ?: throw SpeechUnavailable("Downloaded voices don't run on this device.")
                 EnhancedVoices(model, resolveEnhancedVoice(settings.enhancedVoice).id, scope)
             }
             NarrationEngine.CLOUD -> {

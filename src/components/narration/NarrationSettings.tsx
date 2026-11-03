@@ -233,16 +233,16 @@ export function NarrationSettings() {
                 value="browser"
                 selected={settings.provider}
                 onSelect={handleProviderChange}
-                label="Browser Voices"
-                description="Uses your browser's built-in text-to-speech"
+                label="Built-in Voices"
+                description="The text-to-speech voices your browser already has"
               />
               {(canStreamAudio || settings.provider === "phonon") && (
                 <ProviderOption
                   value="phonon"
                   selected={settings.provider}
                   onSelect={handleProviderChange}
-                  label="Enhanced Voices"
-                  description="Higher-quality voices that run on your device (one-time download)"
+                  label="Downloaded Voices"
+                  description="Higher-quality voices that run on your device after a one-time download"
                 />
               )}
               {((canStreamAudio && cloudVoiceModels.length > 0) ||
@@ -258,7 +258,7 @@ export function NarrationSettings() {
             </div>
           </div>
 
-          {/* Browser Voice Selector (only shown when browser provider selected) */}
+          {/* Built-in Voice Selector (only shown when browser provider selected) */}
           {settings.provider === "browser" && (
             <div>
               <label
@@ -352,7 +352,7 @@ export function NarrationSettings() {
             </div>
           </div>
 
-          {/* Pitch Slider (browser voices only - Phonon has no pitch control) */}
+          {/* Pitch Slider (built-in voices only - Phonon has no pitch control) */}
           {settings.provider === "browser" && (
             <div>
               <label

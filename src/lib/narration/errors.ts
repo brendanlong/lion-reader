@@ -64,7 +64,7 @@ const ERROR_INFO: Record<VoiceErrorType, Omit<VoiceErrorInfo, "type">> = {
   },
   unknown: {
     message: "Something went wrong with the voice model.",
-    suggestion: "Try again or use a browser voice instead.",
+    suggestion: "Try again or use a built-in voice instead.",
   },
 };
 

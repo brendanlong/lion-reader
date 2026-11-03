@@ -183,7 +183,7 @@ async function loadModel(): Promise<LoadedModel> {
   const voiceBlobUrls: string[] = [];
   const blobUrl = async (url: string, keep: string[]): Promise<string> => {
     const response = await cache.match(url);
-    if (!response) throw new Error("The enhanced voice model isn't downloaded");
+    if (!response) throw new Error("The voice model isn't downloaded");
     const blob = URL.createObjectURL(await response.blob());
     keep.push(blob);
     return blob;
@@ -227,7 +227,7 @@ function startLoad(): Promise<LoadedModel> {
     // Another tab removed the files while this loaded.
     if (loading !== load) {
       release(loaded);
-      throw new Error("The enhanced voice model was deleted");
+      throw new Error("The downloaded voice model was deleted");
     }
     return loaded;
   });

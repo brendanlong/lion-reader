@@ -323,12 +323,12 @@ private fun NarrationSettings(
                             voices.isEmpty() -> "No text-to-speech voices installed"
                             else ->
                                 voices.firstOrNull { it.name == settings.narrationVoice }?.label
-                                    ?: "Device default"
+                                    ?: "System default"
                         },
                     options = listOf(null) + voices.orEmpty(),
                     optionLabel = { voice ->
                         when {
-                            voice == null -> "Device default"
+                            voice == null -> "System default"
                             voice.online -> "${voice.label} (online)"
                             else -> voice.label
                         }
@@ -451,7 +451,7 @@ private fun EnhancedVoiceSettings(
 ) {
     val model = graph.enhancedVoiceModel
     if (model == null) {
-        Hint("Enhanced voices don't run on this device.")
+        Hint("Downloaded voices don't run on this device.")
         return
     }
     val state by model.state.collectAsStateWithLifecycle()
@@ -476,7 +476,7 @@ private fun EnhancedVoiceSettings(
                 progress = { current.fraction },
                 modifier =
                     Modifier.fillMaxWidth().semantics {
-                        contentDescription = "Downloading enhanced voices"
+                        contentDescription = "Downloading voices"
                     },
             )
             Hint("Downloading… ${(current.fraction * 100).roundToInt()}%")
@@ -535,8 +535,8 @@ private fun EnhancedVoiceSettings(
         }
     }
     Hint(
-        "Enhanced voices run on this phone, so what you listen to stays on it, and work " +
-            "offline once downloaded. The download comes from Hugging Face."
+        "Downloaded voices run on this phone, so what you listen to stays on it, and work " +
+            "offline. The download comes from Hugging Face."
     )
 }
 
@@ -557,9 +557,9 @@ private fun pauseLabel(seconds: Float): String =
 private val NarrationEngine.label: String
     get() =
         when (this) {
-            NarrationEngine.DEVICE -> "Device"
+            NarrationEngine.DEVICE -> "Built-in"
             NarrationEngine.CLOUD -> "Cloud"
-            NarrationEngine.ENHANCED -> "Enhanced"
+            NarrationEngine.ENHANCED -> "Downloaded"
         }
 
 /** A button showing [label] that opens a menu of [options]. */

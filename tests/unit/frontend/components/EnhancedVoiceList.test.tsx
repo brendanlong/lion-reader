@@ -64,7 +64,7 @@ describe("EnhancedVoiceList", () => {
   it("puts every voice in one native radio group, named for its voice", async () => {
     renderList();
 
-    await screen.findByRole("radiogroup", { name: "Enhanced voices" });
+    await screen.findByRole("radiogroup", { name: "Downloaded voices" });
     const radios = screen.getAllByRole("radio") as HTMLInputElement[];
     expect(radios).toHaveLength(ENHANCED_VOICES.length);
     expect(new Set(radios.map((r) => r.name)).size).toBe(1);

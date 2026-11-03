@@ -32,7 +32,7 @@ export interface NarrationSettings {
   /**
    * Which TTS provider to use.
    * - "browser": Native Web Speech API voices (default)
-   * - "phonon": Enhanced voices via Phonon (requires download)
+   * - "phonon": Downloaded voices via Phonon (requires download)
    * - "cloud": Cloud voices (server-side speech models)
    */
   provider: TTSProviderId;

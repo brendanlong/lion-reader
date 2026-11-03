@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="November 2, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="November 3, 2026">
       <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -234,10 +234,10 @@ export default function PrivacyPolicyPage() {
                 device.
               </LegalParagraph>
               <LegalParagraph>
-                With browser or enhanced voices, audio is generated entirely on your device. If you
-                choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
-                sent to the provider of the speech model you picked to generate the audio: our own
-                speech server (see <TextLink href="#hosting">Hosting</TextLink>) or DeepInfra
+                With built-in or downloaded voices, audio is generated entirely on your device. If
+                you choose <strong>Cloud Voices</strong> (off by default), the text being narrated
+                is sent to the provider of the speech model you picked to generate the audio: our
+                own speech server (see <TextLink href="#hosting">Hosting</TextLink>) or DeepInfra
                 directly (the default voice, Kokoro), BreezeBlue or Together AI directly, or
                 OpenRouter, which forwards it to the company hosting that model (for example
                 DeepInfra or Together). When that provider is too busy or failing, the text may
@@ -247,7 +247,7 @@ export default function PrivacyPolicyPage() {
                 account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
-                In the Android app, device voices send the article text to your device&apos;s
+                In the Android app, built-in voices send the article text to your device&apos;s
                 text-to-speech engine; if that engine uses online voices, its provider processes the
                 text under its own terms. Cloud Voices in the app work as described above, and the
                 audio is cached only on your device.
@@ -292,9 +292,12 @@ export default function PrivacyPolicyPage() {
             </LegalSubsection>
           </Card>
 
-          <LegalSubsection id="enhanced-voices" title="Enhanced Voices (Hugging Face) — Optional">
+          <LegalSubsection
+            id="downloaded-voices"
+            title="Downloaded Voices (Hugging Face) — Optional"
+          >
             <LegalParagraph tight>
-              <strong>Only if you use enhanced voices.</strong> Downloading enhanced voices, on the
+              <strong>Only if you use downloaded voices.</strong> Downloading these voices, on the
               web or in the Android app, fetches the voice model and voices directly from Hugging
               Face. These requests go straight from your browser or the app to Hugging Face, so it
               sees your IP address and user agent, as with any download. No article text or account
@@ -556,7 +559,7 @@ export default function PrivacyPolicyPage() {
             read items, sort order), and keyboard shortcut preferences
           </li>
           <li>
-            <strong>Cache storage:</strong> The enhanced narration voice model and voices (if you
+            <strong>Cache storage:</strong> The downloaded narration voice model and voices (if you
             download them). These files are stored locally on your device and never sent to our
             servers.
           </li>

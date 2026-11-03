@@ -224,7 +224,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
         removeModel={removeModel}
       />
 
-      <div role="radiogroup" aria-label="Enhanced voices" className="space-y-4">
+      <div role="radiogroup" aria-label="Downloaded voices" className="space-y-4">
         {LOCALES.map(({ locale, label }) => (
           <div key={locale} className="space-y-2">
             <h4 className="ui-text-xs text-muted font-medium">{label}</h4>
@@ -246,7 +246,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       </div>
 
       <p className="ui-text-xs text-muted">
-        Enhanced voices run entirely in your browser. Once downloaded, they work offline.
+        Downloaded voices run entirely in your browser and work offline.
       </p>
     </div>
   );
