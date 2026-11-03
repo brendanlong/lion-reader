@@ -607,6 +607,23 @@ describe("narration.generate failure backoff", () => {
     );
   });
 
+  it("narrates in plain text on the server's key for a plan without text cleanup (#2225)", async () => {
+    llmContent = JSON.stringify({ paragraphs: [{ id: 0, text: "Rewritten by the model." }] });
+    const userId = await createServerKeyUser();
+    await db.update(users).set({ plan: "free" }).where(eq(users.id, userId));
+    const caller = createCaller(await createAuthContext(userId));
+
+    await withPlanLimits(
+      "free",
+      { quotas: { ...PLAN_LIMITS.free.quotas, narrationTextProcessing: "excluded" } },
+      async () => {
+        expect(await caller.narration.isAiTextProcessingAvailable()).toEqual({ available: false });
+        expect((await narrateOnce(userId)).source).toBe("fallback");
+        expect(llmRequests).toBe(0);
+      }
+    );
+  });
+
   it("counts a failover from the user's refused key onto the server's against the plan (#2225)", async () => {
     llmContent = JSON.stringify({ paragraphs: [{ id: 0, text: "Rewritten by the model." }] });
     refusedKey = "csk-test-key";

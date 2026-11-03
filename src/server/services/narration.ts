@@ -26,6 +26,7 @@ import {
 import {
   generateChatCompletion,
   isOnUserKey,
+  planIncludesFeature,
   isProviderAvailable,
   isTextModelAllowed,
   TextGenerationError,
@@ -429,5 +430,8 @@ export async function isNarrationLlmAvailable(
   userModel?: string | null
 ): Promise<boolean> {
   const ref = await getNarrationModelRef(userModel, keys);
-  return isTextModelAllowed(formatModelRef(ref.provider, ref.model), keys);
+  return (
+    planIncludesFeature(keys, ref.provider, "narrationTextProcessing") &&
+    (await isTextModelAllowed(formatModelRef(ref.provider, ref.model), keys))
+  );
 }

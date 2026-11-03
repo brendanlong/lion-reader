@@ -30,7 +30,12 @@ import {
   type NarrationFailure,
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import { isModelAllowed, isTextModelAllowed, listAllModels } from "@/server/services/ai-providers";
+import {
+  isModelAllowed,
+  isTextModelAllowed,
+  listAllModels,
+  planIncludesFeature,
+} from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
@@ -253,6 +258,7 @@ export const narrationRouter = createTRPCRouter({
       // If user disabled LLM normalization, no provider is configured, or we had a recent error, fall back to plain text
       if (
         !input.useLlmNormalization ||
+        !planIncludesFeature(keys, modelRef.provider, "narrationTextProcessing") ||
         !(await isTextModelAllowed(formatModelRef(modelRef.provider, modelRef.model), keys)) ||
         !canRetryLLM
       ) {

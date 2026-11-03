@@ -35,6 +35,13 @@ export interface QuotaRate {
   perDay: number;
 }
 
+/**
+ * A plan's quota: a {@link QuotaRate}, `null` for no limit, or `"excluded"`
+ * when the plan doesn't include it at all (an AI feature still works on the
+ * user's own key).
+ */
+export type QuotaLimit = QuotaRate | null | "excluded";
+
 export const PLAN_QUOTA_NAMES: Record<PlanQuota, string> = {
   /** Saving a link, fetching an article's full content, retrying a broken feed. */
   pageFetches: "Page fetches",
@@ -61,7 +68,7 @@ export interface PlanLimits {
    * isn't limited by it.
    */
   serverKeyModels: readonly string[] | null;
-  quotas: Record<PlanQuota, QuotaRate | null>;
+  quotas: Record<PlanQuota, QuotaLimit>;
 }
 
 export const PLAN_NAMES: Record<PlanId, string> = {
@@ -79,7 +86,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
       pageFetches: { burst: 50, perDay: 200 },
       fileConversions: { burst: 5, perDay: 10 },
       summaries: { burst: 3, perDay: 5 },
-      narrationTextProcessing: { burst: 20, perDay: 50 },
+      narrationTextProcessing: "excluded",
       speechCharacters: { burst: 50_000, perDay: 100_000 },
     },
   },

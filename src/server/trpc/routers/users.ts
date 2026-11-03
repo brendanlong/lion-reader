@@ -400,7 +400,11 @@ export const usersRouter = createTRPCRouter({
           serverKeyModels: z.array(z.string()).readonly().nullable(),
           quotas: z.record(
             z.enum(PLAN_QUOTAS),
-            z.object({ burst: z.number(), perDay: z.number() }).nullable()
+            z.union([
+              z.object({ burst: z.number(), perDay: z.number() }),
+              z.null(),
+              z.literal("excluded"),
+            ])
           ),
         }),
         usage: z.object({

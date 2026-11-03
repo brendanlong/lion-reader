@@ -175,9 +175,13 @@ describe("plans", () => {
 
     it("doesn't limit a plan without the quota", async () => {
       const userId = await createTestUser({ plan: "unlimited" });
-      for (let i = 0; i < PLAN_LIMITS.free.quotas.fileConversions!.burst + 1; i++) {
-        await upload(userId, `file-${i}`);
-      }
+      await withPlanLimits(
+        "free",
+        { quotas: { ...PLAN_LIMITS.free.quotas, fileConversions: { burst: 1, perDay: 1 } } },
+        async () => {
+          for (let i = 0; i < 2; i++) await upload(userId, `file-${i}`);
+        }
+      );
     });
   });
 

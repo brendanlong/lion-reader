@@ -19,6 +19,7 @@ import {
   generateChatCompletion,
   getAvailableProviders,
   isTextModelAllowed,
+  planIncludesFeature,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import {
@@ -254,7 +255,11 @@ export async function isSummarizationAvailable(
   keys?: AiProviderKeys,
   userModel?: string | null
 ): Promise<boolean> {
-  return isTextModelAllowed(await getSummarizationModelId(userModel, keys), keys);
+  const modelId = await getSummarizationModelId(userModel, keys);
+  return (
+    planIncludesFeature(keys, parseModelRef(modelId).provider, "summaries") &&
+    (await isTextModelAllowed(modelId, keys))
+  );
 }
 
 /**

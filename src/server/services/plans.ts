@@ -59,6 +59,7 @@ export async function consumeQuota(
 ): Promise<void> {
   const rate = limits.quotas[quota];
   if (rate === null) return;
+  if (rate === "excluded") throw errors.notInPlan(PLAN_QUOTA_NAMES[quota]);
   const result = await consumeBucket(
     planQuotaKey(quota, userId),
     { capacity: rate.burst, refillRate: rate.perDay / SECONDS_PER_DAY },

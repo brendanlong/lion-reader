@@ -132,6 +132,21 @@ export function planAllowsOnServerKey(keys: AiProviderKeys | undefined, modelRef
 }
 
 /**
+ * Whether a call to `provider` for `quota`'s feature is one the user's plan
+ * includes: on their own key always; on the server's, unless the plan
+ * excludes the feature.
+ */
+export function planIncludesFeature(
+  keys: AiProviderKeys | undefined,
+  provider: AiProvider,
+  quota: PlanQuota
+): boolean {
+  return (
+    !keys?.plan || isOnUserKey(provider, keys) || keys.plan.limits.quotas[quota] !== "excluded"
+  );
+}
+
+/**
  * Takes `cost` of the user's `quota` for a call on the server's key (a call
  * on their own key costs us nothing, so the caller doesn't charge it). Throws
  * `QUOTA_EXCEEDED` when the quota is spent. The operator's own calls
