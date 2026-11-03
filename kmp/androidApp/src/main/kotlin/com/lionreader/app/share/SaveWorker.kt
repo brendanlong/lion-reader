@@ -20,6 +20,10 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
 /**
@@ -46,23 +50,37 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     // file is one save.
                     val filename = inputData.getString(FILENAME) ?: file.name
                     connection.saveFile(filename, bytes, idempotencyKey = file.name).also {
-                        if (it != SaveOutcome.Retry) withContext(Dispatchers.IO) { file.delete() }
+                        if (it !is SaveOutcome.Retry) withContext(Dispatchers.IO) { file.delete() }
                     }
                 }
                 else -> return Result.failure()
             }
+        retryMessages.update { it - id }
         return when (outcome) {
             is SaveOutcome.Saved -> {
                 // Bring the new article onto the device.
                 SyncScheduler.syncNow(applicationContext)
                 Result.success(workDataOf(TITLE to outcome.title))
             }
-            SaveOutcome.Retry -> Result.retry()
+            is SaveOutcome.Retry -> {
+                outcome.message?.let { message -> retryMessages.update { it + (id to message) } }
+                Result.retry()
+            }
             is SaveOutcome.Failed -> Result.failure(workDataOf(ERROR to outcome.message))
         }
     }
 
     companion object {
+        /**
+         * The server's reason a save is waiting to retry, by work id. A retry can't carry output
+         * data, so the share dialog reads it here; it's lost with the process, along with the
+         * dialog.
+         */
+        private val retryMessages = MutableStateFlow<Map<UUID, String>>(emptyMap())
+
+        /** The server's reason the save [id] is waiting to retry, if it gave one. */
+        fun retryMessage(id: UUID): Flow<String?> = retryMessages.map { it[id] }
+
         const val TITLE = "title"
         const val ERROR = "error"
         private const val URL = "url"
