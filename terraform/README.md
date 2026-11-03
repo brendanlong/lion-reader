@@ -65,6 +65,7 @@ credentials. Keep applies manual and local.
 
 ```sh
 flyctl secrets set -a lion-reader SENTRY_DSN="$(terraform output -raw sentry_dsn)"
+flyctl secrets set -a lion-reader MAILGUN_SENDING_KEY="$(terraform output -raw mailgun_sending_key)"
 
 terraform output -json healthcheck_ping_urls \
   | python3 -c 'import json,sys;[print(f"{k}={v}") for k,v in json.load(sys.stdin).items()]' \

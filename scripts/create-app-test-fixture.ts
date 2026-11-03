@@ -24,6 +24,7 @@ async function main(): Promise<void> {
     id: userId,
     email: `app-fixture-${userId}@test.com`,
     passwordHash: "unused",
+    emailVerifiedAt: new Date(now),
     tosAgreedAt: new Date(now),
     privacyPolicyAgreedAt: new Date(now),
     notEuAgreedAt: new Date(now),

@@ -25,9 +25,9 @@ import { attachOAuthAccount, claimUnverifiedAccount } from "@/server/services/oa
  * Parameters for processing an OAuth callback.
  *
  * `email` is required for new accounts and optional for returning users (Apple only
- * sends it on first auth; they're matched by `providerAccountId`). OAuth sign-in is
- * the only way an email gets verified in this app, so linking by email or creating
- * an account with it requires `emailVerified === true`.
+ * sends it on first auth; they're matched by `providerAccountId`). Linking by email
+ * or creating an account with it trusts the address, so it requires
+ * `emailVerified === true`.
  */
 export interface ProcessOAuthCallbackParams extends ProviderIdentity {
   provider: OAuthProviderName;

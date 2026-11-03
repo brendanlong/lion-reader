@@ -26,3 +26,9 @@ output "healthcheck_ping_urls" {
   }
   sensitive = true
 }
+
+output "mailgun_sending_key" {
+  description = "The app's MAILGUN_SENDING_KEY."
+  value       = mailgun_api_key.app_sending.secret
+  sensitive   = true
+}

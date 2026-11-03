@@ -58,6 +58,7 @@ const errorCodeToTRPCCode = {
   UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
   SERVER_BUSY: "TOO_MANY_REQUESTS",
   QUOTA_EXCEEDED: "TOO_MANY_REQUESTS",
+  ACCOUNT_EMAIL_RATE_LIMITED: "TOO_MANY_REQUESTS",
   NOT_IN_PLAN: "FORBIDDEN",
   AI_PROVIDER_BUSY: "TOO_MANY_REQUESTS",
   // Only for a call made with the user's own key: their key, credit, or model
@@ -190,6 +191,15 @@ export const errors = {
       `You've used up your plan's ${quotaName} for now. Try again in ${formatWait(retryAfterSeconds)}.`,
       { retryAfter: retryAfterSeconds }
     ),
+
+  accountEmailRateLimited: (retryAfterSeconds: number) => {
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    return createError(
+      "ACCOUNT_EMAIL_RATE_LIMITED",
+      `We've sent several emails to this address recently. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+      { retryAfter: retryAfterSeconds }
+    );
+  },
 
   notInPlan: (quotaName: string) =>
     createError(

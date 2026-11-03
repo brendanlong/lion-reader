@@ -102,6 +102,15 @@ export const RATE_LIMIT_CONFIGS = {
     refillRate: 1 / 600,
   },
   /**
+   * Account emails (verification, password reset) to one address, keyed by the
+   * recipient so nobody can use us to flood an inbox. A few resends, then one
+   * every ten minutes.
+   */
+  accountEmail: {
+    capacity: 3,
+    refillRate: 1 / 600,
+  },
+  /**
    * New entries a WebSub hub may push into one feed, counted in entries (the
    * feed is the identifier). Anyone can publish a feed naming their own hub, so
    * this bounds the inserts and fan-out a hub can cause to what polling could:

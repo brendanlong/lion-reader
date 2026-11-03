@@ -1,16 +1,16 @@
 /**
  * Complete Signup Page
  *
- * Requires users to accept Terms of Service and Privacy Policy — and, on
- * EU-restricted instances (EU_RESTRICTED=true, surfaced via the `euRestricted`
- * signup-config flag), to confirm they are not in the EU — before they can use
- * the app. Also provides a button to delete their account if they don't want to
- * proceed.
+ * Requires users to verify their email address and accept the Terms of Service
+ * and Privacy Policy — and, on EU-restricted instances (EU_RESTRICTED=true,
+ * surfaced via the `euRestricted` signup-config flag), to confirm they are not
+ * in the EU — before they can use the app. Also provides a button to delete
+ * their account if they don't want to proceed.
  */
 
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,25 @@ import { PageLink } from "@/components/ui/page-link";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
+/** How often to check whether the email was verified in another tab or browser. */
+const VERIFICATION_POLL_MS = 5000;
+
 export default function CompleteSignupPage() {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const { data: signupConfigData } = trpc.auth.signupConfig.useQuery();
   const euRestricted = signupConfigData?.euRestricted ?? false;
+  const { data: meData } = trpc.auth.me.useQuery(undefined, {
+    refetchInterval: (query) =>
+      query.state.data && !query.state.data.user.emailVerifiedAt ? VERIFICATION_POLL_MS : false,
+  });
+  const user = meData?.user;
+  const needsVerification = user ? !user.emailVerifiedAt : false;
+  const needsConsent = user
+    ? !user.tosAgreedAt || !user.privacyPolicyAgreedAt || (euRestricted && !user.notEuAgreedAt)
+    : false;
+  const isComplete =
+    user !== undefined && signupConfigData !== undefined && !needsVerification && !needsConsent;
 
   const [acceptedTos, setAcceptedTos] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
@@ -33,12 +48,21 @@ export default function CompleteSignupPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
+  useEffect(() => {
+    if (!isComplete) return;
+    // The OAuth callback passes on the login page's `?redirect=`.
+    router.push(safeRedirectPath(new URLSearchParams(window.location.search).get("redirect")));
+    router.refresh();
+  }, [isComplete, router]);
+
   const confirmMutation = trpc.auth.confirmSignup.useMutation({
-    onSuccess: () => {
-      // The OAuth callback passes on the login page's `?redirect=`.
-      router.push(safeRedirectPath(new URLSearchParams(window.location.search).get("redirect")));
-      router.refresh();
+    onSuccess: () => utils.auth.me.invalidate(),
+    onError: (err) => {
+      setError(err.message);
     },
+  });
+
+  const resendMutation = trpc.auth.resendVerificationEmail.useMutation({
     onError: (err) => {
       setError(err.message);
     },
@@ -78,44 +102,76 @@ export default function CompleteSignupPage() {
       <div>
         <h2 className="ui-text-lg text-body font-semibold">Before you continue</h2>
         <p className="ui-text-sm text-muted mt-1">
-          Please review and accept the following to complete your account setup.
+          {needsConsent
+            ? "Please review and accept the following to complete your account setup."
+            : "One more step to complete your account setup."}
         </p>
       </div>
 
       {error && <Alert variant="error">{error}</Alert>}
 
-      <div className="space-y-4">
-        <ConsentCheckbox checked={acceptedTos} onChange={setAcceptedTos}>
-          I have read and agree to the <PolicyLink href="/terms">Terms of Service</PolicyLink>
-        </ConsentCheckbox>
-
-        <ConsentCheckbox checked={acceptedPrivacy} onChange={setAcceptedPrivacy}>
-          I have read and agree to the <PolicyLink href="/privacy">Privacy Policy</PolicyLink>
-        </ConsentCheckbox>
-
-        {euRestricted && (
-          <ConsentCheckbox checked={confirmedNotInEu} onChange={setConfirmedNotInEu}>
-            I confirm that I am not located in the European Union
-          </ConsentCheckbox>
-        )}
-
-        {euRestricted && (
-          <p className="ui-text-xs text-muted">
-            <EuRestrictionReason />
+      {needsVerification && user && (
+        <div className="border-edge-input space-y-3 rounded-md border p-4">
+          <h3 className="ui-text-base text-body font-semibold">Verify your email</h3>
+          <p className="ui-text-sm text-muted">
+            Open the verification link emailed to{" "}
+            <span className="text-body font-medium">{user.email}</span> in this browser, while
+            signed in. This page continues on its own once you&apos;re verified. Didn&apos;t get
+            one?
           </p>
-        )}
-      </div>
+          {resendMutation.isSuccess && (
+            <Alert variant="success">Sent. Check your inbox (and spam folder).</Alert>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setError(null);
+              resendMutation.mutate({});
+            }}
+            loading={resendMutation.isPending}
+          >
+            Send verification email
+          </Button>
+        </div>
+      )}
+
+      {needsConsent && (
+        <>
+          <div className="space-y-4">
+            <ConsentCheckbox checked={acceptedTos} onChange={setAcceptedTos}>
+              I have read and agree to the <PolicyLink href="/terms">Terms of Service</PolicyLink>
+            </ConsentCheckbox>
+
+            <ConsentCheckbox checked={acceptedPrivacy} onChange={setAcceptedPrivacy}>
+              I have read and agree to the <PolicyLink href="/privacy">Privacy Policy</PolicyLink>
+            </ConsentCheckbox>
+
+            {euRestricted && (
+              <ConsentCheckbox checked={confirmedNotInEu} onChange={setConfirmedNotInEu}>
+                I confirm that I am not located in the European Union
+              </ConsentCheckbox>
+            )}
+
+            {euRestricted && (
+              <p className="ui-text-xs text-muted">
+                <EuRestrictionReason />
+              </p>
+            )}
+          </div>
+
+          <Button
+            onClick={handleConfirm}
+            disabled={!allChecked || confirmMutation.isPending}
+            loading={confirmMutation.isPending}
+            className="w-full"
+          >
+            {needsVerification ? "Accept" : "Confirm and continue"}
+          </Button>
+        </>
+      )}
 
       <div className="space-y-3">
-        <Button
-          onClick={handleConfirm}
-          disabled={!allChecked || confirmMutation.isPending}
-          loading={confirmMutation.isPending}
-          className="w-full"
-        >
-          Confirm and continue
-        </Button>
-
         {!showDeleteConfirm ? (
           <button
             onClick={() => setShowDeleteConfirm(true)}

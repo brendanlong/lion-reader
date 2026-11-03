@@ -269,6 +269,12 @@ export default function LoginPage() {
           disabled={isSubmitting}
         />
 
+        <p className="ui-text-sm -mt-2 text-right">
+          <PageLink href="/forgot-password" className="text-muted hover:text-body hover:underline">
+            Forgot your password?
+          </PageLink>
+        </p>
+
         <Button type="submit" className="w-full" loading={isSubmitting}>
           Sign in
         </Button>

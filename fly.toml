@@ -116,6 +116,8 @@ kill_timeout = 30
 
   # lionreader.com only. Newsletters.
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"
+  # Account emails; MAILGUN_SENDING_KEY is a secret (terraform/mailgun.tf).
+  MAILGUN_DOMAIN = "app.lionreader.com"
 
   # Prometheus metrics
   METRICS_ENABLED = "true"

@@ -114,10 +114,14 @@ fetches user-influenced URLs and must never be usable to reach internal services
   and linking/unlinking a social provider (`src/server/services/oauth-accounts.ts`
   says why a failed revoke doesn't undo the change). The one exception is the
   email-match link inside `processOAuthCallback`, an ordinary sign-in; it says why.
-- **A verified provider sign-in that matches an unverified account claims it**:
-  `claimUnverifiedAccount` removes every other way in (password, links, sessions,
-  tokens, grants), so whoever registered the address first can't keep access
-  once its owner signs in (pre-account takeover).
+- **Proving the address claims an unverified account**: a verified provider
+  sign-in (`claimUnverifiedAccount`) or a password reset removes every other way
+  in (password, links, sessions, tokens, grants), so whoever registered the
+  address first can't keep access once its owner shows up (pre-account takeover).
+- **An email-verification link only works for the signed-in account it was sent
+  to** (`services/account-email.ts`), or the address's owner could verify the
+  registrant's account just by clicking it. Every surface gates an unverified
+  user through `isSignupConfirmed`.
 - **Setting or changing the password deletes the user's Wallabag token grants** in
   the same transaction.
 - **A long-lived authenticated connection re-checks its credential periodically**
@@ -127,8 +131,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
   included), and verify through `verifyEmailPassword` / `verifyUserPassword`
   (`auth/password.ts`), which pay the argon2 cost even for a missing user (#1267).
   **Never add an early return that skips argon2.**
-- **OAuth sign-in is the only email-verification path**, so `processOAuthCallback`
-  **refuses to link or create an account from an unverified provider email**.
+- **`processOAuthCallback` refuses to link or create an account from an
+  unverified provider email.**
 - **Keep the Apple id_token signature check** (`oauth/apple.ts`): nothing else
   verifies the signature.
 - **OAuth `state` is bound to the initiating browser** by an `HttpOnly` cookie the

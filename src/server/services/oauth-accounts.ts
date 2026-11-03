@@ -16,21 +16,13 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import type { Database, DbOrTx } from "@/server/db";
-import {
-  apiTokens,
-  oauthAccounts,
-  oauthAuthorizationCodes,
-  oauthConsentGrants,
-  oauthTokenGrants,
-  sessions,
-  users,
-} from "@/server/db/schema";
+import { oauthAccounts, sessions, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/errors";
 import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
 import { oauthTokenColumns, type OAuthTokens } from "@/server/auth/oauth/token-exchange";
-import { deleteTokenGrants } from "@/server/oauth/service";
+import { removeUnverifiedHolderCredentials } from "@/server/services/account-credentials";
 
 export interface AttachOAuthAccountParams extends OAuthTokens {
   /** The user the provider account is being attached to. */
@@ -119,12 +111,9 @@ export async function attachOAuthAccount(
  * owns that address. Whoever created the account may have registered someone
  * else's email to wait for its owner to sign in (pre-account takeover), so the
  * provider identity wins: the registrant's signup agreements are cleared for
- * the owner to give their own, every way in the account had is removed (password,
- * other provider links, sessions, API tokens, OAuth grants and unredeemed
- * codes), the email becomes verified, and only this provider account stays
- * linked. The account's data is kept, including its AI provider keys and
- * newsletter addresses: an unverified account can't create those, so they only
- * exist on accounts from before verification, whose owners we invited. A link
+ * the owner to give their own, the password is cleared, sessions are revoked,
+ * every other credential is removed (`removeUnverifiedHolderCredentials`), the
+ * email becomes verified, and only this provider account stays linked. A link
  * from Settings never comes here, since the session already established who
  * the user is (`linkOAuthAccount`).
  *
@@ -163,15 +152,7 @@ export async function claimUnverifiedAccount(
       .returning({ id: users.id });
 
     if (claimed.length > 0) {
-      await tx.delete(oauthAccounts).where(eq(oauthAccounts.userId, userId));
-      await tx
-        .update(apiTokens)
-        .set({ revokedAt: now })
-        .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
-      // A code redeems against any consent the user later gives its client.
-      await tx.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.userId, userId));
-      await tx.delete(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId));
-      await deleteTokenGrants(eq(oauthTokenGrants.userId, userId), tx);
+      await removeUnverifiedHolderCredentials(tx, userId, now);
     }
 
     await attachOAuthAccount(tx, params);

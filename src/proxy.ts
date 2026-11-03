@@ -48,7 +48,7 @@ import {
 
 /**
  * The statically-prerendered public routes (issue #1359): the `(public)` route
- * group — demo, login, register, terms, privacy. These get the relaxed static
+ * group — demo, login, register, forgot/reset password, terms, privacy. These get the relaxed static
  * CSP instead of the per-request nonce policy: generating a nonce would be
  * pointless (the prerendered HTML can't be stamped with it, so the nonce'd
  * policy would block every script on the page), and these pages render no
@@ -63,6 +63,8 @@ function isPublicStaticPath(pathname: string): boolean {
     pathname.startsWith("/demo/") ||
     pathname === "/login" ||
     pathname === "/register" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
     pathname === "/terms" ||
     pathname === "/privacy"
   );

@@ -38,6 +38,13 @@ import { startOAuthFlow } from "@/server/auth/oauth/providers";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { unlinkOAuthAccount } from "@/server/services/oauth-accounts";
+import {
+  requestPasswordReset,
+  resetPassword,
+  sendVerificationEmail,
+  sendVerificationEmailInBackground,
+  verifyEmail,
+} from "@/server/services/account-email";
 import { getGoogleDocsGrant } from "@/server/google/tokens";
 import {
   DISCORD_BOT_ENABLED,
@@ -191,6 +198,7 @@ export const authRouter = createTRPCRouter({
       // Announcement-feed subscription + Getting Started article (fire-and-forget,
       // errors are caught internally)
       void runPostSignupTasks(ctx.db, result.user.userId);
+      sendVerificationEmailInBackground(ctx.db, { id: result.user.userId, email });
 
       return {
         user: {
@@ -465,6 +473,71 @@ export const authRouter = createTRPCRouter({
         .where(eq(users.id, userId));
 
       return { success: true };
+    }),
+
+  /** Email the signed-in user a new link to verify their address. */
+  resendVerificationEmail: protectedProcedure
+    .input(z.object({}).optional())
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      const { user } = ctx.session;
+      if (!user.emailVerifiedAt) {
+        await sendVerificationEmail(ctx.db, user);
+      }
+      return { success: true };
+    }),
+
+  /** Verify the signed-in user's email with the token from the emailed link. */
+  verifyEmail: protectedProcedure
+    .input(z.object({ token: z.string().min(1) }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await verifyEmail(ctx.db, ctx.session.user.id, input.token);
+      return { success: true };
+    }),
+
+  /**
+   * Email a password-reset link to the address, if it has an account. Succeeds
+   * either way, so it doesn't reveal which addresses have accounts.
+   */
+  requestPasswordReset: expensivePublicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/request-password-reset",
+        tags: ["Auth"],
+        summary: "Email a password reset link",
+      },
+    })
+    .input(z.object({ email: emailSchema }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await requestPasswordReset(ctx.db, input.email);
+      return { success: true };
+    }),
+
+  /** Set a new password with the token from the emailed link, and sign in. */
+  resetPassword: expensivePublicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/reset-password",
+        tags: ["Auth"],
+        summary: "Reset password with an emailed token",
+      },
+    })
+    .input(z.object({ token: z.string().min(1), newPassword: passwordSchema("New password") }))
+    .output(z.object({ sessionToken: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = await resetPassword(ctx.db, input.token, input.newPassword);
+      // The returned sessionToken stays in the body for REST/OpenAPI clients,
+      // which get no cookie.
+      const { token } = await startSession(ctx.db, {
+        userId,
+        requestHeaders: ctx.headers,
+        resHeaders: ctx.resHeaders,
+      });
+      return { sessionToken: token };
     }),
 
   /**

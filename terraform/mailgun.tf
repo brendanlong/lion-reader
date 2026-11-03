@@ -1,6 +1,6 @@
-# Mailgun — the inbound newsletter path. Receive-only: nothing in the codebase
-# sends mail, so the sending-side settings exist to pin them, not because we use
-# them. The account's auto-created sandbox domain is not managed here.
+# Mailgun — inbound newsletters, and the account emails the app sends
+# (verification and password-reset links). The account's auto-created sandbox
+# domain is not managed here.
 
 resource "mailgun_domain" "app" {
   name   = var.mail_domain
@@ -15,8 +15,9 @@ resource "mailgun_domain" "app" {
   # header we don't read.
   spam_action = "disabled"
 
-  # Nothing to track, since we don't send. This is why the `email.app` CNAME in
-  # cloudflare.tf is inert — Mailgun creates that record either way.
+  # Account emails carry single-use links; tracking would rewrite them. This is
+  # why the `email.app` CNAME in cloudflare.tf is inert — Mailgun creates that
+  # record either way.
   open_tracking  = false
   click_tracking = false
   web_scheme     = "http"
@@ -51,4 +52,14 @@ resource "mailgun_route" "newsletter_ingest" {
     "forward(\"https://${var.domain}/api/webhooks/email/mailgun\")",
     "store()",
   ]
+}
+
+# The app's MAILGUN_SENDING_KEY. A sending key for this domain only, so a leak
+# can send as us but can't read stored mail or change routes. Copy it into Fly
+# after creating it (the README in this directory has the command).
+resource "mailgun_api_key" "app_sending" {
+  role        = "sending"
+  kind        = "domain"
+  domain_name = mailgun_domain.app.name
+  description = "Lion Reader app: account emails"
 }

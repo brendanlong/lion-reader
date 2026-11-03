@@ -97,7 +97,7 @@ resource "cloudflare_dns_record" "ingest_aaaa" {
 }
 
 # --- Mailgun tracking host --------------------------------------------------
-# Inert — tracking is off (mailgun.tf) and we send no mail for it to rewrite.
+# Inert — tracking is off (mailgun.tf), so nothing rewrites links to it.
 # Kept so the Mailgun domain stays fully verified rather than partly configured.
 resource "cloudflare_dns_record" "mailgun_tracking" {
   zone_id = cloudflare_zone.lionreader.id

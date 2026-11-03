@@ -1,9 +1,8 @@
 /**
  * Integration tests for the shared OAuth callback processor.
  *
- * Focused on the email-verification gate: OAuth sign-in is the only way an email
- * becomes verified in this app, so an unverified provider email must never be
- * trusted to link into — or create — an account (account-takeover defense).
+ * Focused on the email-verification gate: an unverified provider email must never
+ * be trusted to link into — or create — an account (account-takeover defense).
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";

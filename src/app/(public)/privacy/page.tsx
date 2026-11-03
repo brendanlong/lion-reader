@@ -451,12 +451,17 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection id="inbound-email" title="Inbound Email (Mailgun)">
+          <LegalSubsection id="inbound-email" title="Email (Mailgun)">
             <LegalParagraph tight>
               If you use the email newsletter feature, we use Mailgun to receive emails sent to your
               unique ingest address and forward them to our servers, where they are stored as feed
               entries. Mailgun processes the sender, subject, and content of those emails in order
               to deliver them to us.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              We also use Mailgun to send account emails: the link that verifies your email address
+              when you sign up with a password, and password reset links you ask for. Mailgun
+              receives your email address and the message we send you.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink
