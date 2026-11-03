@@ -90,6 +90,16 @@ export function SubscribeContent() {
     }
   );
 
+  // At the plan's subscription limit, say so up front rather than after a
+  // preview. Read fresh: subscribing and unsubscribing happen elsewhere.
+  const planQuery = trpc.users["me.plan"].useQuery(undefined, { refetchOnMount: "always" });
+  const plan = planQuery.data;
+  const subscriptionLimit = plan?.limits.maxSubscriptions ?? null;
+  const atSubscriptionLimit =
+    plan !== undefined &&
+    subscriptionLimit !== null &&
+    plan.usage.subscriptions >= subscriptionLimit;
+
   // Subscribe mutation
   const subscribeMutation = trpc.subscriptions.create.useMutation({
     onSuccess: (data) => {
@@ -99,8 +109,8 @@ export function SubscribeContent() {
       handleSubscriptionCreated(utils, subscription, queryClient, counts);
       clientPush("/all");
     },
-    onError: () => {
-      toast.error("Failed to subscribe to feed");
+    onError: (error) => {
+      toast.error("Failed to subscribe to feed", { description: error.message });
     },
   });
 
@@ -187,14 +197,22 @@ export function SubscribeContent() {
   // so the user lands straight on the feed preview / discovery step. The ref
   // guard keeps this from firing again as they edit the field afterwards.
   const autoPreviewedRef = useRef(false);
+  // It waits for the plan, so a user at the limit sees that instead.
+  const planSettled = !planQuery.isPending;
   useEffect(() => {
-    if (!autoPreviewedRef.current && sharedUrl && step === "input") {
+    if (
+      !autoPreviewedRef.current &&
+      sharedUrl &&
+      step === "input" &&
+      planSettled &&
+      !atSubscriptionLimit
+    ) {
       autoPreviewedRef.current = true;
       void handlePreview();
     }
     // handlePreview is intentionally excluded — this runs once, guarded by the ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedUrl, step]);
+  }, [sharedUrl, step, planSettled, atSubscriptionLimit]);
 
   const handleSelectFeed = async (feedUrl: string) => {
     setSelectedFeedUrl(feedUrl);
@@ -246,6 +264,14 @@ export function SubscribeContent() {
         Subscribe to Feed
       </h1>
 
+      {atSubscriptionLimit && (
+        <Alert variant="warning" className="mb-4">
+          You&apos;ve reached your plan&apos;s limit of {subscriptionLimit.toLocaleString()}{" "}
+          subscriptions and collections. Unsubscribe from a feed or delete a collection to add
+          another.
+        </Alert>
+      )}
+
       {step === "input" && (
         <Card>
           <p className="ui-text-sm text-muted mb-4">
@@ -294,10 +320,15 @@ export function SubscribeContent() {
               }}
               error={urlError}
               autoComplete="url"
-              disabled={isLoading}
+              disabled={isLoading || atSubscriptionLimit}
             />
 
-            <Button type="submit" className="w-full" loading={isLoading}>
+            <Button
+              type="submit"
+              className="w-full"
+              loading={isLoading}
+              disabled={atSubscriptionLimit}
+            >
               Preview Feed
             </Button>
           </form>
@@ -464,6 +495,7 @@ export function SubscribeContent() {
               className="flex-1"
               onClick={handleSubscribe}
               loading={subscribeMutation.isPending}
+              disabled={atSubscriptionLimit}
             >
               Subscribe
             </Button>

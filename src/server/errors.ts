@@ -4,6 +4,7 @@
  * the compat APIs convert client errors to their own (`withClientErrors`).
  */
 
+import { formatWait } from "@/lib/format";
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 
@@ -183,19 +184,17 @@ export const errors = {
 
   internal: (message = "An unexpected error occurred") => createError("INTERNAL_ERROR", message),
 
-  quotaExceeded: (quotaName: string, retryAfterSeconds: number) => {
-    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
-    return createError(
+  quotaExceeded: (quotaName: string, retryAfterSeconds: number) =>
+    createError(
       "QUOTA_EXCEEDED",
-      `You've used your plan's ${quotaName.toLowerCase()} for now. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+      `You've used up your plan's ${quotaName} for now. Try again in ${formatWait(retryAfterSeconds)}.`,
       { retryAfter: retryAfterSeconds }
-    );
-  },
+    ),
 
   notInPlan: (quotaName: string) =>
     createError(
       "NOT_IN_PLAN",
-      `Your plan doesn't include ${quotaName.toLowerCase()} on Lion Reader's keys. Add your own API key in Settings to use it.`
+      `Your plan doesn't include ${quotaName} on Lion Reader's keys. Add your own API key in Settings to use it.`
     ),
 
   serverBusy: (work: string) =>

@@ -3,7 +3,7 @@
  * voices stay with that key, and speech streams through to fMP4.
  */
 
-import { PLAN_LIMITS, PLAN_QUOTA_NAMES } from "../../src/lib/plans";
+import { PLAN_LIMITS, quotaNameInSentence } from "../../src/lib/plans";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -476,7 +476,7 @@ describe("the speech route", () => {
           expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
           const body = await second.json();
           expect(body.data.appErrorCode).toBe("QUOTA_EXCEEDED");
-          expect(body.message).toContain(PLAN_QUOTA_NAMES.speechCharacters.toLowerCase());
+          expect(body.message).toContain(quotaNameInSentence("speechCharacters"));
         }
       );
     } finally {
