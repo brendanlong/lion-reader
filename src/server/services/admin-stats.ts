@@ -4,7 +4,8 @@
 
 import { and, count, gt, isNull, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
-import { feeds, invites, subscriptions, users } from "@/server/db/schema";
+import { entries, feeds, invites, subscriptions, users } from "@/server/db/schema";
+import { estimateRows } from "@/server/db/estimate-rows";
 import { isUserManagedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 
 interface AdminOverview {
@@ -14,10 +15,7 @@ interface AdminOverview {
   totalFeeds: number;
   totalFeedsWithSubscribers: number;
   brokenFeeds: number;
-  /**
-   * The planner's row estimate, kept current by autovacuum/ANALYZE: an exact
-   * count(*) reads every entry. NULL until the table is first analyzed.
-   */
+  /** An exact count(*) reads every entry on each page load. */
   estimatedEntries: number | null;
   totalSubscriptions: number;
   pendingInvites: number;
@@ -34,7 +32,7 @@ export async function getAdminOverview(db: Database): Promise<AdminOverview> {
     activeUsersResult,
     feedStatsResult,
     feedsWithSubsResult,
-    estimatedEntriesResult,
+    estimatedEntries,
     totalSubscriptionsResult,
     pendingInvitesResult,
   ] = await Promise.all([
@@ -71,10 +69,7 @@ export async function getAdminOverview(db: Database): Promise<AdminOverview> {
       .from(subscriptions)
       .where(and(isNull(subscriptions.unsubscribedAt), isWebSubscription())),
 
-    // reltuples is -1 before the first ANALYZE.
-    db.execute<{ estimate: string | null }>(
-      sql`SELECT NULLIF(reltuples, -1)::bigint AS estimate FROM pg_class WHERE oid = 'entries'::regclass`
-    ),
+    estimateRows(db, entries),
 
     // Total active subscriptions
     db
@@ -96,10 +91,7 @@ export async function getAdminOverview(db: Database): Promise<AdminOverview> {
     totalFeeds: Number(feedStatsResult[0].total),
     totalFeedsWithSubscribers: Number(feedsWithSubsResult[0].count),
     brokenFeeds: Number(feedStatsResult[0].broken),
-    estimatedEntries:
-      estimatedEntriesResult.rows[0].estimate === null
-        ? null
-        : Number(estimatedEntriesResult.rows[0].estimate),
+    estimatedEntries: estimatedEntries,
     totalSubscriptions: Number(totalSubscriptionsResult[0].count),
     pendingInvites: Number(pendingInvitesResult[0].count),
   };
