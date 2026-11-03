@@ -352,7 +352,12 @@ export async function fetchAndStoreFullContent(
     };
   }
 
-  await consumePlanQuota(db, userId, "pageFetches");
+  // An entry's first fetch is the full-content feature at reading pace (the
+  // reader asks for it when a full-content subscription's entry opens), and is
+  // bounded by the user's library. Fetching it again is what a quota stops.
+  if (entry.fullContentFetchedAt) {
+    await consumePlanQuota(db, userId, "pageFetches");
+  }
   logger.info("Fetching full content for entry", {
     entryId: entry.id,
     url: entry.url,

@@ -8,7 +8,7 @@ Business logic shared by tRPC routers, the MCP server, the compat APIs and backg
 
 ## Plans and Quotas
 
-A per-user limit comes from the user's plan (`@/lib/plans`, #2222), read through `services/plans.ts` (`getUserPlanLimits`, `consumePlanQuota`) in the service every entry point calls — never a constant, an env var, or a check in one router.
+A per-user limit comes from the user's plan (`@/lib/plans`, #2222), read through `services/plans.ts` (`getUserPlanLimits`, `consumePlanQuota`) in the service every entry point calls — never a constant, an env var, or a check in one router. Quota buckets are durable Redis keys (`services/plan-quota-keys.ts`), which the deploy-time clear skips.
 
 ## New-Account Onboarding
 

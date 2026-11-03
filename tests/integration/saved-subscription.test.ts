@@ -169,7 +169,7 @@ describe("the saved subscription (#1846)", () => {
     expect((await caller.tags.list()).uncategorized.feedCount).toBe(1);
     expect((await exportSubscriptionsOpml(db, userId)).feedCount).toBe(1);
 
-    const result = await withPlanLimits("paid", { maxSubscriptions: 2 }, () =>
+    const result = await withPlanLimits("unlimited", { maxSubscriptions: 2 }, () =>
       createSubscription(
         db,
         userId,

@@ -141,9 +141,10 @@ export const users = pgTable(
     // expired sessions (the previous MAX(sessions.last_active_at) source).
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
 
-    // Sets the user's quotas (`@/lib/plans`). The column default only covers
-    // rows the previous release inserts; signup sets the instance's default plan.
-    plan: text("plan", { enum: PLAN_IDS }).notNull().default("paid"),
+    // Sets the user's quotas (`@/lib/plans`). The column default covers rows
+    // from before plans and the previous release's inserts; signup sets the
+    // instance's default plan.
+    plan: text("plan", { enum: PLAN_IDS }).notNull().default("unlimited"),
 
     // Trigger-maintained unread counters (spam excluded; rules in migration
     // 0133, kept by `apply_unread_memberships` / `recompute_list_counters`):

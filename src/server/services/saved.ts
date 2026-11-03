@@ -1122,6 +1122,7 @@ export async function uploadArticle(
     const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
     if (existing) return existing.article;
 
+    await consumePlanQuota(db, userId, "fileConversions");
     // Convert markdown to HTML (with frontmatter title/summary/author); Readability
     // is skipped downstream because preCleanedContent is set.
     const markdownResult = await processMarkdown(params.content);

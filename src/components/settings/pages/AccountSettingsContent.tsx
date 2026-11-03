@@ -148,7 +148,9 @@ function formatQuota(rate: QuotaRate | null): string {
 }
 
 export function PlanSection() {
-  const planQuery = trpc.users["me.plan"].useQuery();
+  // Usage changes on other pages (subscribing, adding an address), so read it
+  // fresh whenever the section is shown instead of patching it from each.
+  const planQuery = trpc.users["me.plan"].useQuery(undefined, { refetchOnMount: "always" });
   const data = planQuery.data;
 
   return (

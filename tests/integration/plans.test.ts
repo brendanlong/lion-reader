@@ -11,13 +11,15 @@ import { db } from "../../src/server/db";
 import { users } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import { createSubscription } from "../../src/server/services/subscribe";
-import { saveArticle, uploadFile } from "../../src/server/services/saved";
-import { getRedisClient } from "../../src/server/redis";
+import { saveArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
+import { fetchAndStoreFullContent } from "../../src/server/services/full-content";
+import { retrySubscriptionFeed } from "../../src/server/services/feeds";
 import { getAppErrorCode } from "../../src/server/errors";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { PLAN_LIMITS } from "../../src/lib/plans";
 import {
   createAuthContext,
+  createTestEntry,
   createTestFeed,
   createTestSubscription,
   createTestUser,
@@ -86,10 +88,6 @@ describe("plans", () => {
         filename: `${name}.md`,
       });
 
-    beforeEach(async () => {
-      await getRedisClient()!.flushdb();
-    });
-
     it("refuses saves past the plan's burst, saying when to retry, but re-saving costs nothing", async () => {
       const userId = await createTestUser({ plan: "free" });
       await withPlanLimits(
@@ -118,6 +116,59 @@ describe("plans", () => {
             (error) => getAppErrorCode(error) === "QUOTA_EXCEEDED"
           );
           await expect(save(userId, "still-allowed")).resolves.toBeDefined();
+        }
+      );
+    });
+
+    const pageFetchers: [string, (userId: string) => Promise<unknown>][] = [
+      [
+        "refetching an entry's full content",
+        async (userId) => {
+          const feedId = await createTestFeed();
+          await createTestSubscription(userId, feedId);
+          const entryId = await createTestEntry(feedId, {
+            userIds: [userId],
+            url: "https://example.com/full",
+            fullContentFetchedAt: new Date(),
+          });
+          return fetchAndStoreFullContent(db, userId, entryId);
+        },
+      ],
+      [
+        "retrying a broken feed",
+        async (userId) =>
+          retrySubscriptionFeed(
+            db,
+            userId,
+            await createTestSubscription(userId, await createTestFeed())
+          ),
+      ],
+    ];
+
+    it.each(pageFetchers)("charges %s as a page fetch", async (_name, fetchPage) => {
+      const userId = await createTestUser({ plan: "free" });
+      await withPlanLimits(
+        "free",
+        { quotas: { ...PLAN_LIMITS.free.quotas, pageFetches: { burst: 1, perDay: 1 } } },
+        async () => {
+          await save(userId, "spends-the-quota");
+          await expect(fetchPage(userId)).rejects.toSatisfy(
+            (error) => getAppErrorCode(error) === "QUOTA_EXCEEDED"
+          );
+        }
+      );
+    });
+
+    it("charges a Markdown upload as a file upload", async () => {
+      const userId = await createTestUser({ plan: "free" });
+      await withPlanLimits(
+        "free",
+        { quotas: { ...PLAN_LIMITS.free.quotas, fileConversions: { burst: 1, perDay: 1 } } },
+        async () => {
+          await upload(userId, "spends-the-quota");
+          await expect(
+            uploadArticle(db, userId, { content: "# Notes", title: "Notes" })
+          ).rejects.toSatisfy((error) => getAppErrorCode(error) === "QUOTA_EXCEEDED");
         }
       );
     });

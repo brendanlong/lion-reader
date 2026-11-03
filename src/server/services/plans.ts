@@ -3,7 +3,7 @@
  * through {@link getUserPlanLimits}, so every entry point gets the same ones.
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   PLAN_LIMITS,
   PLAN_QUOTA_NAMES,
@@ -12,10 +12,12 @@ import {
   type PlanQuota,
 } from "@/lib/plans";
 import { consumeBucket } from "@/server/rate-limit";
+import { planQuotaKey } from "@/server/services/plan-quota-keys";
 import type { DbOrTx } from "@/server/db";
-import { ingestAddresses, users } from "@/server/db/schema";
+import { users } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 import { countActiveSubscriptions } from "@/server/services/subscriptions";
+import { countIngestAddresses } from "@/server/services/ingest-addresses";
 
 async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
   const [row] = await db
@@ -48,7 +50,7 @@ export async function consumePlanQuota(
   const rate = (await getUserPlanLimits(db, userId)).quotas[quota];
   if (rate === null) return;
   const result = await consumeBucket(
-    `rate_limit:plan:${quota}:user:${userId}`,
+    planQuotaKey(quota, userId),
     { capacity: rate.burst, refillRate: rate.perDay / SECONDS_PER_DAY },
     { cost }
   );
@@ -91,13 +93,4 @@ export async function getPlanUsage(db: DbOrTx, userId: string): Promise<PlanUsag
     limits: PLAN_LIMITS[plan],
     usage: { subscriptions: subscriptionCount, ingestAddresses: addressCount },
   };
-}
-
-/** The user's ingest addresses that count toward the plan's limit. */
-export async function countIngestAddresses(db: DbOrTx, userId: string): Promise<number> {
-  const [{ addressCount }] = await db
-    .select({ addressCount: sql<number>`count(*)::int` })
-    .from(ingestAddresses)
-    .where(and(eq(ingestAddresses.userId, userId), isNull(ingestAddresses.deletedAt)));
-  return addressCount;
 }
