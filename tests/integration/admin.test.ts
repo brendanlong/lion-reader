@@ -20,11 +20,13 @@ import {
   jobs,
   sessions,
   apiTokens,
+  entries,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import {
+  createTestEntryBatch,
   createTestFeed,
   createTestSavedSubscription,
   createTestSubscription,
@@ -355,6 +357,16 @@ describe("Admin API", () => {
       expect(stats.totalUsers).toBe(4);
       expect(stats.activeUsersLast7Days).toBe(1);
       expect(stats.activeUsersLast30Days).toBe(2);
+    });
+
+    it("estimates entries from the table's statistics", async () => {
+      const caller = createCaller(createAdminContext());
+      await createTestEntryBatch(await createTestFeed(), 5, { start: new Date() });
+      // ANALYZE samples every row of a table this small, so the estimate is exact.
+      await db.execute(sql`ANALYZE entries`);
+      const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(entries);
+
+      expect((await caller.admin.getOverview()).estimatedEntries).toBe(count);
     });
 
     it("doesn't count the hidden saved subscription (#1846)", async () => {

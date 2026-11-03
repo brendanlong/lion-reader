@@ -70,8 +70,11 @@
                     "brokenFeeds": {
                       "type": "number"
                     },
-                    "totalEntries": {
-                      "type": "number"
+                    "estimatedEntries": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
                     },
                     "totalSubscriptions": {
                       "type": "number"
@@ -87,7 +90,7 @@
                     "totalFeeds",
                     "totalFeedsWithSubscribers",
                     "brokenFeeds",
-                    "totalEntries",
+                    "estimatedEntries",
                     "totalSubscriptions",
                     "pendingInvites"
                   ],

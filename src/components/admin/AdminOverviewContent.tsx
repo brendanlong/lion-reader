@@ -80,7 +80,7 @@ export default function AdminOverviewContent() {
       {/* Content & Activity */}
       <h3 className="ui-text-sm text-body mb-3 font-medium">Content & Activity</h3>
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Total Entries" value={data.totalEntries} />
+        <StatCard label="Total Entries (approx.)" value={data.estimatedEntries ?? "—"} />
         <StatCard label="Active Subscriptions" value={data.totalSubscriptions} />
         <StatCard label="Pending Invites" value={data.pendingInvites} />
       </div>
