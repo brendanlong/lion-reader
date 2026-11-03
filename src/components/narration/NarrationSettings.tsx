@@ -242,7 +242,7 @@ export function NarrationSettings() {
                   selected={settings.provider}
                   onSelect={handleProviderChange}
                   label="Downloaded Voices"
-                  description="Natural-sounding voices that run on your device after a one-time download"
+                  description="Higher-quality voices that run on your device after a one-time download"
                 />
               )}
               {((canStreamAudio && cloudVoiceModels.length > 0) ||

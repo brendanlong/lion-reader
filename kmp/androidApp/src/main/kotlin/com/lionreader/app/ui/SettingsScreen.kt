@@ -323,12 +323,12 @@ private fun NarrationSettings(
                             voices.isEmpty() -> "No text-to-speech voices installed"
                             else ->
                                 voices.firstOrNull { it.name == settings.narrationVoice }?.label
-                                    ?: "Device default"
+                                    ?: "System default"
                         },
                     options = listOf(null) + voices.orEmpty(),
                     optionLabel = { voice ->
                         when {
-                            voice == null -> "Device default"
+                            voice == null -> "System default"
                             voice.online -> "${voice.label} (online)"
                             else -> voice.label
                         }
@@ -536,7 +536,7 @@ private fun EnhancedVoiceSettings(
     }
     Hint(
         "Downloaded voices run on this phone, so what you listen to stays on it, and work " +
-            "offline once downloaded. The download comes from Hugging Face."
+            "offline. The download comes from Hugging Face."
     )
 }
 

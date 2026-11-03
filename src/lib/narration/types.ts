@@ -5,8 +5,8 @@
  */
 
 /**
- * TTS backends: the browser's Web Speech API, Phonon running in the browser
- * ("Enhanced Voices"), and server-side speech models ("Cloud Voices").
+ * TTS backends: the browser's Web Speech API ("Built-in Voices"), Phonon running in the browser
+ * ("Downloaded Voices"), and server-side speech models ("Cloud Voices").
  */
 export const TTS_PROVIDER_IDS = ["browser", "phonon", "cloud"] as const;
 

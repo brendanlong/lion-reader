@@ -246,7 +246,7 @@ export function EnhancedVoiceList({ settings, setSettings }: EnhancedVoiceListPr
       </div>
 
       <p className="ui-text-xs text-muted">
-        Downloaded voices run entirely in your browser. Once downloaded, they work offline.
+        Downloaded voices run entirely in your browser and work offline.
       </p>
     </div>
   );
