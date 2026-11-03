@@ -484,19 +484,31 @@ async function loadExistingEntries(
 }
 
 /**
- * How many entries processing `feed` would create: its distinct guids with no
- * stored entry yet. A concurrent run of the feed can make the real count lower.
+ * How many entries processing `feed` would create or rewrite: items with no
+ * stored entry yet or with changed content, as `processEntryWithCache` decides.
+ * A concurrent run of the feed can make the real count lower.
  */
-export async function countNewEntries(
+export async function countEntryWrites(
   db: typeof dbType,
   feedId: string,
   feed: ParsedFeed
 ): Promise<number> {
-  const { existingEntriesMap, currentGuidKeys } = await loadExistingEntries(db, feedId, feed.items);
+  const { existingEntriesMap } = await loadExistingEntries(db, feedId, feed.items);
+  const contentHashes = new Map(
+    [...existingEntriesMap].map(([key, entry]) => [key, entry.contentHash])
+  );
   let count = 0;
-  for (const key of currentGuidKeys) {
-    if (!existingEntriesMap.has(key)) {
+  for (const item of feed.items) {
+    let guidKey;
+    try {
+      guidKey = canonicalGuid(deriveGuid(item));
+    } catch {
+      continue;
+    }
+    const contentHash = generateContentHash(item);
+    if (contentHashes.get(guidKey) !== contentHash) {
       count++;
+      contentHashes.set(guidKey, contentHash);
     }
   }
   return count;

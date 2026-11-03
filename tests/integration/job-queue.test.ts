@@ -15,7 +15,7 @@ import {
   finishJob,
   getJobPayload,
   ensureFeedJob,
-  updateFeedJobNextRun,
+  scheduleFeedJobBy,
   scheduleFeedRefreshNow,
   claimFeedJob,
   claimSingletonJob,
@@ -447,21 +447,21 @@ describe("Job Queue", () => {
       expect(job.nextRunAt!.getTime()).toBe(scheduled.getTime());
     });
 
-    it("updateFeedJobNextRun updates the next run time", async () => {
+    it("scheduleFeedJobBy moves a job's run up but never later", async () => {
       const feedId = generateUuidv7();
-      const originalTime = new Date(Date.now() + 60 * 60 * 1000);
-
       await createJob({
         type: "fetch_feed",
         payload: { feedId },
-        nextRunAt: originalTime,
+        nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
 
-      const newTime = new Date(Date.now() + 4 * 60 * 60 * 1000);
-      const updated = await updateFeedJobNextRun(feedId, newTime);
+      const sooner = new Date(Date.now() + 60 * 60 * 1000);
+      expect((await scheduleFeedJobBy(feedId, sooner))!.nextRunAt!.getTime()).toBe(
+        sooner.getTime()
+      );
 
-      expect(updated).not.toBeNull();
-      expect(updated!.nextRunAt!.getTime()).toBe(newTime.getTime());
+      const later = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      expect((await scheduleFeedJobBy(feedId, later))!.nextRunAt!.getTime()).toBe(sooner.getTime());
     });
 
     it("scheduleFeedRefreshNow creates a force-reprocess job set to run now", async () => {

@@ -627,32 +627,68 @@ describe("ingestWebsubNotification", () => {
     expect(await getUserEntry(userId)).toBeUndefined();
   });
 
-  it("drops a push over the feed's budget and schedules a poll no sooner than the minimum interval (#2254)", async () => {
-    if (!process.env.REDIS_URL) {
-      throw new Error("REDIS_URL must be set: without Redis the limiter fails open");
+  describe("push budget (#2254)", () => {
+    beforeAll(() => {
+      if (!process.env.REDIS_URL) {
+        throw new Error("REDIS_URL must be set: without Redis the limiter fails open");
+      }
+    });
+
+    /** Seeds a feed and spends its whole push budget on new entries. */
+    async function exhaustBudget(emailPrefix: string, lastPoll: Date) {
+      const { feed } = await seedPushFeed(emailPrefix, lastPoll);
+      await ensureFeedJob(db, feed.id, new Date(Date.now() + 24 * 60 * 60 * 1000));
+      const { capacity } = RATE_LIMIT_CONFIGS.websubPush;
+      const flood = multiPushBody("flood", capacity, new Date());
+      await expect(ingestWebsubNotification(feed, flood)).resolves.toBe("processed");
+      return { feed, flood };
     }
-    const lastPoll = new Date(Date.now() - 60 * 1000);
-    const { feed } = await seedPushFeed("pushflood", lastPoll);
-    const backupPoll = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await ensureFeedJob(db, feed.id, backupPoll);
-    const { capacity } = RATE_LIMIT_CONFIGS.websubPush;
 
-    const flood = multiPushBody("flood", capacity, new Date());
-    await expect(ingestWebsubNotification(feed, flood)).resolves.toBe("processed");
-    // Entries we already have cost nothing, so a hub re-pushing its feed isn't limited.
-    await expect(ingestWebsubNotification(feed, flood)).resolves.toBe("processed");
+    async function feedJob(feedId: string) {
+      const [job] = await db.select().from(jobs).where(eq(jobs.type, "fetch_feed"));
+      expect(getJobPayload(job, "fetch_feed").feedId).toBe(feedId);
+      return job;
+    }
 
-    // Acknowledged, since a redelivery would be dropped too, but not ingested.
-    await expect(
-      ingestWebsubNotification(feed, pushBody("one-too-many", "One Too Many", new Date()))
-    ).resolves.toBe("rate_limited");
-    const stored = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
-    expect(stored).toHaveLength(capacity);
-    expect((await getHubStats()).articlesRateLimited).toBe(1);
+    it("drops a push that would write past the budget and polls once the minimum interval allows", async () => {
+      const lastPoll = new Date(Date.now() - 60 * 1000);
+      const { feed, flood } = await exhaustBudget("pushflood", lastPoll);
 
-    // The poll that picks the entry up waits out the minimum interval since the
-    // last one, rather than running now or waiting for the backup poll.
-    const [job] = await db.select().from(jobs).where(eq(jobs.type, "fetch_feed"));
-    expect(job.nextRunAt?.getTime()).toBe(lastPoll.getTime() + MIN_FETCH_INTERVAL_SECONDS * 1000);
+      // Entries we already have unchanged cost nothing, so a hub re-pushing its
+      // whole feed isn't limited.
+      await expect(ingestWebsubNotification(feed, flood)).resolves.toBe("processed");
+
+      // A changed entry is a write like a new one, so it's charged too; dropped,
+      // but acknowledged, since a redelivery would be dropped as well.
+      await expect(
+        ingestWebsubNotification(feed, pushBody("flood-0", "Rewritten", new Date()))
+      ).resolves.toBe("rate_limited");
+      const [entry] = await db.select().from(entries).where(eq(entries.guid, "flood-0"));
+      expect(entry.title).toBe("Post 0");
+      expect((await getHubStats()).articlesRateLimited).toBe(1);
+
+      // The poll that picks it up waits out the minimum interval since the last
+      // one, rather than running now or waiting for the backup poll.
+      expect((await feedJob(feed.id)).nextRunAt?.getTime()).toBe(
+        lastPoll.getTime() + MIN_FETCH_INTERVAL_SECONDS * 1000
+      );
+    });
+
+    it("leaves a failing feed's backoff alone", async () => {
+      const { feed } = await exhaustBudget("pushfailing", new Date(Date.now() - 60 * 1000));
+      const backoff = new Date(Date.now() + 6 * 60 * 60 * 1000);
+      await db.update(jobs).set({ nextRunAt: backoff }).where(eq(jobs.type, "fetch_feed"));
+      const [failing] = await db
+        .update(feeds)
+        .set({ consecutiveFailures: 1 })
+        .where(eq(feeds.id, feed.id))
+        .returning();
+
+      await expect(
+        ingestWebsubNotification(failing, pushBody("late", "Late", new Date()))
+      ).resolves.toBe("rate_limited");
+
+      expect((await feedJob(feed.id)).nextRunAt?.getTime()).toBe(backoff.getTime());
+    });
   });
 });

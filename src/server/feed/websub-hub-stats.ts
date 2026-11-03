@@ -124,7 +124,7 @@ export async function recordHubAnnouncedEntries(
 }
 
 /**
- * Records that a push carried `count` new entries we dropped because the feed
+ * Records that a push carried `count` entry writes we dropped because the feed
  * was over its push budget. No-op for a non-positive count.
  */
 export async function recordHubRateLimitedEntries(

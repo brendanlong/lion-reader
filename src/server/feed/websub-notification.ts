@@ -8,10 +8,10 @@ import { db } from "../db";
 import { databaseNow } from "../db/temporal";
 import { feeds, type Feed } from "../db/schema";
 import { parseFeedAsync } from "./parser";
-import { countNewEntries, processEntries } from "./entry-processor";
+import { countEntryWrites, processEntries } from "./entry-processor";
 import { recordHubAnnouncedEntries, recordHubRateLimitedEntries } from "./websub-hub-stats";
-import { MIN_FETCH_INTERVAL_SECONDS, WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
-import { enqueueFullContentFetch, scheduleFeedJobBy, updateFeedJobNextRun } from "../jobs/queue";
+import { MIN_FETCH_INTERVAL_SECONDS } from "./scheduling";
+import { enqueueFullContentFetch, scheduleFeedJobBy } from "../jobs/queue";
 import { checkRateLimit } from "../rate-limit";
 import { getFeedPlugin } from "../plugins";
 import { feedWantsFullContent } from "../services/full-content";
@@ -23,7 +23,7 @@ import { logger } from "@/lib/logger";
  * status code: only `failed` asks the hub to retry.
  */
 export type WebsubIngestOutcome =
-  /** Entries were processed (or there were none) and the backup poll rescheduled. */
+  /** Entries were processed (or there were none). */
   | "processed"
   /** The body wasn't a parseable feed. Nothing to do; a retry can't help. */
   | "unparseable"
@@ -36,66 +36,25 @@ export type WebsubIngestOutcome =
   | "failed";
 
 /**
- * Pushes the feed's backup poll out, so a push-active feed isn't polled on the
- * ordinary cadence — but never past `WEBSUB_BACKUP_POLL_INTERVAL_SECONDS` after
- * the last **real** poll.
- *
- * A push doesn't advance `feeds.last_fetched_at` (see `ingestWebsubNotification`),
- * so deferring to "now + 24h" on every push starves the backup poll of any feed
- * whose hub pushes more often than daily: the poll is deferred again before it
- * ever runs, and it never runs. That poll is load-bearing — it is what confirms
- * or drops pushed entries for new subscribers (`currentEntryIdsSql`), and the only
- * way a push miss gets tallied — so bound the deferral by the last real poll
- * instead of by "now".
- *
- * A feed with no successful poll yet has no bound to compute, and its first poll
- * is what establishes one: leave its job alone rather than deferring it a day.
- */
-async function scheduleBackupPoll(feed: Feed): Promise<void> {
-  const feedId = feed.id;
-  const intervalMs = WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000;
-  const lastFetchedAt = feed.lastFetchedAt;
-
-  if (!lastFetchedAt) {
-    logger.debug("Skipping WebSub backup poll deferral for a never-fetched feed", { feedId });
-    return;
-  }
-
-  const nextRunAt = new Date(
-    Math.min(Date.now() + intervalMs, lastFetchedAt.getTime() + intervalMs)
-  );
-
-  try {
-    await updateFeedJobNextRun(feedId, nextRunAt);
-    logger.debug("Scheduled WebSub backup poll", {
-      feedId,
-      nextRunAt: nextRunAt.toISOString(),
-    });
-  } catch (error) {
-    // Don't let scheduling errors affect the response
-    logger.warn("Failed to schedule WebSub backup poll", {
-      feedId,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-}
-
-/**
- * Handles a push over the feed's budget: records the dropped entries and
+ * Handles a push over the feed's budget: records the dropped writes and
  * schedules a poll to pick up whatever the feed still lists, so legitimate
  * entries arrive late rather than never. The poll runs no sooner than the
- * feed's minimum poll interval after the last one, so pushes can't make us
- * poll faster than polling alone would.
+ * minimum poll interval after the last one, so pushes can't make us poll faster
+ * than an ordinary feed is polled. A failing feed keeps its backoff: its next
+ * poll is already scheduled, and `Retry-After` must stay a floor.
  */
-async function dropOverBudgetPush(feed: Feed, newEntryCount: number): Promise<void> {
+async function dropOverBudgetPush(feed: Feed, writeCount: number): Promise<void> {
   const feedId = feed.id;
-  logger.warn("WebSub push over the feed's budget; dropped it and scheduled a poll", {
+  logger.warn("WebSub push over the feed's budget; dropped it", {
     feedId,
     hubUrl: feed.hubUrl,
-    newEntries: newEntryCount,
+    entryWrites: writeCount,
   });
   if (feed.hubUrl) {
-    await recordHubRateLimitedEntries(feed.hubUrl, newEntryCount);
+    await recordHubRateLimitedEntries(feed.hubUrl, writeCount);
+  }
+  if (feed.consecutiveFailures > 0) {
+    return;
   }
 
   const minIntervalSeconds = Math.max(
@@ -140,7 +99,9 @@ async function queueFullContentFetch(feedId: string, entryIds: string[]): Promis
 
 /**
  * Parses a pushed WebSub notification body and processes its entries into the
- * given feed, then schedules a backup poll.
+ * given feed. A push never defers the feed's poll: a websub-active feed's polls
+ * already schedule themselves on the backup interval, and the poll is what
+ * confirms or drops pushed entries for new subscribers (`currentEntryIdsSql`).
  *
  * Never throws; it reports what happened instead, because the two failure modes
  * want opposite answers to the hub. An unparseable body is final — a redelivery
@@ -151,8 +112,8 @@ async function queueFullContentFetch(feedId: string, entryIds: string[]): Promis
  * answers 503 on that path and lets the hub redeliver, which is safe because
  * ingest is idempotent (entries match on `content_hash`).
  *
- * A push carrying more new entries than the feed's budget (`websubPush` rate
- * limit) is dropped and acknowledged, since a redelivery would be dropped too;
+ * A push is charged the entries it would create or change against the feed's
+ * budget (`websubPush` rate limit); one over budget is dropped and acknowledged, since a redelivery would be dropped too;
  * see `dropOverBudgetPush`.
  *
  * The caller is responsible for authenticating the notification (HMAC) and
@@ -179,13 +140,11 @@ export async function ingestWebsubNotification(
   }
 
   try {
-    const newEntryCount = await countNewEntries(db, feedId, parsedFeed);
-    if (newEntryCount > 0) {
-      const budget = await checkRateLimit(`feed:${feedId}`, "websubPush", {
-        cost: newEntryCount,
-      });
+    const writeCount = await countEntryWrites(db, feedId, parsedFeed);
+    if (writeCount > 0) {
+      const budget = await checkRateLimit(`feed:${feedId}`, "websubPush", { cost: writeCount });
       if (!budget.allowed) {
-        await dropOverBudgetPush(feed, newEntryCount);
+        await dropOverBudgetPush(feed, writeCount);
         return "rate_limited";
       }
     }
@@ -244,11 +203,8 @@ export async function ingestWebsubNotification(
       feedId,
       error: error instanceof Error ? error.message : "Unknown error",
     });
-    // Don't defer the backup poll: nothing was ingested, so the feed still needs
-    // a real poll, and pushing it a day out would delay recovery by that long.
     return "failed";
   }
 
-  await scheduleBackupPoll(feed);
   return "processed";
 }
