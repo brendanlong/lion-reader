@@ -137,7 +137,7 @@ class EnhancedVoiceModel(
     /** On the model thread. */
     private fun load(): PhononTts {
         if (stored() != State.Downloaded) {
-            throw SpeechUnavailable("Download the enhanced voices in Settings first.")
+            throw SpeechUnavailable("Download the voices in Settings first.")
         }
         val failure =
             try {
@@ -149,7 +149,7 @@ class EnhancedVoiceModel(
                 e
             }
         throw SpeechUnavailable(
-            "The enhanced voices couldn't load (${failure.message}). Delete and download them " +
+            "The downloaded voices couldn't load (${failure.message}). Delete and download them " +
                 "again in Settings."
         )
     }

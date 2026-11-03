@@ -12,7 +12,7 @@ const article: DemoArticle = {
   publishedAt: new Date("2025-12-27T18:00:00Z"),
   score: 220,
   starred: true,
-  summaryHtml: `<p>Pressing <strong>Listen</strong> on any article reads it aloud in a natural voice while highlighting each paragraph, with controls to jump between paragraphs and change speed. Choose from cloud, offline, or browser voices, and turn on AI text processing to expand abbreviations without changing the article&rsquo;s meaning.</p>`,
+  summaryHtml: `<p>Pressing <strong>Listen</strong> on any article reads it aloud in a natural voice while highlighting each paragraph, with controls to jump between paragraphs and change speed. Choose from cloud, downloaded, or built-in voices, and turn on AI text processing to expand abbreviations without changing the article&rsquo;s meaning.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
@@ -26,11 +26,11 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>Cloud Voices</strong> &mdash; the most natural-sounding option, included with no extra account, and what this demo uses. You can also connect your own account with a voice provider for more voices.</li>
-      <li><strong>Enhanced Voices</strong> &mdash; for when you&rsquo;d rather nothing leave your device. Download one once and it works offline.</li>
-      <li><strong>Browser Voices</strong> &mdash; the voices your browser already has, with no setup at all.</li>
+      <li><strong>Downloaded Voices</strong> &mdash; for when you&rsquo;d rather nothing leave your device. Download one once and it works offline.</li>
+      <li><strong>Built-in Voices</strong> &mdash; the voices your browser already has, with no setup at all.</li>
     </ul>
 
-    <p>Cloud and Enhanced Voices keep playing with your screen locked. Pick your voice in Settings.</p>
+    <p>Cloud and Downloaded Voices keep playing with your screen locked. Pick your voice in Settings.</p>
 
     <h3>Clean Up Abbreviations with AI</h3>
 
@@ -38,7 +38,7 @@ const article: DemoArticle = {
 
     <details>
       <summary>What gets sent where</summary>
-      <p>With Cloud Voices, only the text being read is sent to the voice provider, a passage at a time. With Enhanced Voices, nothing leaves your device. Browser Voices marked &ldquo;online&rdquo; are run by your browser&rsquo;s maker. With any voice, turning on AI text processing also sends the article to an AI model first. The <a href="/privacy">privacy policy</a> lists the providers.</p>
+      <p>With Cloud Voices, only the text being read is sent to the voice provider, a passage at a time. With Downloaded Voices, nothing leaves your device. Built-in Voices marked &ldquo;online&rdquo; are run by your browser&rsquo;s maker. With any voice, turning on AI text processing also sends the article to an AI model first. The <a href="/privacy">privacy policy</a> lists the providers.</p>
     </details>
   `,
 };
