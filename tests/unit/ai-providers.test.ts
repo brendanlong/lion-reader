@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach } from "vitest";
+import { PLAN_LIMITS } from "../../src/lib/plans";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import Anthropic from "@anthropic-ai/sdk";
@@ -75,41 +76,40 @@ describe("isProviderAvailable / getAvailableProviders", () => {
   it("keeps a provider whose saved key can't be read off the server's key", () => {
     clearEnv();
     process.env.DEEPINFRA_API_KEY = "server-key";
-    const keys: AiProviderKeys = { deepinfra: UNREADABLE_API_KEY };
+    const keys: AiProviderKeys = { deepinfra: UNREADABLE_API_KEY, plan: null };
     // Still the user's own provider, so callers reach its clear error...
     expect(isProviderAvailable("deepinfra", keys)).toBe(true);
     // ...but there's no key to call it with, the server's included.
     expect(getProviderApiKey("deepinfra", keys)).toBeNull();
-    expect(getProviderApiKey("deepinfra", {})).toBe("server-key");
+    expect(getProviderApiKey("deepinfra", { plan: null })).toBe("server-key");
   });
 
   it("uses per-user keys", () => {
     clearEnv();
-    expect(isProviderAvailable("cerebras", { cerebras: "csk-test" })).toBe(true);
-    expect(isProviderAvailable("openrouter", { cerebras: "csk-test" })).toBe(false);
-    expect(getAvailableProviders({ openrouter: "sk-or-test", anthropic: "sk-test" })).toEqual([
-      "anthropic",
-      "openrouter",
-    ]);
+    expect(isProviderAvailable("cerebras", { cerebras: "csk-test", plan: null })).toBe(true);
+    expect(isProviderAvailable("openrouter", { cerebras: "csk-test", plan: null })).toBe(false);
+    expect(
+      getAvailableProviders({ openrouter: "sk-or-test", anthropic: "sk-test", plan: null })
+    ).toEqual(["anthropic", "openrouter"]);
   });
 
   it("falls back to server env keys", () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
     expect(isProviderAvailable("cerebras")).toBe(true);
-    expect(getAvailableProviders({})).toEqual(["cerebras"]);
+    expect(getAvailableProviders({ plan: null })).toEqual(["cerebras"]);
   });
 
   it("reports nothing available with no keys at all", () => {
     clearEnv();
-    expect(getAvailableProviders({})).toEqual([]);
+    expect(getAvailableProviders({ plan: null })).toEqual([]);
   });
 
   it("leaves speech-only DeepInfra out of the text providers", () => {
     clearEnv();
     process.env.DEEPINFRA_API_KEY = "di-server";
     expect(isProviderAvailable("deepinfra")).toBe(true);
-    expect(getAvailableProviders({ deepinfra: "d" })).toEqual([]);
+    expect(getAvailableProviders({ deepinfra: "d", plan: null })).toEqual([]);
   });
 });
 
@@ -117,51 +117,57 @@ describe("getSummarizationModelId", () => {
   it("prefers the user model", async () => {
     clearEnv();
     process.env.SUMMARIZATION_MODEL = "openrouter:foo";
-    expect(await getSummarizationModelId("cerebras:bar", { cerebras: "c" })).toBe("cerebras:bar");
+    expect(await getSummarizationModelId("cerebras:bar", { cerebras: "c", plan: null })).toBe(
+      "cerebras:bar"
+    );
   });
 
   it("falls back to the env var", async () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SUMMARIZATION_MODEL = "openrouter:foo";
-    expect(await getSummarizationModelId(null, {})).toBe("openrouter:foo");
+    expect(await getSummarizationModelId(null, { plan: null })).toBe("openrouter:foo");
   });
 
   it("skips an env model that can't be used", async () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
     process.env.SUMMARIZATION_MODEL = "openrouter:foo";
-    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
+    expect(await getSummarizationModelId(null, { plan: null })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MODELS = "cerebras:*";
-    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
+    expect(await getSummarizationModelId(null, { plan: null })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
   });
 
   it("defaults to the first configured provider by priority (Cerebras > Anthropic > OpenRouter)", async () => {
     clearEnv();
     // Cerebras wins over both others when configured.
-    expect(await getSummarizationModelId(null, { openrouter: "o", cerebras: "c" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.cerebras
-    );
-    expect(await getSummarizationModelId(null, { anthropic: "a", cerebras: "c" })).toBe(
+    expect(
+      await getSummarizationModelId(null, { openrouter: "o", cerebras: "c", plan: null })
+    ).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
+    expect(await getSummarizationModelId(null, { anthropic: "a", cerebras: "c", plan: null })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
     // A direct Anthropic key wins over the OpenRouter aggregator.
-    expect(await getSummarizationModelId(null, { anthropic: "a", openrouter: "o" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.anthropic
-    );
-    expect(await getSummarizationModelId(null, { openrouter: "o" })).toBe(
+    expect(
+      await getSummarizationModelId(null, { anthropic: "a", openrouter: "o", plan: null })
+    ).toBe(DEFAULT_SUMMARIZATION_MODELS.anthropic);
+    expect(await getSummarizationModelId(null, { openrouter: "o", plan: null })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
     // Anthropic only when it's the sole option.
-    expect(await getSummarizationModelId(null, { anthropic: "a" })).toBe(
+    expect(await getSummarizationModelId(null, { anthropic: "a", plan: null })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.anthropic
     );
   });
 
   it("defaults to the first-priority provider when nothing is configured", async () => {
     clearEnv();
-    expect(await getSummarizationModelId(null, {})).toBe(
+    expect(await getSummarizationModelId(null, { plan: null })).toBe(
       DEFAULT_SUMMARIZATION_MODELS[SUMMARIZATION_PROVIDER_PRIORITY[0]]
     );
   });
@@ -177,22 +183,25 @@ describe("getNarrationModelRef", () => {
 
   it("defaults to the first configured provider (Cerebras before OpenRouter)", async () => {
     clearEnv();
-    expect(await getNarrationModelRef(null, { openrouter: "o", cerebras: "c" })).toEqual(
-      parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
-    );
+    expect(
+      await getNarrationModelRef(null, { openrouter: "o", cerebras: "c", plan: null })
+    ).toEqual(parseModelRef(DEFAULT_NARRATION_MODELS.cerebras));
   });
 
   it("defaults to OpenRouter when it's the only JSON-mode provider configured", async () => {
     clearEnv();
-    expect(await getNarrationModelRef(null, { openrouter: "o", anthropic: "a" })).toEqual(
-      parseModelRef(DEFAULT_NARRATION_MODELS.openrouter)
-    );
+    expect(
+      await getNarrationModelRef(null, { openrouter: "o", anthropic: "a", plan: null })
+    ).toEqual(parseModelRef(DEFAULT_NARRATION_MODELS.openrouter));
   });
 
   it("accepts OpenRouter model IDs, including ones containing colons", async () => {
     clearEnv();
     expect(
-      await getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", { openrouter: "o" })
+      await getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", {
+        openrouter: "o",
+        plan: null,
+      })
     ).toEqual({
       provider: "openrouter",
       model: "openai/gpt-oss-20b:free",
@@ -201,7 +210,9 @@ describe("getNarrationModelRef", () => {
 
   it("uses the user model when set", async () => {
     clearEnv();
-    expect(await getNarrationModelRef("cerebras:qwen-3.8-27b", { cerebras: "c" })).toEqual({
+    expect(
+      await getNarrationModelRef("cerebras:qwen-3.8-27b", { cerebras: "c", plan: null })
+    ).toEqual({
       provider: "cerebras",
       model: "qwen-3.8-27b",
     });
@@ -316,7 +327,7 @@ describe("isModelAllowed", () => {
   it("allows every model on the server's keys by default", () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
-    expect(isModelAllowed("openrouter:openai/o1-pro", {})).toBe(true);
+    expect(isModelAllowed("openrouter:openai/o1-pro", { plan: null })).toBe(true);
   });
 
   it("limits the server's keys to the listed models", () => {
@@ -324,11 +335,31 @@ describe("isModelAllowed", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.ANTHROPIC_API_KEY = "sk-ant-server";
     process.env.SERVER_KEY_MODELS = " openrouter:openai/gpt-oss-120b , claude-haiku-5 ";
-    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {})).toBe(true);
-    expect(isModelAllowed("openrouter:openai/o1-pro", {})).toBe(false);
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", { plan: null })).toBe(true);
+    expect(isModelAllowed("openrouter:openai/o1-pro", { plan: null })).toBe(false);
     // Bare IDs are Anthropic's, whichever side they're on.
-    expect(isModelAllowed("anthropic:claude-haiku-5", {})).toBe(true);
-    expect(isModelAllowed("claude-opus-5", {})).toBe(false);
+    expect(isModelAllowed("anthropic:claude-haiku-5", { plan: null })).toBe(true);
+    expect(isModelAllowed("claude-opus-5", { plan: null })).toBe(false);
+  });
+
+  it("limits a user's plan to its listed models, within the instance's, but not their own key", () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MODELS = "cerebras:*";
+    const plan = (serverKeyModels: readonly string[] | null) => ({
+      plan: { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyModels } },
+    });
+
+    expect(isModelAllowed("cerebras:gpt-oss-120b", plan(["cerebras:gpt-oss-120b"]))).toBe(true);
+    expect(isModelAllowed("cerebras:llama-3.3-70b", plan(["cerebras:gpt-oss-120b"]))).toBe(false);
+    // The plan can't grant what the instance doesn't allow.
+    expect(isModelAllowed("openrouter:openai/o1-pro", plan(["openrouter:*"]))).toBe(false);
+    expect(isModelAllowed("cerebras:gpt-oss-120b", plan([]))).toBe(false);
+    expect(isModelAllowed("cerebras:gpt-oss-120b", plan(null))).toBe(true);
+    expect(isModelAllowed("cerebras:gpt-oss-120b", { cerebras: "csk-user", ...plan([]) })).toBe(
+      true
+    );
   });
 
   it("allows a whole provider with provider:*", () => {
@@ -336,8 +367,8 @@ describe("isModelAllowed", () => {
     process.env.CEREBRAS_API_KEY = "csk-server";
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MODELS = "cerebras:*";
-    expect(isModelAllowed("cerebras:llama-3.3-70b", {})).toBe(true);
-    expect(isModelAllowed("openrouter:cerebras/llama-3.3-70b", {})).toBe(false);
+    expect(isModelAllowed("cerebras:llama-3.3-70b", { plan: null })).toBe(true);
+    expect(isModelAllowed("openrouter:cerebras/llama-3.3-70b", { plan: null })).toBe(false);
   });
 
   it("allows text models priced within both caps", () => {
@@ -350,13 +381,13 @@ describe("isModelAllowed", () => {
       inputPricePerMillion: input,
       outputPricePerMillion: output,
     });
-    expect(isModelAllowed(model, {}, price(0.35, 0.75))).toBe(true);
-    expect(isModelAllowed(model, {}, price(0, 0))).toBe(true);
-    expect(isModelAllowed(model, {}, price(0.01, 0.8))).toBe(false);
-    expect(isModelAllowed(model, {}, price(0.4, 0.1))).toBe(false);
+    expect(isModelAllowed(model, { plan: null }, price(0.35, 0.75))).toBe(true);
+    expect(isModelAllowed(model, { plan: null }, price(0, 0))).toBe(true);
+    expect(isModelAllowed(model, { plan: null }, price(0.01, 0.8))).toBe(false);
+    expect(isModelAllowed(model, { plan: null }, price(0.4, 0.1))).toBe(false);
     // An unknown price is never within a cap.
-    expect(isModelAllowed(model, {}, price(0.01, undefined))).toBe(false);
-    expect(isModelAllowed(model, {})).toBe(false);
+    expect(isModelAllowed(model, { plan: null }, price(0.01, undefined))).toBe(false);
+    expect(isModelAllowed(model, { plan: null })).toBe(false);
   });
 
   it("checks only the caps that are set", () => {
@@ -364,7 +395,7 @@ describe("isModelAllowed", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "1";
     const price = { inputPricePerMillion: 5, outputPricePerMillion: 1 };
-    expect(isModelAllowed("openrouter:some/model", {}, price)).toBe(true);
+    expect(isModelAllowed("openrouter:some/model", { plan: null }, price)).toBe(true);
   });
 
   it("allows speech models by the speech cap, not the token caps", () => {
@@ -373,49 +404,51 @@ describe("isModelAllowed", () => {
     process.env.SERVER_KEY_MAX_INPUT_PRICE = "100";
     process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "100";
     const kokoro = { pricePerMillionCharacters: 0.93 };
-    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, kokoro)).toBe(false);
+    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", { plan: null }, kokoro)).toBe(false);
     process.env.SERVER_KEY_MAX_SPEECH_PRICE = "1";
-    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, kokoro)).toBe(true);
-    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", {}, { pricePerMillionCharacters: 20 })).toBe(
-      false
-    );
+    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", { plan: null }, kokoro)).toBe(true);
+    expect(
+      isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { plan: null }, { pricePerMillionCharacters: 20 })
+    ).toBe(false);
   });
 
   it("allows nothing by an unparseable cap", () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MAX_SPEECH_PRICE = "one dollar";
-    expect(isModelAllowed("openrouter:a/b", {}, { pricePerMillionCharacters: 0 })).toBe(false);
+    expect(isModelAllowed("openrouter:a/b", { plan: null }, { pricePerMillionCharacters: 0 })).toBe(
+      false
+    );
   });
 
   it("allows any model on the user's own key", () => {
     clearEnv();
     process.env.SERVER_KEY_MODELS = "cerebras:gpt-oss-120b";
-    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouter: "o" })).toBe(true);
-    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfra: "d" })).toBe(true);
+    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouter: "o", plan: null })).toBe(true);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfra: "d", plan: null })).toBe(true);
   });
 
   it("isn't unlocked by the user's key for another provider", () => {
     clearEnv();
     process.env.DEEPINFRA_API_KEY = "di-server";
     process.env.SERVER_KEY_MODELS = "deepinfra:hexgrad/Kokoro-82M";
-    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { openrouter: "o" })).toBe(false);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { openrouter: "o", plan: null })).toBe(false);
   });
 
   it("ignores a disallowed stored model when picking the model to run", async () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MODELS = "openrouter:openai/gpt-oss-120b";
-    expect(await getSummarizationModelId("openrouter:openai/o1-pro", {})).toBe(
+    expect(await getSummarizationModelId("openrouter:openai/o1-pro", { plan: null })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
-    expect(await getNarrationModelRef("openrouter:openai/o1-pro", {})).toEqual({
+    expect(await getNarrationModelRef("openrouter:openai/o1-pro", { plan: null })).toEqual({
       provider: "openrouter",
       model: "openai/gpt-oss-120b",
     });
-    expect(await getSummarizationModelId("openrouter:openai/o1-pro", { openrouter: "o" })).toBe(
-      "openrouter:openai/o1-pro"
-    );
+    expect(
+      await getSummarizationModelId("openrouter:openai/o1-pro", { openrouter: "o", plan: null })
+    ).toBe("openrouter:openai/o1-pro");
   });
 
   it("skips a provider whose default isn't allowed when picking the default", async () => {
@@ -423,8 +456,10 @@ describe("isModelAllowed", () => {
     process.env.CEREBRAS_API_KEY = "csk-server";
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.openrouter;
-    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.openrouter);
-    expect(await getNarrationModelRef(null, {})).toEqual(
+    expect(await getSummarizationModelId(null, { plan: null })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.openrouter
+    );
+    expect(await getNarrationModelRef(null, { plan: null })).toEqual(
       parseModelRef(DEFAULT_NARRATION_MODELS.openrouter)
     );
   });
@@ -432,25 +467,25 @@ describe("isModelAllowed", () => {
   it("rejects a model whose provider has no key at all", async () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
-    expect(isModelAllowed("anthropic:claude-opus-5", {})).toBe(false);
-    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {})).toBe(false);
-    expect(await getSummarizationModelId("anthropic:claude-opus-5", {})).toBe(
+    expect(isModelAllowed("anthropic:claude-opus-5", { plan: null })).toBe(false);
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", { plan: null })).toBe(false);
+    expect(await getSummarizationModelId("anthropic:claude-opus-5", { plan: null })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
-    expect(await getNarrationModelRef("openrouter:openai/gpt-oss-120b", {})).toEqual(
+    expect(await getNarrationModelRef("openrouter:openai/gpt-oss-120b", { plan: null })).toEqual(
       parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
     );
-    expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a" })).toBe(true);
+    expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a", plan: null })).toBe(true);
   });
 
   it("reports summarization unavailable when no model can be used", async () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
-    expect(await isSummarizationAvailable({})).toBe(true);
+    expect(await isSummarizationAvailable({ plan: null })).toBe(true);
     process.env.SERVER_KEY_MODELS = "cerebras:*";
-    expect(await isSummarizationAvailable({})).toBe(false);
-    expect(await isNarrationLlmAvailable({})).toBe(false);
-    expect(await isSummarizationAvailable({ openrouter: "o" })).toBe(true);
+    expect(await isSummarizationAvailable({ plan: null })).toBe(false);
+    expect(await isNarrationLlmAvailable({ plan: null })).toBe(false);
+    expect(await isSummarizationAvailable({ openrouter: "o", plan: null })).toBe(true);
   });
 
   it("holds only price-allowed models to the price caps", () => {
@@ -469,9 +504,9 @@ describe("isModelAllowed", () => {
   it("never summarizes with a speech-only provider", async () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
-    expect(await getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfra: "d" })).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.cerebras
-    );
+    expect(
+      await getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfra: "d", plan: null })
+    ).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
   });
 });
 
@@ -483,7 +518,7 @@ describe("generateChatCompletion", () => {
     await expect(
       generateChatCompletion(
         parseModelRef("cerebras:qwen-3.8-27b"),
-        {},
+        { plan: null },
         {
           userPrompt: "hi",
           maxTokens: 10,
@@ -548,7 +583,7 @@ describe("generateChatCompletion", () => {
         pointSdksAtServer();
         const text = await generateChatCompletion(
           { provider, model: "some-model" },
-          { [provider]: "user-key" },
+          { [provider]: "user-key", plan: null },
           { userPrompt: "hi", maxTokens: 10 }
         );
         expect(text).toBe("hello");
@@ -562,13 +597,13 @@ describe("generateChatCompletion", () => {
         pointSdksAtServer();
         const options = { userPrompt: "hi", maxTokens: 10 };
         const model = { provider, model: "some-model" };
-        await generateChatCompletion(model, { [provider]: "user-key-a" }, options);
-        await generateChatCompletion(model, { [provider]: "user-key-b" }, options);
+        await generateChatCompletion(model, { [provider]: "user-key-a", plan: null }, options);
+        await generateChatCompletion(model, { [provider]: "user-key-b", plan: null }, options);
         const envVar = `${provider.toUpperCase()}_API_KEY`;
         process.env[envVar] = "server-key-1";
-        await generateChatCompletion(model, {}, options);
+        await generateChatCompletion(model, { plan: null }, options);
         process.env[envVar] = "server-key-2";
-        await generateChatCompletion(model, {}, options);
+        await generateChatCompletion(model, { plan: null }, options);
         expect(requests.map((request) => request.apiKey)).toEqual([
           "user-key-a",
           "user-key-b",
@@ -601,20 +636,24 @@ describe("generateChatCompletion", () => {
         ["refuses its key, as when it's out of credit", 402],
       ])("goes to the model's next host when the first %s", async (_, status) => {
         cerebrasFailure = status;
-        expect(await generateChatCompletion(model, {}, options)).toBe("hello");
+        expect(await generateChatCompletion(model, { plan: null }, options)).toBe("hello");
         expect(asked().at(-1)).toEqual(["anthropic", "server-a"]);
       });
 
       it("allows a failover on the server's key that users can't pick", async () => {
         process.env.SERVER_KEY_MODELS = "cerebras:some-model";
         cerebrasFailure = 503;
-        expect(await generateChatCompletion(model, {}, options)).toBe("hello");
+        expect(await generateChatCompletion(model, { plan: null }, options)).toBe("hello");
         expect(asked().at(-1)).toEqual(["anthropic", "server-a"]);
       });
 
       it("backs the user's own key up with the server's, never another of theirs", async () => {
         cerebrasFailure = 402;
-        await generateChatCompletion(model, { cerebras: "user-c", anthropic: "user-a" }, options);
+        await generateChatCompletion(
+          model,
+          { cerebras: "user-c", anthropic: "user-a", plan: null },
+          options
+        );
         expect(asked()).toEqual([
           ["cerebras", "user-c"],
           ["anthropic", "server-a"],
@@ -625,7 +664,7 @@ describe("generateChatCompletion", () => {
         cerebrasFailure = 402;
         anthropicFailure = 503;
         await expect(
-          generateChatCompletion(model, { cerebras: "user-c" }, options)
+          generateChatCompletion(model, { cerebras: "user-c", plan: null }, options)
         ).rejects.toMatchObject({ failure: "rejected", provider: "cerebras", usedUserKey: true });
         expect(asked().at(-1)?.[0]).toBe("anthropic");
       });
@@ -633,7 +672,7 @@ describe("generateChatCompletion", () => {
       it("skips a host that can't do what's asked", async () => {
         cerebrasFailure = 503;
         await expect(
-          generateChatCompletion(model, {}, { ...options, jsonObject: true })
+          generateChatCompletion(model, { plan: null }, { ...options, jsonObject: true })
         ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
         expect(asked().map(([provider]) => provider)).not.toContain("anthropic");
       });
@@ -644,12 +683,14 @@ describe("generateChatCompletion", () => {
       await expect(
         generateChatCompletion(
           { provider: "anthropic", model: "claude-haiku-4-5" },
-          { anthropic: "user-key" },
+          { anthropic: "user-key", plan: null },
           { userPrompt: "hi", maxTokens: 10, jsonObject: true }
         )
       ).rejects.toThrow("JSON-object responses are not supported for Anthropic");
       expect(
-        await listAllModels({ anthropic: "user-key" }, TEXT_AI_PROVIDERS, { jsonObject: true })
+        await listAllModels({ anthropic: "user-key", plan: null }, TEXT_AI_PROVIDERS, {
+          jsonObject: true,
+        })
       ).toEqual([]);
       expect(requests).toEqual([]);
     });

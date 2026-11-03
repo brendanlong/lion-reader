@@ -294,6 +294,13 @@ export function getAppErrorCode(error: unknown): string | undefined {
     : undefined;
 }
 
+/** A quota error's `retryAfter` (seconds), as {@link errors.quotaExceeded} sets it. */
+export function getRetryAfterSeconds(error: unknown): number | undefined {
+  if (!(error instanceof TRPCError)) return undefined;
+  const details = (error.cause as { details?: { retryAfter?: unknown } } | undefined)?.details;
+  return typeof details?.retryAfter === "number" ? details.retryAfter : undefined;
+}
+
 /**
  * App error codes that represent an **expected** condition — the user's input or
  * an upstream site, not a bug in our server — but which map to a 5xx HTTP status

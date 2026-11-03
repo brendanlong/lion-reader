@@ -23,7 +23,13 @@ import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
-import { PLAN_NAMES, PLAN_QUOTAS, PLAN_QUOTA_NAMES, type QuotaRate } from "@/lib/plans";
+import {
+  AI_PLAN_QUOTAS,
+  PLAN_NAMES,
+  PLAN_QUOTAS,
+  PLAN_QUOTA_NAMES,
+  type QuotaRate,
+} from "@/lib/plans";
 
 function isOAuthProvider(provider: string): provider is OAuthProvider {
   return provider in providerNames;
@@ -181,11 +187,19 @@ export function PlanSection() {
             <div key={quota}>
               <dt className="ui-text-sm text-muted font-medium">{PLAN_QUOTA_NAMES[quota]}</dt>
               <dd className="ui-text-sm text-body mt-1 tabular-nums">
-                {formatQuota(data.limits.quotas[quota])}
+                {AI_PLAN_QUOTAS.has(quota) && data.limits.serverKeyModels?.length === 0
+                  ? "With your own API key only"
+                  : formatQuota(data.limits.quotas[quota])}
               </dd>
             </div>
           ))}
         </dl>
+      )}
+      {data && (
+        <p className="ui-text-sm text-muted mt-4">
+          AI limits count only what runs on Lion Reader&apos;s keys. Your own API keys aren&apos;t
+          limited.
+        </p>
       )}
     </SettingsSection>
   );

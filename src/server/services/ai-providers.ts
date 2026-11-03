@@ -32,10 +32,13 @@ import {
 import {
   hasServerKeyPriceCaps,
   isAllowedOnServerKey,
+  modelListIncludes,
   serverKeyTokenPriceCaps,
   type ModelPrice,
 } from "@/server/services/server-key-models";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import type { PlanLimits, PlanQuota } from "@/lib/plans";
+import { consumeQuota } from "@/server/services/plans";
 import { failoverModels } from "@/server/services/model-failover";
 import {
   classifyProviderStatus,
@@ -44,10 +47,24 @@ import {
 } from "@/server/services/provider-errors";
 
 /**
- * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
- * null entry falls back to the server's key; {@link UNREADABLE_API_KEY} doesn't.
+ * Whose AI calls these are, and what they may run on the server's keys: the
+ * user's plan (`@/lib/plans`), whose quotas their calls on the server's keys
+ * count against.
  */
-export type AiProviderKeys = Partial<Record<AiProvider, string | null | typeof UNREADABLE_API_KEY>>;
+export interface AiPlanAccess {
+  userId: string;
+  limits: PlanLimits;
+}
+
+/**
+ * Per-user provider API keys, as `getUserApiKeys` returns them, with the
+ * user's {@link AiPlanAccess}. A missing or null key falls back to the
+ * server's; {@link UNREADABLE_API_KEY} doesn't. `plan` is null only for the
+ * operator's own calls (the demo's recordings), which no plan limits.
+ */
+export type AiProviderKeys = Partial<
+  Record<AiProvider, string | null | typeof UNREADABLE_API_KEY>
+> & { plan: AiPlanAccess | null };
 
 /** A call to a provider whose saved key can't be read. */
 export class UnreadableApiKeyError extends Error {
@@ -101,7 +118,27 @@ export function isModelAllowed(
 ): boolean {
   const { provider } = parseModelRef(modelRef);
   if (!isProviderAvailable(provider, keys)) return false;
-  return isOnUserKey(provider, keys) || isAllowedOnServerKey(modelRef, price);
+  if (isOnUserKey(provider, keys)) return true;
+  const planModels = keys?.plan?.limits.serverKeyModels ?? null;
+  return (
+    (planModels === null || modelListIncludes(planModels, modelRef)) &&
+    isAllowedOnServerKey(modelRef, price)
+  );
+}
+
+/**
+ * Takes `cost` of the user's `quota` for a call to `provider` on the server's
+ * key; a call on their own key costs us nothing, so it's free. Throws
+ * `QUOTA_EXCEEDED` when the quota is spent.
+ */
+export async function chargeServerKeyUse(
+  keys: AiProviderKeys,
+  provider: AiProvider,
+  quota: PlanQuota,
+  cost = 1
+): Promise<void> {
+  if (!keys.plan || isOnUserKey(provider, keys)) return;
+  await consumeQuota(keys.plan.userId, keys.plan.limits, quota, cost);
 }
 
 /** {@link isModelAllowed} for a text model, looking up its price if that's what decides. */

@@ -88,8 +88,8 @@ export default function TermsOfServicePage() {
         <Card padding="md" className="mt-4">
           <ul className="text-muted list-disc space-y-2 pl-6">
             <li>
-              <strong>Subscriptions, newsletter addresses, saves and uploads:</strong> Limited by
-              your account&apos;s plan, shown under Settings → Account
+              <strong>Subscriptions, newsletter addresses, saves, uploads and AI features:</strong>{" "}
+              Limited by your account&apos;s plan, shown under Settings → Account
             </li>
             <li>
               <strong>Feed size:</strong> Individual feed responses are limited to 10 MB

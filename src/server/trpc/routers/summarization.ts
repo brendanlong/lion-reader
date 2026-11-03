@@ -31,13 +31,18 @@ import {
   sanitizeSummaryHtml,
 } from "@/server/services/summarization";
 import {
+  chargeServerKeyUse,
   isModelAllowed,
   listAllModels,
   TextGenerationError,
   UnreadableApiKeyError,
 } from "@/server/services/ai-providers";
-import { normalizeModelRef } from "@/lib/ai/model-ref";
-import { getApiKeyProviders, getUserApiKeys } from "@/server/services/user-api-keys";
+import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import {
+  getApiKeyProviders,
+  getUserAiPlanAccess,
+  getUserApiKeys,
+} from "@/server/services/user-api-keys";
 import { aiProviderName } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -298,6 +303,9 @@ export const summarizationRouter = createTRPCRouter({
         return toCachedResult(summaryRecord, isSettingsChanged(summaryRecord));
       }
 
+      // Counted before the call, so a failed one counts too.
+      await chargeServerKeyUse(keys, parseModelRef(currentModelId).provider, "summaries");
+
       // A failure stores nothing: summaries are only generated when the user
       // asks (and this is rate-limited), so asking again simply tries again.
       try {
@@ -376,8 +384,14 @@ export const summarizationRouter = createTRPCRouter({
     .output(z.object({ available: z.boolean() }))
     .query(async ({ ctx }) => {
       // Availability only needs to know which keys exist, not decrypt them.
-      const providers = await getApiKeyProviders(ctx.session.user.id);
-      const keys = Object.fromEntries(providers.map((provider) => [provider, "configured"]));
+      const [providers, plan] = await Promise.all([
+        getApiKeyProviders(ctx.session.user.id),
+        getUserAiPlanAccess(ctx.session.user.id),
+      ]);
+      const keys = {
+        ...Object.fromEntries(providers.map((provider) => [provider, "configured"])),
+        plan,
+      };
       return {
         available: await isSummarizationAvailable(keys, ctx.session.user.summarizationModel),
       };

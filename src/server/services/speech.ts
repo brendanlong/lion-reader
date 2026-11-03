@@ -24,6 +24,7 @@ import {
 import { jittered } from "@/lib/jitter";
 import { logger } from "@/lib/logger";
 import {
+  chargeServerKeyUse,
   getProviderApiKey,
   isModelAllowed,
   isOnUserKey,
@@ -49,7 +50,8 @@ import {
   getBreezeBlueCatalog,
   type BreezeBlueCatalog,
 } from "@/server/services/breezeblue";
-import { checkRateLimit } from "@/server/rate-limit";
+import { checkRateLimit, speechRateLimitCost } from "@/server/rate-limit";
+import { getAppErrorCode, getRetryAfterSeconds } from "@/server/errors";
 import {
   listOpenRouterModels,
   openRouterSpeech,
@@ -445,6 +447,14 @@ export function speechErrorAnswer(
   logContext: Record<string, unknown>
 ): SpeechErrorAnswer {
   const message = error instanceof Error ? error.message : String(error);
+  if (getAppErrorCode(error) === "QUOTA_EXCEEDED") {
+    return {
+      status: 429,
+      code: "TOO_MANY_REQUESTS",
+      message,
+      headers: retryAfter(getRetryAfterSeconds(error) ?? BUSY_RETRY_AFTER_SECONDS),
+    };
+  }
   if (error instanceof ProviderBusyError) {
     logger.warn("Speech provider busy", { ...logContext, error: message });
     return {
@@ -680,6 +690,12 @@ export async function streamSpeech(
   if (!apiKey) {
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
+  await chargeServerKeyUse(
+    keys,
+    model.provider,
+    "speechCharacters",
+    speechRateLimitCost(options.text)
+  );
   const candidates = [{ model, voice, apiKey }, ...(await failoverCandidates(model, voice))];
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;

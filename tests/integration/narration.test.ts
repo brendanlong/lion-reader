@@ -16,6 +16,7 @@
  *     player splits the narration text — length(map) === length(split).
  */
 
+import { PLAN_LIMITS } from "../../src/lib/plans";
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
@@ -37,6 +38,7 @@ import {
   createTestSubscription,
   createTestUser,
   createTestUserEntries,
+  withPlanLimits,
 } from "./helpers";
 
 /**
@@ -576,6 +578,25 @@ describe("narration.generate failure backoff", () => {
     expect(llmRequests).toBe(1);
     expect(source).toBe("fallback");
     expect(row.errorAt).toBeNull();
+  });
+
+  it("narrates in plain text, without calling the LLM, past the plan's quota on the server's key (#2225)", async () => {
+    llmContent = JSON.stringify({ paragraphs: [{ id: 0, text: "Rewritten by the model." }] });
+    const userId = await createServerKeyUser();
+    await db.update(users).set({ plan: "paid" }).where(eq(users.id, userId));
+
+    await withPlanLimits(
+      "paid",
+      { quotas: { ...PLAN_LIMITS.paid.quotas, narrationTextProcessing: { burst: 1, perDay: 1 } } },
+      async () => {
+        expect((await narrateOnce(userId)).source).toBe("llm");
+        const { row, source } = await narrateOnce(userId);
+        expect(source).toBe("fallback");
+        expect(llmRequests).toBe(1);
+        // Nothing failed, so nothing backs off.
+        expect(row.errorAt).toBeNull();
+      }
+    );
   });
 
   it("caches a usable response (the fake endpoint reaches the LLM path)", async () => {

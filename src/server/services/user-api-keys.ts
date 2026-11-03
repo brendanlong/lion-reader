@@ -17,8 +17,14 @@ import {
   isEncryptionConfigured,
 } from "@/lib/encryption";
 import { errors } from "@/server/errors";
-import type { AiProviderKeys } from "@/server/services/ai-providers";
+import type { AiPlanAccess, AiProviderKeys } from "@/server/services/ai-providers";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import { getUserPlanLimits } from "@/server/services/plans";
+
+/** What `userId`'s plan lets their AI calls run on the server's keys. */
+export async function getUserAiPlanAccess(userId: string): Promise<AiPlanAccess> {
+  return { userId, limits: await getUserPlanLimits(db, userId) };
+}
 
 /** The providers `userId` has their own API key for (not the keys). */
 export async function getApiKeyProviders(userId: string): Promise<UserKeyProvider[]> {
@@ -31,7 +37,7 @@ export async function getApiKeyProviders(userId: string): Promise<UserKeyProvide
 }
 
 /**
- * Fetches and decrypts a user's API keys.
+ * Fetches and decrypts a user's API keys, with their plan's AI access.
  *
  * A missing or malformed `API_KEY_ENCRYPTION_KEY` throws. A key that doesn't
  * decrypt under it is reported and comes back as `UNREADABLE_API_KEY`, so
@@ -47,7 +53,7 @@ export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
   if (rows.length > 0) {
     assertEncryptionConfigured();
   }
-  const keys: AiProviderKeys = {};
+  const keys: AiProviderKeys = { plan: await getUserAiPlanAccess(userId) };
   for (const { provider, encryptedKey } of rows) {
     if (!isUserKeyProvider(provider)) continue;
     try {

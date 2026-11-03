@@ -14,7 +14,7 @@ import {
   expensiveConfirmedProtectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { errors } from "@/server/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { narrationContent } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -36,7 +36,11 @@ import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { defaultSpeechModelId, defaultVoiceFor, listSpeechModels } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/entry-content";
-import { getApiKeyProviders, getUserApiKeys } from "@/server/services/user-api-keys";
+import {
+  getApiKeyProviders,
+  getUserAiPlanAccess,
+  getUserApiKeys,
+} from "@/server/services/user-api-keys";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -313,6 +317,12 @@ export const narrationRouter = createTRPCRouter({
         // Stop the timer even on error
         stopTimer();
 
+        // Out of the plan's narration cleanup: plain text is the narration it
+        // gets, and nothing failed.
+        if (getAppErrorCode(error) === "QUOTA_EXCEEDED") {
+          return fallbackResponse();
+        }
+
         // Log the error
         logger.error("Narration generation failed", {
           contentHash,
@@ -350,8 +360,14 @@ export const narrationRouter = createTRPCRouter({
     .output(z.object({ available: z.boolean() }))
     .query(async ({ ctx }) => {
       // Availability only needs to know which keys exist, not decrypt them.
-      const providers = await getApiKeyProviders(ctx.session.user.id);
-      const keys = Object.fromEntries(providers.map((provider) => [provider, "configured"]));
+      const [providers, plan] = await Promise.all([
+        getApiKeyProviders(ctx.session.user.id),
+        getUserAiPlanAccess(ctx.session.user.id),
+      ]);
+      const keys = {
+        ...Object.fromEntries(providers.map((provider) => [provider, "configured"])),
+        plan,
+      };
       return { available: await isNarrationLlmAvailable(keys, ctx.session.user.narrationModel) };
     }),
 

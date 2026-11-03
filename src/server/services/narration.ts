@@ -23,6 +23,7 @@ import {
   NARRATION_PROVIDERS,
 } from "@/lib/narration/constants";
 import {
+  chargeServerKeyUse,
   generateChatCompletion,
   isOnUserKey,
   isProviderAvailable,
@@ -341,21 +342,21 @@ export function narrationFromLlmOutput(
  */
 export async function generateNarration(
   htmlContent: string,
-  options?: {
-    keys?: AiProviderKeys;
+  options: {
+    keys: AiProviderKeys;
     userModel?: string | null;
     /** The model already resolved from `userModel` (see `getNarrationModelRef`). */
     modelRef?: ModelRef;
   }
 ): Promise<GenerateNarrationResult> {
   const modelRef =
-    options?.modelRef ?? (await getNarrationModelRef(options?.userModel, options?.keys));
+    options.modelRef ?? (await getNarrationModelRef(options.userModel, options.keys));
 
   // Convert HTML to structured paragraphs
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);
 
   // If the model's provider is not configured, use fallback
-  if (!isProviderAvailable(modelRef.provider, options?.keys)) {
+  if (!isProviderAvailable(modelRef.provider, options.keys)) {
     logger.debug("Narration LLM provider not configured, using fallback text conversion", {
       provider: modelRef.provider,
     });
@@ -363,11 +364,12 @@ export async function generateNarration(
     return buildFallbackNarration(inputParagraphs);
   }
 
+  await chargeServerKeyUse(options.keys, modelRef.provider, "narrationTextProcessing");
   try {
     // Send paragraphs as JSON
     const userPrompt = JSON.stringify({ paragraphs: inputParagraphs });
 
-    const rawOutput = await generateChatCompletion(modelRef, options?.keys, {
+    const rawOutput = await generateChatCompletion(modelRef, options.keys, {
       system: NARRATION_SYSTEM_PROMPT,
       userPrompt,
       // Mechanical text normalization task — minimal reasoning keeps latency and
@@ -397,7 +399,7 @@ export async function generateNarration(
       failure: {
         kind: "unusable_output",
         onCallerTerms:
-          !isDefaultNarrationModel(modelRef) || isOnUserKey(modelRef.provider, options?.keys),
+          !isDefaultNarrationModel(modelRef) || isOnUserKey(modelRef.provider, options.keys),
       },
     };
   } catch (error) {

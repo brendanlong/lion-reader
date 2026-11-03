@@ -207,7 +207,7 @@ const modelsOf = (asked: typeof requests) => asked.map((request) => request.mode
 
 describe("Together voices", () => {
   it("lists the speech models it serves serverless, with their voices and price", async () => {
-    const { models } = await listSpeechModels({ together: randomUUID() });
+    const { models } = await listSpeechModels({ together: randomUUID(), plan: null });
     expect(
       models.map((model) => [model.id, model.displayName, model.pricePerMillionCharacters])
     ).toEqual([
@@ -223,7 +223,7 @@ describe("Together voices", () => {
   it("streams the voice as fragmented MP4, asking for 16-bit PCM", async () => {
     const before = requests.length;
     const audio = await streamSpeech(
-      { together: randomUUID() },
+      { together: randomUUID(), plan: null },
       { model: KOKORO, voice: "af_bella", text: "Hello.", userId: randomUUID() }
     );
     const input = new Input({
@@ -259,7 +259,7 @@ describe("speech failover", () => {
     "goes straight to the next host, in the same voice, when the one asked %s",
     async (_, setUp) => {
       setUp();
-      const asked = await speak({});
+      const asked = await speak({ plan: null });
       expect(modelsOf(asked)).toEqual([KOKORO, ORPHEUS]);
       expect(asked[1].body).toMatchObject({ voice: "af_bella" });
     }
@@ -268,7 +268,7 @@ describe("speech failover", () => {
   it("passes over a failover host that fails too", async () => {
     busy.set(KOKORO, 1);
     refusing.add(ORPHEUS);
-    const asked = await speak({});
+    const asked = await speak({ plan: null });
     expect(modelsOf(asked)).toEqual([KOKORO, ORPHEUS, BREEZE]);
     expect(asked[2].path).toBe("/text-to-speech/af_bella/stream");
   });
@@ -278,7 +278,7 @@ describe("speech failover", () => {
     refusing.add(KOKORO);
     refusing.add(ORPHEUS);
     // Only a refusal of the user's own key says what the provider said.
-    const refusal = speak({ together: "user-together" });
+    const refusal = speak({ together: "user-together", plan: null });
     await expect(refusal).rejects.toThrow(SpeechRejectedError);
     await expect(refusal).rejects.toThrow("Unable to access non-serverless model");
   });
@@ -289,22 +289,26 @@ describe("speech failover", () => {
   ])("waits out a busy host for %s", async (_, setUp, options) => {
     setUp();
     busy.set(KOKORO, 1);
-    expect(modelsOf(await speak({}, options))).toEqual([KOKORO, KOKORO]);
+    expect(modelsOf(await speak({ plan: null }, options))).toEqual([KOKORO, KOKORO]);
   });
 
   it("fails over on the server's key to a model it doesn't let users pick", async () => {
     process.env.SERVER_KEY_MODELS = KOKORO;
-    const { models } = await listSpeechModels({});
+    const { models } = await listSpeechModels({ plan: null });
     expect(models.map((model) => model.id)).toEqual([KOKORO]);
 
     busy.set(KOKORO, 1);
-    expect(modelsOf(await speak({}))).toEqual([KOKORO, ORPHEUS]);
+    expect(modelsOf(await speak({ plan: null }))).toEqual([KOKORO, ORPHEUS]);
   });
 
   it("backs the user's own key up with the server's, never another of theirs", async () => {
     busy.set(KOKORO, 1);
     busy.set(ORPHEUS, 1);
-    const asked = await speak({ together: "user-together", breezeblue: "user-breezeblue" });
+    const asked = await speak({
+      together: "user-together",
+      breezeblue: "user-breezeblue",
+      plan: null,
+    });
     expect(asked.map(({ model, key }) => [model, key])).toEqual([
       [KOKORO, "user-together"],
       [ORPHEUS, "server-together"],

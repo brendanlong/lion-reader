@@ -4,7 +4,8 @@
 
 /**
  * The account settings Plan section: usage is shown against the plan's limit,
- * a limit the plan doesn't have isn't shown as one, and quotas show their rate.
+ * a limit the plan doesn't have isn't shown as one, quotas show their rate, and
+ * AI quotas say when only the user's own key can be used.
  */
 
 import { describe, it, expect } from "vitest";
@@ -21,7 +22,14 @@ describe("PlanSection", () => {
           limits: {
             maxSubscriptions: 150,
             maxIngestAddresses: null,
-            quotas: { pageFetches: { burst: 50, perDay: 200 }, fileConversions: null },
+            serverKeyModels: [],
+            quotas: {
+              pageFetches: { burst: 50, perDay: 200 },
+              fileConversions: null,
+              summaries: null,
+              narrationTextProcessing: null,
+              speechCharacters: null,
+            },
           },
           usage: { subscriptions: 12, ingestAddresses: 3 },
         }),
@@ -33,5 +41,7 @@ describe("PlanSection", () => {
     expect(screen.getByText("3 (no limit)")).toBeTruthy();
     expect(screen.getByText("200 a day, up to 50 at once")).toBeTruthy();
     expect(screen.getByText("No limit")).toBeTruthy();
+    // A plan with no models on the server's keys has AI only on the user's own.
+    expect(screen.getAllByText("With your own API key only")).toHaveLength(3);
   });
 });

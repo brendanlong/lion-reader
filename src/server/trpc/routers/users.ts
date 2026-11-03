@@ -26,6 +26,7 @@ import { isSummarizationAvailable } from "@/server/services/summarization";
 import { isNarrationLlmAvailable } from "@/server/services/narration";
 import { listSpeechModels } from "@/server/services/speech";
 import { getPlanUsage } from "@/server/services/plans";
+import { getUserAiPlanAccess } from "@/server/services/user-api-keys";
 import { PLAN_IDS, PLAN_QUOTAS } from "@/lib/plans";
 import {
   getApiKeyProviders,
@@ -367,8 +368,8 @@ export const usersRouter = createTRPCRouter({
     }),
 
   /**
-   * Which AI features work on the server's keys alone, for settings to say
-   * which ones need the user's own key.
+   * Which AI features work on the server's keys alone, as far as the user's
+   * plan allows, for settings to say which ones need the user's own key.
    */
   "me.serverAiFeatures": protectedProcedure
     .output(
@@ -378,11 +379,12 @@ export const usersRouter = createTRPCRouter({
         cloudVoices: z.boolean(),
       })
     )
-    .query(async () => {
+    .query(async ({ ctx }) => {
+      const serverKeysOnly = { plan: await getUserAiPlanAccess(ctx.session.user.id) };
       const [summaries, narrationTextProcessing, speech] = await Promise.all([
-        isSummarizationAvailable({}),
-        isNarrationLlmAvailable({}),
-        listSpeechModels({}),
+        isSummarizationAvailable(serverKeysOnly),
+        isNarrationLlmAvailable(serverKeysOnly),
+        listSpeechModels(serverKeysOnly),
       ]);
       return { summaries, narrationTextProcessing, cloudVoices: speech.models.length > 0 };
     }),
@@ -395,6 +397,7 @@ export const usersRouter = createTRPCRouter({
         limits: z.object({
           maxSubscriptions: z.number().nullable(),
           maxIngestAddresses: z.number().nullable(),
+          serverKeyModels: z.array(z.string()).readonly().nullable(),
           quotas: z.record(
             z.enum(PLAN_QUOTAS),
             z.object({ burst: z.number(), perDay: z.number() }).nullable()

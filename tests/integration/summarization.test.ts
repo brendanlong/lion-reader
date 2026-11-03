@@ -21,6 +21,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { getAppErrorCode } from "../../src/server/errors";
 import { DEFAULT_SUMMARIZATION_MODELS } from "../../src/lib/summarization/constants";
+import { PLAN_LIMITS } from "../../src/lib/plans";
 import {
   createAuthContext,
   createTestEntry,
@@ -29,6 +30,7 @@ import {
   createTestSubscription,
   createTestUser,
   createTestUserEntries,
+  withPlanLimits,
 } from "./helpers";
 
 /**
@@ -429,6 +431,54 @@ describe("summarization.generate provider failures", () => {
     expect(result.cached).toBe(false);
     expect(result.summary).toContain("It worked this time");
     expect(providerRequests).toBe(3);
+  });
+
+  describe("on a plan (#2225)", () => {
+    async function onPlan(plan: "free" | "paid") {
+      const set = await setUp();
+      await db.update(users).set({ plan }).where(eq(users.id, set.userId));
+      return set;
+    }
+    const oneSummary = {
+      quotas: { ...PLAN_LIMITS.paid.quotas, summaries: { burst: 1, perDay: 1 } },
+    };
+
+    it("counts summaries on the server's key, refusing past the quota without calling anyone", async () => {
+      providerAnswer = { status: 200, type: "", message: "Summary" };
+      const { caller, entryId, userId } = await onPlan("paid");
+      const other = await createVisibleEntry(userId, `hash-${generateUuidv7()}`);
+
+      await withPlanLimits("paid", oneSummary, async () => {
+        await caller.summarization.generate({ entryId });
+        const error = await failure(caller.summarization.generate({ entryId: other }));
+        expect(getAppErrorCode(error)).toBe("QUOTA_EXCEEDED");
+        expect(providerRequests).toBe(1);
+      });
+    });
+
+    it("doesn't count summaries on the user's own key", async () => {
+      providerAnswer = { status: 200, type: "", message: "Summary" };
+      const { caller, entryId, userId } = await onPlan("paid");
+      await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-user-key" } });
+      const other = await createVisibleEntry(userId, `hash-${generateUuidv7()}`);
+
+      await withPlanLimits("paid", oneSummary, async () => {
+        await caller.summarization.generate({ entryId });
+        await caller.summarization.generate({ entryId: other });
+        expect(providerRequests).toBe(2);
+      });
+    });
+
+    it("isn't available on the server's key to a plan without its models", async () => {
+      const { caller, entryId } = await onPlan("free");
+
+      await withPlanLimits("free", { serverKeyModels: [] }, async () => {
+        expect(await caller.summarization.isAvailable()).toEqual({ available: false });
+        const error = await failure(caller.summarization.generate({ entryId }));
+        expect(getAppErrorCode(error)).toBe("AI_NOT_CONFIGURED");
+        expect(providerRequests).toBe(0);
+      });
+    });
   });
 
   it("says so, without calling anyone, when the user's saved key can't be read", async () => {
