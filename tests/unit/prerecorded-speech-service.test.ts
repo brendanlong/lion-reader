@@ -27,14 +27,16 @@ async function text(stream: ReadableStream<Uint8Array> | null): Promise<string |
   return stream ? new Response(stream).text() : null;
 }
 
-async function untilOnDisk(cacheDir: string): Promise<void> {
-  await vi.waitFor(async () => expect(await readdir(cacheDir)).toContain(KEY));
+async function untilOnDisk(cacheDir: string, key = KEY): Promise<void> {
+  await vi.waitFor(async () => expect(await readdir(cacheDir)).toContain(key));
 }
 
 let root: string;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "prerecorded-speech-test-"));
 });
+// A test whose last request fills the cache waits for the write to land
+// (`untilOnDisk`): it outlives the response, and would race this removal.
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
@@ -82,9 +84,10 @@ describe("prerecorded speech", () => {
 
   it("serves a recording in the bucket whatever the catalog says", async () => {
     const other = "c".repeat(64);
-    const { get, bucket } = setup();
+    const { get, bucket, cacheDir } = setup();
     bucket.set(other, "from another version");
     expect(await text(await get(other))).toBe("from another version");
+    await untilOnDisk(cacheDir, other);
   });
 
   it("records a missing chunk once, into the bucket and onto disk", async () => {
@@ -117,7 +120,7 @@ describe("prerecorded speech", () => {
 
   it("keeps nothing of audio that stopped partway, and tries again", async () => {
     let attempts = 0;
-    const { get, synthesized } = setup({
+    const { get, synthesized, cacheDir } = setup({
       synthesize: async (chunk) => {
         synthesized.push(chunk.text);
         if (++attempts > 1) return streamOf("audio:", chunk.text);
@@ -133,12 +136,13 @@ describe("prerecorded speech", () => {
     // Requests get the failure until the failed synthesis is forgotten.
     await vi.waitFor(async () => expect(await text(await get(KEY))).toBe("audio:Hello."));
     expect(synthesized).toEqual(["Hello.", "Hello."]);
+    await untilOnDisk(cacheDir);
   });
 
   it("gives requests waiting on a synthesis that fails its failure, not new syntheses", async () => {
     let fail = true;
     const { promise: released, resolve: release } = Promise.withResolvers<void>();
-    const { get, synthesized } = setup({
+    const { get, synthesized, cacheDir } = setup({
       synthesize: async (chunk) => {
         synthesized.push(chunk.text);
         await released;
@@ -155,6 +159,7 @@ describe("prerecorded speech", () => {
     expect(synthesized).toEqual(["Hello."]);
     fail = false;
     expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await untilOnDisk(cacheDir);
   });
 
   it("serves from disk what the bucket refused, without paying again", async () => {
@@ -183,6 +188,7 @@ describe("prerecorded speech", () => {
     });
     expect(await text(await restartedWithNewDisk.get(KEY))).toBe("audio:Hello.");
     expect(restartedWithNewDisk.synthesized).toEqual(["Hello."]);
+    await untilOnDisk(restartedWithNewDisk.cacheDir);
   });
 
   it("turns off for longer each time the disk fails a write, until one succeeds", async () => {
