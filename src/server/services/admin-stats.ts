@@ -5,6 +5,7 @@
 import { and, count, gt, isNull, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { entries, feeds, invites, subscriptions, users } from "@/server/db/schema";
+import { estimateRows } from "@/server/db/estimate-rows";
 import { isUserManagedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 
 interface AdminOverview {
@@ -14,7 +15,8 @@ interface AdminOverview {
   totalFeeds: number;
   totalFeedsWithSubscribers: number;
   brokenFeeds: number;
-  totalEntries: number;
+  /** An exact count(*) reads every entry on each page load. */
+  estimatedEntries: number | null;
   totalSubscriptions: number;
   pendingInvites: number;
 }
@@ -30,7 +32,7 @@ export async function getAdminOverview(db: Database): Promise<AdminOverview> {
     activeUsersResult,
     feedStatsResult,
     feedsWithSubsResult,
-    totalEntriesResult,
+    estimatedEntries,
     totalSubscriptionsResult,
     pendingInvitesResult,
   ] = await Promise.all([
@@ -67,8 +69,7 @@ export async function getAdminOverview(db: Database): Promise<AdminOverview> {
       .from(subscriptions)
       .where(and(isNull(subscriptions.unsubscribedAt), isWebSubscription())),
 
-    // Total entries
-    db.select({ count: count() }).from(entries),
+    estimateRows(db, entries),
 
     // Total active subscriptions
     db
@@ -90,7 +91,7 @@ export async function getAdminOverview(db: Database): Promise<AdminOverview> {
     totalFeeds: Number(feedStatsResult[0].total),
     totalFeedsWithSubscribers: Number(feedsWithSubsResult[0].count),
     brokenFeeds: Number(feedStatsResult[0].broken),
-    totalEntries: Number(totalEntriesResult[0].count),
+    estimatedEntries: estimatedEntries,
     totalSubscriptions: Number(totalSubscriptionsResult[0].count),
     pendingInvites: Number(pendingInvitesResult[0].count),
   };

@@ -4,9 +4,10 @@
  * Collects metrics from the database for Prometheus export, on each scrape.
  */
 
-import { getTableName, sql, type SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { db, pool } from "../db";
+import { estimateRows } from "../db/estimate-rows";
 import { users, subscriptions, entries, feeds, jobs } from "../db/schema";
 import {
   metricsEnabled,
@@ -23,18 +24,6 @@ function countRows(table: PgTable, where?: SQL): Promise<number> {
     .then((rows) => rows[0]?.count ?? 0);
 }
 
-// entries grows without bound, so it uses the planner's row estimate instead of
-// a count(*) scan per scrape. reltuples lives in the catalog, so unlike the
-// cumulative stats (n_live_tup) it survives a crash or failover; vacuum and
-// analyze keep it current. It's -1 until the table is first analyzed.
-function estimateRows(table: PgTable): Promise<number> {
-  return db
-    .execute<{ estimate: number }>(
-      sql`SELECT GREATEST(reltuples, 0)::float8 AS estimate FROM pg_class WHERE oid = ${getTableName(table)}::regclass`
-    )
-    .then((result) => result.rows[0]?.estimate ?? 0);
-}
-
 /**
  * Collects and updates all business metrics from the database.
  */
@@ -42,7 +31,8 @@ async function collectBusinessMetrics(): Promise<void> {
   const [userCount, subscriptionCount, entryCount, feedCount] = await Promise.all([
     countRows(users),
     countRows(subscriptions, sql`${subscriptions.unsubscribedAt} IS NULL`),
-    estimateRows(entries),
+    // entries grows without bound, so it isn't counted on every scrape.
+    estimateRows(db, entries).then((estimate) => estimate ?? 0),
     countRows(feeds),
   ]);
 

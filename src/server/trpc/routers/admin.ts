@@ -349,7 +349,7 @@ const overviewEndpoints = {
         totalFeeds: z.number(),
         totalFeedsWithSubscribers: z.number(),
         brokenFeeds: z.number(),
-        totalEntries: z.number(),
+        estimatedEntries: z.number().nullable(),
         totalSubscriptions: z.number(),
         pendingInvites: z.number(),
       })
