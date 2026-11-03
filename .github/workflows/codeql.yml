@@ -1,10 +1,9 @@
 name: CodeQL
 
-# GitHub's default setup (which must stay off in the repo settings: the two
-# conflict), as our own workflow only so java-kotlin caches through
-# setup-gradle. CodeQL's own dependency cache key hashes kmp/.gradle/, which
-# every build rewrites, so each run uploaded a new ~1.2 GB entry nothing
-# restored, evicting our other caches (#2169).
+# Default setup must stay off in the repo settings (the two conflict). We run
+# CodeQL ourselves so java-kotlin caches through setup-gradle: CodeQL's own
+# dependency cache key hashes kmp/.gradle/, which every build rewrites, so it
+# uploads a ~1.2 GB entry per run that nothing restores (#2169).
 on:
   push:
     branches: [master]
@@ -25,9 +24,7 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
-      packages: read
       security-events: write
     strategy:
       fail-fast: false
@@ -64,7 +61,7 @@ jobs:
         uses: github/codeql-action/autobuild@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         env:
           # CodeQL sees only the Kotlin it watches compile, so no task may come
-          # from setup-gradle's build cache.
+          # from setup-gradle's build cache. Overrides kmp/gradle.properties.
           GRADLE_OPTS: -Dorg.gradle.caching=false
 
       - uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
