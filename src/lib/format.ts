@@ -99,3 +99,26 @@ export function getFeedDisplayName(feed: {
   if (feed.url) return getDomain(feed.url);
   return "Unknown Feed";
 }
+
+function countOf(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * A wait as words, rounded up to the minute: "5 minutes", "4 hours and 48
+ * minutes", "2 days and 3 hours".
+ */
+export function formatWait(seconds: number): string {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  if (minutes < 60) return countOf(minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest
+      ? `${countOf(hours, "hour")} and ${countOf(rest, "minute")}`
+      : countOf(hours, "hour");
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${countOf(days, "day")} and ${countOf(rest, "hour")}` : countOf(days, "day");
+}

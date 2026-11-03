@@ -58,8 +58,29 @@ function preview(url: string, title: string) {
  * message that triggers discovery), discovery finds two feeds, and previewing
  * either of them succeeds.
  */
+/** `users.me.plan` with `subscriptions` used of a `limit` (null: no limit). */
+function planWith(subscriptions: number, limit: number | null) {
+  return () => ({
+    plan: "free",
+    limits: {
+      maxSubscriptions: limit,
+      maxIngestAddresses: null,
+      serverKeyModels: null,
+      quotas: {
+        pageFetches: null,
+        fileConversions: null,
+        summaries: null,
+        narrationTextProcessing: null,
+        speechCharacters: null,
+      },
+    },
+    usage: { subscriptions, ingestAddresses: 0 },
+  });
+}
+
 function discoveryHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
+    "users.me.plan": planWith(0, null),
     "feeds.preview": (input: never) => {
       const { url } = input as { url: string };
       if (url === FEED_URL) return preview(FEED_URL, "Example Blog");
@@ -142,5 +163,28 @@ describe("SubscribeContent discovery step", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Example Comments/ })).toBeEnabled()
     );
+  });
+});
+
+describe("SubscribeContent at the plan's subscription limit", () => {
+  it("says so and disables the form before anything is entered", async () => {
+    const { callsFor } = renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers({ "users.me.plan": planWith(3, 3) }),
+    });
+
+    expect(await screen.findByText(/reached your plan's limit of 3/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/feed url/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /preview feed/i })).toBeDisabled();
+    expect(callsFor("feeds.preview")).toEqual([]);
+  });
+
+  it("leaves the form enabled under the limit", async () => {
+    const { callsFor } = renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers({ "users.me.plan": planWith(2, 3) }),
+    });
+
+    await waitFor(() => expect(callsFor("users.me.plan")).toHaveLength(1));
+    expect(screen.queryByText(/reached your plan's limit/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /preview feed/i })).toBeEnabled();
   });
 });

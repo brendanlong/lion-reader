@@ -55,6 +55,15 @@ export const PLAN_QUOTA_NAMES: Record<PlanQuota, string> = {
   speechCharacters: "Cloud voice characters",
 };
 
+/**
+ * A quota's name for the middle of a sentence: lower-cased, but an acronym
+ * ("AI summaries") keeps its capitals.
+ */
+export function quotaNameInSentence(quota: PlanQuota): string {
+  const name = PLAN_QUOTA_NAMES[quota];
+  return /^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1);
+}
+
 export interface PlanLimits {
   /** Active subscriptions and collections (the saved subscription doesn't count). */
   maxSubscriptions: number | null;

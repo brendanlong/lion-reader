@@ -173,6 +173,24 @@ describe("plans", () => {
       );
     });
 
+    it("starts the quotas full when an admin changes the plan", async () => {
+      const userId = await createTestUser({ plan: "free" });
+      const oneFetch = {
+        quotas: { ...PLAN_LIMITS.free.quotas, pageFetches: { burst: 1, perDay: 1 } },
+      };
+      await withPlanLimits("free", oneFetch, () =>
+        withPlanLimits("paid", oneFetch, async () => {
+          await save(userId, "spends-the-quota");
+          await expect(save(userId, "refused")).rejects.toSatisfy(
+            (error) => getAppErrorCode(error) === "QUOTA_EXCEEDED"
+          );
+
+          await adminCaller().admin.setUserPlan({ userId, plan: "paid" });
+          await expect(save(userId, "allowed-again")).resolves.toBeDefined();
+        })
+      );
+    });
+
     it("doesn't limit a plan without the quota", async () => {
       const userId = await createTestUser({ plan: "unlimited" });
       await withPlanLimits(

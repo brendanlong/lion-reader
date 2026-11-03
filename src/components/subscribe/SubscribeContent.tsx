@@ -90,6 +90,13 @@ export function SubscribeContent() {
     }
   );
 
+  // At the plan's subscription limit, say so up front rather than after a
+  // preview. Read fresh: subscribing and unsubscribing happen elsewhere.
+  const planQuery = trpc.users["me.plan"].useQuery(undefined, { refetchOnMount: "always" });
+  const subscriptionLimit = planQuery.data?.limits.maxSubscriptions ?? null;
+  const atSubscriptionLimit =
+    subscriptionLimit !== null && planQuery.data!.usage.subscriptions >= subscriptionLimit;
+
   // Subscribe mutation
   const subscribeMutation = trpc.subscriptions.create.useMutation({
     onSuccess: (data) => {
@@ -99,8 +106,8 @@ export function SubscribeContent() {
       handleSubscriptionCreated(utils, subscription, queryClient, counts);
       clientPush("/all");
     },
-    onError: () => {
-      toast.error("Failed to subscribe to feed");
+    onError: (error) => {
+      toast.error("Failed to subscribe to feed", { description: error.message });
     },
   });
 
@@ -253,6 +260,13 @@ export function SubscribeContent() {
             automatically discover the feed if possible.
           </p>
 
+          {atSubscriptionLimit && (
+            <Alert variant="warning" className="mb-4">
+              You&apos;ve reached your plan&apos;s limit of {subscriptionLimit.toLocaleString()}{" "}
+              subscriptions and collections. Unsubscribe from a feed to add another.
+            </Alert>
+          )}
+
           {/* Show discovery error if no feeds were found */}
           {discoveryError && (
             <Alert variant="error" className="mb-4">
@@ -294,10 +308,15 @@ export function SubscribeContent() {
               }}
               error={urlError}
               autoComplete="url"
-              disabled={isLoading}
+              disabled={isLoading || atSubscriptionLimit}
             />
 
-            <Button type="submit" className="w-full" loading={isLoading}>
+            <Button
+              type="submit"
+              className="w-full"
+              loading={isLoading}
+              disabled={atSubscriptionLimit}
+            >
               Preview Feed
             </Button>
           </form>

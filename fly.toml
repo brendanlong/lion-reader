@@ -71,7 +71,7 @@ kill_timeout = 30
   PORT = "3000"
 
   # lionreader.com only. The plan new accounts get (src/lib/plans.ts).
-  DEFAULT_PLAN = "paid"
+  DEFAULT_PLAN = "free"
 
   # lionreader.com only.
   FETCHER_CONTACT_EMAIL = "self@brendanlong.com"

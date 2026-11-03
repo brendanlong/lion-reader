@@ -6,12 +6,14 @@
 import { eq } from "drizzle-orm";
 import {
   PLAN_LIMITS,
-  PLAN_QUOTA_NAMES,
+  PLAN_QUOTAS,
+  quotaNameInSentence,
   type PlanId,
   type PlanLimits,
   type PlanQuota,
 } from "@/lib/plans";
 import { consumeBucket } from "@/server/rate-limit";
+import { getRedisClient } from "@/server/redis";
 import { planQuotaKey } from "@/server/services/plan-quota-keys";
 import type { DbOrTx } from "@/server/db";
 import { users } from "@/server/db/schema";
@@ -59,20 +61,22 @@ export async function consumeQuota(
 ): Promise<void> {
   const rate = limits.quotas[quota];
   if (rate === null) return;
-  if (rate === "excluded") throw errors.notInPlan(PLAN_QUOTA_NAMES[quota]);
+  if (rate === "excluded") throw errors.notInPlan(quotaNameInSentence(quota));
   const result = await consumeBucket(
     planQuotaKey(quota, userId),
     { capacity: rate.burst, refillRate: rate.perDay / SECONDS_PER_DAY },
     { cost }
   );
   if (!result.allowed) {
-    throw errors.quotaExceeded(PLAN_QUOTA_NAMES[quota], result.retryAfterSeconds ?? 0);
+    throw errors.quotaExceeded(quotaNameInSentence(quota), result.retryAfterSeconds ?? 0);
   }
 }
 
 /**
  * Changes a user's plan. Moving to a smaller plan never deletes anything: a
  * user over a new limit just can't add more until they're back under it.
+ * Their quotas start full on the new plan, so an upgrade takes effect at
+ * once rather than refilling from what the old plan left.
  */
 export async function setUserPlan(db: DbOrTx, userId: string, plan: PlanId): Promise<void> {
   const updated = await db
@@ -81,6 +85,7 @@ export async function setUserPlan(db: DbOrTx, userId: string, plan: PlanId): Pro
     .where(eq(users.id, userId))
     .returning({ id: users.id });
   if (updated.length === 0) throw errors.notFound("User");
+  await getRedisClient()?.del(...PLAN_QUOTAS.map((quota) => planQuotaKey(quota, userId)));
 }
 
 export interface PlanUsage {
