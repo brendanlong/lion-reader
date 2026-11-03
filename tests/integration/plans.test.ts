@@ -11,6 +11,8 @@ import { db } from "../../src/server/db";
 import { users } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import { createSubscription } from "../../src/server/services/subscribe";
+import { saveArticle, uploadFile } from "../../src/server/services/saved";
+import { getRedisClient } from "../../src/server/redis";
 import { getAppErrorCode } from "../../src/server/errors";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { PLAN_LIMITS } from "../../src/lib/plans";
@@ -71,6 +73,61 @@ describe("plans", () => {
     await expect(caller.ingestAddresses.create({})).rejects.toSatisfy(
       (error) => getAppErrorCode(error) === "MAX_INGEST_ADDRESSES_REACHED"
     );
+  });
+
+  describe("continuous quotas", () => {
+    const html =
+      "<html><head><title>T</title></head><body><article><p>Body text here.</p></article></body></html>";
+    const save = (userId: string, path: string) =>
+      saveArticle(db, userId, { url: `https://example.com/${path}`, html });
+    const upload = (userId: string, name: string) =>
+      uploadFile(db, userId, {
+        content: Buffer.from(`# ${name}\n\nBody`).toString("base64"),
+        filename: `${name}.md`,
+      });
+
+    beforeEach(async () => {
+      await getRedisClient()!.flushdb();
+    });
+
+    it("refuses saves past the plan's burst, saying when to retry, but re-saving costs nothing", async () => {
+      const userId = await createTestUser({ plan: "free" });
+      await withPlanLimits(
+        "free",
+        { quotas: { ...PLAN_LIMITS.free.quotas, pageFetches: { burst: 1, perDay: 1 } } },
+        async () => {
+          await save(userId, "a");
+          // Already saved, so nothing is fetched and nothing is charged.
+          await save(userId, "a");
+
+          const error = await save(userId, "b").catch((e: unknown) => e);
+          expect(getAppErrorCode(error)).toBe("QUOTA_EXCEEDED");
+          expect(error).toMatchObject({ cause: { details: { retryAfter: expect.any(Number) } } });
+        }
+      );
+    });
+
+    it("refuses uploads past the plan's burst, separately from page fetches", async () => {
+      const userId = await createTestUser({ plan: "free" });
+      await withPlanLimits(
+        "free",
+        { quotas: { ...PLAN_LIMITS.free.quotas, fileConversions: { burst: 1, perDay: 1 } } },
+        async () => {
+          await upload(userId, "one");
+          await expect(upload(userId, "two")).rejects.toSatisfy(
+            (error) => getAppErrorCode(error) === "QUOTA_EXCEEDED"
+          );
+          await expect(save(userId, "still-allowed")).resolves.toBeDefined();
+        }
+      );
+    });
+
+    it("doesn't limit a plan without the quota", async () => {
+      const userId = await createTestUser({ plan: "unlimited" });
+      for (let i = 0; i < PLAN_LIMITS.free.quotas.fileConversions!.burst + 1; i++) {
+        await upload(userId, `file-${i}`);
+      }
+    });
   });
 
   it("shows the user their plan, its limits and their usage", async () => {

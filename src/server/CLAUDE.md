@@ -6,6 +6,10 @@ Diagram: `docs/diagrams/backend-api.d2`. The decisions behind the data model are
 
 Business logic shared by tRPC routers, the MCP server, the compat APIs and background jobs lives in `src/server/services/` as plain functions that take `db` plus parameters and return plain data, named `verbNoun` (`listEntries`, `markEntriesRead`). Routers, tools and job handlers stay thin; lint rejects a write to a core table from an API surface. Services throw the app errors in `src/server/errors.ts`; the compat APIs answer their client errors in their own format through `withClientErrors` there.
 
+## Plans and Quotas
+
+A per-user limit comes from the user's plan (`@/lib/plans`, #2222), read through `services/plans.ts` (`getUserPlanLimits`, `consumePlanQuota`) in the service every entry point calls — never a constant, an env var, or a check in one router.
+
 ## New-Account Onboarding
 
 Everything a new account gets goes in `runPostSignupTasks` (`src/server/auth/signup.ts`), which both signup paths call — **add steps there, not in the routes**, or the paths drift. Each task swallows its own errors; none may fail a signup.

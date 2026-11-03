@@ -9,8 +9,7 @@ import { z } from "zod";
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
-import { errors } from "@/server/errors";
-import { retryFeed } from "@/server/services/feeds";
+import { retrySubscriptionFeed } from "@/server/services/feeds";
 import { feeds, subscriptions } from "@/server/db/schema";
 
 // ============================================================================
@@ -125,28 +124,7 @@ export const brokenFeedsRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      const [subscription] = await ctx.db
-        .select({ feedId: subscriptions.feedId })
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.id, input.subscriptionId),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .limit(1);
-
-      // A subscription without a feed (#1846) has nothing to fetch.
-      const feedId = subscription?.feedId;
-      if (!feedId) {
-        throw errors.subscriptionNotFound();
-      }
-
-      await retryFeed(ctx.db, feedId);
-
+      await retrySubscriptionFeed(ctx.db, ctx.session.user.id, input.subscriptionId);
       return { success: true };
     }),
 });

@@ -6,6 +6,7 @@
  * then falls back to standard HTML fetching and Readability.
  */
 
+import { consumePlanQuota } from "@/server/services/plans";
 import { createHash } from "crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
@@ -351,6 +352,7 @@ export async function fetchAndStoreFullContent(
     };
   }
 
+  await consumePlanQuota(db, userId, "pageFetches");
   logger.info("Fetching full content for entry", {
     entryId: entry.id,
     url: entry.url,

@@ -23,7 +23,7 @@ import { LinkedAccounts } from "@/components/settings/LinkedAccounts";
 import { type OAuthProvider, providerNames } from "@/components/auth/oauth-helpers";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
-import { PLAN_NAMES } from "@/lib/plans";
+import { PLAN_NAMES, PLAN_QUOTAS, PLAN_QUOTA_NAMES, type QuotaRate } from "@/lib/plans";
 
 function isOAuthProvider(provider: string): provider is OAuthProvider {
   return provider in providerNames;
@@ -137,8 +137,14 @@ export function AccountInfoSection() {
 
 function formatUsage(used: number, limit: number | null): string {
   return limit === null
-    ? used.toLocaleString()
+    ? `${used.toLocaleString()} (no limit)`
     : `${used.toLocaleString()} of ${limit.toLocaleString()}`;
+}
+
+function formatQuota(rate: QuotaRate | null): string {
+  return rate === null
+    ? "No limit"
+    : `${rate.perDay.toLocaleString()} a day, up to ${rate.burst.toLocaleString()} at once`;
 }
 
 export function PlanSection() {
@@ -169,6 +175,14 @@ export function PlanSection() {
               {formatUsage(data.usage.ingestAddresses, data.limits.maxIngestAddresses)}
             </dd>
           </div>
+          {PLAN_QUOTAS.map((quota) => (
+            <div key={quota}>
+              <dt className="ui-text-sm text-muted font-medium">{PLAN_QUOTA_NAMES[quota]}</dt>
+              <dd className="ui-text-sm text-body mt-1 tabular-nums">
+                {formatQuota(data.limits.quotas[quota])}
+              </dd>
+            </div>
+          ))}
         </dl>
       )}
     </SettingsSection>

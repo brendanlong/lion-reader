@@ -26,7 +26,7 @@ import { isSummarizationAvailable } from "@/server/services/summarization";
 import { isNarrationLlmAvailable } from "@/server/services/narration";
 import { listSpeechModels } from "@/server/services/speech";
 import { getPlanUsage } from "@/server/services/plans";
-import { PLAN_IDS } from "@/lib/plans";
+import { PLAN_IDS, PLAN_QUOTAS } from "@/lib/plans";
 import {
   getApiKeyProviders,
   getUnreadableApiKeyProviders,
@@ -395,6 +395,10 @@ export const usersRouter = createTRPCRouter({
         limits: z.object({
           maxSubscriptions: z.number().nullable(),
           maxIngestAddresses: z.number().nullable(),
+          quotas: z.record(
+            z.enum(PLAN_QUOTAS),
+            z.object({ burst: z.number(), perDay: z.number() }).nullable()
+          ),
         }),
         usage: z.object({
           subscriptions: z.number(),

@@ -4,7 +4,14 @@
  */
 
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { PLAN_LIMITS, type PlanId, type PlanLimits } from "@/lib/plans";
+import {
+  PLAN_LIMITS,
+  PLAN_QUOTA_NAMES,
+  type PlanId,
+  type PlanLimits,
+  type PlanQuota,
+} from "@/lib/plans";
+import { consumeBucket } from "@/server/rate-limit";
 import type { DbOrTx } from "@/server/db";
 import { ingestAddresses, users } from "@/server/db/schema";
 import { errors } from "@/server/errors";
@@ -22,6 +29,32 @@ async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
 
 export async function getUserPlanLimits(db: DbOrTx, userId: string): Promise<PlanLimits> {
   return PLAN_LIMITS[await getUserPlan(db, userId)];
+}
+
+const SECONDS_PER_DAY = 24 * 60 * 60;
+
+/**
+ * Takes `cost` of the user's `quota` (`PLAN_QUOTAS`), or throws
+ * `QUOTA_EXCEEDED` saying when more will be available. Charged before the work,
+ * so an attempt that fails still counts. Like the other rate limits, it allows
+ * the work when Redis is down.
+ */
+export async function consumePlanQuota(
+  db: DbOrTx,
+  userId: string,
+  quota: PlanQuota,
+  cost = 1
+): Promise<void> {
+  const rate = (await getUserPlanLimits(db, userId)).quotas[quota];
+  if (rate === null) return;
+  const result = await consumeBucket(
+    `rate_limit:plan:${quota}:user:${userId}`,
+    { capacity: rate.burst, refillRate: rate.perDay / SECONDS_PER_DAY },
+    { cost }
+  );
+  if (!result.allowed) {
+    throw errors.quotaExceeded(PLAN_QUOTA_NAMES[quota], result.retryAfterSeconds ?? 0);
+  }
 }
 
 /**
