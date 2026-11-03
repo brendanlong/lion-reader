@@ -6,6 +6,9 @@
  * separately in the rate limiter service.
  */
 
+import { usageLimitsConfig } from "@/server/config/env";
+import { MIN_FETCH_INTERVAL_SECONDS } from "@/server/feed/scheduling";
+
 /**
  * Configuration for a rate limit bucket.
  */
@@ -97,6 +100,18 @@ export const RATE_LIMIT_CONFIGS = {
   libraryExport: {
     capacity: 3,
     refillRate: 1 / 600,
+  },
+  /**
+   * New entries a WebSub hub may push into one feed, counted in entries (the
+   * feed is the identifier). Anyone can publish a feed naming their own hub, so
+   * this bounds the inserts and fan-out a hub can cause to what polling could:
+   * one fetch's worth of entries per minimum poll interval. The capacity is also
+   * the most new entries one push can carry (the parsers' cap), so any push fits
+   * an empty-enough bucket.
+   */
+  websubPush: {
+    capacity: usageLimitsConfig.maxFeedEntries,
+    refillRate: usageLimitsConfig.maxFeedEntries / MIN_FETCH_INTERVAL_SECONDS,
   },
 } as const satisfies Record<string, RateLimitConfig>;
 

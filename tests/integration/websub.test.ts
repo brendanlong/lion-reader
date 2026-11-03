@@ -37,7 +37,6 @@ import {
   recordBackupPollNewEntries,
 } from "../../src/server/feed/websub-hub-stats";
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
-import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "../../src/server/feed/scheduling";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
 import {
   createTestFeed as insertTestFeed,
@@ -933,62 +932,32 @@ describe("WebSub Integration", () => {
       return existing.nextRunAt as Date;
     }
 
-    it("never defers the backup poll past 24h after the last real poll, however often the hub pushes", async () => {
-      // A push doesn't advance last_fetched_at, so deferring to "now + 24h" on
-      // every push would let a feed pushed more often than daily re-defer its
-      // backup poll forever - and that poll is the only thing that makes pushed
-      // entries current for new subscribers and can spot a push miss.
+    it("never moves the feed's poll, however often the hub pushes", async () => {
+      // A push isn't a poll, and the poll is the only thing that makes pushed
+      // entries current for new subscribers and can spot a push miss, so a hub
+      // pushing more often than daily must not be able to keep deferring it.
       const lastFetchedAt = new Date(Date.now() - 20 * 60 * 60 * 1000);
       const feed = await createTestFeed({
         websubActive: true,
         lastFetchedAt,
         lastEntriesUpdatedAt: lastFetchedAt,
       });
-      await ensureFeedJob(db, feed.id, new Date(Date.now() + 60 * 1000));
+      const scheduled = new Date(Date.now() + 60 * 1000);
+      await ensureFeedJob(db, feed.id, scheduled);
 
-      const deadline = lastFetchedAt.getTime() + WEBSUB_BACKUP_POLL_INTERVAL_SECONDS * 1000;
-
-      // Five pushes, each re-reading the feed exactly as the callback route does.
       for (let i = 0; i < 5; i++) {
         const [current] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
         expect(await ingestWebsubNotification(current, rssWithArticle(`push-${i}`))).toBe(
           "processed"
         );
-        expect((await feedJobNextRun(feed.id)).getTime()).toBeLessThanOrEqual(deadline);
       }
 
+      expect((await feedJobNextRun(feed.id)).getTime()).toBe(scheduled.getTime());
       const [after] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
-      // The premise the bound rests on: a push is not a poll.
       expect(after.lastFetchedAt?.getTime()).toBe(lastFetchedAt.getTime());
       expect(await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id))).toHaveLength(
         5
       );
-    });
-
-    it("leaves an already-overdue backup poll due", async () => {
-      // Last real poll is older than the backup interval: the poll is owed now,
-      // and a push must not buy the feed another day.
-      const lastFetchedAt = new Date(
-        Date.now() - (WEBSUB_BACKUP_POLL_INTERVAL_SECONDS + 6 * 60 * 60) * 1000
-      );
-      const feed = await createTestFeed({ websubActive: true, lastFetchedAt });
-      await ensureFeedJob(db, feed.id, new Date(Date.now() + 12 * 60 * 60 * 1000));
-
-      expect(await ingestWebsubNotification(feed, rssWithArticle("overdue"))).toBe("processed");
-
-      expect((await feedJobNextRun(feed.id)).getTime()).toBeLessThanOrEqual(Date.now());
-    });
-
-    it("leaves a never-polled feed's first poll where it was scheduled", async () => {
-      // No last_fetched_at to bound the deferral, and the first poll is what
-      // establishes one - so don't push it out.
-      const feed = await createTestFeed({ websubActive: true, lastFetchedAt: null });
-      const scheduled = new Date(Date.now() + 60 * 1000);
-      await ensureFeedJob(db, feed.id, scheduled);
-
-      expect(await ingestWebsubNotification(feed, rssWithArticle("first"))).toBe("processed");
-
-      expect((await feedJobNextRun(feed.id)).getTime()).toBe(scheduled.getTime());
     });
 
     it("acknowledges an unparseable body without touching the schedule", async () => {

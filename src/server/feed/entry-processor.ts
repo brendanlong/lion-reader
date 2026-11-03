@@ -438,6 +438,83 @@ async function loadExistingEntry(
 }
 
 /**
+ * Batch-loads the stored entries matching a fetch's items, keyed on the canonical
+ * guid. Matching is http/https-insensitive (#1535), so it looks up every spelling
+ * a stored row might carry — exact values, so the (owner_feed_id, guid) unique
+ * index serves the query — and loads only those rows, not the feed's history.
+ * Items without a derivable guid are left out; processing skips them.
+ */
+async function loadExistingEntries(
+  db: typeof dbType,
+  feedId: string,
+  items: ParsedEntry[]
+): Promise<{
+  existingEntries: CachedEntryInfo[];
+  existingEntriesMap: Map<string, CachedEntryInfo>;
+  currentGuidKeys: Set<string>;
+}> {
+  const guidsToCheck = new Set<string>();
+  const currentGuidKeys = new Set<string>();
+  for (const item of items) {
+    try {
+      const guid = deriveGuid(item);
+      for (const candidate of guidMatchCandidates(guid)) {
+        guidsToCheck.add(candidate);
+      }
+      currentGuidKeys.add(canonicalGuid(guid));
+    } catch {
+      // Invalid entry without GUID - will be skipped during processing
+    }
+  }
+
+  const existingEntries =
+    guidsToCheck.size > 0
+      ? await db
+          .select(existingEntryColumns)
+          .from(entries)
+          .where(and(eq(entries.ownerFeedId, feedId), inArray(entries.guid, [...guidsToCheck])))
+      : [];
+
+  // At most one row per key: uq_entries_owner_feed_guid_canonical enforces it.
+  const existingEntriesMap = new Map<string, CachedEntryInfo>(
+    existingEntries.map((e) => [canonicalGuid(e.guid), e])
+  );
+
+  return { existingEntries, existingEntriesMap, currentGuidKeys };
+}
+
+/**
+ * How many entries processing `feed` would create or rewrite: items with no
+ * stored entry yet or with changed content, as `processEntryWithCache` decides.
+ * A concurrent run of the feed can make the real count lower.
+ */
+export async function countEntryWrites(
+  db: typeof dbType,
+  feedId: string,
+  feed: ParsedFeed
+): Promise<number> {
+  const { existingEntriesMap } = await loadExistingEntries(db, feedId, feed.items);
+  const contentHashes = new Map(
+    [...existingEntriesMap].map(([key, entry]) => [key, entry.contentHash])
+  );
+  let count = 0;
+  for (const item of feed.items) {
+    let guidKey;
+    try {
+      guidKey = canonicalGuid(deriveGuid(item));
+    } catch {
+      continue;
+    }
+    const contentHash = generateContentHash(item);
+    if (contentHashes.get(guidKey) !== contentHash) {
+      count++;
+      contentHashes.set(guidKey, contentHash);
+    }
+  }
+  return count;
+}
+
+/**
  * Processes a single entry using a pre-loaded cache of existing entries.
  * This avoids N+1 queries by using a Map lookup instead of a database query.
  *
@@ -801,38 +878,10 @@ export async function processEntries(
     pushed = false,
   } = options;
 
-  // Derive GUIDs from all items first, so we only query for entries we need.
-  // Matching is http/https-insensitive (#1535), so look up every spelling a
-  // stored row might carry — exact values, so the (owner_feed_id, guid) unique index
-  // serves the query — and key the cache on the canonical form.
-  const guidsToCheck = new Set<string>();
-  const currentGuidKeys = new Set<string>();
-  for (const item of feed.items) {
-    try {
-      const guid = deriveGuid(item);
-      for (const candidate of guidMatchCandidates(guid)) {
-        guidsToCheck.add(candidate);
-      }
-      currentGuidKeys.add(canonicalGuid(guid));
-    } catch {
-      // Invalid entry without GUID - will be skipped during processing
-    }
-  }
-
-  // Batch load only the entries we're looking for (by GUID) to avoid N+1 queries
-  // This is much more efficient than querying per-entry, and doesn't load
-  // thousands of historical entries we don't need
-  const existingEntries =
-    guidsToCheck.size > 0
-      ? await db
-          .select(existingEntryColumns)
-          .from(entries)
-          .where(and(eq(entries.ownerFeedId, feedId), inArray(entries.guid, [...guidsToCheck])))
-      : [];
-
-  // At most one row per key: uq_entries_owner_feed_guid_canonical enforces it.
-  const existingEntriesMap = new Map<string, CachedEntryInfo>(
-    existingEntries.map((e) => [canonicalGuid(e.guid), e])
+  const { existingEntries, existingEntriesMap, currentGuidKeys } = await loadExistingEntries(
+    db,
+    feedId,
+    feed.items
   );
 
   const results: ProcessedEntry[] = [];

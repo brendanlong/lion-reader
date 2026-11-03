@@ -1091,7 +1091,8 @@ CREATE TABLE public.websub_hub_stats (
     articles_announced_by_backup bigint DEFAULT 0 NOT NULL,
     articles_near_miss bigint DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    articles_rate_limited bigint DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE public.websub_subscriptions (

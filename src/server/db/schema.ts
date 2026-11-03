@@ -1216,6 +1216,11 @@ export const websubSubscriptions = pgTable(
  *   too recently (or with an unknown date) to confidently blame the hub — it may
  *   simply not have been pushed yet. Recorded separately so it doesn't inflate
  *   the miss count.
+ * - `articlesRateLimited`: entry creates and changes a push carried that we
+ *   dropped because the feed was over its push budget (`websubPush` rate
+ *   limit). The poll that recovers the new ones also counts them as
+ *   `articlesAnnouncedByBackup`/`articlesNearMiss`, so subtract these before
+ *   blaming a flooding hub for misses.
  *
  * Purely observational: nothing reads these to change fetch behavior (yet).
  */
@@ -1228,6 +1233,7 @@ export const websubHubStats = pgTable("websub_hub_stats", {
     .notNull()
     .default(0),
   articlesNearMiss: bigint("articles_near_miss", { mode: "number" }).notNull().default(0),
+  articlesRateLimited: bigint("articles_rate_limited", { mode: "number" }).notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

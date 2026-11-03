@@ -539,21 +539,16 @@ export async function ensureFeedJob(db: DbOrTx, feedId: string, nextRunAt?: Date
 }
 
 /**
- * Updates a feed job's next_run_at.
- * Used by WebSub to schedule backup polls.
+ * Moves a feed job's next run up to `runAt`, leaving one already due sooner.
  *
- * @param feedId The feed ID
- * @param nextRunAt The new next run time
- * @returns The updated job, or null if not found
+ * @returns The updated job, or null if the feed has none
  */
-export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Promise<Job | null> {
-  const now = new Date();
-
+export async function scheduleFeedJobBy(feedId: string, runAt: Date): Promise<Job | null> {
   const result = await db.execute<RawJobRow>(sql`
     UPDATE ${jobs}
     SET
-      next_run_at = ${nextRunAt},
-      updated_at = ${now}
+      next_run_at = LEAST(COALESCE(${jobs.nextRunAt}, ${runAt}), ${runAt}),
+      updated_at = ${new Date()}
     WHERE type = 'fetch_feed'
       AND payload->>'feedId' = ${feedId}
     RETURNING *
