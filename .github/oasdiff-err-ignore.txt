@@ -25,3 +25,4 @@ GET /users/me/preferences added the new `together` enum value to the `apiKeyProv
 GET /users/me/preferences added the new `together` enum value to the `unreadableApiKeyProviders/items/` response property for the response status `200`
 PATCH /users/me/preferences added the new `together` enum value to the `apiKeyProviders/items/` response property for the response status `200`
 PATCH /users/me/preferences added the new `together` enum value to the `unreadableApiKeyProviders/items/` response property for the response status `200`
+GET /admin/overview removed the required property `totalEntries` from the response with the `200` status
