@@ -143,17 +143,18 @@ export async function processOAuthCallback(
     // An account whose email nobody verified is claimed instead, which does
     // revoke everything (`claimUnverifiedAccount` says why).
     const user = existingUser[0];
+    let claimed = false;
     if (user.emailVerifiedAt) {
       await attachOAuthAccount(db, { ...params, userId: user.id });
     } else {
-      await claimUnverifiedAccount(db, { ...params, userId: user.id });
+      claimed = await claimUnverifiedAccount(db, { ...params, userId: user.id });
     }
 
     return {
       userId: user.id,
       email: user.email,
       createdAt: user.createdAt,
-      signupConfirmed: isSignupConfirmed(user),
+      signupConfirmed: !claimed && isSignupConfirmed(user),
     };
   }
 

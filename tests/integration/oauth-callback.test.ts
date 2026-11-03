@@ -211,9 +211,12 @@ describe("processOAuthCallback email verification", () => {
       const result = await signInByEmail("victim-google-id");
 
       expect(result.userId).toBe(userId);
+      // The registrant's agreements aren't the owner's.
+      expect(result.signupConfirmed).toBe(false);
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       expect(user.passwordHash).toBeNull();
       expect(user.emailVerifiedAt).not.toBeNull();
+      expect(user.tosAgreedAt).toBeNull();
       const links = await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId));
       expect(links.map((link) => link.providerAccountId)).toEqual(["victim-google-id"]);
       const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId));

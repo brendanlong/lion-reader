@@ -118,7 +118,8 @@ export async function attachOAuthAccount(
  * A sign-in whose verified provider email matches an account nobody has proven
  * owns that address. Whoever created the account may have registered someone
  * else's email to wait for its owner to sign in (pre-account takeover), so the
- * provider identity wins: every way in the account had is removed (password,
+ * provider identity wins: the registrant's signup agreements are cleared for
+ * the owner to give their own, every way in the account had is removed (password,
  * other provider links, sessions, API tokens, OAuth grants and unredeemed
  * codes), the email becomes verified, and only this provider account stays
  * linked. The account's data is kept, including its AI provider keys and
@@ -128,13 +129,15 @@ export async function attachOAuthAccount(
  * the user is (`linkOAuthAccount`).
  *
  * If the email was verified in the meantime, this is an ordinary attach.
+ *
+ * @returns whether the account was claimed
  */
 export async function claimUnverifiedAccount(
   db: Database,
   params: AttachOAuthAccountParams
-): Promise<void> {
+): Promise<boolean> {
   const { userId } = params;
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const now = new Date();
     const stillUnverified = sql`EXISTS (
       SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} AND ${users.emailVerifiedAt} IS NULL
@@ -148,7 +151,14 @@ export async function claimUnverifiedAccount(
 
     const claimed = await tx
       .update(users)
-      .set({ passwordHash: null, emailVerifiedAt: now, updatedAt: now })
+      .set({
+        passwordHash: null,
+        emailVerifiedAt: now,
+        tosAgreedAt: null,
+        privacyPolicyAgreedAt: null,
+        notEuAgreedAt: null,
+        updatedAt: now,
+      })
       .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
       .returning({ id: users.id });
 
@@ -165,6 +175,7 @@ export async function claimUnverifiedAccount(
     }
 
     await attachOAuthAccount(tx, params);
+    return claimed.length > 0;
   });
 }
 
