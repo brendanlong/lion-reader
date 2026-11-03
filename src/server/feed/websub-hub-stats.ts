@@ -74,11 +74,12 @@ export function classifyBackupPollEntries(
 async function incrementHubStats(
   db: DbClient,
   hubUrl: string,
-  delta: { byHub?: number; byBackup?: number; nearMiss?: number }
+  delta: { byHub?: number; byBackup?: number; nearMiss?: number; rateLimited?: number }
 ): Promise<void> {
   const byHub = delta.byHub ?? 0;
   const byBackup = delta.byBackup ?? 0;
   const nearMiss = delta.nearMiss ?? 0;
+  const rateLimited = delta.rateLimited ?? 0;
 
   try {
     await db
@@ -88,6 +89,7 @@ async function incrementHubStats(
         articlesAnnouncedByHub: byHub,
         articlesAnnouncedByBackup: byBackup,
         articlesNearMiss: nearMiss,
+        articlesRateLimited: rateLimited,
       })
       .onConflictDoUpdate({
         target: websubHubStats.hubUrl,
@@ -95,6 +97,7 @@ async function incrementHubStats(
           articlesAnnouncedByHub: sql`${websubHubStats.articlesAnnouncedByHub} + ${byHub}`,
           articlesAnnouncedByBackup: sql`${websubHubStats.articlesAnnouncedByBackup} + ${byBackup}`,
           articlesNearMiss: sql`${websubHubStats.articlesNearMiss} + ${nearMiss}`,
+          articlesRateLimited: sql`${websubHubStats.articlesRateLimited} + ${rateLimited}`,
           updatedAt: new Date(),
         },
       });
@@ -118,6 +121,19 @@ export async function recordHubAnnouncedEntries(
 ): Promise<void> {
   if (count <= 0) return;
   await incrementHubStats(db, hubUrl, { byHub: count });
+}
+
+/**
+ * Records that a push carried `count` new entries we dropped because the feed
+ * was over its push budget. No-op for a non-positive count.
+ */
+export async function recordHubRateLimitedEntries(
+  hubUrl: string,
+  count: number,
+  db: DbClient = defaultDb
+): Promise<void> {
+  if (count <= 0) return;
+  await incrementHubStats(db, hubUrl, { rateLimited: count });
 }
 
 /**

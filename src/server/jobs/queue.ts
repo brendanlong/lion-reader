@@ -563,6 +563,25 @@ export async function updateFeedJobNextRun(feedId: string, nextRunAt: Date): Pro
 }
 
 /**
+ * Moves a feed job's next run up to `runAt`, leaving one already due sooner.
+ *
+ * @returns The updated job, or null if the feed has none
+ */
+export async function scheduleFeedJobBy(feedId: string, runAt: Date): Promise<Job | null> {
+  const result = await db.execute<RawJobRow>(sql`
+    UPDATE ${jobs}
+    SET
+      next_run_at = LEAST(COALESCE(${jobs.nextRunAt}, ${runAt}), ${runAt}),
+      updated_at = ${new Date()}
+    WHERE type = 'fetch_feed'
+      AND payload->>'feedId' = ${feedId}
+    RETURNING *
+  `);
+
+  return firstJob(result);
+}
+
+/**
  * Schedules an immediate, force-reprocess fetch of a feed.
  *
  * Used by the interactive subscribe path to refresh a stale feed before a

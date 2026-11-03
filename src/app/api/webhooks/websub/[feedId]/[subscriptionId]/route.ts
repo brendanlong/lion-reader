@@ -170,7 +170,7 @@ export async function POST(
     return new Response("Ingest failed", { status: 503 });
   }
 
-  // Acknowledge receipt (an unparseable body included - a redelivery of the
-  // same bytes would fail identically).
+  // Acknowledge receipt (an unparseable or over-budget push included - a
+  // redelivery would be dropped the same way).
   return new Response("OK", { status: 200 });
 }

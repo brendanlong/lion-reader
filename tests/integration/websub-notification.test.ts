@@ -29,7 +29,10 @@ import {
   MAX_PENDING_FULL_CONTENT_ENTRIES,
   MAX_RUNNING_FULL_CONTENT_JOBS,
   DEFAULT_JOB_TIMEOUT_MS,
+  ensureFeedJob,
 } from "../../src/server/jobs/queue";
+import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
+import { MIN_FETCH_INTERVAL_SECONDS } from "../../src/server/feed/scheduling";
 import {
   handleFetchFullContent,
   MAX_ATTEMPTS,
@@ -163,7 +166,7 @@ afterAll(async () => {
 
 describe("ingestWebsubNotification", () => {
   async function cleanup(): Promise<void> {
-    await db.delete(jobs).where(eq(jobs.type, "fetch_full_content"));
+    await db.delete(jobs);
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
@@ -622,5 +625,34 @@ describe("ingestWebsubNotification", () => {
 
     expect(await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id))).toHaveLength(0);
     expect(await getUserEntry(userId)).toBeUndefined();
+  });
+
+  it("drops a push over the feed's budget and schedules a poll no sooner than the minimum interval (#2254)", async () => {
+    if (!process.env.REDIS_URL) {
+      throw new Error("REDIS_URL must be set: without Redis the limiter fails open");
+    }
+    const lastPoll = new Date(Date.now() - 60 * 1000);
+    const { feed } = await seedPushFeed("pushflood", lastPoll);
+    const backupPoll = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await ensureFeedJob(db, feed.id, backupPoll);
+    const { capacity } = RATE_LIMIT_CONFIGS.websubPush;
+
+    const flood = multiPushBody("flood", capacity, new Date());
+    await expect(ingestWebsubNotification(feed, flood)).resolves.toBe("processed");
+    // Entries we already have cost nothing, so a hub re-pushing its feed isn't limited.
+    await expect(ingestWebsubNotification(feed, flood)).resolves.toBe("processed");
+
+    // Acknowledged, since a redelivery would be dropped too, but not ingested.
+    await expect(
+      ingestWebsubNotification(feed, pushBody("one-too-many", "One Too Many", new Date()))
+    ).resolves.toBe("rate_limited");
+    const stored = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
+    expect(stored).toHaveLength(capacity);
+    expect((await getHubStats()).articlesRateLimited).toBe(1);
+
+    // The poll that picks the entry up waits out the minimum interval since the
+    // last one, rather than running now or waiting for the backup poll.
+    const [job] = await db.select().from(jobs).where(eq(jobs.type, "fetch_feed"));
+    expect(job.nextRunAt?.getTime()).toBe(lastPoll.getTime() + MIN_FETCH_INTERVAL_SECONDS * 1000);
   });
 });

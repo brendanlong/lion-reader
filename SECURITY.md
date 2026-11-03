@@ -90,12 +90,17 @@ fetches user-influenced URLs and must never be usable to reach internal services
 
 ## 3. WebSub
 
-**Code:** `src/server/feed/websub.ts`, `src/app/api/webhooks/websub/`
+**Code:** `src/server/feed/websub.ts`, `src/server/feed/websub-notification.ts`, `src/app/api/webhooks/websub/`
 
 - **Content pushes are authenticated by HMAC over the raw request bytes** (algorithm
   allowlist, timing-safe compare). Never trust pushed content without it.
 - Hub URLs are fetched through the SSRF guard. **The weak `isPrivateHostname` in
   `websub.ts` is only for our own callback URL — never reuse it for untrusted URLs.**
+- **A hub can't make us ingest faster than polling would** (#2254): anyone can publish
+  a feed naming their own hub, so a push is charged its new entries against a per-feed
+  budget (`websubPush`). An over-budget push is acknowledged and dropped, and the poll
+  that recovers its entries runs no sooner than the feed's minimum poll interval —
+  never `scheduleFeedRefreshNow`, or pushes become a way to make us poll.
 
 ## 4. Sessions & authentication
 

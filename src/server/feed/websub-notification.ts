@@ -8,10 +8,12 @@ import { db } from "../db";
 import { databaseNow } from "../db/temporal";
 import { feeds, type Feed } from "../db/schema";
 import { parseFeedAsync } from "./parser";
-import { processEntries } from "./entry-processor";
-import { recordHubAnnouncedEntries } from "./websub-hub-stats";
-import { WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
-import { enqueueFullContentFetch, updateFeedJobNextRun } from "../jobs/queue";
+import { countNewEntries, processEntries } from "./entry-processor";
+import { recordHubAnnouncedEntries, recordHubRateLimitedEntries } from "./websub-hub-stats";
+import { MIN_FETCH_INTERVAL_SECONDS, WEBSUB_BACKUP_POLL_INTERVAL_SECONDS } from "./scheduling";
+import { enqueueFullContentFetch, scheduleFeedJobBy, updateFeedJobNextRun } from "../jobs/queue";
+import { checkRateLimit } from "../rate-limit";
+import { getFeedPlugin } from "../plugins";
 import { feedWantsFullContent } from "../services/full-content";
 import { trackWebsubNotificationReceived } from "../metrics/metrics";
 import { logger } from "@/lib/logger";
@@ -25,6 +27,11 @@ export type WebsubIngestOutcome =
   | "processed"
   /** The body wasn't a parseable feed. Nothing to do; a retry can't help. */
   | "unparseable"
+  /**
+   * The feed is over its push budget, so nothing was ingested and a poll was
+   * scheduled instead. A retry would be dropped too.
+   */
+  | "rate_limited"
   /** Infrastructure failure (DB down, etc.). The push is lost unless the hub retries. */
   | "failed";
 
@@ -74,6 +81,34 @@ async function scheduleBackupPoll(feed: Feed): Promise<void> {
 }
 
 /**
+ * Handles a push over the feed's budget: records the dropped entries and
+ * schedules a poll to pick up whatever the feed still lists, so legitimate
+ * entries arrive late rather than never. The poll runs no sooner than the
+ * feed's minimum poll interval after the last one, so pushes can't make us
+ * poll faster than polling alone would.
+ */
+async function dropOverBudgetPush(feed: Feed, newEntryCount: number): Promise<void> {
+  const feedId = feed.id;
+  logger.warn("WebSub push over the feed's budget; dropped it and scheduled a poll", {
+    feedId,
+    hubUrl: feed.hubUrl,
+    newEntries: newEntryCount,
+  });
+  if (feed.hubUrl) {
+    await recordHubRateLimitedEntries(feed.hubUrl, newEntryCount);
+  }
+
+  const minIntervalSeconds = Math.max(
+    MIN_FETCH_INTERVAL_SECONDS,
+    getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds ?? 0
+  );
+  const pollAt = new Date(
+    Math.max(Date.now(), (feed.lastFetchedAt?.getTime() ?? 0) + minIntervalSeconds * 1000)
+  );
+  await scheduleFeedJobBy(feedId, pollAt);
+}
+
+/**
  * Queues full-content fetching for the entries a push just created, if any
  * subscriber wants it — the same work a poll does inline for its new entries
  * (`fetchFullContentForNewEntries`). A push is ingested inside the hub's
@@ -116,6 +151,10 @@ async function queueFullContentFetch(feedId: string, entryIds: string[]): Promis
  * answers 503 on that path and lets the hub redeliver, which is safe because
  * ingest is idempotent (entries match on `content_hash`).
  *
+ * A push carrying more new entries than the feed's budget (`websubPush` rate
+ * limit) is dropped and acknowledged, since a redelivery would be dropped too;
+ * see `dropOverBudgetPush`.
+ *
  * The caller is responsible for authenticating the notification (HMAC) and
  * loading the feed before calling this.
  */
@@ -140,6 +179,17 @@ export async function ingestWebsubNotification(
   }
 
   try {
+    const newEntryCount = await countNewEntries(db, feedId, parsedFeed);
+    if (newEntryCount > 0) {
+      const budget = await checkRateLimit(`feed:${feedId}`, "websubPush", {
+        cost: newEntryCount,
+      });
+      if (!budget.allowed) {
+        await dropOverBudgetPush(feed, newEntryCount);
+        return "rate_limited";
+      }
+    }
+
     // The database clock: the entries' pushed_at is compared with the poll's
     // last_fetched_at (`currentEntryIdsSql`).
     const now = new Date((await databaseNow(db)).epochMilliseconds);
