@@ -14,6 +14,7 @@ import {
 } from "@/lib/plans";
 import { consumeBucket } from "@/server/rate-limit";
 import { getRedisClient } from "@/server/redis";
+import { logger } from "@/lib/logger";
 import { planQuotaKey } from "@/server/services/plan-quota-keys";
 import type { DbOrTx } from "@/server/db";
 import { users } from "@/server/db/schema";
@@ -85,7 +86,15 @@ export async function setUserPlan(db: DbOrTx, userId: string, plan: PlanId): Pro
     .where(eq(users.id, userId))
     .returning({ id: users.id });
   if (updated.length === 0) throw errors.notFound("User");
-  await getRedisClient()?.del(...PLAN_QUOTAS.map((quota) => planQuotaKey(quota, userId)));
+  try {
+    await getRedisClient()?.del(...PLAN_QUOTAS.map((quota) => planQuotaKey(quota, userId)));
+  } catch (error) {
+    // The plan changed; the old buckets just refill on their own.
+    logger.warn("Failed to reset quotas after a plan change", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export interface PlanUsage {

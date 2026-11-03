@@ -9,6 +9,7 @@
  * previous render, so the click used to be a visible no-op until repeated).
  */
 
+import { PLAN_LIMITS } from "@/lib/plans";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
@@ -19,8 +20,9 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
+let searchParams = new URLSearchParams("");
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => searchParams,
   usePathname: () => "/subscribe",
 }));
 
@@ -53,31 +55,20 @@ function preview(url: string, title: string) {
   };
 }
 
+/** `users.me.plan` with `subscriptions` used of a `limit` (null: no limit). */
+function planWith(subscriptions: number, limit: number | null) {
+  return () => ({
+    plan: "free",
+    limits: { ...PLAN_LIMITS.free, maxSubscriptions: limit },
+    usage: { subscriptions, ingestAddresses: 0 },
+  });
+}
+
 /**
  * Handlers for the standard flow: the site URL is HTML (preview fails with the
  * message that triggers discovery), discovery finds two feeds, and previewing
  * either of them succeeds.
  */
-/** `users.me.plan` with `subscriptions` used of a `limit` (null: no limit). */
-function planWith(subscriptions: number, limit: number | null) {
-  return () => ({
-    plan: "free",
-    limits: {
-      maxSubscriptions: limit,
-      maxIngestAddresses: null,
-      serverKeyModels: null,
-      quotas: {
-        pageFetches: null,
-        fileConversions: null,
-        summaries: null,
-        narrationTextProcessing: null,
-        speechCharacters: null,
-      },
-    },
-    usage: { subscriptions, ingestAddresses: 0 },
-  });
-}
-
 function discoveryHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
     "users.me.plan": planWith(0, null),
@@ -111,6 +102,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  searchParams = new URLSearchParams("");
 });
 
 describe("SubscribeContent discovery step", () => {
@@ -179,12 +171,31 @@ describe("SubscribeContent at the plan's subscription limit", () => {
   });
 
   it("leaves the form enabled under the limit", async () => {
-    const { callsFor } = renderWithTrpc(<SubscribeContent />, {
+    renderWithTrpc(<SubscribeContent />, {
       handlers: discoveryHandlers({ "users.me.plan": planWith(2, 3) }),
     });
 
-    await waitFor(() => expect(callsFor("users.me.plan")).toHaveLength(1));
+    // A shared URL previews only once the plan is known, so this waits for it.
+    await reachDiscoveryStep();
     expect(screen.queryByText(/reached your plan's limit/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /preview feed/i })).toBeEnabled();
+  });
+
+  it("doesn't preview a shared URL at the limit, saying why instead", async () => {
+    searchParams = new URLSearchParams({ url: SITE_URL });
+    const { callsFor } = renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers({ "users.me.plan": planWith(3, 3) }),
+    });
+
+    expect(await screen.findByText(/reached your plan's limit of 3/i)).toBeInTheDocument();
+    expect(callsFor("feeds.preview")).toEqual([]);
+  });
+
+  it("previews a shared URL under the limit", async () => {
+    searchParams = new URLSearchParams({ url: SITE_URL });
+    renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers({ "users.me.plan": planWith(2, 3) }),
+    });
+
+    await screen.findByRole("heading", { name: /we found 2 feeds on this site/i });
   });
 });

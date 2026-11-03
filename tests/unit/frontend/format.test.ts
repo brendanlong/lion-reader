@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { formatRelativeTime, getDomain } from "@/lib/format";
+import { formatRelativeTime, formatWait, getDomain } from "@/lib/format";
 
 describe("formatRelativeTime", () => {
   beforeEach(() => {
@@ -121,5 +121,20 @@ describe("getDomain", () => {
     expect(getDomain("not a url")).toBe("not a url");
     expect(getDomain("example.com")).toBe("example.com");
     expect(getDomain("")).toBe("");
+  });
+});
+
+describe("formatWait", () => {
+  it.each([
+    [1, "1 minute"],
+    [60, "1 minute"],
+    [61, "2 minutes"],
+    [59 * 60, "59 minutes"],
+    [60 * 60, "1 hour"],
+    [288 * 60, "4 hours and 48 minutes"],
+    [24 * 60 * 60 + 60, "1 day and 1 hour"],
+    [48 * 60 * 60, "2 days"],
+  ])("says %i seconds as %s", (seconds, words) => {
+    expect(formatWait(seconds)).toBe(words);
   });
 });

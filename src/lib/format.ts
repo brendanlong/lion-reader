@@ -105,8 +105,8 @@ function countOf(n: number, unit: string): string {
 }
 
 /**
- * A wait as words, rounded up to the minute: "5 minutes", "4 hours and 48
- * minutes", "2 days and 3 hours".
+ * A wait as words, rounded up: "5 minutes", "4 hours and 48 minutes", "2 days
+ * and 3 hours".
  */
 export function formatWait(seconds: number): string {
   const minutes = Math.max(1, Math.ceil(seconds / 60));
@@ -118,7 +118,9 @@ export function formatWait(seconds: number): string {
       ? `${countOf(hours, "hour")} and ${countOf(rest, "minute")}`
       : countOf(hours, "hour");
   }
-  const days = Math.floor(hours / 24);
-  const rest = hours % 24;
+  // Rounded up to the hour, so it never says to come back early.
+  const wholeHours = Math.ceil(minutes / 60);
+  const days = Math.floor(wholeHours / 24);
+  const rest = wholeHours % 24;
   return rest ? `${countOf(days, "day")} and ${countOf(rest, "hour")}` : countOf(days, "day");
 }
