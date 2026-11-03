@@ -74,14 +74,13 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   free: {
     maxSubscriptions: 150,
     maxIngestAddresses: 1,
-    // AI costs us money, so free accounts bring their own key.
-    serverKeyModels: [],
+    serverKeyModels: null,
     quotas: {
       pageFetches: { burst: 50, perDay: 200 },
       fileConversions: { burst: 5, perDay: 10 },
-      summaries: null,
-      narrationTextProcessing: null,
-      speechCharacters: null,
+      summaries: { burst: 3, perDay: 5 },
+      narrationTextProcessing: { burst: 20, perDay: 50 },
+      speechCharacters: { burst: 50_000, perDay: 100_000 },
     },
   },
   paid: {
@@ -91,9 +90,9 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     quotas: {
       pageFetches: { burst: 200, perDay: 2000 },
       fileConversions: { burst: 20, perDay: 100 },
-      summaries: { burst: 20, perDay: 50 },
-      narrationTextProcessing: { burst: 10, perDay: 30 },
-      speechCharacters: { burst: 60_000, perDay: 100_000 },
+      summaries: { burst: 50, perDay: 200 },
+      narrationTextProcessing: { burst: 50, perDay: 200 },
+      speechCharacters: { burst: 200_000, perDay: 500_000 },
     },
   },
   unlimited: {
