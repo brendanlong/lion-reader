@@ -15739,7 +15739,7 @@
             }
           },
           "429": {
-            "description": "Rate limit exceeded",
+            "description": "Rate limit or plan quota exceeded",
             "content": {
               "application/json": {
                 "schema": {

@@ -65,7 +65,7 @@ export const openApiDocument = generateOpenApiDocument(appRouter, {
             413: "The body is too large",
             415: "The body isn't JSON",
             422: "The voice's provider refused the request",
-            429: "Rate limit exceeded",
+            429: "Rate limit or plan quota exceeded",
             500: "Speech synthesis failed",
             503: "The cloud voice is busy or unavailable; try again",
           }),

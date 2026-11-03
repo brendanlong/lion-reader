@@ -3,8 +3,7 @@
  * voices stay with that key, and speech streams through to fMP4.
  */
 
-import { PLAN_LIMITS } from "../../src/lib/plans";
-import { speechRateLimitCost } from "../../src/server/rate-limit";
+import { PLAN_LIMITS, PLAN_QUOTA_NAMES } from "../../src/lib/plans";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -464,7 +463,7 @@ describe("the speech route", () => {
         {
           quotas: {
             ...PLAN_LIMITS.paid.quotas,
-            speechCharacters: { burst: speechRateLimitCost(text), perDay: 1 },
+            speechCharacters: { burst: text.length, perDay: 1 },
           },
         },
         async () => {
@@ -475,7 +474,9 @@ describe("the speech route", () => {
           const second = await speak(token, text);
           expect(second.status).toBe(429);
           expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
-          expect((await second.json()).message).toContain("cloud voice characters");
+          const body = await second.json();
+          expect(body.data.appErrorCode).toBe("QUOTA_EXCEEDED");
+          expect(body.message).toContain(PLAN_QUOTA_NAMES.speechCharacters.toLowerCase());
         }
       );
     } finally {

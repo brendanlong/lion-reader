@@ -413,6 +413,8 @@ describe("narration.generate failure backoff", () => {
   let llmRequests = 0;
   let llmContent = "";
   let llmStatus = 200;
+  /** A key the stand-in refuses (401), whatever `llmStatus` says. */
+  let refusedKey: string | null = null;
   const previousBaseUrl = process.env.CEREBRAS_BASE_URL;
   const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
   const previousServerKey = process.env.CEREBRAS_API_KEY;
@@ -425,6 +427,11 @@ describe("narration.generate failure backoff", () => {
       req.resume();
       req.on("end", () => {
         llmRequests++;
+        if (refusedKey && req.headers.authorization?.includes(refusedKey)) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "Invalid key" } }));
+          return;
+        }
         if (llmStatus !== 200) {
           // Retry-After 0 so the SDK's own retry doesn't slow the test down.
           res.writeHead(llmStatus, { "Content-Type": "application/json", "Retry-After": "0" });
@@ -464,6 +471,7 @@ describe("narration.generate failure backoff", () => {
   beforeEach(() => {
     llmRequests = 0;
     llmStatus = 200;
+    refusedKey = null;
   });
 
   afterEach(() => {
@@ -597,6 +605,35 @@ describe("narration.generate failure backoff", () => {
         expect(row.errorAt).toBeNull();
       }
     );
+  });
+
+  it("counts a failover from the user's refused key onto the server's against the plan (#2225)", async () => {
+    llmContent = JSON.stringify({ paragraphs: [{ id: 0, text: "Rewritten by the model." }] });
+    refusedKey = "csk-test-key";
+    process.env.CEREBRAS_API_KEY = "csk-server-key";
+    const previousFailover = process.env.MODEL_FAILOVER;
+    process.env.MODEL_FAILOVER = "cerebras:gpt-oss-120b,cerebras:gpt-oss-120b-backup";
+    try {
+      const userId = await createCerebrasUser();
+      await db.update(users).set({ plan: "paid" }).where(eq(users.id, userId));
+      await withPlanLimits(
+        "paid",
+        {
+          quotas: { ...PLAN_LIMITS.paid.quotas, narrationTextProcessing: { burst: 1, perDay: 1 } },
+        },
+        async () => {
+          // Refused on their key, then said on the server's, which counts.
+          expect((await narrateOnce(userId)).source).toBe("llm");
+          expect(llmRequests).toBe(2);
+          // Out of quota: no failover, just their key's refusal.
+          expect((await narrateOnce(userId)).source).toBe("fallback");
+          expect(llmRequests).toBe(3);
+        }
+      );
+    } finally {
+      if (previousFailover === undefined) delete process.env.MODEL_FAILOVER;
+      else process.env.MODEL_FAILOVER = previousFailover;
+    }
   });
 
   it("caches a usable response (the fake endpoint reaches the LLM path)", async () => {

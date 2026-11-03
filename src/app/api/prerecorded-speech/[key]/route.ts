@@ -48,8 +48,9 @@ const getPrerecordedSpeech = createPrerecordedSpeech({
   catalog: demoNarrationCatalog,
   read: readStoredRecording,
   // On the server's keys, so its allowlist applies (but no plan: these are
-  // the operator's recordings), in exactly the voice the key names. No abort signal: a chunk the listener leaves halfway is still
-  // worth finishing and keeping.
+  // the operator's recordings), in exactly the voice the key names. No abort
+  // signal: a chunk the listener leaves halfway is still worth finishing and
+  // keeping.
   synthesize: ({ voice, text }) =>
     streamSpeech(
       { plan: null },

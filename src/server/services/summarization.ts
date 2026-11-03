@@ -6,6 +6,7 @@
  * deduplication across entries.
  */
 
+import { getAppErrorCode } from "@/server/errors";
 import { createHash } from "crypto";
 import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
@@ -196,22 +197,22 @@ export function prepareContentForSummarization(htmlContent: string): string {
 export async function generateSummary(
   content: string,
   title: string,
-  options?: {
-    keys?: AiProviderKeys;
+  options: {
+    keys: AiProviderKeys;
     userModel?: string | null;
     userMaxWords?: number | null;
     userPrompt?: string | null;
   }
 ): Promise<GenerateSummaryResult> {
   // Priority: user model > environment > default
-  const modelId = await getSummarizationModelId(options?.userModel, options?.keys);
+  const modelId = await getSummarizationModelId(options.userModel, options.keys);
   const modelRef = parseModelRef(modelId);
 
   try {
-    const responseText = await generateChatCompletion(modelRef, options?.keys, {
+    const responseText = await generateChatCompletion(modelRef, options.keys, "summaries", {
       userPrompt: buildSummarizationPrompt(content, title, {
-        userMaxWords: options?.userMaxWords,
-        userPrompt: options?.userPrompt,
+        userMaxWords: options.userMaxWords,
+        userPrompt: options.userPrompt,
       }),
       maxTokens:
         modelRef.provider === "anthropic"
@@ -235,6 +236,7 @@ export async function generateSummary(
       modelId,
     };
   } catch (error) {
+    if (getAppErrorCode(error) === "QUOTA_EXCEEDED") throw error;
     logger.error("Summarization API call failed", {
       provider: modelRef.provider,
       model: modelRef.model,

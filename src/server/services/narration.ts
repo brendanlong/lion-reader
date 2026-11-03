@@ -7,6 +7,7 @@
  * available.
  */
 
+import { getAppErrorCode } from "@/server/errors";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { logger } from "@/lib/logger";
@@ -23,7 +24,6 @@ import {
   NARRATION_PROVIDERS,
 } from "@/lib/narration/constants";
 import {
-  chargeServerKeyUse,
   generateChatCompletion,
   isOnUserKey,
   isProviderAvailable,
@@ -364,27 +364,31 @@ export async function generateNarration(
     return buildFallbackNarration(inputParagraphs);
   }
 
-  await chargeServerKeyUse(options.keys, modelRef.provider, "narrationTextProcessing");
   try {
     // Send paragraphs as JSON
     const userPrompt = JSON.stringify({ paragraphs: inputParagraphs });
 
-    const rawOutput = await generateChatCompletion(modelRef, options.keys, {
-      system: NARRATION_SYSTEM_PROMPT,
-      userPrompt,
-      // Mechanical text normalization task — minimal reasoning keeps latency and
-      // token cost low. gpt-oss emits any reasoning in a separate `reasoning`
-      // field, so the response content is still the clean JSON we parse below.
-      reasoningEffort: "low",
-      jsonObject: true, // Request JSON output
-      temperature: 0.1, // Low temperature for consistency
-      // Output must echo back every rewritten paragraph for the whole article,
-      // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
-      // this budget on reasoning tokens even at "low" effort. Keep the cap high
-      // so long articles don't truncate into the (uncached, retried after a backoff)
-      // fallback path. We only pay for tokens actually generated.
-      maxTokens: 16000,
-    });
+    const rawOutput = await generateChatCompletion(
+      modelRef,
+      options.keys,
+      "narrationTextProcessing",
+      {
+        system: NARRATION_SYSTEM_PROMPT,
+        userPrompt,
+        // Mechanical text normalization task — minimal reasoning keeps latency and
+        // token cost low. gpt-oss emits any reasoning in a separate `reasoning`
+        // field, so the response content is still the clean JSON we parse below.
+        reasoningEffort: "low",
+        jsonObject: true, // Request JSON output
+        temperature: 0.1, // Low temperature for consistency
+        // Output must echo back every rewritten paragraph for the whole article,
+        // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
+        // this budget on reasoning tokens even at "low" effort. Keep the cap high
+        // so long articles don't truncate into the (uncached, retried after a backoff)
+        // fallback path. We only pay for tokens actually generated.
+        maxTokens: 16000,
+      }
+    );
 
     const narration = narrationFromLlmOutput(inputParagraphs, rawOutput);
     if (narration) return narration;
@@ -403,12 +407,15 @@ export async function generateNarration(
       },
     };
   } catch (error) {
-    // Log the error and re-throw so caller can handle
-    logger.error("Narration LLM call failed", {
-      provider: modelRef.provider,
-      model: modelRef.model,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // Log the error and re-throw so caller can handle (running out of the
+    // plan's quota isn't one)
+    if (getAppErrorCode(error) !== "QUOTA_EXCEEDED") {
+      logger.error("Narration LLM call failed", {
+        provider: modelRef.provider,
+        model: modelRef.model,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     throw error;
   }
 }

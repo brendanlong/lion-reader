@@ -14,7 +14,7 @@ import {
   expensiveScopedProtectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { errors, markReported } from "@/server/errors";
+import { errors, getAppErrorCode, markReported } from "@/server/errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -31,13 +31,12 @@ import {
   sanitizeSummaryHtml,
 } from "@/server/services/summarization";
 import {
-  chargeServerKeyUse,
   isModelAllowed,
   listAllModels,
   TextGenerationError,
   UnreadableApiKeyError,
 } from "@/server/services/ai-providers";
-import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import { normalizeModelRef } from "@/lib/ai/model-ref";
 import {
   getApiKeyProviders,
   getUserAiPlanAccess,
@@ -60,6 +59,9 @@ import * as Sentry from "@sentry/nextjs";
  * call — on the server's key it may describe the operator's account.
  */
 function summaryFailure(error: unknown): { error: TRPCError; report: boolean } {
+  if (getAppErrorCode(error) === "QUOTA_EXCEEDED") {
+    return { error: error as TRPCError, report: false };
+  }
   if (error instanceof UnreadableApiKeyError) {
     // Reported when the key failed to decrypt.
     return { error: errors.aiProviderKeyUnreadable(error.message), report: false };
@@ -303,9 +305,6 @@ export const summarizationRouter = createTRPCRouter({
         return toCachedResult(summaryRecord, isSettingsChanged(summaryRecord));
       }
 
-      // Counted before the call, so a failed one counts too.
-      await chargeServerKeyUse(keys, parseModelRef(currentModelId).provider, "summaries");
-
       // A failure stores nothing: summaries are only generated when the user
       // asks (and this is rate-limited), so asking again simply tries again.
       try {
@@ -347,12 +346,13 @@ export const summarizationRouter = createTRPCRouter({
           settingsChanged: false,
         };
       } catch (error) {
-        logger.error("Summary generation failed", {
-          contentHash,
-          error: error instanceof Error ? error.message : String(error),
-        });
-
         const failure = summaryFailure(error);
+        if (failure.report || getAppErrorCode(error) !== "QUOTA_EXCEEDED") {
+          logger.error("Summary generation failed", {
+            contentHash,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         if (failure.report) {
           // The tRPC error carries only our code; the provider's error is here.
           Sentry.captureException(error, {

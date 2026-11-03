@@ -516,14 +516,10 @@ describe("generateChatCompletion", () => {
     process.env.CEREBRAS_API_KEY = "csk-server";
     process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.cerebras;
     await expect(
-      generateChatCompletion(
-        parseModelRef("cerebras:qwen-3.8-27b"),
-        { plan: null },
-        {
-          userPrompt: "hi",
-          maxTokens: 10,
-        }
-      )
+      generateChatCompletion(parseModelRef("cerebras:qwen-3.8-27b"), { plan: null }, "summaries", {
+        userPrompt: "hi",
+        maxTokens: 10,
+      })
     ).rejects.toThrow("isn't allowed on the server's Cerebras key");
   });
 
@@ -584,6 +580,7 @@ describe("generateChatCompletion", () => {
         const text = await generateChatCompletion(
           { provider, model: "some-model" },
           { [provider]: "user-key", plan: null },
+          "summaries",
           { userPrompt: "hi", maxTokens: 10 }
         );
         expect(text).toBe("hello");
@@ -597,13 +594,23 @@ describe("generateChatCompletion", () => {
         pointSdksAtServer();
         const options = { userPrompt: "hi", maxTokens: 10 };
         const model = { provider, model: "some-model" };
-        await generateChatCompletion(model, { [provider]: "user-key-a", plan: null }, options);
-        await generateChatCompletion(model, { [provider]: "user-key-b", plan: null }, options);
+        await generateChatCompletion(
+          model,
+          { [provider]: "user-key-a", plan: null },
+          "summaries",
+          options
+        );
+        await generateChatCompletion(
+          model,
+          { [provider]: "user-key-b", plan: null },
+          "summaries",
+          options
+        );
         const envVar = `${provider.toUpperCase()}_API_KEY`;
         process.env[envVar] = "server-key-1";
-        await generateChatCompletion(model, { plan: null }, options);
+        await generateChatCompletion(model, { plan: null }, "summaries", options);
         process.env[envVar] = "server-key-2";
-        await generateChatCompletion(model, { plan: null }, options);
+        await generateChatCompletion(model, { plan: null }, "summaries", options);
         expect(requests.map((request) => request.apiKey)).toEqual([
           "user-key-a",
           "user-key-b",
@@ -636,14 +643,18 @@ describe("generateChatCompletion", () => {
         ["refuses its key, as when it's out of credit", 402],
       ])("goes to the model's next host when the first %s", async (_, status) => {
         cerebrasFailure = status;
-        expect(await generateChatCompletion(model, { plan: null }, options)).toBe("hello");
+        expect(await generateChatCompletion(model, { plan: null }, "summaries", options)).toBe(
+          "hello"
+        );
         expect(asked().at(-1)).toEqual(["anthropic", "server-a"]);
       });
 
       it("allows a failover on the server's key that users can't pick", async () => {
         process.env.SERVER_KEY_MODELS = "cerebras:some-model";
         cerebrasFailure = 503;
-        expect(await generateChatCompletion(model, { plan: null }, options)).toBe("hello");
+        expect(await generateChatCompletion(model, { plan: null }, "summaries", options)).toBe(
+          "hello"
+        );
         expect(asked().at(-1)).toEqual(["anthropic", "server-a"]);
       });
 
@@ -652,6 +663,7 @@ describe("generateChatCompletion", () => {
         await generateChatCompletion(
           model,
           { cerebras: "user-c", anthropic: "user-a", plan: null },
+          "summaries",
           options
         );
         expect(asked()).toEqual([
@@ -660,11 +672,20 @@ describe("generateChatCompletion", () => {
         ]);
       });
 
+      it("doesn't back the user's own key up with the server's beyond their plan (#2225)", async () => {
+        cerebrasFailure = 402;
+        const plan = { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyModels: [] } };
+        await expect(
+          generateChatCompletion(model, { cerebras: "user-c", plan }, "summaries", options)
+        ).rejects.toMatchObject({ failure: "rejected", usedUserKey: true });
+        expect(asked()).toEqual([["cerebras", "user-c"]]);
+      });
+
       it("throws the first host's error when every host fails", async () => {
         cerebrasFailure = 402;
         anthropicFailure = 503;
         await expect(
-          generateChatCompletion(model, { cerebras: "user-c", plan: null }, options)
+          generateChatCompletion(model, { cerebras: "user-c", plan: null }, "summaries", options)
         ).rejects.toMatchObject({ failure: "rejected", provider: "cerebras", usedUserKey: true });
         expect(asked().at(-1)?.[0]).toBe("anthropic");
       });
@@ -672,7 +693,10 @@ describe("generateChatCompletion", () => {
       it("skips a host that can't do what's asked", async () => {
         cerebrasFailure = 503;
         await expect(
-          generateChatCompletion(model, { plan: null }, { ...options, jsonObject: true })
+          generateChatCompletion(model, { plan: null }, "summaries", {
+            ...options,
+            jsonObject: true,
+          })
         ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
         expect(asked().map(([provider]) => provider)).not.toContain("anthropic");
       });
@@ -684,6 +708,7 @@ describe("generateChatCompletion", () => {
         generateChatCompletion(
           { provider: "anthropic", model: "claude-haiku-4-5" },
           { anthropic: "user-key", plan: null },
+          "summaries",
           { userPrompt: "hi", maxTokens: 10, jsonObject: true }
         )
       ).rejects.toThrow("JSON-object responses are not supported for Anthropic");
