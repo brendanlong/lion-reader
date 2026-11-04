@@ -235,3 +235,12 @@ resource "cloudflare_dns_record" "mcp_registry" {
   ttl     = 300
   comment = "MCP Registry namespace proof"
 }
+
+resource "cloudflare_dns_record" "glama_claim" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "_glama-claim"
+  type    = "TXT"
+  content = "\"glama_claim_S00cKNLukTvxo6Yb7tUP1UpFFDSQe5CQ\""
+  ttl     = 300
+  comment = "Glama MCP directory ownership claim"
+}
