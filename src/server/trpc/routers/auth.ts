@@ -23,7 +23,9 @@ import {
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { users } from "@/server/db/schema";
-import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
+import { signupConfig, ALL_SIGNUP_PROVIDERS, readTurnstileKeys } from "@/server/config/env";
+import { verifyCaptcha } from "@/server/auth/captcha";
+import { getClientIp } from "@/server/http/client-ip";
 import { revokeSessionByToken, startSession } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
@@ -78,6 +80,8 @@ const registerInputSchema = z.object({
   email: emailSchema,
   password: passwordSchema(),
   inviteToken: z.string().optional(),
+  /** The Turnstile token, required when `signupConfig` returns a `turnstileSiteKey` */
+  captchaToken: z.string().max(2048).optional(),
 });
 
 /**
@@ -159,7 +163,9 @@ export const authRouter = createTRPCRouter({
     .input(registerInputSchema)
     .output(sessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { email, password, inviteToken } = input;
+      const { email, password, inviteToken, captchaToken } = input;
+
+      await verifyCaptcha(captchaToken, getClientIp(ctx.headers));
 
       // Check if email already exists
       const existingUser = await ctx.db
@@ -368,6 +374,8 @@ export const authRouter = createTRPCRouter({
          * page shows a notice that the service is not available in the EU.
          */
         euRestricted: z.boolean(),
+        /** Cloudflare Turnstile site key for the password signup form, when it has a CAPTCHA. */
+        turnstileSiteKey: z.string().nullable(),
       })
     )
     .query(() => {
@@ -377,6 +385,7 @@ export const authRouter = createTRPCRouter({
         allowedSignupProviders: [...signupConfig.allowedSignupProviders],
         publicSignupProviders,
         euRestricted: signupConfig.euRestricted,
+        turnstileSiteKey: readTurnstileKeys()?.siteKey ?? null,
       };
     }),
 

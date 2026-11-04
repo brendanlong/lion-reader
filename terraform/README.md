@@ -2,14 +2,14 @@
 
 Everything about the deployment is managed either by Fly.io (`../fly.toml`) or
 here. This module owns `lionreader.com` DNS (Cloudflare), the Bunny CDN pull
-zone, Mailgun, Sentry, the healthchecks.io monitors, the backup-health Cloudflare
+zone, Mailgun, Sentry, the Turnstile signup widget, the healthchecks.io monitors, the backup-health Cloudflare
 Worker, both Tigris buckets, and the domain registration at Amazon
 Registrar. Change them here, not in a dashboard.
 
 ## Credentials
 
 ```sh
-export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit + account Workers Scripts:Edit
+export CLOUDFLARE_API_TOKEN=...   # Zone:Edit + DNS:Edit + account Workers Scripts:Edit + Turnstile Sites:Edit
 export BUNNYNET_API_KEY=...       # see providers.tf on the name
 export MAILGUN_API_KEY=...        # account key; a Sending key can't read routes
 export SENTRY_AUTH_TOKEN=...      # org:read + project:write
@@ -66,6 +66,8 @@ credentials. Keep applies manual and local.
 ```sh
 flyctl secrets set -a lion-reader SENTRY_DSN="$(terraform output -raw sentry_dsn)"
 flyctl secrets set -a lion-reader MAILGUN_SENDING_KEY="$(terraform output -raw mailgun_sending_key)"
+flyctl secrets set -a lion-reader TURNSTILE_SITE_KEY="$(terraform output -raw turnstile_site_key)" \
+  TURNSTILE_SECRET_KEY="$(terraform output -raw turnstile_secret_key)"
 
 terraform output -json healthcheck_ping_urls \
   | python3 -c 'import json,sys;[print(f"{k}={v}") for k,v in json.load(sys.stdin).items()]' \

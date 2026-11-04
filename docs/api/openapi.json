@@ -1517,6 +1517,10 @@
                   },
                   "inviteToken": {
                     "type": "string"
+                  },
+                  "captchaToken": {
+                    "type": "string",
+                    "maxLength": 2048
                   }
                 },
                 "required": [
@@ -2316,13 +2320,20 @@
                     },
                     "euRestricted": {
                       "type": "boolean"
+                    },
+                    "turnstileSiteKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
                     "requiresInvite",
                     "allowedSignupProviders",
                     "publicSignupProviders",
-                    "euRestricted"
+                    "euRestricted",
+                    "turnstileSiteKey"
                   ],
                   "additionalProperties": false
                 }

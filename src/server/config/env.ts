@@ -185,6 +185,16 @@ export const outboundEmailConfig = {
 };
 
 /**
+ * Cloudflare Turnstile, the CAPTCHA on password signup. Off unless both keys
+ * are set.
+ */
+export function readTurnstileKeys(): { siteKey: string; secretKey: string } | undefined {
+  const siteKey = process.env.TURNSTILE_SITE_KEY;
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
+  return siteKey && secretKey ? { siteKey, secretKey } : undefined;
+}
+
+/**
  * Email ingest (newsletter) configuration. Newsletters are off unless both
  * INGEST_EMAIL_DOMAIN and MAILGUN_WEBHOOK_SIGNING_KEY are set: there is no
  * default domain, since addresses on someone else's domain never reach us.

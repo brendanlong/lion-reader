@@ -50,6 +50,8 @@ By default, Lion Reader runs in invite-only mode. New users need an invite link 
 | `ALLOWLIST_SECRET`                | -       | Secret for admin API (required whenever any provider is invite-only)                         |
 | `MAILGUN_DOMAIN`                  | -       | Mailgun sending domain (US region) for account emails; required to verify password accounts  |
 | `MAILGUN_SENDING_KEY`             | -       | A Mailgun sending key for that domain                                                        |
+| `TURNSTILE_SITE_KEY`              | -       | Cloudflare Turnstile site key; with the secret key, adds a CAPTCHA to password signup        |
+| `TURNSTILE_SECRET_KEY`            | -       | Cloudflare Turnstile secret key                                                              |
 
 Accounts that sign up with a password must verify their email address before using the app, and "Forgot your password?" emails a reset link, so password signup needs the two Mailgun settings. Social sign-ins are verified by the provider.
 
