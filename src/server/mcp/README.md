@@ -38,5 +38,5 @@ The stdio transport has no authentication layer — it acts as the single user c
 ## Adding New Tools
 
 1. Add a service function in `src/server/services/{domain}.ts`
-2. Define the tool (with a Zod input schema and its annotations) in `tools.ts` and add it to `buildTools()`. Its description is all an agent sees when choosing and calling it: say what it changes and whether that can be undone or repeated, what it returns, how it fails (not found, conflicts), and which sibling tool to use instead when one fits better. Directories like Glama score tools on exactly this.
+2. Define the tool (with a Zod input schema and its annotations) in `tools.ts` and add it to `buildTools()`. Its description is all an agent sees when choosing and calling it: say what it changes and whether that can be undone or repeated, what it returns, how it fails (not found, conflicts), and which sibling tool to use instead when one fits better.
 3. If the tool mirrors a tRPC endpoint, keep the endpoint's scope handling in sync (`src/server/auth/CLAUDE.md`, "Token scopes")

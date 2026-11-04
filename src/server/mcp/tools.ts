@@ -334,7 +334,6 @@ const listSubscriptionsArgs = subscriptionListInputSchema().extend({
   tagId: subscriptionList.tagId.describe("Filter by tag ID"),
   uncategorized: subscriptionList.uncategorized.describe("Only show subscriptions with no tags"),
   unreadOnly: subscriptionList.unreadOnly.describe("Only show feeds with unread items"),
-  // The saved subscription is never listed, so `saved` would match nothing.
   type: z
     .enum(["web", "email", "collection", "saved"])
     .optional()
@@ -437,10 +436,10 @@ function buildTools(): Tool[] {
         "List the user's entries (feed items, newsletter issues and saved articles), newest first " +
         "by default. Use this to browse or search: filter by subscription, tag, type, read or " +
         "starred state, sort by date, score or a collection's position (see sortBy), or pass " +
-        "`query` for relevance-ranked full-text search. Returns a page of entries (id, title, " +
-        "summary, url, read/starred state, score, subscription IDs) without the body, and " +
-        "`nextCursor` when there are more: pass it as `cursor` for the next page. Use get_entry " +
-        "for an entry's content, and count_entries when you only need an unread count.",
+        "`query` for relevance-ranked full-text search. Returns `items` (id, title, summary, url, " +
+        "read/starred state, score, subscription IDs; no body) and `nextCursor` when there are " +
+        "more: pass it as `cursor` for the next page. Use get_entry for an entry's content, and " +
+        "count_entries when you only need an unread count.",
       annotations: { title: "List entries", ...readOnly },
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
@@ -477,10 +476,9 @@ function buildTools(): Tool[] {
       name: "mark_entries_read",
       description:
         `Mark up to ${entryStateService.MAX_ENTRY_STATE_BATCH} entries as read or unread in one ` +
-        "call. Reversible (call again with the opposite `read`) and idempotent: re-marking an " +
-        "entry in the same state changes nothing. IDs the user doesn't have are ignored. Returns " +
-        "the entries' new state and, when anything changed, the affected unread counts. To star " +
-        "entries use star_entries.",
+        "call. Reversible (call again with the opposite `read`) and idempotent. Returns the " +
+        "entries' new state (IDs the user can't see are left out) and, when anything changed, the " +
+        "affected unread counts. To star an entry use star_entries.",
       annotations: {
         title: "Mark entries read or unread",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -508,9 +506,9 @@ function buildTools(): Tool[] {
       description:
         "Star or unstar one entry (call once per entry). Starred entries stay visible in the " +
         "Starred list even after unsubscribing from their feed; unstarring one from a feed the " +
-        "user has left removes it from view. Idempotent. Fails with a not-found error if the " +
-        "entry isn't visible to the user. Returns the entry's new state. To group entries under a " +
-        "name instead, use a collection (add_to_collection); to rank them, set_entry_scores.",
+        "user has left removes it from view. Idempotent. Fails with a not-found error if the user " +
+        "has no such entry. Returns the entry's new state. To group entries under a name instead, " +
+        "use a collection (add_to_collection); to rank them, set_entry_scores.",
       annotations: {
         title: "Star or unstar entry",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -555,11 +553,11 @@ function buildTools(): Tool[] {
     {
       name: "count_entries",
       description:
-        "Get the unread count of one list: all entries by default, or pass at most one of " +
-        "subscriptionId, tagId, uncategorized, type and starredOnly (passing more is an " +
-        "invalid-arguments error). Cheaper than paging through list_entries when you only need " +
-        "the number; list_tags and list_subscriptions also include unread counts per tag and " +
-        "subscription.",
+        "Get the unread count of one list as { unread, asOf }: all entries by default, or pass at " +
+        "most one of subscriptionId, tagId, uncategorized, type and starredOnly (more is an " +
+        "invalid-arguments error). An ID that isn't one of the user's subscriptions or tags " +
+        "counts 0. Cheaper than paging through list_entries when you only need the number; " +
+        "list_tags and list_subscriptions include unread counts per tag and subscription.",
       annotations: { title: "Count unread entries", ...readOnly },
       inputSchema: toInputSchema(countEntriesArgs),
       handler: async (db, userId, args) => {
@@ -575,15 +573,14 @@ function buildTools(): Tool[] {
     {
       name: "save_article",
       description:
-        "Save a web page by URL to the user's Saved list for later reading: fetches the page, " +
-        "extracts the article with Readability and stores it. For content you already have as " +
-        "text, use upload_article instead. Saving a URL that's already saved returns the existing " +
-        "article unchanged (pass refetch=true to fetch it again and update it). Returns the " +
-        "article's id and metadata with an excerpt, not the content (use get_entry for that). " +
-        "Fails with an error if the page can't be fetched or extracted, with an app error code in " +
-        "the error data (e.g. when the site rate limits us). Private Google Docs work when the " +
-        "user has linked their Google account and granted Google Docs access in the web app; " +
-        "otherwise the error explains how to authorize.",
+        "Save a web page by URL to the user's Saved list: fetches it, extracts the article with " +
+        "Readability and stores it. For content you already have, use upload_article instead. A " +
+        "URL that's already saved is returned unchanged unless you pass refetch, which replaces " +
+        "the stored copy. Returns the article's id, metadata, an excerpt and `outcome` (created, " +
+        "updated or existing), not the content (use get_entry for that). Errors carry an app code " +
+        "in their data, e.g. when the site rate limits us or the user's fetch quota is used up. " +
+        "Private Google Docs work once the user has granted Google Docs access in the web app; " +
+        "otherwise the error says how.",
       annotations: {
         title: "Save article from URL",
         readOnlyHint: false,
@@ -615,11 +612,10 @@ function buildTools(): Tool[] {
     {
       name: "delete_saved_article",
       description:
-        "Permanently delete an article from the user's Saved list (saved by URL or uploaded), " +
-        "removing it from every collection too. This can't be undone. Only saved articles can be " +
-        "deleted: feed entries can't (to hide one, mark it read; to take it out of a collection, " +
-        "use remove_from_collection). Returns { deleted: true }, or { deleted: false } when the " +
-        "ID isn't one of the user's saved articles (including one already deleted).",
+        "Permanently delete an article from the user's Saved list (saved by URL or uploaded), and " +
+        "from every collection. Can't be undone. Feed entries can't be deleted: mark them read, " +
+        "or take them out of a collection with remove_from_collection. Returns { deleted: false } " +
+        "if the ID isn't one of the user's saved articles (e.g. already deleted).",
       annotations: {
         title: "Delete saved article",
         ...write({ destructiveHint: true, idempotentHint: true }),
@@ -637,9 +633,8 @@ function buildTools(): Tool[] {
       description:
         "Save an article from Markdown you provide (e.g. something you wrote, summarized or " +
         "collected), with no URL to fetch. For a web page, use save_article instead. Each call " +
-        "creates a new article unless you pass the same idempotencyKey as an earlier call, which " +
-        "returns that article instead (use it when retrying). Returns the article's id and " +
-        "metadata with an excerpt, not the content (use get_entry for that).",
+        "creates a new article unless it repeats an earlier call's idempotencyKey. Returns the " +
+        "article's id and metadata with an excerpt, not the content (use get_entry for that).",
       annotations: {
         title: "Upload Markdown article",
         ...write({ destructiveHint: false, idempotentHint: false }),
@@ -666,14 +661,11 @@ function buildTools(): Tool[] {
     {
       name: "list_subscriptions",
       description:
-        "List the user's active subscriptions: web feeds (type 'web'), newsletters ('email'), " +
-        "collections ('collection') and, once the user has saved an article, their Saved list " +
-        "('saved', which can't be tagged, renamed or removed). Each has its id, title, type, tags " +
-        "and unread count. Use this to find a subscription or collection ID for list_entries, " +
-        "count_entries, set_subscription_tags or the collection tools; filter with a " +
-        "case-insensitive title search, tag, type or unread-only. Returns `nextCursor` when there " +
-        "are more: pass it as `cursor` for the next page. If you already have the ID, " +
-        "get_subscription returns just that one.",
+        "List the user's active subscriptions: web feeds, newsletters, collections and (once " +
+        "they've saved an article) their Saved list, which can't be tagged, renamed or removed. " +
+        "Each has its id, title, type, tags and unread count. Use this to find the subscriptionId " +
+        "or collectionId other tools take. Returns `items` and `nextCursor` when there are more: " +
+        "pass it as `cursor` for the next page. With an ID already in hand, use get_subscription.",
       annotations: { title: "List subscriptions", ...readOnly },
       inputSchema: toInputSchema(listSubscriptionsArgs),
       handler: async (db, userId, args) => {
@@ -703,11 +695,11 @@ function buildTools(): Tool[] {
       name: "set_subscription_tags",
       description:
         "Replace the complete set of tags on a subscription (a feed, newsletter or collection; " +
-        "not Saved): tags not in tagIds are removed, and an empty array removes them all. To add " +
-        "one tag, pass the subscription's current tags (from get_subscription) plus the new one. " +
-        "Tags group subscriptions in the sidebar; create them with create_tag and find their IDs " +
-        "with list_tags. Idempotent. Fails with a not-found error if the subscription isn't the " +
-        "user's, and with an invalid-arguments error, changing nothing, if any tag isn't.",
+        "not Saved). To add one tag, pass the subscription's current tags (from get_subscription) " +
+        "plus the new one. Tags group subscriptions in the sidebar; create them with create_tag " +
+        "and find their IDs with list_tags. Idempotent. Fails with a not-found error if the " +
+        "subscription isn't the user's, and with an invalid-arguments error, changing nothing, if " +
+        "any tag isn't.",
       annotations: {
         title: "Set subscription tags",
         ...write({ destructiveHint: true, idempotentHint: true }),
@@ -737,7 +729,7 @@ function buildTools(): Tool[] {
         "(create_tag) instead. Returns it as a subscription; its id is the collectionId for the " +
         "collection tools and the subscriptionId for list_entries and set_subscription_tags. If a " +
         "collection with that name (ignoring case) already exists, returns it unchanged with " +
-        "created: false, so retrying is safe.",
+        "created: false. Fails if the user is at their plan's subscription limit.",
       annotations: {
         title: "Create collection",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -757,14 +749,13 @@ function buildTools(): Tool[] {
     {
       name: "delete_collection",
       description:
-        "Delete a collection. This can't be undone. Its articles stay in their feeds and in Saved " +
-        "unless deleteSavedArticles is set, which also permanently deletes the saved articles " +
-        "that are in no other collection. To take only some articles out, use " +
+        "Delete a collection. Can't be undone. Its articles stay in their feeds and in Saved " +
+        "unless deleteSavedArticles is set. To take only some articles out, use " +
         "remove_from_collection instead. Fails with a not-found error if the user has no such " +
-        "collection (including one already deleted).",
+        "collection (e.g. already deleted).",
       annotations: {
         title: "Delete collection",
-        ...write({ destructiveHint: true, idempotentHint: false }),
+        ...write({ destructiveHint: true, idempotentHint: true }),
       },
       inputSchema: toInputSchema(deleteCollectionArgs),
       handler: async (db, userId, args) => {
@@ -782,9 +773,9 @@ function buildTools(): Tool[] {
         "Add articles to a collection (find its ID with list_subscriptions, or make one with " +
         "create_collection). Any article the user can see works, feed entry or saved article; it " +
         "stays in its own feed too, sharing read and starred state. A collection holds at most " +
-        `${MAX_COLLECTION_ENTRIES} articles. Returns the IDs newly added: already-present and ` +
-        "unknown IDs are skipped, so retrying is safe. To order the collection, use " +
-        "set_collection_positions.",
+        `${MAX_COLLECTION_ENTRIES} articles. Returns the IDs newly added; IDs already present or ` +
+        "not visible are skipped. Fails with a not-found error if the collection isn't the " +
+        "user's. To order the collection, use set_collection_positions.",
       annotations: {
         title: "Add to collection",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -807,9 +798,9 @@ function buildTools(): Tool[] {
       description:
         "Remove articles from a collection without deleting them: they stay in their feeds and in " +
         "Saved (to delete a saved article, use delete_saved_article; to delete the whole " +
-        "collection, delete_collection). Undo with add_to_collection, though the articles' " +
-        "positions are lost. Returns the IDs actually removed; IDs not in the collection are " +
-        "skipped.",
+        "collection, delete_collection). Their positions in the collection are lost. Returns the " +
+        "IDs actually removed; IDs not in the collection are skipped. Fails with a not-found " +
+        "error if the collection isn't the user's.",
       annotations: {
         title: "Remove from collection",
         ...write({ destructiveHint: true, idempotentHint: true }),
@@ -832,11 +823,11 @@ function buildTools(): Tool[] {
       description:
         "Set the order of articles in a collection (e.g. a book's chapters): a list sorted by " +
         "position (list_entries with the collection's subscriptionId and sortBy: position) shows " +
-        "lower positions first, then articles without one. Pass exactly one of entryIds, to " +
-        "number those articles 1, 2, 3, … in that order, or positions, to set (or clear, with " +
-        "null) a few without renumbering the rest, e.g. 2.5 to place one between 2 and 3. " +
+        "lower positions first, then articles without one. Pass exactly one of entryIds or " +
+        "positions; articles you don't name keep their positions, so clear stale ones with null. " +
         "Articles must already be in the collection (add_to_collection). Returns the IDs whose " +
-        "position changed and those not in the collection.",
+        "position changed and those not in the collection. Fails with a not-found error if the " +
+        "collection isn't the user's.",
       annotations: {
         title: "Order collection",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -861,10 +852,10 @@ function buildTools(): Tool[] {
     {
       name: "list_tags",
       description:
-        "List all the user's tags, each with its id, name, color, number of subscriptions and " +
-        "unread count, plus the subscription and unread counts of Uncategorized (subscriptions " +
-        "with no tag). Use this to find tag IDs for set_subscription_tags, list_entries, " +
-        "count_entries and list_subscriptions, or before create_tag to see what exists.",
+        "List all the user's tags as `items` (id, name, color, feedCount: subscriptions tagged, " +
+        "unreadCount), plus `uncategorized` (feedCount and unreadCount of subscriptions with no " +
+        "tag). Use this to find tag IDs for set_subscription_tags, list_entries, count_entries " +
+        "and list_subscriptions, or before create_tag to see what exists.",
       annotations: { title: "List tags", ...readOnly },
       inputSchema: toInputSchema(listTagsArgs),
       handler: async (db, userId, args) => {
@@ -877,9 +868,8 @@ function buildTools(): Tool[] {
       name: "create_tag",
       description:
         "Create a tag for grouping subscriptions (apply it with set_subscription_tags). If a tag " +
-        "with that name (ignoring case) already exists, returns it unchanged with created: false, " +
-        "so retrying is safe; to rename or recolor a tag, use update_tag. Returns the tag (id, " +
-        "name, color, counts) and `created`.",
+        "with that name (ignoring case) already exists, returns it unchanged with created: false; " +
+        "to rename or recolor a tag, use update_tag. Returns the tag and `created`.",
       annotations: {
         title: "Create tag",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -898,11 +888,10 @@ function buildTools(): Tool[] {
     {
       name: "update_tag",
       description:
-        "Rename or recolor one of the user's tags (find its ID with list_tags). Only the fields " +
-        "you pass change: omit name to keep it, omit color to keep it, or pass color: null to " +
-        "remove it. The tag keeps its subscriptions. Fails with a not-found error if the tag " +
-        "isn't the user's, and with an error if another of their tags already has the new name " +
-        "(ignoring case). Returns the updated tag.",
+        "Rename or recolor one of the user's tags (find its ID with list_tags); only the fields " +
+        "you pass change, and the tag keeps its subscriptions. Fails with a not-found error if " +
+        "the tag isn't the user's, or with a name-taken error if another of their tags has the " +
+        "new name (ignoring case). Returns the updated tag.",
       annotations: {
         title: "Update tag",
         ...write({ destructiveHint: false, idempotentHint: true }),
@@ -920,14 +909,13 @@ function buildTools(): Tool[] {
     {
       name: "delete_tag",
       description:
-        "Delete a tag and remove it from every subscription. The subscriptions themselves and " +
-        "their entries are kept (any left with no tag become Uncategorized). This can't be " +
-        "undone; recreating a tag with create_tag doesn't restore its subscriptions. To just " +
-        "rename it, use update_tag. Fails with a not-found error if the tag isn't the user's " +
-        "(including one already deleted).",
+        "Delete a tag and remove it from every subscription; the subscriptions and their entries " +
+        "are kept (any left with no tag become Uncategorized). Can't be undone: recreating the " +
+        "tag doesn't restore its subscriptions. To rename it, use update_tag. Fails with a " +
+        "not-found error if the tag isn't the user's (e.g. already deleted).",
       annotations: {
         title: "Delete tag",
-        ...write({ destructiveHint: true, idempotentHint: false }),
+        ...write({ destructiveHint: true, idempotentHint: true }),
       },
       inputSchema: toInputSchema(deleteTagArgs),
       handler: async (db, userId, args) => {
