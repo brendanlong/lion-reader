@@ -1,24 +1,28 @@
 /**
- * Integration tests for the Getting Started onboarding article (issue #1397).
+ * Integration tests for the Getting Started onboarding collection (issue #1397).
  *
- * The behavior worth pinning down is the once-ever guarantee: the article shows
- * up starred and unread for a new user, and once a user has had it, nothing —
- * a second signup-path call, the backfill job, or deleting the article — brings
- * it back (issue #1383).
+ * The behavior worth pinning down: a new user gets one collection of unread
+ * articles that opens in reading order, and once a user has had it, nothing —
+ * a second signup-path call, the backfill job, or deleting it — brings it back
+ * (issue #1383).
  */
 
 import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, entries, userEntries } from "../../src/server/db/schema";
+import { users, entries } from "../../src/server/db/schema";
 import {
-  backfillGettingStartedArticles,
-  createGettingStartedArticle,
+  backfillGettingStartedCollections,
+  createGettingStartedCollection,
 } from "../../src/server/services/getting-started";
-import { GETTING_STARTED_TITLE } from "../../src/server/services/getting-started-content";
-import { deleteSavedArticle } from "../../src/server/services/saved";
+import {
+  GETTING_STARTED_ARTICLES,
+  GETTING_STARTED_COLLECTION_NAME,
+} from "../../src/server/services/getting-started-content";
+import { listEntries } from "../../src/server/services/entries";
+import { deleteCollection } from "../../src/server/services/collections";
+import { listSubscriptions } from "../../src/server/services/subscriptions";
 import { createTestUser } from "./helpers";
-import { getUserUnreadCounts } from "../../src/server/services/counts";
 
 const createdUserIds: string[] = [];
 
@@ -29,24 +33,12 @@ async function createUser(): Promise<string> {
   return userId;
 }
 
-/** Every saved entry the user can see, newest first. */
-async function savedEntriesFor(userId: string) {
-  return db
-    .select({
-      id: entries.id,
-      title: entries.title,
-      summary: entries.summary,
-      contentOriginal: entries.contentOriginal,
-      contentCleaned: entries.contentCleaned,
-      read: userEntries.read,
-      starred: userEntries.starred,
-    })
+async function savedEntryCount(userId: string): Promise<number> {
+  const rows = await db
+    .select({ id: entries.id })
     .from(entries)
-    .innerJoin(
-      userEntries,
-      and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
-    )
     .where(eq(entries.ownerUserId, userId));
+  return rows.length;
 }
 
 async function gettingStartedAt(userId: string): Promise<Date | null> {
@@ -64,10 +56,10 @@ const BATCH = 100;
  *
  * The backfill is global by design, and this database is shared with 50-odd
  * other integration files whose leftover user rows are all pending. Without
- * this the backfill would create articles for them (slow, and it mutates rows
- * this file doesn't own) and the batch counts would depend on how dirty the
- * database happened to be. Stamping the flag — and only the flag — leaves our
- * user as the single pending row, so the counts below are exact.
+ * this the backfill would create collections for them (slow, and it mutates
+ * rows this file doesn't own) and the batch counts would depend on how dirty
+ * the database happened to be. Stamping the flag — and only the flag — leaves
+ * our user as the single pending row, so the counts below are exact.
  */
 async function claimEveryoneElse(ourUserId: string): Promise<void> {
   await db
@@ -82,98 +74,95 @@ afterAll(async () => {
   }
 });
 
-describe("createGettingStartedArticle", () => {
-  it("adds a starred, unread saved article and stamps the user", async () => {
+describe("createGettingStartedCollection", () => {
+  it("adds a collection of unread articles that opens in reading order", async () => {
     const userId = await createUser();
 
-    const entryId = await createGettingStartedArticle(db, userId);
-    expect(entryId).not.toBeNull();
-
-    const saved = await savedEntriesFor(userId);
-    expect(saved).toHaveLength(1);
-    expect(saved[0].title).toBe(GETTING_STARTED_TITLE);
-    expect(saved[0].starred).toBe(true);
-    expect(saved[0].read).toBe(false);
-    // Rendered through the Markdown pipeline, with its in-app links left
-    // relative (same-tab) rather than resolved against the upload host.
-    expect(saved[0].contentOriginal).toContain('href="/subscribe"');
-    expect(saved[0].contentCleaned).toContain('href="/subscribe"');
-    expect(saved[0].summary).toBeTruthy();
-
+    const collectionId = await createGettingStartedCollection(db, userId);
+    expect(collectionId).not.toBeNull();
     expect(await gettingStartedAt(userId)).toBeInstanceOf(Date);
 
-    // The starred counter the badge reads must see it.
-    const [counts] = await db
-      .select({ starred: users.starredUnreadCount })
-      .from(users)
-      .where(eq(users.id, userId));
-    expect(counts.starred).toBe(1);
-    expect((await getUserUnreadCounts(db, userId)).savedUnread).toBe(1);
+    const { subscriptions: collections } = await listSubscriptions(db, {
+      userId,
+      type: "collection",
+    });
+    expect(collections.map((sub) => [sub.id, sub.title])).toEqual([
+      [collectionId, GETTING_STARTED_COLLECTION_NAME],
+    ]);
+
+    // No sort named: the collection's default, which its positions make reading order.
+    const { items } = await listEntries(db, {
+      userId,
+      subscriptionId: collectionId!,
+      showSpam: false,
+    });
+    expect(items.map((item) => item.title)).toEqual(
+      GETTING_STARTED_ARTICLES.map((article) => article.title)
+    );
+    expect(items.every((item) => !item.read && !item.starred)).toBe(true);
+
+    // Newest-first lists show them in reading order too.
+    const { items: saved } = await listEntries(db, { userId, type: "saved", showSpam: false });
+    expect(saved.map((item) => item.title)).toEqual(
+      GETTING_STARTED_ARTICLES.map((article) => article.title)
+    );
+
+    // Rendered through the Markdown pipeline, with in-app links left relative
+    // (same-tab) rather than resolved against the upload host.
+    const [first] = await db
+      .select({ contentCleaned: entries.contentCleaned })
+      .from(entries)
+      .where(eq(entries.id, items[0].id));
+    expect(first.contentCleaned).toContain('href="/subscribe"');
   });
 
-  it("does not re-add the article after the user deletes it", async () => {
+  it("does not re-add the collection after the user deletes it", async () => {
     const userId = await createUser();
 
-    const entryId = await createGettingStartedArticle(db, userId);
-    expect(entryId).not.toBeNull();
-    expect(await deleteSavedArticle(db, userId, entryId!)).not.toBeNull();
+    const collectionId = await createGettingStartedCollection(db, userId);
+    await deleteCollection(db, userId, collectionId!, { deleteSavedArticles: true });
+    expect(await savedEntryCount(userId)).toBe(0);
 
     // Both the signup path and the backfill must leave it deleted.
-    expect(await createGettingStartedArticle(db, userId)).toBeNull();
+    expect(await createGettingStartedCollection(db, userId)).toBeNull();
     await claimEveryoneElse(userId);
-    expect(await backfillGettingStartedArticles(db, BATCH)).toEqual({
+    expect(await backfillGettingStartedCollections(db, BATCH)).toEqual({
       attempted: 0,
       created: 0,
       failed: 0,
     });
 
-    expect(await savedEntriesFor(userId)).toHaveLength(0);
+    expect(await savedEntryCount(userId)).toBe(0);
   });
 
-  it("doesn't add a second copy when the claim is released after the insert committed", async () => {
+  it("finishes without duplicates when the claim is released after the inserts committed", async () => {
     const userId = await createUser();
-    const entryId = await createGettingStartedArticle(db, userId);
-    // What a lost commit acknowledgement leaves: the article, but no claim.
+    const collectionId = await createGettingStartedCollection(db, userId);
+    // What a failure after the inserts leaves: the collection, but no claim.
     await db.update(users).set({ gettingStartedAt: null }).where(eq(users.id, userId));
 
-    expect(await createGettingStartedArticle(db, userId)).toBe(entryId);
-    expect(await savedEntriesFor(userId)).toHaveLength(1);
-  });
-
-  it("leaves an unstarred copy unstarred", async () => {
-    const userId = await createUser();
-    const entryId = await createGettingStartedArticle(db, userId);
-
-    await db
-      .update(userEntries)
-      .set({ starred: false })
-      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId!)));
-
-    expect(await createGettingStartedArticle(db, userId)).toBeNull();
-
-    const saved = await savedEntriesFor(userId);
-    expect(saved).toHaveLength(1);
-    expect(saved[0].starred).toBe(false);
+    expect(await createGettingStartedCollection(db, userId)).toBe(collectionId);
+    expect(await savedEntryCount(userId)).toBe(GETTING_STARTED_ARTICLES.length);
   });
 });
 
-describe("backfillGettingStartedArticles", () => {
-  it("covers a user who predates the feature", async () => {
+describe("backfillGettingStartedCollections", () => {
+  it("covers a user whose signup-path insert never happened", async () => {
     const userId = await createUser();
     expect(await gettingStartedAt(userId)).toBeNull();
     await claimEveryoneElse(userId);
 
-    expect(await backfillGettingStartedArticles(db, BATCH)).toEqual({
+    expect(await backfillGettingStartedCollections(db, BATCH)).toEqual({
       attempted: 1,
       created: 1,
       failed: 0,
     });
 
     expect(await gettingStartedAt(userId)).toBeInstanceOf(Date);
-    expect(await savedEntriesFor(userId)).toHaveLength(1);
+    expect(await savedEntryCount(userId)).toBe(GETTING_STARTED_ARTICLES.length);
 
     // Nothing is left over: a second pass finds no pending users.
-    expect(await backfillGettingStartedArticles(db, BATCH)).toEqual({
+    expect(await backfillGettingStartedCollections(db, BATCH)).toEqual({
       attempted: 0,
       created: 0,
       failed: 0,
