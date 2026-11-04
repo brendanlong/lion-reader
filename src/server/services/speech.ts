@@ -66,7 +66,7 @@ import {
   SELFHOSTED_KOKORO_MODEL,
   selfHostedSpeech,
 } from "@/server/services/selfhosted";
-import { canonicalModelRef, failoverGroup, hasFailover } from "@/server/services/model-failover";
+import { canonicalModelRef, failoverGroup, failoverGroups } from "@/server/services/model-failover";
 
 export interface SpeechVoice {
   /** What the provider calls the voice; what's stored and sent. */
@@ -292,14 +292,22 @@ export function pickableSpeechModels(
 
 /**
  * The catalogs to fetch: each provider's on the user's own key, else on the
- * server's, and on the server's too where it backs theirs up.
+ * server's, and on the server's too where one of its hosts backs another up
+ * ({@link ownHostId}).
  */
 function catalogKeys(keys: AiProviderKeys): { provider: SpeechProvider; onUserKey: boolean }[] {
+  const backsUp = (provider: SpeechProvider) =>
+    failoverGroups().some((group) => {
+      const ownId = ownHostId(group, keys);
+      return group.some(
+        (hostId) => hostId !== ownId && parseModelRef(hostId).provider === provider
+      );
+    });
   return SPEECH_PROVIDERS.flatMap((provider) => {
     const own = isOnUserKey(provider, keys);
     const fetches = [];
     if (own && getProviderApiKey(provider, keys)) fetches.push({ provider, onUserKey: true });
-    if ((!own || hasFailover(provider)) && getProviderApiKey(provider, keysFor(keys, false))) {
+    if ((!own || backsUp(provider)) && getProviderApiKey(provider, keysFor(keys, false))) {
       fetches.push({ provider, onUserKey: false });
     }
     return fetches;
@@ -394,7 +402,12 @@ async function keepPickedVoice(
   if (!model || hasVoice(model, voice)) return "listed";
   const group = failoverGroup(model.id);
   const ownId = ownHostId(group, keys);
-  if (group.some((hostId) => isUnlisted(unlisted, hostId, hostId === ownId))) return "unchecked";
+  // A host that may have the voice, on the key it'd say it with, can't be asked.
+  const mayHave = (hostId: string) =>
+    hostId === ownId
+      ? isUnlisted(unlisted, hostId, true)
+      : isUnlisted(unlisted, hostId, false) && planAllowsOnServerKey(keys, hostId);
+  if (group.some(mayHave)) return "unchecked";
   const host = model.hosts.find(
     ({ model: { provider } }) => SPEECH_PROVIDER_ADAPTERS[provider].findVoice
   );
@@ -673,19 +686,19 @@ export function resolveSpeechModel(
   requestedModel: string | null,
   requestedVoice: string | null
 ): { model: PickableSpeechModel; voice: string } {
-  const requestedProvider = requestedModel ? parseModelRef(requestedModel).provider : null;
-  if (requestedProvider && keys[requestedProvider] === UNREADABLE_API_KEY) {
-    throw new SpeechRejectedError(new UnreadableApiKeyError(requestedProvider).message);
-  }
   const requested = requestedModel ? canonicalModelRef(requestedModel) : null;
-  const requestedHosts = requested
-    ? failoverGroup(requested).map((hostId) => parseModelRef(hostId).provider)
-    : [];
+  const group = requested ? failoverGroup(requested) : [];
+  const ownId = ownHostId(group, keys);
+  const ownProvider = ownId && parseModelRef(ownId).provider;
+  if (ownProvider && keys[ownProvider] === UNREADABLE_API_KEY) {
+    throw new SpeechRejectedError(new UnreadableApiKeyError(ownProvider).message);
+  }
   const failed =
     (models.some((candidate) => candidate.id === requested)
       ? undefined
-      : unavailable.find(({ provider }) => requestedHosts.includes(provider))) ??
-    (models.length === 0 ? unavailable[0] : undefined);
+      : unavailable.find((down) =>
+          group.some((hostId) => isUnlisted([down], hostId, hostId === ownId))
+        )) ?? (models.length === 0 ? unavailable[0] : undefined);
   if (failed) {
     if (failed.error instanceof ProviderRejectedError) {
       throw speechRejection(failed.provider, failed.error, failed.onUserKey);

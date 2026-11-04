@@ -200,12 +200,40 @@ describe("a model with several hosts", () => {
 
   it("never says on the server's key what the user's own key would, even unreadable", () => {
     process.env.SERVER_KEY_MAX_SPEECH_PRICE = "10";
-    const keys = { deepinfra: UNREADABLE_API_KEY, plan: null };
+    const keys: AiProviderKeys = { deepinfra: UNREADABLE_API_KEY, plan: null };
     const qwen = kokoro("deepinfra:Qwen/Qwen3-TTS", "deepinfra", ["Vivian"]);
     const models = pickableSpeechModels([ours(selfHosted), ours(deepInfra), ours(qwen)], keys);
     expect(models.map((model) => [model.id, model.hosts])).toEqual([
       [SELFHOSTED_KOKORO, [ours(selfHosted)]],
     ]);
+  });
+
+  it("asks for an unreadable key again only if it's the one that would say it", () => {
+    const keys: AiProviderKeys = { selfhosted: "s", deepinfra: UNREADABLE_API_KEY, plan: null };
+    const models = pickableSpeechModels([theirs(selfHosted)], keys);
+    const resolved = resolveSpeechModel({ models, unavailable: [] }, keys, DEEPINFRA_KOKORO, null);
+    expect(resolved.model.id).toBe(SELFHOSTED_KOKORO);
+    expect(() =>
+      resolveSpeechModel(
+        { models: [], unavailable: [] },
+        { deepinfra: UNREADABLE_API_KEY, plan: null },
+        DEEPINFRA_KOKORO,
+        null
+      )
+    ).toThrow(SpeechRejectedError);
+  });
+
+  it("reports the failure of the catalog on the key the host would use", () => {
+    const refused = new ProviderRejectedError("", "Lion Reader", null, 401);
+    const unavailable = [
+      { provider: "selfhosted" as const, onUserKey: false, error: refused },
+      { provider: "selfhosted" as const, onUserKey: true, error: new Error("timed out") },
+    ];
+    const keys: AiProviderKeys = { selfhosted: "s", plan: null };
+    const other = { ...deepInfra, id: "deepinfra:other", hosts: [ours(deepInfra)] };
+    expect(() =>
+      resolveSpeechModel({ models: [other], unavailable }, keys, SELFHOSTED_KOKORO, null)
+    ).toThrow(SpeechUnavailableError);
   });
 
   it("is run for a request naming any of its hosts", () => {
@@ -413,7 +441,12 @@ describe("resolveSpeechModel", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
     const keys = { openrouter: "o", plan: null };
     expect(() =>
-      resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
+      resolveSpeechModel(
+        catalog([deepInfraKokoro], ["openrouter"], new Error("timed out"), true),
+        keys,
+        OPENROUTER_KOKORO,
+        null
+      )
     ).toThrow(
       new SpeechUnavailableError("Couldn't get OpenRouter's cloud voices; try again shortly")
     );

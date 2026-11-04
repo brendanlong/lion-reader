@@ -9,9 +9,9 @@
  * users pick it.
  */
 
-import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import { normalizeModelRef } from "@/lib/ai/model-ref";
 
-function failoverGroups(): string[][] {
+export function failoverGroups(): string[][] {
   return (process.env.MODEL_FAILOVER ?? "").split(";").map((group) =>
     group
       .split(",")
@@ -25,14 +25,6 @@ function failoverGroups(): string[][] {
 export function failoverGroup(modelRef: string): string[] {
   const ref = normalizeModelRef(modelRef);
   return failoverGroups().find((models) => models.includes(ref)) ?? [ref];
-}
-
-/** Whether any of `provider`'s models has other hosts. */
-export function hasFailover(provider: string): boolean {
-  return failoverGroups().some(
-    (models) =>
-      models.length > 1 && models.some((model) => parseModelRef(model).provider === provider)
-  );
 }
 
 /** The id a model with several hosts goes by: its group's first. */
