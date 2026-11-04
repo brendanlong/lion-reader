@@ -92,9 +92,11 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     maxIngestAddresses: 1,
     serverKeyModels: null,
     quotas: {
-      pageFetches: { burst: 50, perDay: 200 },
-      fileConversions: { burst: 5, perDay: 10 },
-      summaries: { burst: 3, perDay: 5 },
+      // Bursts above the daily refill: a new user's first session is
+      // generous, and steady use is still held to the daily rate.
+      pageFetches: { burst: 100, perDay: 200 },
+      fileConversions: { burst: 20, perDay: 10 },
+      summaries: { burst: 50, perDay: 5 },
       narrationTextProcessing: "excluded",
       speechCharacters: { burst: 50_000, perDay: 100_000 },
     },
@@ -105,8 +107,8 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     serverKeyModels: null,
     quotas: {
       pageFetches: { burst: 200, perDay: 2000 },
-      fileConversions: { burst: 20, perDay: 100 },
-      summaries: { burst: 50, perDay: 200 },
+      fileConversions: { burst: 50, perDay: 100 },
+      summaries: { burst: 100, perDay: 200 },
       narrationTextProcessing: { burst: 50, perDay: 200 },
       speechCharacters: { burst: 200_000, perDay: 500_000 },
     },
