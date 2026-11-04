@@ -23,6 +23,7 @@ describe("PlanSection", () => {
             maxSubscriptions: 150,
             maxIngestAddresses: null,
             serverKeyModels: null,
+            serverKeyRouting: "cheapest",
             quotas: {
               pageFetches: { burst: 50, perDay: 200 },
               fileConversions: null,

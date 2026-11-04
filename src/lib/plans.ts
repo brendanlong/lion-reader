@@ -77,6 +77,12 @@ export interface PlanLimits {
    * isn't limited by it.
    */
   serverKeyModels: readonly string[] | null;
+  /**
+   * How OpenRouter picks a host for the plan's text calls on the server's
+   * key: the cheapest, or the fastest. A user's own key always gets the
+   * fastest.
+   */
+  serverKeyRouting: "cheapest" | "fastest";
   quotas: Record<PlanQuota, QuotaLimit>;
 }
 
@@ -90,7 +96,11 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   free: {
     maxSubscriptions: 150,
     maxIngestAddresses: 1,
-    serverKeyModels: null,
+    // Only what costs us (almost) nothing: our own speech server, and
+    // summaries on OpenRouter's cheapest gpt-oss-120b host. No failover onto
+    // paid speech hosts.
+    serverKeyModels: ["selfhosted:*", "openrouter:openai/gpt-oss-120b"],
+    serverKeyRouting: "cheapest",
     quotas: {
       // Bursts above the daily refill: a new user's first session is
       // generous, and steady use is still held to the daily rate.
@@ -105,18 +115,22 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     maxSubscriptions: 1000,
     maxIngestAddresses: 5,
     serverKeyModels: null,
+    serverKeyRouting: "fastest",
     quotas: {
       pageFetches: { burst: 200, perDay: 2000 },
       fileConversions: { burst: 50, perDay: 100 },
       summaries: { burst: 100, perDay: 200 },
       narrationTextProcessing: { burst: 50, perDay: 200 },
-      speechCharacters: { burst: 200_000, perDay: 500_000 },
+      // Cloud voices run on our own speech server, which costs us almost
+      // nothing: paid listening isn't capped.
+      speechCharacters: null,
     },
   },
   unlimited: {
     maxSubscriptions: null,
     maxIngestAddresses: null,
     serverKeyModels: null,
+    serverKeyRouting: "fastest",
     quotas: {
       pageFetches: null,
       fileConversions: null,

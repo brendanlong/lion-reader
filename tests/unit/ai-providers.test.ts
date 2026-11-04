@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 import { PLAN_LIMITS } from "../../src/lib/plans";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -681,6 +681,18 @@ describe("generateChatCompletion", () => {
         expect(asked()).toEqual([["cerebras", "user-c"]]);
       });
 
+      it("fails over only to hosts the user's plan allows on the server's keys", async () => {
+        cerebrasFailure = 503;
+        const plan = {
+          userId: "u",
+          limits: { ...PLAN_LIMITS.paid, serverKeyModels: ["cerebras:some-model"] },
+        };
+        await expect(
+          generateChatCompletion(model, { plan }, "summaries", options)
+        ).rejects.toMatchObject({ failure: "busy", provider: "cerebras" });
+        expect(asked().map(([provider]) => provider)).not.toContain("anthropic");
+      });
+
       it("throws the first host's error when every host fails", async () => {
         cerebrasFailure = 402;
         anthropicFailure = 503;
@@ -722,6 +734,78 @@ describe("generateChatCompletion", () => {
   });
 });
 
+describe("plans on the server's keys (#2225)", () => {
+  const onPlan = (plan: "free" | "paid", keys: Record<string, string> = {}) => ({
+    ...keys,
+    plan: { userId: "u", limits: PLAN_LIMITS[plan] },
+  });
+
+  /** The OpenRouter request bodies sent while running `fn`, with OpenRouter stood in. */
+  async function openRouterBodies(
+    fn: () => Promise<unknown>
+  ): Promise<Array<{ provider: unknown }>> {
+    const bodies: Array<{ provider: unknown }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/models")) return Response.json({ data: [] });
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json({ choices: [{ message: { content: "hi" } }] });
+    });
+    try {
+      await fn();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return bodies;
+  }
+
+  const gptOss = parseModelRef("openrouter:openai/gpt-oss-120b");
+  const options = { userPrompt: "hi", maxTokens: 10 };
+
+  it("summarizes with OpenRouter's gpt-oss on free and Cerebras on paid", async () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MODELS = "cerebras:gpt-oss-120b";
+    process.env.SERVER_KEY_MAX_INPUT_PRICE = "0.35";
+    process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "0.75";
+    expect(await getSummarizationModelId(null, onPlan("free"))).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.openrouter
+    );
+    expect(await getSummarizationModelId(null, onPlan("paid"))).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
+  });
+
+  it("routes to OpenRouter's cheapest host for a plan that asks, its fastest otherwise", async () => {
+    clearEnv();
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    const cheapest = {
+      plan: { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyRouting: "cheapest" as const } },
+    };
+    const fastest = {
+      plan: { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyRouting: "fastest" as const } },
+    };
+
+    const [onCheapest] = await openRouterBodies(() =>
+      generateChatCompletion(gptOss, cheapest, "summaries", options)
+    );
+    const [onFastest] = await openRouterBodies(() =>
+      generateChatCompletion(gptOss, fastest, "summaries", options)
+    );
+    const [ownKey] = await openRouterBodies(() =>
+      generateChatCompletion(
+        gptOss,
+        { ...cheapest, openrouter: "sk-or-user" },
+        "summaries",
+        options
+      )
+    );
+    expect(onCheapest.provider).toMatchObject({ sort: "price" });
+    expect(onFastest.provider).toMatchObject({ sort: "throughput" });
+    expect(ownKey.provider).toMatchObject({ sort: "throughput" });
+  });
+});
+
 describe("buildChatCompletionBody (OpenRouter)", () => {
   const options = {
     system: "sys",
@@ -733,7 +817,7 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
   };
 
   it("sends optional parameters only when the model supports them", () => {
-    const body = buildChatCompletionBody("m", options, ["response_format"]);
+    const body = buildChatCompletionBody("m", options, ["response_format"], "throughput");
     expect(body).not.toHaveProperty("max_tokens");
     expect(body).not.toHaveProperty("temperature");
     expect(body).not.toHaveProperty("reasoning");
@@ -750,17 +834,22 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
 
   it("includes supported parameters", () => {
     expect(
-      buildChatCompletionBody("m", options, [
-        "max_tokens",
-        "temperature",
-        "reasoning",
-        "response_format",
-      ])
+      buildChatCompletionBody(
+        "m",
+        options,
+        ["max_tokens", "temperature", "reasoning", "response_format"],
+        "throughput"
+      )
     ).toMatchObject({ max_tokens: 100, temperature: 0.1, reasoning: { effort: "low" } });
   });
 
   it("only requires parameters for JSON mode", () => {
-    const body = buildChatCompletionBody("m", { userPrompt: "hi", maxTokens: 100 }, []);
+    const body = buildChatCompletionBody(
+      "m",
+      { userPrompt: "hi", maxTokens: 100 },
+      [],
+      "throughput"
+    );
     expect(body).toMatchObject({ provider: { sort: "throughput" } });
     expect(body.provider).not.toHaveProperty("require_parameters");
     expect(body).not.toHaveProperty("response_format");
@@ -769,9 +858,14 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
   it("keeps to the price caps it's given", () => {
     const options = { userPrompt: "hi", maxTokens: 100 };
     expect(
-      buildChatCompletionBody("m", options, [], { maxInputPrice: 0.35, maxOutputPrice: 0.75 })
+      buildChatCompletionBody("m", options, [], "throughput", {
+        maxInputPrice: 0.35,
+        maxOutputPrice: 0.75,
+      })
     ).toMatchObject({ provider: { max_price: { prompt: 0.35, completion: 0.75 } } });
-    expect(buildChatCompletionBody("m", options, []).provider).not.toHaveProperty("max_price");
+    expect(buildChatCompletionBody("m", options, [], "throughput").provider).not.toHaveProperty(
+      "max_price"
+    );
   });
 });
 

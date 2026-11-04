@@ -596,7 +596,7 @@ interface SpeechCandidate {
 /**
  * Where to say a chunk when `first` fails: the other hosts of its model
  * ({@link failoverModels}) that have the same voice, in order, on the
- * server's keys, as far as the user's plan lets the model run on them. A
+ * server's keys, where the user's plan lets that host run on them. A
  * user's own key is only used the way they picked, but the server's back
  * them up. A host whose catalog can't be fetched is passed over.
  */
@@ -610,7 +610,7 @@ async function failoverCandidates(
       const { provider } = parseModelRef(id);
       const apiKey = getProviderApiKey(provider);
       if (!apiKey || !isSpeechProvider(provider)) return [];
-      if (!planAllowsOnServerKey(keys, first.id) && !planAllowsOnServerKey(keys, id)) return [];
+      if (!planAllowsOnServerKey(keys, id)) return [];
       const models = await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey).catch(() => []);
       const model = models.find((candidate) => candidate.id === id);
       return model && hasVoice(model, voice) ? [{ model, voice, apiKey, onUserKey: false }] : [];

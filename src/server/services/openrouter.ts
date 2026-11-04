@@ -72,10 +72,14 @@ function headers(apiKey?: string): Record<string, string> {
  * `require_parameters`, which restricts routing to hosts supporting *every*
  * parameter sent, so an unsupported extra would leave no host at all.
  */
+/** How OpenRouter picks among a model's hosts. */
+export type OpenRouterSort = "price" | "throughput";
+
 export function buildChatCompletionBody(
   model: string,
   options: ChatCompletionOptions,
   supportedParameters: readonly string[],
+  sort: OpenRouterSort,
   priceCaps: TokenPriceCaps | null = null
 ): Record<string, unknown> {
   const supports = (parameter: string) => supportedParameters.includes(parameter);
@@ -94,8 +98,7 @@ export function buildChatCompletionBody(
       : {}),
     ...(options.jsonObject ? { response_format: { type: "json_object" } } : {}),
     provider: {
-      // Every caller is interactive, so prefer the fastest host.
-      sort: "throughput",
+      sort,
       // Only route to hosts that honor JSON mode rather than having the
       // parameter silently dropped.
       ...(options.jsonObject ? { require_parameters: true } : {}),
@@ -160,6 +163,7 @@ export async function openRouterChatCompletion(
   apiKey: string,
   model: string,
   options: ChatCompletionOptions,
+  sort: OpenRouterSort,
   priceCaps: TokenPriceCaps | null,
   timeoutMs: number
 ): Promise<string> {
@@ -171,7 +175,13 @@ export async function openRouterChatCompletion(
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
     signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify(
-      buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [], priceCaps)
+      buildChatCompletionBody(
+        model,
+        options,
+        catalogEntry?.supported_parameters ?? [],
+        sort,
+        priceCaps
+      )
     ),
   });
   return chatCompletionText(response.status, await response.json().catch(() => null));
