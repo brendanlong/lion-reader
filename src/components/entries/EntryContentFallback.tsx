@@ -22,6 +22,7 @@ import { SparklesIcon } from "@/components/ui/icons";
 import { NarrationControlsSkeleton } from "@/components/narration";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { CollectionsButton } from "./CollectionsButton";
+import { useEntryContentOptions } from "./EntryContentOptions";
 import { ENTRY_ACTION_BAR_CLASSES, EntryArticle, EntryArticleSkeleton } from "./EntryArticle";
 
 interface EntryContentFallbackProps {
@@ -42,6 +43,7 @@ export function EntryContentFallback({
   // Star/read work optimistically even while the full entry loads
   const { setStarred } = useEntryMutations();
   const [narrationSettings] = useNarrationSettings();
+  const { hideFullContent } = useEntryContentOptions();
 
   return (
     <ScrollContainer className="h-full overflow-y-auto">
@@ -67,7 +69,7 @@ export function EntryContentFallback({
                 onToggle={() => onSetRead(!cachedEntry.read)}
               />
               <CollectionsButton entryId={entryId} />
-              {cachedEntry.url && (
+              {cachedEntry.url && !hideFullContent && (
                 <Button variant="secondary" size="sm" disabled>
                   Full Content
                 </Button>

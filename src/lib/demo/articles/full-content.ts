@@ -18,7 +18,7 @@ const article: DemoArticle = {
   contentHtml: `
     <p>Many sites put only the first paragraph or two in their feed, so you have to leave your reader to finish the article. Lion Reader can fetch the complete article for you and show it right where you&rsquo;re reading &mdash; cleaned up, without the site&rsquo;s ads and navigation, but with its images and formatting intact. <a href="/demo/all?entry=email-newsletters">Newsletters</a> and <a href="/demo/all?entry=save-for-later">saved articles</a> already arrive complete, so this is for the sites you follow.</p>
 
-    <p>Press <strong>Full Content</strong> at the top of an article &mdash; including this one &mdash; to load the complete version. The choice sticks for that subscription, so its new articles arrive complete from then on. Press it again to go back to the feed&rsquo;s version. Lion Reader fetches the page as anyone without a login would see it, so paywalled articles still show only their public part.</p>
+    <p>Press <strong>Full Content</strong> at the top of an article to load the complete version. (The articles in this demo are already complete, so it isn&rsquo;t shown here.) The choice sticks for that subscription, so its new articles arrive complete from then on. Press it again to go back to the feed&rsquo;s version. Lion Reader fetches the page as anyone without a login would see it, so paywalled articles still show only their public part.</p>
 
     <p>Once you have the full text, <a href="/demo/all?entry=ai-summaries">summaries</a> and <a href="/demo/all?entry=text-to-speech">listening</a> cover the whole article, not just the teaser.</p>
   `,

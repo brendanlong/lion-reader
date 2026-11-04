@@ -34,6 +34,8 @@ export interface EntryContentOptions {
    * jump from UTC. Client renders always use the visitor's zone.
    */
   ssrDateTimeZone?: string;
+  /** Hide the full content toggle, for where there's no page to fetch. */
+  hideFullContent?: boolean;
   /** Extra content to render around a specific entry's body. */
   renderSlots?: (entryId: string) => EntryContentSlots | undefined;
 }

@@ -21,6 +21,7 @@ import { patchServerEntryMetadata } from "@/lib/local-db/entries";
 import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import { useMarkReadOn, type MarkReadOn } from "@/lib/hooks/useMarkReadOn";
 import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
@@ -232,6 +233,22 @@ describe("EntryContent", () => {
     expect(
       screen.queryByRole("button", { name: "Fetch and display full article content" }) !== null
     ).toBe(offered);
+  });
+
+  it("offers the full content toggle unless the mount hides it", async () => {
+    const toggle = { name: "Fetch and display full article content" };
+    const { unmount } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    expect(await screen.findByRole("button", toggle)).toBeInTheDocument();
+    unmount();
+
+    renderEntryContent(
+      <EntryContentOptionsProvider value={{ hideFullContent: true }}>
+        <EntryContent entryId="entry-1" />
+      </EntryContentOptionsProvider>,
+      baseHandlers()
+    );
+    expect(await screen.findByRole("link", { name: "The Great Article" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", toggle)).not.toBeInTheDocument();
   });
 
   it("shows the error fallback when entries.get fails", async () => {

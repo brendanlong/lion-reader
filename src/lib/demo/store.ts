@@ -54,10 +54,6 @@ export type DemoProcedures = {
     Outputs["entries"]["markAllRead"]
   >;
   "entries.setStarred": Handler<Inputs["entries"]["setStarred"], Outputs["entries"]["setStarred"]>;
-  "entries.fetchFullContent": Handler<
-    Inputs["entries"]["fetchFullContent"],
-    Outputs["entries"]["fetchFullContent"]
-  >;
   "tags.list": Handler<Inputs["tags"]["list"], Outputs["tags"]["list"]>;
   "subscriptions.list": Handler<Inputs["subscriptions"]["list"], Outputs["subscriptions"]["list"]>;
   "subscriptions.get": Handler<Inputs["subscriptions"]["get"], Outputs["subscriptions"]["get"]>;
@@ -108,7 +104,6 @@ interface EntryState {
   starred: boolean;
   readChangedAt: Date | null;
   updatedAt: Date;
-  fullContentFetchedAt: Date | null;
 }
 
 interface SubscriptionState {
@@ -119,7 +114,6 @@ interface SubscriptionState {
   originalTitle: string;
   description: string | null;
   tagIds: string[];
-  fetchFullContent: boolean;
   deleted: boolean;
   members: Set<string>;
 }
@@ -215,7 +209,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         originalTitle: sub.title,
         description: sub.description,
         tagIds: [sub.tagId],
-        fetchFullContent: false,
         deleted: false,
         members: new Set(),
       },
@@ -231,7 +224,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         starred: entry.starred,
         readChangedAt: null,
         updatedAt: entry.publishedAt ?? entry.fetchedAt,
-        fullContentFetchedAt: null,
       },
     ])
   );
@@ -355,23 +347,17 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
   }
 
   function toFullEntry(state: EntryState): FullEntry {
-    const contentCleaned = state.entry.contentHtml;
     return {
       ...toListItem(state),
       contentOriginal: null,
-      contentCleaned,
+      contentCleaned: state.entry.contentHtml,
       feedUrl: null,
       unsubscribeUrl: null,
       fullContentOriginal: null,
-      // "Full content" of a self-contained demo article is the article itself.
-      fullContentCleaned: state.fullContentFetchedAt ? contentCleaned : null,
-      fullContentFetchedAt: state.fullContentFetchedAt,
+      fullContentCleaned: null,
+      fullContentFetchedAt: null,
       fullContentError: null,
-      // The saved subscription has no settings.
-      fetchFullContent:
-        originOf(state) === DEMO_SAVED_SUBSCRIPTION_ID
-          ? false
-          : (subscriptionOf(state)?.fetchFullContent ?? false),
+      fetchFullContent: false,
     };
   }
 
@@ -391,7 +377,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         const tag = tags.get(id);
         return tag ? [{ id: tag.id, name: tag.name, color: tag.color }] : [];
       }),
-      fetchFullContent: sub.fetchFullContent,
+      fetchFullContent: false,
     };
   }
 
@@ -656,12 +642,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       };
     },
 
-    "entries.fetchFullContent": (input) => {
-      const state = requireEntry(input.id);
-      state.fullContentFetchedAt = new Date();
-      return { success: true, entry: toFullEntry(state) };
-    },
-
     "tags.list": () => ({
       items: [...tags.values()].map((tag) => ({
         id: tag.id,
@@ -734,9 +714,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         }
         sub.title = title ?? sub.originalTitle;
       }
-      if (input.fetchFullContent !== undefined) {
-        sub.fetchFullContent = input.fetchFullContent;
-      }
       return toSubscription(sub);
     },
 
@@ -784,7 +761,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
         originalTitle: input.name,
         description: null,
         tagIds: [],
-        fetchFullContent: false,
         deleted: false,
         members: new Set(),
       };
