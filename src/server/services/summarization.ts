@@ -219,7 +219,9 @@ export async function generateSummary(
         modelRef.provider === "anthropic"
           ? MAX_OUTPUT_TOKENS_ANTHROPIC
           : MAX_OUTPUT_TOKENS_OPENAI_COMPAT,
-      ...(modelRef.provider !== "anthropic" ? { reasoningEffort: "medium" as const } : {}),
+      // Summarizing needs no reasoning, which gpt-oss bills as output tokens
+      // and makes the summary slower; "low" is the least it accepts.
+      ...(modelRef.provider !== "anthropic" ? { reasoningEffort: "low" as const } : {}),
     });
 
     if (!responseText) {
