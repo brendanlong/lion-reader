@@ -93,6 +93,8 @@ export interface UseNarrationReturn {
   stop: () => void;
   /** Whether narration is supported in this browser */
   isSupported: boolean;
+  /** Whether it's still finding out if cloud voices are available; play waits. */
+  isCheckingVoices: boolean;
 }
 
 /**

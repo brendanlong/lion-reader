@@ -604,10 +604,32 @@ describe("narration that finishes generating after the user moved on", () => {
       wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
     });
     await waitFor(() => expect(callsFor("narration.listVoiceModels")).toHaveLength(1));
-    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeEnabled());
 
     fireEvent.click(screen.getByRole("button", { name: "Listen" }));
     await waitFor(() => expect(speech.speak).toHaveBeenCalledTimes(1));
+  });
+
+  it("holds Listen until it knows whether cloud voices are available", async () => {
+    localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "cloud" }));
+    vi.stubGlobal(
+      "MediaSource",
+      class extends EventTarget {
+        static isTypeSupported = () => true;
+      }
+    );
+    let answer: (value: unknown) => void = () => {};
+    const { callsFor } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: {
+        "narration.listVoiceModels": () => new Promise((resolve) => (answer = resolve)),
+      },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+
+    await waitFor(() => expect(callsFor("narration.listVoiceModels")).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Listen" })).toBeDisabled();
+    await act(async () => answer({ models: [], defaultModelId: "" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeEnabled());
   });
 
   it("doesn't let an abandoned cloud request stop the playback that replaced it", async () => {
@@ -653,6 +675,7 @@ describe("narration that finishes generating after the user moved on", () => {
       wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
     });
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Listen" }));
     await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(1));
 

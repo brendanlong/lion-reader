@@ -10,7 +10,6 @@ import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.TokenStore
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
-import com.lionreader.shared.narration.SpeechInterrupted
 import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.sync.RetentionPolicy
 import com.lionreader.shared.sync.SyncEngine
@@ -118,8 +117,8 @@ internal constructor(
 
     /**
      * The cloud model and voice to narrate with: the chosen [model] and [voice] if the server still
-     * offers them, else its defaults; null when it offers this account none. Throws the
-     * [com.lionreader.shared.narration.SpeechException] saying why it couldn't be asked.
+     * offers them, else its defaults; null when it offers this account none or can't be reached
+     * (cloud voices couldn't play either). Throws [SpeechUnavailable] when the server refuses.
      */
     suspend fun cloudVoice(model: String?, voice: String?): ResolvedVoice? {
         val available =
@@ -132,12 +131,7 @@ internal constructor(
                     ApiFailure.SignedOut -> throw SpeechUnavailable("Sign in to use cloud voices.")
                     is ApiFailure.Rejected ->
                         throw SpeechUnavailable(why.message ?: "Cloud voices aren't available.")
-                    // Moving to the next article mustn't need the network just to find out again.
-                    else ->
-                        voiceModels.value
-                            ?: throw SpeechInterrupted(
-                                "Couldn't reach Lion Reader for cloud voices."
-                            )
+                    else -> return null
                 }
             }
         return available.resolve(model, voice)

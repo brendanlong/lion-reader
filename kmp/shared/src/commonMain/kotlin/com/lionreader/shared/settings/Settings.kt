@@ -69,8 +69,9 @@ enum class NarrationEngine {
 
     /**
      * The engine narration uses: the device's voices instead of cloud ones when the server offers
-     * the account none (no provider key, or a plan without them). [cloudVoices] is null until the
-     * server has answered, when the choice stands. The web's `narrationProvider` is the same.
+     * the account none (no provider key, or a plan without them) or couldn't be reached, for which
+     * pass an empty list. [cloudVoices] is null until the server has answered, when the choice
+     * stands. The web's `narrationProvider` is the same.
      */
     fun inUse(cloudVoices: VoiceModels?): NarrationEngine =
         if (this == CLOUD && cloudVoices?.models?.isEmpty() == true) DEVICE else this

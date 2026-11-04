@@ -208,15 +208,17 @@ export function loadNarrationSettings(): NarrationSettings {
 /**
  * The provider narration uses: built-in voices instead of cloud ones when the
  * browser can't stream audio, or `narration.listVoiceModels` lists none for
- * the user (no provider key, or a plan without them). Until it answers, the
+ * the user (no provider key, or a plan without them) or fails (the server
+ * can't be reached, so neither could cloud voices). Until it answers, the
  * choice stands.
  */
 export function narrationProvider(
   provider: TTSProviderId,
-  cloudVoices: { models: unknown[] } | undefined,
+  cloudVoices: { data?: { models: unknown[] }; isError: boolean },
   canStreamAudio: boolean
 ): TTSProviderId {
-  const unavailable = !canStreamAudio || cloudVoices?.models.length === 0;
+  const unavailable =
+    !canStreamAudio || cloudVoices.isError || cloudVoices.data?.models.length === 0;
   return provider === "cloud" && unavailable ? "browser" : provider;
 }
 

@@ -262,16 +262,21 @@ describe("highlighting settings", () => {
 });
 
 describe("narrationProvider", () => {
-  const listed = { models: [{}] };
-  const none = { models: [] };
+  const listed = { data: { models: [{}] }, isError: false };
+  const none = { data: { models: [] }, isError: false };
+  const pending = { isError: false };
+  const failed = { isError: true };
 
   it("uses cloud voices while the server lists some, or hasn't answered yet", () => {
     expect(narrationProvider("cloud", listed, true)).toBe("cloud");
-    expect(narrationProvider("cloud", undefined, true)).toBe("cloud");
+    expect(narrationProvider("cloud", pending, true)).toBe("cloud");
   });
 
-  it("uses built-in voices when the server lists no cloud voices", () => {
+  it("uses built-in voices when the server lists no cloud voices or can't be reached", () => {
     expect(narrationProvider("cloud", none, true)).toBe("browser");
+    expect(narrationProvider("cloud", failed, true)).toBe("browser");
+    // A refetch that failed keeps the old answer's data.
+    expect(narrationProvider("cloud", { ...listed, isError: true }, true)).toBe("browser");
   });
 
   it("uses built-in voices when the browser can't stream cloud audio", () => {

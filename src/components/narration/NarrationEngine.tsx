@@ -38,12 +38,12 @@ export function NarrationEngineImpl({ onChange, ...config }: NarrationEngineProp
     []
   );
 
-  const { state, isSupported } = narration;
+  const { state, isSupported, isCheckingVoices } = narration;
 
   // Layout effects, so the view re-renders with a new state before paint.
   useLayoutEffect(() => {
-    onChange({ ...controls, state, isSupported });
-  }, [onChange, controls, state, isSupported]);
+    onChange({ ...controls, state, isSupported, isCheckingVoices });
+  }, [onChange, controls, state, isSupported, isCheckingVoices]);
   useLayoutEffect(() => () => onChange(null), [onChange]);
 
   return null;

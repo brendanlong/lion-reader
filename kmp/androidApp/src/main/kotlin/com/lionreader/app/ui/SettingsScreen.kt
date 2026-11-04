@@ -280,24 +280,24 @@ private fun NarrationSettings(
         produceState<List<VoiceOption>?>(null) {
             value = runCatching { graph.systemTts.voices() }.getOrDefault(emptyList())
         }
-    // Null while loading; empty when this account has none (no speech provider
-    // key) or the server can't be reached.
     val account by graph.accounts.account.collectAsStateWithLifecycle()
-    // What narration last heard (it works offline too), until the server answers again.
+    // What narration last heard, until the server answers again.
     val known by
         remember(account) { account?.voiceModels ?: MutableStateFlow(null) }
             .collectAsStateWithLifecycle()
-    var asked by remember(account) { mutableStateOf(false) }
+    var unreachable by remember(account) { mutableStateOf(false) }
     LaunchedEffect(account) {
         try {
             account?.fetchVoiceModels(settings.cloudVoiceModel, settings.cloudVoice)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {}
-        asked = true
+        } catch (_: Exception) {
+            unreachable = true
+        }
     }
-    val cloud = known ?: VoiceModels(emptyList(), "").takeIf { asked }
-    val inUse = settings.narrationEngine.inUse(known)
+    // Null while loading; empty when this account has none, or the server can't be reached.
+    val cloud = if (unreachable || account == null) VoiceModels(emptyList(), "") else known
+    val inUse = settings.narrationEngine.inUse(cloud)
     Section("Narration voices") {
         val engines =
             NarrationEngine.entries.filter { engine ->
@@ -344,8 +344,7 @@ private fun NarrationSettings(
                 val resolved = cloud?.resolve(settings.cloudVoiceModel, settings.cloudVoice)
                 if (resolved == null) {
                     Text(
-                        if (cloud == null) "Loading cloud voices…"
-                        else "Couldn't reach Lion Reader for cloud voices.",
+                        "Loading cloud voices…",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -68,7 +68,7 @@ export function NarrationSettings() {
     placeholderData: keepPreviousData,
   });
   const cloudVoiceModels = voiceModelsQuery.data?.models ?? [];
-  const provider = narrationProvider(settings.provider, voiceModelsQuery.data, canStreamAudio);
+  const provider = narrationProvider(settings.provider, voiceModelsQuery, canStreamAudio);
 
   // Load voices on mount (only if supported)
   useEffect(() => {
