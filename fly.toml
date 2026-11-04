@@ -57,9 +57,10 @@ kill_timeout = 30
   # flags leaves them unset, which only means the User-Agent omits the SHA
   # suffix and /api/health reports no commit/buildTime.
 
-  # apple/google are open to the public; email is allowed only with a valid invite.
-  ALLOWED_SIGNUP_PROVIDERS = "apple,google,email"
-  ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "apple,google"
+  # Every provider is open to the public. Email signup needs MAILGUN_SENDING_KEY
+  # (verification) and the TURNSTILE_* secrets (CAPTCHA).
+  ALLOWED_SIGNUP_PROVIDERS = "apple,google,discord,email"
+  ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "apple,google,discord,email"
 
   # lionreader.com only. The hosted instance is not offered to EU users: require the not-in-the-EU
   # certification at signup and show the "not available in the EU" notice. Unset
@@ -116,6 +117,8 @@ kill_timeout = 30
 
   # lionreader.com only. Newsletters.
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"
+  # Account emails; MAILGUN_SENDING_KEY is a secret (terraform/mailgun.tf).
+  MAILGUN_DOMAIN = "app.lionreader.com"
 
   # Prometheus metrics
   METRICS_ENABLED = "true"

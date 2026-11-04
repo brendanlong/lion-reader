@@ -22,6 +22,7 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
 import { PASSWORD_MIN_LENGTH, passwordLengthError } from "@/lib/password";
+import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,12 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  // Turnstile loads once someone starts on the email form, so Cloudflare sees
+  // only people signing up with a password (privacy policy).
+  const [captchaStarted, setCaptchaStarted] = useState(false);
+  const turnstileSiteKey = signupConfigData?.turnstileSiteKey ?? null;
   const [errors, setErrors] = useState<{
     email?: string;
     password?: string;
@@ -104,6 +111,8 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
       router.refresh();
     },
     onError: (error) => {
+      // The server spent the token whether or not it passed.
+      setCaptchaResetKey((key) => key + 1);
       // Handle specific error codes
       if (error.data?.code === "CONFLICT") {
         setErrors({ email: "An account with this email already exists" });
@@ -160,6 +169,7 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
       email,
       password,
       inviteToken: inviteToken ?? undefined,
+      captchaToken: captchaToken ?? undefined,
     });
   };
 
@@ -245,7 +255,11 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            onFocus={() => setCaptchaStarted(true)}
+            className="space-y-4"
+          >
             <Input
               id="email"
               type="email"
@@ -282,7 +296,20 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
               disabled={isSubmitting}
             />
 
-            <Button type="submit" className="w-full" loading={isSubmitting}>
+            {turnstileSiteKey && captchaStarted && (
+              <TurnstileWidget
+                siteKey={turnstileSiteKey}
+                onToken={setCaptchaToken}
+                resetKey={captchaResetKey}
+              />
+            )}
+
+            <Button
+              type="submit"
+              className="w-full"
+              loading={isSubmitting}
+              disabled={turnstileSiteKey !== null && !captchaToken}
+            >
               Create account
             </Button>
           </form>

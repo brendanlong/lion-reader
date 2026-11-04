@@ -19,8 +19,8 @@
  *   - duplicate email -> button re-enables, shows the error, no navigation.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TRPCClientError } from "@trpc/client";
 import RegisterPage from "@/app/(public)/(auth)/register/page";
 import {
@@ -55,6 +55,7 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
       requiresInvite: false,
       allowedSignupProviders: ["email", "google", "apple", "discord"],
       publicSignupProviders: ["email", "google", "apple", "discord"],
+      turnstileSiteKey: null,
     }),
     ...overrides,
   };
@@ -123,5 +124,66 @@ describe("RegisterPage auto-login + submit-button lifecycle", () => {
     ).toBeInTheDocument();
     expect(button).toBeEnabled();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+});
+
+describe("RegisterPage CAPTCHA", () => {
+  let solve: ((token: string) => void) | null = null;
+  const reset = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubMemoryLocalStorage();
+    solve = null;
+    window.turnstile = {
+      render: (_container, options) => {
+        solve = options.callback;
+        return "widget";
+      },
+      reset,
+      remove: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    delete window.turnstile;
+  });
+
+  it("sends the solved token and needs a new one after a failed submit", async () => {
+    const register = vi.fn(() => {
+      throw trpcError("BAD_REQUEST", "The CAPTCHA check failed. Please try again.");
+    });
+    await renderRegister(
+      baseHandlers({
+        "auth.signupConfig": () => ({
+          euRestricted: false,
+          requiresInvite: false,
+          allowedSignupProviders: ["email"],
+          publicSignupProviders: ["email"],
+          turnstileSiteKey: "site-key",
+        }),
+        "auth.register": register,
+      })
+    );
+    const button = screen.getByRole("button", { name: "Create account" });
+
+    // Cloudflare gets nothing until someone starts on the email form.
+    expect(solve).toBeNull();
+    fireEvent.focus(screen.getByLabelText("Email"));
+    fillForm();
+    expect(button).toBeDisabled();
+
+    await waitFor(() => expect(solve).not.toBeNull());
+    act(() => solve?.("solved-token"));
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(register).toHaveBeenCalledWith(
+        expect.objectContaining({ captchaToken: "solved-token" })
+      )
+    );
+    await waitFor(() => expect(reset).toHaveBeenCalledWith("widget"));
+    expect(button).toBeDisabled();
   });
 });

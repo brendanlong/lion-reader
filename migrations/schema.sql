@@ -646,6 +646,16 @@ CREATE TABLE public.discord_api_token_links (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TABLE public.email_tokens (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    purpose text NOT NULL,
+    token_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT email_tokens_purpose_known CHECK ((purpose = ANY (ARRAY['verify_email'::text, 'reset_password'::text])))
+);
+
 CREATE TABLE public.entries (
     id uuid NOT NULL,
     owner_feed_id uuid,
@@ -1127,6 +1137,12 @@ ALTER TABLE ONLY public.blocked_senders
 ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_pkey PRIMARY KEY (discord_id);
 
+ALTER TABLE ONLY public.email_tokens
+    ADD CONSTRAINT email_tokens_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.email_tokens
+    ADD CONSTRAINT email_tokens_token_hash_key UNIQUE (token_hash);
+
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
 
@@ -1269,6 +1285,8 @@ CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (user_id);
 
 CREATE INDEX idx_discord_api_token_links_token ON public.discord_api_token_links USING btree (token_id);
+
+CREATE INDEX idx_email_tokens_user ON public.email_tokens USING btree (user_id);
 
 CREATE UNIQUE INDEX idx_entries_greader_item_id ON public.entries USING btree (greader_item_id);
 
@@ -1444,6 +1462,9 @@ ALTER TABLE ONLY public.blocked_senders
 
 ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_token_id_fkey FOREIGN KEY (token_id) REFERENCES public.api_tokens(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.email_tokens
+    ADD CONSTRAINT email_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_owner_feed_id_feeds_id_fk FOREIGN KEY (owner_feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;

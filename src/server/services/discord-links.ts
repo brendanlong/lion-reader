@@ -44,6 +44,7 @@ export interface DiscordUser {
 
 const userConsentColumns = {
   userId: users.id,
+  emailVerifiedAt: users.emailVerifiedAt,
   tosAgreedAt: users.tosAgreedAt,
   privacyPolicyAgreedAt: users.privacyPolicyAgreedAt,
   notEuAgreedAt: users.notEuAgreedAt,

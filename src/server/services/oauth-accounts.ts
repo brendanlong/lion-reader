@@ -1,10 +1,10 @@
 /**
  * OAuth Account Links Service
  *
- * Linking/unlinking a social provider (Google/Apple/Discord) to an *existing*
- * signed-in account. The login/signup side of OAuth — where the provider
- * identity decides which account you get — lives in
- * `src/server/auth/oauth/callback.ts` instead.
+ * Adding and removing a social provider (Google/Apple/Discord) link on an
+ * existing account: from Settings, or when a sign-in matched the account by
+ * email. Deciding which account a sign-in gets — or creating one — lives in
+ * `src/server/auth/oauth/callback.ts`.
  *
  * Linking and unlinking add or remove a way to sign in, so both revoke the user's
  * other sessions (SECURITY.md §4) via `revokeOtherUserSessionsOrReport`, which owns
@@ -13,15 +13,16 @@
  * really changed — see each function for what doesn't count.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
-import type { Database } from "@/server/db";
-import { oauthAccounts, users } from "@/server/db/schema";
+import type { Database, DbOrTx } from "@/server/db";
+import { oauthAccounts, sessions, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/errors";
 import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
 import { oauthTokenColumns, type OAuthTokens } from "@/server/auth/oauth/token-exchange";
+import { removeUnverifiedHolderCredentials } from "@/server/services/account-credentials";
 
 export interface AttachOAuthAccountParams extends OAuthTokens {
   /** The user the provider account is being attached to. */
@@ -48,7 +49,7 @@ export interface AttachOAuthAccountParams extends OAuthTokens {
  * @throws `oauthCallbackFailed` when this provider account belongs to another user
  */
 export async function attachOAuthAccount(
-  db: Database,
+  db: DbOrTx,
   params: AttachOAuthAccountParams
 ): Promise<"linked" | "updated"> {
   const { userId, provider, providerAccountId } = params;
@@ -102,6 +103,60 @@ export async function attachOAuthAccount(
       throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
     }
     return "linked";
+  });
+}
+
+/**
+ * A sign-in whose verified provider email matches an account nobody has proven
+ * owns that address. Whoever created the account may have registered someone
+ * else's email to wait for its owner to sign in (pre-account takeover), so the
+ * provider identity wins: the registrant's signup agreements are cleared for
+ * the owner to give their own, the password is cleared, sessions are revoked,
+ * every other credential is removed (`removeUnverifiedHolderCredentials`), the
+ * email becomes verified, and only this provider account stays linked. A link
+ * from Settings never comes here, since the session already established who
+ * the user is (`linkOAuthAccount`).
+ *
+ * If the email was verified in the meantime, this is an ordinary attach.
+ *
+ * @returns whether the account was claimed
+ */
+export async function claimUnverifiedAccount(
+  db: Database,
+  params: AttachOAuthAccountParams
+): Promise<boolean> {
+  const { userId } = params;
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const stillUnverified = sql`EXISTS (
+      SELECT 1 FROM ${users} WHERE ${users.id} = ${userId} AND ${users.emailVerifiedAt} IS NULL
+    )`;
+
+    // Sessions before the user row, the order `updateLastActiveAt` takes them in.
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now })
+      .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), stillUnverified));
+
+    const claimed = await tx
+      .update(users)
+      .set({
+        passwordHash: null,
+        emailVerifiedAt: now,
+        tosAgreedAt: null,
+        privacyPolicyAgreedAt: null,
+        notEuAgreedAt: null,
+        updatedAt: now,
+      })
+      .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
+      .returning({ id: users.id });
+
+    if (claimed.length > 0) {
+      await removeUnverifiedHolderCredentials(tx, userId, now);
+    }
+
+    await attachOAuthAccount(tx, params);
+    return claimed.length > 0;
   });
 }
 

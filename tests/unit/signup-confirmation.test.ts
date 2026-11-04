@@ -1,17 +1,16 @@
 import { describe, it, expect, afterEach } from "vitest";
 
-import { isSignupConfirmed } from "@/server/auth/confirmation";
+import { isSignupConfirmed, type ConfirmationFields } from "@/server/auth/confirmation";
 import { signupConfig } from "@/server/config/env";
 
 const NEVER = null;
 const NOW = new Date("2026-07-16T00:00:00.000Z");
 
-function user(overrides: {
-  tosAgreedAt: Date | null;
-  privacyPolicyAgreedAt: Date | null;
-  notEuAgreedAt: Date | null;
-}) {
-  return overrides;
+function user(
+  overrides: Omit<ConfirmationFields, "emailVerifiedAt">,
+  emailVerifiedAt: Date | null = NOW
+) {
+  return { emailVerifiedAt, ...overrides };
 }
 
 describe("isSignupConfirmed", () => {
@@ -35,6 +34,15 @@ describe("isSignupConfirmed", () => {
     expect(signupConfig.euRestricted).toBe(false);
     process.env.EU_RESTRICTED = "1";
     expect(signupConfig.euRestricted).toBe(false);
+  });
+
+  it("is not confirmed until the email is verified", () => {
+    delete process.env.EU_RESTRICTED;
+    expect(
+      isSignupConfirmed(
+        user({ tosAgreedAt: NOW, privacyPolicyAgreedAt: NOW, notEuAgreedAt: NOW }, NEVER)
+      )
+    ).toBe(false);
   });
 
   describe("when the instance is not EU-restricted", () => {

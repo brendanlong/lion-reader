@@ -23,7 +23,9 @@ import {
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { users } from "@/server/db/schema";
-import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
+import { signupConfig, ALL_SIGNUP_PROVIDERS, readTurnstileKeys } from "@/server/config/env";
+import { verifyCaptcha } from "@/server/auth/captcha";
+import { getClientIp } from "@/server/http/client-ip";
 import { revokeSessionByToken, startSession } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
@@ -38,6 +40,13 @@ import { startOAuthFlow } from "@/server/auth/oauth/providers";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { unlinkOAuthAccount } from "@/server/services/oauth-accounts";
+import {
+  requestPasswordReset,
+  resetPassword,
+  sendVerificationEmail,
+  sendVerificationEmailInBackground,
+  verifyEmail,
+} from "@/server/services/account-email";
 import { getGoogleDocsGrant } from "@/server/google/tokens";
 import {
   DISCORD_BOT_ENABLED,
@@ -71,6 +80,8 @@ const registerInputSchema = z.object({
   email: emailSchema,
   password: passwordSchema(),
   inviteToken: z.string().optional(),
+  /** The Turnstile token, required when `signupConfig` returns a `turnstileSiteKey` */
+  captchaToken: z.string().max(2048).optional(),
 });
 
 /**
@@ -152,7 +163,9 @@ export const authRouter = createTRPCRouter({
     .input(registerInputSchema)
     .output(sessionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { email, password, inviteToken } = input;
+      const { email, password, inviteToken, captchaToken } = input;
+
+      await verifyCaptcha(captchaToken, getClientIp(ctx.headers));
 
       // Check if email already exists
       const existingUser = await ctx.db
@@ -191,6 +204,7 @@ export const authRouter = createTRPCRouter({
       // Announcement-feed subscription + Getting Started article (fire-and-forget,
       // errors are caught internally)
       void runPostSignupTasks(ctx.db, result.user.userId);
+      sendVerificationEmailInBackground(ctx.db, { id: result.user.userId, email });
 
       return {
         user: {
@@ -360,6 +374,8 @@ export const authRouter = createTRPCRouter({
          * page shows a notice that the service is not available in the EU.
          */
         euRestricted: z.boolean(),
+        /** Cloudflare Turnstile site key for the password signup form, when it has a CAPTCHA. */
+        turnstileSiteKey: z.string().nullable(),
       })
     )
     .query(() => {
@@ -369,6 +385,7 @@ export const authRouter = createTRPCRouter({
         allowedSignupProviders: [...signupConfig.allowedSignupProviders],
         publicSignupProviders,
         euRestricted: signupConfig.euRestricted,
+        turnstileSiteKey: readTurnstileKeys()?.siteKey ?? null,
       };
     }),
 
@@ -465,6 +482,71 @@ export const authRouter = createTRPCRouter({
         .where(eq(users.id, userId));
 
       return { success: true };
+    }),
+
+  /** Email the signed-in user a new link to verify their address. */
+  resendVerificationEmail: protectedProcedure
+    .input(z.object({}).optional())
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      const { user } = ctx.session;
+      if (!user.emailVerifiedAt) {
+        await sendVerificationEmail(ctx.db, user);
+      }
+      return { success: true };
+    }),
+
+  /** Verify the signed-in user's email with the token from the emailed link. */
+  verifyEmail: protectedProcedure
+    .input(z.object({ token: z.string().min(1) }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await verifyEmail(ctx.db, ctx.session.user.id, input.token);
+      return { success: true };
+    }),
+
+  /**
+   * Email a password-reset link to the address, if it has an account. Succeeds
+   * either way, so it doesn't reveal which addresses have accounts.
+   */
+  requestPasswordReset: expensivePublicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/request-password-reset",
+        tags: ["Auth"],
+        summary: "Email a password reset link",
+      },
+    })
+    .input(z.object({ email: emailSchema }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await requestPasswordReset(ctx.db, input.email);
+      return { success: true };
+    }),
+
+  /** Set a new password with the token from the emailed link, and sign in. */
+  resetPassword: expensivePublicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/auth/reset-password",
+        tags: ["Auth"],
+        summary: "Reset password with an emailed token",
+      },
+    })
+    .input(z.object({ token: z.string().min(1), newPassword: passwordSchema("New password") }))
+    .output(z.object({ sessionToken: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = await resetPassword(ctx.db, input.token, input.newPassword);
+      // The returned sessionToken stays in the body for REST/OpenAPI clients,
+      // which get no cookie.
+      const { token } = await startSession(ctx.db, {
+        userId,
+        requestHeaders: ctx.headers,
+        resHeaders: ctx.resHeaders,
+      });
+      return { sessionToken: token };
     }),
 
   /**

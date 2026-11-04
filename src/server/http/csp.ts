@@ -26,6 +26,8 @@
 
 import { embedCanonicalHostnames } from "@lion-reader/sanitizer";
 import { goatCounterConfig } from "@/lib/analytics/goatcounter";
+import { TURNSTILE_ORIGIN } from "@/lib/turnstile";
+import { readTurnstileKeys } from "@/server/config/env";
 
 /**
  * Builds the Content-Security-Policy header value for a request.
@@ -96,7 +98,8 @@ export function buildContentSecurityPolicy(nonce: string): string {
 /**
  * Builds the static Content-Security-Policy for the public routes (demo,
  * login, register, terms, privacy — see `isPublicStaticPath` in
- * `src/proxy.ts`). Identical to the strict policy except for `script-src`:
+ * `src/proxy.ts`). Identical to the strict policy except for `script-src`
+ * (and `frame-src`, for Turnstile):
  *
  * - `'unsafe-inline'` instead of a nonce, so the statically-prerendered HTML's
  *   inline scripts (our head scripts, next-themes, Next's streamed flight-data
@@ -105,6 +108,8 @@ export function buildContentSecurityPolicy(nonce: string): string {
  *   browser IGNORE `'unsafe-inline'` and the host/`'self'` allowlist, which
  *   with no nonce would block every script on the page. Without it, chunk
  *   loading is covered by the `'self'`/CDN host allowlist.
+ * - When Turnstile is configured, its script and challenge frame, for the
+ *   register page's CAPTCHA. The app's own pages load no third-party script.
  *
  * Inline-script injection is the exact vector the strict policy exists to
  * stop, so this policy is only safe on pages that render no user-supplied
@@ -112,11 +117,18 @@ export function buildContentSecurityPolicy(nonce: string): string {
  */
 export function buildPublicContentSecurityPolicy(): string {
   const isDev = process.env.NODE_ENV === "development";
-  return buildPolicy(`'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`);
+  const turnstile = readTurnstileKeys() ? ` ${TURNSTILE_ORIGIN}` : "";
+  return buildPolicy(
+    `'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}${turnstile}`,
+    turnstile
+  );
 }
 
-/** Shared directive list; `scriptSrcExtra` is appended to `script-src 'self'{cdn}`. */
-function buildPolicy(scriptSrcExtra: string): string {
+/**
+ * Shared directive list; `scriptSrcExtra` is appended to `script-src 'self'{cdn}`
+ * and `frameSrcExtra` to `frame-src`.
+ */
+function buildPolicy(scriptSrcExtra: string, frameSrcExtra = ""): string {
   const isDev = process.env.NODE_ENV === "development";
   // The CDN origin (leading space) when ASSET_PREFIX is set, "" otherwise.
   const assetPrefix = process.env.ASSET_PREFIX;
@@ -125,7 +137,7 @@ function buildPolicy(scriptSrcExtra: string): string {
     .map((host) => `https://${host}`)
     .join(" ");
   // The analytics beacon destination (leading space), "" when unconfigured.
-  // Only connect-src: we load no third-party script, so script-src is untouched.
+  // Only connect-src: the beacon is a request, not a script.
   // Scoped to the exact endpoint path, not just its origin — CSP host-sources
   // may carry a path and ignore the query when matching, so this still allows
   // our beacon while refusing any other path on that host.
@@ -142,7 +154,7 @@ function buildPolicy(scriptSrcExtra: string): string {
       isDev ? " ws:" : ""
     }`,
     "worker-src 'self' blob:",
-    `frame-src ${frameSrc}`,
+    `frame-src ${frameSrc}${frameSrcExtra}`,
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",

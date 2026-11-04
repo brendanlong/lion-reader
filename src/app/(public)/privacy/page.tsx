@@ -451,12 +451,17 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection id="inbound-email" title="Inbound Email (Mailgun)">
+          <LegalSubsection id="inbound-email" title="Email (Mailgun)">
             <LegalParagraph tight>
               If you use the email newsletter feature, we use Mailgun to receive emails sent to your
               unique ingest address and forward them to our servers, where they are stored as feed
               entries. Mailgun processes the sender, subject, and content of those emails in order
               to deliver them to us.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              We also use Mailgun to send account emails: the link that verifies your email address
+              when you sign up with a password, and password reset links you ask for. Mailgun
+              receives your email address and the message we send you.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink
@@ -465,6 +470,24 @@ export default function PrivacyPolicyPage() {
                 className="ui-text-sm"
               >
                 View Mailgun&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
+          <LegalSubsection id="signup-captcha" title="Signup CAPTCHA (Cloudflare Turnstile)">
+            <LegalParagraph tight>
+              When you start filling in the email-and-password signup form, it runs Cloudflare
+              Turnstile to check that you&apos;re not an automated bot. Turnstile runs in your
+              browser on the signup page only, and Cloudflare receives your IP address and
+              information about your browser to make that check. It sets no advertising cookies.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink
+                href="https://www.cloudflare.com/turnstile-privacy-policy/"
+                external
+                className="ui-text-sm"
+              >
+                View Cloudflare Turnstile&apos;s Privacy Policy &rarr;
               </TextLink>
             </p>
           </LegalSubsection>

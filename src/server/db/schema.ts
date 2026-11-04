@@ -260,6 +260,34 @@ export const apiTokens = pgTable(
   (table) => [index("idx_api_tokens_user").on(table.userId)]
 );
 
+export const EMAIL_TOKEN_PURPOSES = ["verify_email", "reset_password"] as const;
+export type EmailTokenPurpose = (typeof EMAIL_TOKEN_PURPOSES)[number];
+
+/**
+ * Single-use links we email (`src/server/auth/email-token.ts`). Token is stored
+ * as SHA-256 hash (never raw), like sessions.
+ */
+export const emailTokens = pgTable(
+  "email_tokens",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    purpose: text("purpose", { enum: EMAIL_TOKEN_PURPOSES }).notNull(),
+    tokenHash: text("token_hash").unique().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("idx_email_tokens_user").on(table.userId),
+    check(
+      "email_tokens_purpose_known",
+      sql`${table.purpose} IN ('verify_email', 'reset_password')`
+    ),
+  ]
+);
+
 // ============================================================================
 // DISCORD API-TOKEN LINKS
 // ============================================================================

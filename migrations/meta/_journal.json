@@ -1310,6 +1310,13 @@
       "when": 1793750400000,
       "tag": "0187_users_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0188_email_tokens",
+      "breakpoints": true
     }
   ]
 }

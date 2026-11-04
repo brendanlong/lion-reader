@@ -75,6 +75,7 @@ export async function createTestUser(options: CreateTestUserOptions = {}): Promi
     id: userId,
     email: `${emailPrefix}-${userId}@test.com`,
     passwordHash: "test-hash",
+    emailVerifiedAt: now,
     tosAgreedAt: now,
     privacyPolicyAgreedAt: now,
     notEuAgreedAt: now,

@@ -26,3 +26,20 @@ output "healthcheck_ping_urls" {
   }
   sensitive = true
 }
+
+output "mailgun_sending_key" {
+  description = "The app's MAILGUN_SENDING_KEY."
+  value       = mailgun_api_key.app_sending.secret
+  sensitive   = true
+}
+
+output "turnstile_site_key" {
+  description = "The app's TURNSTILE_SITE_KEY (public; it ships to the browser)."
+  value       = cloudflare_turnstile_widget.signup.sitekey
+}
+
+output "turnstile_secret_key" {
+  description = "The app's TURNSTILE_SECRET_KEY."
+  value       = cloudflare_turnstile_widget.signup.secret
+  sensitive   = true
+}

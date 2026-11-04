@@ -168,6 +168,33 @@ export const buildConfig = {
 };
 
 /**
+ * Outbound email (account verification and password reset), sent through
+ * Mailgun's US-region API. Off unless both are set; outside production an
+ * unsent email is logged instead (`src/server/email/send.ts`).
+ */
+export const outboundEmailConfig = {
+  /** The Mailgun sending domain; mail comes from noreply@ it. */
+  get mailgunDomain(): string | undefined {
+    return process.env.MAILGUN_DOMAIN || undefined;
+  },
+
+  /** A Mailgun sending key for that domain. */
+  get mailgunSendingKey(): string | undefined {
+    return process.env.MAILGUN_SENDING_KEY || undefined;
+  },
+};
+
+/**
+ * Cloudflare Turnstile, the CAPTCHA on password signup. Off unless both keys
+ * are set.
+ */
+export function readTurnstileKeys(): { siteKey: string; secretKey: string } | undefined {
+  const siteKey = process.env.TURNSTILE_SITE_KEY;
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
+  return siteKey && secretKey ? { siteKey, secretKey } : undefined;
+}
+
+/**
  * Email ingest (newsletter) configuration. Newsletters are off unless both
  * INGEST_EMAIL_DOMAIN and MAILGUN_WEBHOOK_SIGNING_KEY are set: there is no
  * default domain, since addresses on someone else's domain never reach us.

@@ -21,6 +21,7 @@ import { and, eq, inArray, lt, notExists, or, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import {
   apiTokens,
+  emailTokens,
   jobs,
   oauthAccessTokens,
   oauthAuthorizationCodes,
@@ -86,6 +87,7 @@ const OPML_IMPORT_RETENTION_MS = 30 * DAY_MS;
 export interface RetentionCleanupResult {
   sessions: number;
   apiTokens: number;
+  emailTokens: number;
   oauthAuthorizationCodes: number;
   oauthAccessTokens: number;
   oauthRefreshTokens: number;
@@ -120,6 +122,10 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
   const expiredApiTokens = await db
     .delete(apiTokens)
     .where(or(lt(apiTokens.expiresAt, expiryCutoff), lt(apiTokens.revokedAt, revokedCutoff)));
+
+  const expiredEmailTokens = await db
+    .delete(emailTokens)
+    .where(lt(emailTokens.expiresAt, expiryCutoff));
 
   const expiredAuthCodes = await db
     .delete(oauthAuthorizationCodes)
@@ -228,6 +234,7 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
   return {
     sessions: expiredSessions.rowCount ?? 0,
     apiTokens: expiredApiTokens.rowCount ?? 0,
+    emailTokens: expiredEmailTokens.rowCount ?? 0,
     oauthAuthorizationCodes: expiredAuthCodes.rowCount ?? 0,
     oauthAccessTokens: expiredAccessTokens.rowCount ?? 0,
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
