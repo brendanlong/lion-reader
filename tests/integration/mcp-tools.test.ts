@@ -11,6 +11,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { db } from "../../src/server/db";
 import { eq } from "drizzle-orm";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
@@ -22,6 +24,7 @@ import {
   createTestUser,
 } from "./helpers";
 import { getTools, toMcpError } from "../../src/server/mcp/tools";
+import { createMcpServer } from "../../src/server/mcp/server";
 import { createApiToken } from "../../src/server/auth/api-token";
 import { GET as restHandler } from "../../src/app/api/v1/[...path]/route";
 
@@ -81,6 +84,21 @@ describe("MCP tool argument validation", () => {
     // Internal service params must not be advertised
     expect(Object.keys(listSchema.properties)).not.toContain("maxLimit");
     expect(Object.keys(listSchema.properties)).not.toContain("userId");
+  });
+
+  it("advertises every tool's annotations to clients", async () => {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await createMcpServer(userId).connect(serverTransport);
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(clientTransport);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => [t.name, t.annotations])).toEqual(
+        getTools().map((t) => [t.name, t.annotations])
+      );
+    } finally {
+      await client.close();
+    }
   });
 
   it("rejects malformed arguments with InvalidParams", async () => {
