@@ -208,13 +208,30 @@ export interface SpeechChoice {
 }
 
 /**
+ * The host of a model's `group` that speaks on the user's own key: the first
+ * whose provider they have one for (even an unreadable one). The others speak
+ * on the server's keys, never another of the user's.
+ */
+function ownHostId(group: string[], keys: AiProviderKeys | undefined): string | undefined {
+  return group.find((hostId) => isOnUserKey(parseModelRef(hostId).provider, keys));
+}
+
+function isUnlisted(
+  unlisted: readonly Omit<UnlistedCatalog, "error">[],
+  hostId: string,
+  onUserKey: boolean
+): boolean {
+  const { provider } = parseModelRef(hostId);
+  return unlisted.some((down) => down.provider === provider && down.onUserKey === onUserKey);
+}
+
+/**
  * The models with voices the user can pick, from the hosts' `catalog`: those
  * with a host allowed on the key it'd run on (see `isModelAllowed`), by a plan
- * that includes cloud voices there. A host whose catalog is `unlisted` still
- * counts, if allowing it doesn't take its price, so its model stays while the
- * other hosts say it. A model is said on the user's own key by the first host
- * they have one for, and backed up by the others on the server's, which any
- * host of a model with several may run on where the plan lets it.
+ * that includes cloud voices there. A host on the server's key whose catalog
+ * is `unlisted` still counts, if allowing it doesn't take its price, so its
+ * model stays while the other hosts say it. Any host of a model with several
+ * may back the others up on the server's key, where the plan lets it.
  */
 export function pickableSpeechModels(
   catalog: SpeechHost[],
@@ -225,35 +242,36 @@ export function pickableSpeechModels(
     catalog.find((host) => host.onUserKey === onUserKey && normalizeModelRef(host.model.id) === id);
   const includesSpeech = (provider: SpeechProvider, onUserKey: boolean) =>
     planIncludesFeature(keysFor(keys, onUserKey), provider, "speechCharacters");
-  const usable = (host: SpeechHost | undefined): host is SpeechHost =>
-    !!host && host.model.voices.length > 0 && includesSpeech(host.model.provider, host.onUserKey);
   const allowed = (host: SpeechHost) =>
-    isModelAllowed(host.model.id, keysFor(keys, host.onUserKey), {
+    host.onUserKey ||
+    isModelAllowed(host.model.id, keysFor(keys, false), {
       pricePerMillionCharacters: host.model.pricePerMillionCharacters,
     });
-  const allowedWhileDown = (id: string) =>
-    unlisted.some(
-      ({ provider, onUserKey }) =>
-        provider === parseModelRef(id).provider &&
-        includesSpeech(provider, onUserKey) &&
-        isModelAllowed(id, keysFor(keys, onUserKey))
+  const allowedWhileDown = (hostId: string, onUserKey: boolean) => {
+    const { provider } = parseModelRef(hostId);
+    return (
+      !onUserKey &&
+      isUnlisted(unlisted, hostId, false) &&
+      isSpeechProvider(provider) &&
+      includesSpeech(provider, false) &&
+      isModelAllowed(hostId, keysFor(keys, false))
     );
-  const groups = new Map(catalog.map(({ model }) => [canonicalModelRef(model.id), model.id]));
-  return [...groups.entries()].flatMap(([id, member]): PickableSpeechModel[] => {
-    const group = failoverGroup(member);
-    const own = group.map((hostId) => listed(hostId, true)).find(usable);
-    const backups = group
-      .filter((hostId) => hostId !== (own && normalizeModelRef(own.model.id)))
-      .map((hostId) => listed(hostId, false))
-      .filter(usable);
+  };
+  const ids = new Set(catalog.map(({ model }) => canonicalModelRef(model.id)));
+  return [...ids].flatMap((id): PickableSpeechModel[] => {
+    const group = failoverGroup(id);
+    const ownId = ownHostId(group, keys);
+    const hosts = group
+      .flatMap((hostId) => {
+        const host = listed(hostId, hostId === ownId);
+        if (!host || host.model.voices.length === 0) return [];
+        if (!includesSpeech(host.model.provider, host.onUserKey)) return [];
+        const asFailover = group.length > 1 && planAllowsOnServerKey(keys, hostId);
+        return allowed(host) || asFailover ? [host] : [];
+      })
+      .sort((a, b) => Number(b.onUserKey) - Number(a.onUserKey));
     const isPickable =
-      !!own || backups.some(allowed) || group.some((hostId) => allowedWhileDown(hostId));
-    const hosts = [
-      ...(own ? [own] : []),
-      ...backups.filter(
-        (host) => allowed(host) || (group.length > 1 && planAllowsOnServerKey(keys, host.model.id))
-      ),
-    ];
+      hosts.some(allowed) || group.some((hostId) => allowedWhileDown(hostId, hostId === ownId));
     const [first] = hosts;
     if (!isPickable || !first) return [];
     const voices = new Map(
@@ -374,17 +392,16 @@ async function keepPickedVoice(
   const index = models.findIndex((candidate) => candidate.id === id);
   const model = models[index];
   if (!model || hasVoice(model, voice)) return "listed";
-  const hostDown = failoverGroup(model.id).some((hostId) =>
-    unlisted.some(({ provider }) => provider === parseModelRef(hostId).provider)
-  );
-  if (hostDown) return "unchecked";
+  const group = failoverGroup(model.id);
+  const ownId = ownHostId(group, keys);
+  if (group.some((hostId) => isUnlisted(unlisted, hostId, hostId === ownId))) return "unchecked";
   const host = model.hosts.find(
     ({ model: { provider } }) => SPEECH_PROVIDER_ADAPTERS[provider].findVoice
   );
   const provider = host?.model.provider;
   const findVoice = provider && SPEECH_PROVIDER_ADAPTERS[provider].findVoice;
   const apiKey = host && provider && getProviderApiKey(provider, keysFor(keys, host.onUserKey));
-  if (!host || !provider || !findVoice || !apiKey) return "missing";
+  if (!provider || !findVoice || !apiKey) return "missing";
 
   const slot = JSON.stringify([userId, provider, apiKey]);
   const now = Date.now();
@@ -493,7 +510,7 @@ function pricePerMillionCharacters(model: OpenRouterModel): number | undefined {
 export function defaultSpeechModelId(models: SpeechModel[]): string {
   const ids = new Set(models.map((model) => model.id));
   return (
-    DEFAULT_CLOUD_VOICE_MODELS.find((id) => ids.has(id)) ??
+    DEFAULT_CLOUD_VOICE_MODELS.map(canonicalModelRef).find((id) => ids.has(id)) ??
     models[0]?.id ??
     DEFAULT_CLOUD_VOICE_MODELS[0]
   );
@@ -524,8 +541,10 @@ function hasVoice(model: SpeechModel, voice: string): boolean {
 
 /** The id of the voice used when the user hasn't picked one. */
 export function defaultVoiceFor(model: SpeechModel): string {
-  const preferred = DEFAULT_CLOUD_VOICES[model.id];
-  return preferred && hasVoice(model, preferred) ? preferred : model.voices[0].id;
+  const preferred = failoverGroup(model.id)
+    .map((hostId) => DEFAULT_CLOUD_VOICES[hostId])
+    .find((voice) => voice && hasVoice(model, voice));
+  return preferred ?? model.voices[0].id;
 }
 
 export class SpeechRequestError extends Error {}

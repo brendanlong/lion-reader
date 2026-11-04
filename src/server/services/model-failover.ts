@@ -3,11 +3,10 @@
  * different hosts, each in the order to try them, separated by `;`, e.g.
  * `deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b`.
  * A request for one that fails (busy, down, or its key refused) goes to the
- * others in its group, on the server's keys: a user's own key is only used
- * the way they picked. Listing a model here allows it on the server's key as
- * a failover, even if `SERVER_KEY_MODELS` doesn't let users pick it. A cloud
- * voice model with several hosts is listed once, as its group's first ref, so
- * it stays listed while one host's catalog is down.
+ * others in its group, on the server's keys: a user's own key is used only
+ * for one host, never another of theirs. Listing a model here allows it on
+ * the server's key as a failover, even if `SERVER_KEY_MODELS` doesn't let
+ * users pick it.
  */
 
 import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";

@@ -190,6 +190,24 @@ describe("a model with several hosts", () => {
     expect(model.hosts).toEqual([ours(selfHosted)]);
   });
 
+  it("isn't kept listed by the user's own key's catalog being down", () => {
+    process.env.SERVER_KEY_MODELS = "openrouter:*";
+    const ownDown = [{ provider: "deepinfra" as const, onUserKey: true }];
+    expect(
+      pickableSpeechModels([ours(selfHosted)], { deepinfra: "d", plan: null }, ownDown)
+    ).toEqual([]);
+  });
+
+  it("never says on the server's key what the user's own key would, even unreadable", () => {
+    process.env.SERVER_KEY_MAX_SPEECH_PRICE = "10";
+    const keys = { deepinfra: UNREADABLE_API_KEY, plan: null };
+    const qwen = kokoro("deepinfra:Qwen/Qwen3-TTS", "deepinfra", ["Vivian"]);
+    const models = pickableSpeechModels([ours(selfHosted), ours(deepInfra), ours(qwen)], keys);
+    expect(models.map((model) => [model.id, model.hosts])).toEqual([
+      [SELFHOSTED_KOKORO, [ours(selfHosted)]],
+    ]);
+  });
+
   it("is run for a request naming any of its hosts", () => {
     const models = pickableSpeechModels([ours(selfHosted), ours(deepInfra)], { plan: null });
     expect(targetSpeechModelId(models, { plan: null }, DEEPINFRA_KOKORO)).toBe(SELFHOSTED_KOKORO);
