@@ -27,6 +27,12 @@ test.afterAll(async () => {
 
 async function fakeSpeech(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    if (!localStorage.getItem("lion-reader-narration-settings")) {
+      localStorage.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ provider: "browser" })
+      );
+    }
     const spoken: string[] = [];
     (window as unknown as { spoken: string[] }).spoken = spoken;
     const voice = {
@@ -144,7 +150,7 @@ test("narration stops at the end of the article with the setting off", async ({
   await page.addInitScript(() => {
     localStorage.setItem(
       "lion-reader-narration-settings",
-      JSON.stringify({ continueToNextArticle: false })
+      JSON.stringify({ provider: "browser", continueToNextArticle: false })
     );
   });
   const [first] = await openFirst(page, baseURL!, ["Alpha", "Beta"]);

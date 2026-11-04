@@ -67,6 +67,7 @@ let speech: SpeechStub;
 
 beforeEach(() => {
   stubMemoryLocalStorage();
+  localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "browser" }));
 
   const voice = {
     voiceURI: "test-voice",
@@ -522,7 +523,7 @@ describe("narration that finishes generating after the user moved on", () => {
   beforeEach(() => {
     localStorage.setItem(
       "lion-reader-narration-settings",
-      JSON.stringify({ useLlmNormalization: true })
+      JSON.stringify({ provider: "browser", useLlmNormalization: true })
     );
   });
 

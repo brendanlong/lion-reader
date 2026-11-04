@@ -31,9 +31,9 @@ export interface NarrationSettings {
 
   /**
    * Which TTS provider to use.
-   * - "browser": Native Web Speech API voices (default)
+   * - "browser": Native Web Speech API voices
    * - "phonon": Downloaded voices via Phonon (requires download)
-   * - "cloud": Cloud voices (server-side speech models)
+   * - "cloud": Cloud voices (server-side speech models; default)
    */
   provider: TTSProviderId;
 
@@ -100,7 +100,7 @@ export interface NarrationSettings {
  */
 export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   enabled: true,
-  provider: "browser",
+  provider: "cloud",
   cloudModelId: null,
   voiceId: null,
   rate: DEFAULT_RATE,

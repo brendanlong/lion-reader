@@ -106,7 +106,7 @@ data class AppSettings(
     val narrationAutoScroll: Boolean = true,
     /** When an article ends, narration goes on to the next one in the list. */
     val narrationContinue: Boolean = true,
-    val narrationEngine: NarrationEngine = NarrationEngine.DEVICE,
+    val narrationEngine: NarrationEngine = NarrationEngine.CLOUD,
     /** The cloud voice model (`provider:model`) and voice; null for the server's defaults. */
     val cloudVoiceModel: String? = null,
     val cloudVoice: String? = null,

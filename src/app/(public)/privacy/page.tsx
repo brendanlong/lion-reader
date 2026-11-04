@@ -234,17 +234,17 @@ export default function PrivacyPolicyPage() {
                 device.
               </LegalParagraph>
               <LegalParagraph>
-                With built-in or downloaded voices, audio is generated entirely on your device. If
-                you choose <strong>Cloud Voices</strong> (off by default), the text being narrated
-                is sent to the provider of the speech model you picked to generate the audio: our
-                own speech server (see <TextLink href="#hosting">Hosting</TextLink>) or DeepInfra
-                directly (the default voice, Kokoro), BreezeBlue or Together AI directly, or
-                OpenRouter, which forwards it to the company hosting that model (for example
-                DeepInfra or Together). When that provider is too busy or failing, the text may
-                instead be sent to another of these providers that hosts the same voice. The
-                generated audio is streamed back to your device and not stored on our servers. We
-                ask BreezeBlue not to save the text or audio in the generation history of the
-                account whose key was used.
+                With built-in or downloaded voices, audio is generated entirely on your device. With
+                <strong>Cloud Voices</strong> (the default; you can switch to built-in or downloaded
+                voices in narration settings), the text being narrated is sent to the provider of
+                the speech model you picked to generate the audio: our own speech server (see{" "}
+                <TextLink href="#hosting">Hosting</TextLink>) or DeepInfra directly (the default
+                voice, Kokoro), BreezeBlue or Together AI directly, or OpenRouter, which forwards it
+                to the company hosting that model (for example DeepInfra or Together). When that
+                provider is too busy or failing, the text may instead be sent to another of these
+                providers that hosts the same voice. The generated audio is streamed back to your
+                device and not stored on our servers. We ask BreezeBlue not to save the text or
+                audio in the generation history of the account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, built-in voices send the article text to your device&apos;s
