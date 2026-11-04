@@ -12,6 +12,7 @@ import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import {
   listSpeechModels,
   SpeechRejectedError,
+  SpeechUnavailableError,
   streamSpeech,
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
@@ -29,6 +30,11 @@ const accessTokens: Array<{ id: unknown; secret: unknown }> = [];
 let voiceShape: "ids" | "objects" = "objects";
 /** "302" is Cloudflare Access sending a refused service token to its sign-in page. */
 let selfHostedFails: "500" | "401" | "302" | false = false;
+/** The server's voices can't be listed: down behind Cloudflare, or its key refused. */
+let voicesFail: 503 | 401 | false = false;
+let togetherRefuses = false;
+/** A user's own Together key that Together refuses. */
+const REFUSED_TOGETHER_KEY = "refused-user-key";
 const saved = new Map<string, string | undefined>();
 
 /** A second of sound at 24 kHz mono, 16-bit. */
@@ -56,6 +62,7 @@ beforeAll(async () => {
       }
       switch (req.url) {
         case "/selfhosted/v1/audio/voices": {
+          if (voicesFail) return json({ detail: "Unavailable" }, voicesFail);
           const voices = ["af_heart", "af_bella"];
           return json({
             voices: voiceShape === "ids" ? voices : voices.map((id) => ({ id })),
@@ -79,6 +86,7 @@ beforeAll(async () => {
           return;
         }
         case "/together/models":
+          if (key === REFUSED_TOGETHER_KEY) return json({ error: "Invalid API key" }, 401);
           return json([
             {
               id: "hexgrad/Kokoro-82M",
@@ -94,6 +102,7 @@ beforeAll(async () => {
         case "/together/audio/speech": {
           const request = JSON.parse(body) as Record<string, unknown>;
           requests.push({ model: `together:${String(request.model)}`, key, body: request });
+          if (togetherRefuses) return json({ error: { message: "Insufficient credits" } }, 402);
           res.writeHead(200, { "Content-Type": "text/event-stream" });
           res.end(
             `data: ${JSON.stringify({ delta: speech().toString("base64") })}\n\ndata: [DONE]\n\n`
@@ -143,7 +152,10 @@ beforeEach(() => {
 afterEach(() => {
   voiceShape = "objects";
   selfHostedFails = false;
+  voicesFail = false;
+  togetherRefuses = false;
   delete process.env.TOGETHER_API_KEY;
+  delete process.env.SERVER_KEY_MODELS;
   delete process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID;
   delete process.env.SELFHOSTED_CF_ACCESS_CLIENT_SECRET;
 });
@@ -213,6 +225,59 @@ describe("self-hosted voices", () => {
 
     const asked = await speak(null);
     expect(asked.map((request) => request.model)).toEqual([TOGETHER_KOKORO]);
+  });
+
+  it.each([503, 401] as const)(
+    "stands in for Kokoro, on another host, while the server's voices can't be listed (%s)",
+    async (status) => {
+      process.env.TOGETHER_API_KEY = "server-together";
+      // Together's Kokoro may only run as a failover.
+      process.env.SERVER_KEY_MODELS = "selfhosted:*";
+      voicesFail = status;
+      const { models } = await listSpeechModels({ plan: null });
+      expect(models.map((model) => [model.id, model.voices.map((voice) => voice.id)])).toEqual([
+        [SELFHOSTED_KOKORO, ["af_bella"]],
+      ]);
+      const asked = await speak(SELFHOSTED_KOKORO);
+      expect(asked.map((request) => [request.model, request.body.voice])).toEqual([
+        [TOGETHER_KOKORO, "af_bella"],
+      ]);
+    }
+  );
+
+  it("tells of the outage, not of a fallback's key, when the fallback refuses", async () => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    voicesFail = 503;
+    togetherRefuses = true;
+    await expect(speak(SELFHOSTED_KOKORO)).rejects.toThrow(SpeechUnavailableError);
+  });
+
+  it("doesn't stand the server's key in for the user's own, whose voices can't be listed", async () => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    const keys = { together: REFUSED_TOGETHER_KEY, plan: null };
+    const { models } = await listSpeechModels(keys);
+    expect(models.map((model) => model.id)).toEqual([SELFHOSTED_KOKORO]);
+    await expect(
+      streamSpeech(keys, {
+        model: TOGETHER_KOKORO,
+        voice: "af_bella",
+        text: "Hello.",
+        userId: randomUUID(),
+      })
+    ).rejects.toThrow(/refused your API key/);
+  });
+
+  it("refuses for now, rather than change voices, when the other host lacks the picked one", async () => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    voicesFail = 503;
+    const before = requests.length;
+    await expect(
+      streamSpeech(
+        { plan: null },
+        { model: SELFHOSTED_KOKORO, voice: "af_heart", text: "Hello.", userId: randomUUID() }
+      )
+    ).rejects.toThrow(SpeechUnavailableError);
+    expect(requests.length).toBe(before);
   });
 
   it.each(["401", "302"] as const)(

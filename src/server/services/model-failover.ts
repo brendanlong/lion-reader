@@ -8,7 +8,7 @@
  * a failover, even if `SERVER_KEY_MODELS` doesn't let users pick it.
  */
 
-import { normalizeModelRef } from "@/lib/ai/model-ref";
+import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
 
 function failoverGroups(): string[][] {
   return (process.env.MODEL_FAILOVER ?? "").split(";").map((group) =>
@@ -18,6 +18,15 @@ function failoverGroups(): string[][] {
       .filter(Boolean)
       .map(normalizeModelRef)
   );
+}
+
+/** `provider`'s models that have other hosts to fail over to. */
+export function modelsWithFailover(provider: string): string[] {
+  const models = failoverGroups()
+    .filter((group) => group.length > 1)
+    .flat()
+    .filter((model) => parseModelRef(model).provider === provider);
+  return [...new Set(models)];
 }
 
 /** The hosts of `modelRef`'s model to fail over to, in order (not itself), or none. */
