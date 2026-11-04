@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { CHROME_EXTENSION_URL, FIREFOX_EXTENSION_URL } from "@/lib/app-listings";
 import { CardSection } from "@/components/ui/card";
 import { CodeBlock } from "@/components/ui/copy-button";
 import { BookmarkIcon, ChevronRightIcon, ChromeIcon, FirefoxIcon } from "@/components/ui/icons";
@@ -31,6 +32,7 @@ export function BookmarkletSettings() {
 
   return (
     <SettingsSection
+      id="save-to-lion-reader"
       title="Save to Lion Reader"
       description="Save any webpage to your Saved list to read later."
     >
@@ -39,7 +41,7 @@ export function BookmarkletSettings() {
         <h3 className="ui-text-sm text-body font-medium">Browser Extensions</h3>
         <div className="mt-3 flex flex-wrap gap-3">
           <a
-            href="https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl"
+            href={CHROME_EXTENSION_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5 font-medium text-blue-800 shadow-sm transition hover:border-blue-400 hover:bg-blue-100 hover:shadow dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200 dark:hover:border-blue-600 dark:hover:bg-blue-900"
@@ -48,7 +50,7 @@ export function BookmarkletSettings() {
             Install Chrome Extension
           </a>
           <a
-            href="https://addons.mozilla.org/en-US/firefox/addon/lion-reader/"
+            href={FIREFOX_EXTENSION_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="ui-text-sm inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-4 py-2.5 font-medium text-orange-800 shadow-sm transition hover:border-orange-400 hover:bg-orange-100 hover:shadow dark:border-orange-700 dark:bg-orange-950 dark:text-orange-200 dark:hover:border-orange-600 dark:hover:bg-orange-900"

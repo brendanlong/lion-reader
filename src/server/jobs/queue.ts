@@ -142,10 +142,10 @@ const JOB_DEFINITIONS = {
     lane: "singleton",
     intervalMs: 24 * 60 * 60 * 1000,
   },
-  // Fills the Getting Started article in for users who predate it, a batch per
-  // run (issue #1397). Stateless — `users.getting_started_at` is the progress
-  // marker. See src/server/services/getting-started.ts. While a backlog remains
-  // it reschedules itself in seconds.
+  // Gives the Getting Started collection to users who never got it (whose
+  // signup-path insert failed), a batch per run (issue #1397). Stateless — `users.getting_started_at`
+  // is the progress marker. See src/server/services/getting-started.ts. While a
+  // backlog remains it reschedules itself in seconds.
   backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
   // Process an OPML import in the background.
   process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },

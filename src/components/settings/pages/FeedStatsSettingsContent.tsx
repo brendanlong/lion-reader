@@ -22,6 +22,9 @@ import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
 import { SettingsListSkeleton } from "@/components/settings/SettingsListSkeleton";
 import { RssIcon, ClockIcon, CalendarIcon, RefreshIcon, DocumentIcon } from "@/components/ui/icons";
 import { InfiniteScrollFooter } from "@/components/ui/infinite-scroll-footer";
+import type { SettingsSectionId } from "../settings-search";
+
+const SECTION_ID: SettingsSectionId = "feed-statistics";
 
 // ============================================================================
 // Constants
@@ -103,7 +106,7 @@ export default function FeedStatsSettingsContent() {
   const websubFeeds = feeds.filter((f) => f.websubActive).length;
 
   return (
-    <div>
+    <div id={SECTION_ID}>
       {/* Page Header */}
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Feed Statistics</h2>

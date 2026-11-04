@@ -97,7 +97,7 @@ export function ThemeSettings() {
   const isEInk = useIsEInkDisplay();
 
   return (
-    <SettingsSection title="Theme">
+    <SettingsSection id="theme" title="Theme">
       <OptionGroup
         label="Color Mode"
         description={
@@ -121,7 +121,11 @@ export function ArticleTextSettings() {
   const { settings, updateSettings } = useAppearance();
 
   return (
-    <SettingsSection title="Article Text" description="How articles look when you open them.">
+    <SettingsSection
+      id="article-text"
+      title="Article Text"
+      description="How articles look when you open them."
+    >
       <div className="space-y-6">
         <OptionGroup
           label="Text Size"
@@ -154,7 +158,7 @@ export function EntryListSettings() {
   const { settings, updateSettings } = useAppearance();
 
   return (
-    <SettingsSection title="Entry List">
+    <SettingsSection id="entry-list" title="Entry List">
       <OptionGroup
         label="List Density"
         description={

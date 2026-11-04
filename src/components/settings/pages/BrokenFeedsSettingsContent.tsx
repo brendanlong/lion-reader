@@ -18,6 +18,9 @@ import { CheckIcon, AlertCircleIcon } from "@/components/ui/icons";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { FileFeedIssueDialog } from "@/components/feeds/FileFeedIssueDialog";
 import type { FeedIssueInput } from "@/lib/github-issue";
+import type { SettingsSectionId } from "../settings-search";
+
+const SECTION_ID: SettingsSectionId = "broken-feeds";
 
 // ============================================================================
 // Types
@@ -72,7 +75,7 @@ export default function BrokenFeedsSettingsContent() {
   const feeds = brokenQuery.data?.items ?? [];
 
   return (
-    <div>
+    <div id={SECTION_ID}>
       {/* Page Header */}
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Broken Feeds</h2>

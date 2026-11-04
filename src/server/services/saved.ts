@@ -136,12 +136,6 @@ export interface UploadArticleParams extends CollectionsParam {
    * summary length like the other excerpt sources.
    */
   excerpt?: string;
-  /**
-   * Leaves relative URLs as written, so root-relative ones stay in-app links:
-   * only for content we wrote ourselves (the Getting Started article). Never
-   * caller-supplied: otherwise they resolve against a host that never resolves.
-   */
-  keepRelativeUrls?: boolean;
   /** As {@link UploadFileParams.idempotencyKey}, but the existing article isn't re-rendered. */
   idempotencyKey?: string;
 }
@@ -1115,6 +1109,37 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
+  return insertMarkdownArticle(db, userId, params, {
+    beforeInsert: () => consumePlanQuota(db, userId, "fileConversions"),
+    keepRelativeUrls: false,
+    siteName: "Uploaded Article",
+  });
+}
+
+/**
+ * Uploads an article we wrote ourselves (the Getting Started collection): its
+ * root-relative links stay in-app links instead of resolving against a host
+ * that never resolves, it doesn't count against the user's upload quota, and
+ * its source reads "Lion Reader".
+ */
+export async function uploadOnboardingArticle(
+  db: typeof dbType,
+  userId: string,
+  params: UploadArticleParams
+): Promise<SavedArticle> {
+  return insertMarkdownArticle(db, userId, params, {
+    beforeInsert: async () => {},
+    keepRelativeUrls: true,
+    siteName: "Lion Reader",
+  });
+}
+
+async function insertMarkdownArticle(
+  db: typeof dbType,
+  userId: string,
+  params: UploadArticleParams,
+  options: { beforeInsert: () => Promise<void>; keepRelativeUrls: boolean; siteName: string }
+): Promise<SavedArticle> {
   assertUploadSize("Uploaded article", Buffer.byteLength(params.content, "utf8"));
 
   return withCollections(db, userId, params.collectionIds, async () => {
@@ -1122,7 +1147,7 @@ export async function uploadArticle(
     const existing = guid ? await selectExistingUpload(db, userId, guid) : null;
     if (existing) return existing.article;
 
-    await consumePlanQuota(db, userId, "fileConversions");
+    await options.beforeInsert();
     // Convert markdown to HTML (with frontmatter title/summary/author); Readability
     // is skipped downstream because preCleanedContent is set.
     const markdownResult = await processMarkdown(params.content);
@@ -1138,10 +1163,10 @@ export async function uploadArticle(
         providedTitle: params.title,
         providedAuthor: params.author ?? null,
         providedExcerpt: params.excerpt ?? null,
-        siteName: "Uploaded Article",
+        siteName: options.siteName,
       },
       {
-        keepRelativeUrls: params.keepRelativeUrls,
+        keepRelativeUrls: options.keepRelativeUrls,
         objectsPrefix: entryObjectsPrefix(userId, entryId),
       }
     );

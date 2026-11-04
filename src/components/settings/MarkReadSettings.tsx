@@ -22,7 +22,11 @@ export function MarkReadSettings() {
   const [markReadOn, setMarkReadOn] = useMarkReadOn();
 
   return (
-    <SettingsSection title="Mark as Read" description="Applies to this browser only.">
+    <SettingsSection
+      id="mark-read"
+      title="Mark as Read"
+      description="Applies to this browser only."
+    >
       <OptionGroup
         label="Mark articles read when"
         description={

@@ -181,7 +181,7 @@ export function NarrationSettings() {
   // Show loading skeleton while checking support (avoids hydration mismatch)
   if (supportInfo === null) {
     return (
-      <SettingsSection title="Narration">
+      <SettingsSection id="narration" title="Narration">
         <div className="flex items-center justify-between">
           <div>
             <div className="bg-fill-muted h-5 w-32 animate-pulse rounded" />
@@ -196,7 +196,7 @@ export function NarrationSettings() {
   // Show unsupported message if narration is not available
   if (!supportInfo.supported) {
     return (
-      <SettingsSection title="Narration">
+      <SettingsSection id="narration" title="Narration">
         <div className="flex items-start gap-3">
           <AlertIcon className="text-faint mt-0.5 h-5 w-5 flex-shrink-0" />
           <div>
@@ -212,7 +212,7 @@ export function NarrationSettings() {
   }
 
   return (
-    <SettingsSection title="Narration">
+    <SettingsSection id="narration" title="Narration">
       {/* Enable/Disable Toggle */}
       <SwitchRow
         id="narration-enabled-label"

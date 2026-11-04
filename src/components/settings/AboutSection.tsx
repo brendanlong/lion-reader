@@ -9,7 +9,7 @@ import { CONTACT_EMAIL } from "@/lib/contact";
 
 export function AboutSection() {
   return (
-    <SettingsSection title="About">
+    <SettingsSection id="about" title="About">
       <p className="ui-text-sm text-muted">
         Lion Reader was created by{" "}
         <a

@@ -45,6 +45,7 @@ export function DiscordBotSettings() {
 
   return (
     <SettingsSection
+      id="discord-bot"
       title="Discord Bot"
       description="Save links from Discord by reacting to a message, or by sending the link to the bot in a DM."
     >

@@ -19,6 +19,9 @@ import { Card } from "@/components/ui/card";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { CloseIcon, KeyIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
+import type { SettingsSectionId } from "../settings-search";
+
+const SECTION_ID: SettingsSectionId = "api-tokens";
 
 /**
  * Get scope labels for display
@@ -121,7 +124,7 @@ export default function ApiTokensSettingsContent() {
     ) ?? [];
 
   return (
-    <section aria-labelledby="api-tokens-heading">
+    <section id={SECTION_ID} aria-labelledby="api-tokens-heading">
       <div className="mb-4 flex items-center justify-between">
         <h2 id="api-tokens-heading" className="ui-text-lg text-body font-semibold">
           API Tokens

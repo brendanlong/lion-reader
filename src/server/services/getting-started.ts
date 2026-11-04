@@ -1,15 +1,17 @@
 /**
- * Getting Started Article Service
+ * Getting Started Collection Service
  *
- * Inserts the onboarding article (issue #1397) as a starred saved article, once
- * per user. Called fire-and-forget from the signup paths and, for users who
- * predate the feature, from the `backfill_getting_started` job.
+ * Gives each user, once, a "Getting Started" collection of short onboarding
+ * articles in reading order (issue #1397). Called fire-and-forget from the
+ * signup paths and, for a user whose signup-path insert failed, from the
+ * `backfill_getting_started` job.
  *
- * The article goes in through the ordinary Markdown upload path, so it is a
- * completely normal saved article afterwards: the user can unstar it, mark it
- * read, or delete it. `users.getting_started_at` is what stops us re-adding it
- * (issue #1383) — it records that we inserted the article, not that the article
- * still exists.
+ * The articles go in through the ordinary Markdown upload path and the
+ * collection is an ordinary collection, so afterwards the user can read,
+ * rearrange, or delete any of it. `users.getting_started_at` is what stops us
+ * re-adding them (issue #1383) — it records that we inserted them, not that
+ * they still exist. Accounts that got the single article this replaced
+ * already have it set, so they don't get the collection.
  */
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -18,35 +20,31 @@ import * as Sentry from "@sentry/nextjs";
 import type { Database } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
-import { uploadArticle } from "@/server/services/saved";
-import { updateEntryStarred } from "@/server/services/entry-state";
+import { uploadOnboardingArticle } from "@/server/services/saved";
+import { addEntriesToCollection, createCollection } from "@/server/services/collections";
 import {
-  GETTING_STARTED_EXCERPT,
-  GETTING_STARTED_MARKDOWN,
-  GETTING_STARTED_TITLE,
+  GETTING_STARTED_ARTICLES,
+  GETTING_STARTED_COLLECTION_NAME,
 } from "@/server/services/getting-started-content";
 
 /**
- * Inserts the Getting Started article for a user, unless they already got one.
+ * Creates the Getting Started collection for a user, unless they already got
+ * one.
  *
- * The flag is claimed *before* the insert (`UPDATE ... WHERE
+ * The flag is claimed *before* the inserts (`UPDATE ... WHERE
  * getting_started_at IS NULL RETURNING`), so a signup racing the backfill job
- * can't produce two copies.
+ * can't produce two copies. A failure releases the claim, and every step is
+ * idempotent (each article by its upload key, the collection by name, the
+ * filing by membership), so the retry finishes the job without duplicates.
  *
- * The claim is released only when the **insert itself** fails, and the insert
- * uses a fixed idempotency key, so a retry can never add a second copy. Once
- * the article exists the claim stands, which makes starring best-effort: an
- * unstarred article is a much better failure than a duplicate one, and the user
- * can star it themselves.
+ * Deliberately biased toward missing over doubling: the claim commits on its
+ * own, so a process that dies part-way leaves that one user with some of the
+ * articles in Saved, maybe no collection, and nothing to retry it. Losing onboarding articles beats showing
+ * someone two copies.
  *
- * Deliberately biased that way at the other end too: the claim commits on its
- * own, so a process that dies between the claim and the insert leaves that one
- * user with no article and nothing to retry it. Losing an onboarding article
- * beats showing someone two of them.
- *
- * @returns the new entry's id, or null if this user already had one.
+ * @returns the collection's id, or null if this user already had one.
  */
-export async function createGettingStartedArticle(
+export async function createGettingStartedCollection(
   db: Database,
   userId: string
 ): Promise<string | null> {
@@ -60,82 +58,80 @@ export async function createGettingStartedArticle(
     return null;
   }
 
-  let article;
   try {
-    article = await uploadArticle(db, userId, {
-      content: GETTING_STARTED_MARKDOWN,
-      title: GETTING_STARTED_TITLE,
-      excerpt: GETTING_STARTED_EXCERPT,
-      keepRelativeUrls: true,
-      // The insert can throw after it commits (a lost commit acknowledgement, or
-      // sanitizing the result), and the claim is then released; the key makes
-      // the retry find the article. The colon keeps it out of the key space
-      // callers can use.
-      idempotencyKey: "onboarding:getting-started",
+    // Inserted last to first, so newest-first lists like All and Saved show
+    // them in reading order too.
+    const positions = new Map<string, number>();
+    for (const [index, article] of [...GETTING_STARTED_ARTICLES.entries()].reverse()) {
+      const saved = await uploadOnboardingArticle(db, userId, {
+        content: article.markdown,
+        title: article.title,
+        excerpt: article.excerpt,
+        // The colon keeps it out of the key space callers can use.
+        idempotencyKey: `onboarding:getting-started:${article.key}`,
+      });
+      positions.set(saved.id, index + 1);
+    }
+    // Filed in one call after the uploads, so a retry files articles an
+    // earlier attempt uploaded too, even into a new collection if the user
+    // renamed or deleted a partial one.
+    const { subscription } = await createCollection(db, userId, GETTING_STARTED_COLLECTION_NAME);
+    await addEntriesToCollection(db, userId, subscription.id, [...positions.keys()], positions);
+    logger.info("Created Getting Started collection", {
+      userId,
+      subscriptionId: subscription.id,
     });
+    return subscription.id;
   } catch (err) {
-    // Hand the user back to the backfill; the key covers an insert that committed.
+    // Hand the user back to the backfill to finish.
     await db
       .update(users)
       .set({ gettingStartedAt: null })
       .where(eq(users.id, userId))
       .catch(() => {
-        // Nothing left to do — the user just won't get the article.
+        // Nothing left to do — the user just won't get the collection.
       });
     throw err;
   }
-
-  // Starred so it stays easy to find after it scrolls out of the timeline. A
-  // separate call rather than an insert-time flag, so it emits the same
-  // `entry_state_changed` event a hand-star does and open tabs update live.
-  try {
-    await updateEntryStarred(db, userId, article.id, true);
-  } catch (err) {
-    logger.error("Created Getting Started article but failed to star it", {
-      userId,
-      entryId: article.id,
-      err,
-    });
-  }
-
-  logger.info("Created Getting Started article", { userId, entryId: article.id });
-  return article.id;
 }
 
 /**
  * Same, but never throws — for the fire-and-forget signup callers, where
- * failing to add an onboarding article must not fail the signup.
+ * failing to add onboarding articles must not fail the signup.
  */
-export async function tryCreateGettingStartedArticle(db: Database, userId: string): Promise<void> {
+export async function tryCreateGettingStartedCollection(
+  db: Database,
+  userId: string
+): Promise<void> {
   try {
-    await createGettingStartedArticle(db, userId);
+    await createGettingStartedCollection(db, userId);
   } catch (err) {
-    logger.error("Failed to create Getting Started article", { userId, err });
+    logger.error("Failed to create Getting Started collection", { userId, err });
     Sentry.captureException(err, {
-      tags: { source: "getting-started-article" },
+      tags: { source: "getting-started-collection" },
       extra: { userId },
     });
   }
 }
 
-/** Result of one {@link backfillGettingStartedArticles} pass. */
+/** Result of one {@link backfillGettingStartedCollections} pass. */
 export interface GettingStartedBackfillResult {
   /** Users we attempted in this pass (the batch size, until the tail). */
   attempted: number;
-  /** Users who got an article. */
+  /** Users who got a collection. */
   created: number;
   /** Users whose insert failed; their claim was released, so they're retried. */
   failed: number;
 }
 
 /**
- * Inserts the article for up to `limit` users who don't have one yet.
+ * Creates the collection for up to `limit` users who don't have one yet.
  *
- * One user at a time: this runs on the worker with no deadline, and rendering
- * plus two inserts per user is cheap, so there's no reason to add concurrency
- * (and every reason not to compete with feed fetching for the pool).
+ * One user at a time: this runs on the worker with no deadline, so there's no
+ * reason to add concurrency (and every reason not to compete with feed
+ * fetching for the pool).
  */
-export async function backfillGettingStartedArticles(
+export async function backfillGettingStartedCollections(
   db: Database,
   limit: number
 ): Promise<GettingStartedBackfillResult> {
@@ -150,7 +146,7 @@ export async function backfillGettingStartedArticles(
 
   for (const user of pending) {
     try {
-      if (await createGettingStartedArticle(db, user.id)) {
+      if (await createGettingStartedCollection(db, user.id)) {
         created++;
       }
     } catch (err) {

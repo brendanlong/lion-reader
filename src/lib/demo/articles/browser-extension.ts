@@ -1,10 +1,11 @@
 import { type DemoArticle } from "./types";
+import { CHROME_EXTENSION_URL, FIREFOX_EXTENSION_URL } from "@/lib/app-listings";
 
 const article: DemoArticle = {
   id: "browser-extension",
   subscriptionId: "integrations",
   type: "web",
-  url: "https://addons.mozilla.org/en-US/firefox/addon/lion-reader/",
+  url: FIREFOX_EXTENSION_URL,
   title: "Browser Extension",
   author: null,
   summary:
@@ -27,8 +28,8 @@ const article: DemoArticle = {
     <h3>Install</h3>
 
     <ul>
-      <li><a href="https://addons.mozilla.org/en-US/firefox/addon/lion-reader/" target="_blank" rel="noopener noreferrer">Firefox Add-ons</a></li>
-      <li><a href="https://chromewebstore.google.com/detail/lion-reader/mpjddkjjkckmclaifjfokjppfoenmlpl" target="_blank" rel="noopener noreferrer">Chrome Web Store</a>, which also works for Chromium browsers like Edge and Brave</li>
+      <li><a href="${FIREFOX_EXTENSION_URL}" target="_blank" rel="noopener noreferrer">Firefox Add-ons</a></li>
+      <li><a href="${CHROME_EXTENSION_URL}" target="_blank" rel="noopener noreferrer">Chrome Web Store</a>, which also works for Chromium browsers like Edge and Brave</li>
     </ul>
   `,
 };

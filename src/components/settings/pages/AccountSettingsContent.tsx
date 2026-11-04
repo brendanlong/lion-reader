@@ -96,7 +96,7 @@ export function AccountInfoSection() {
   const userQuery = trpc.auth.me.useQuery();
 
   return (
-    <SettingsSection title="Account Information">
+    <SettingsSection id="account-info" title="Account Information">
       {userQuery.isLoading ? (
         <div className="space-y-4">
           <div className="bg-fill-muted h-5 w-48 animate-pulse rounded" />
@@ -160,7 +160,7 @@ export function PlanSection() {
   const data = planQuery.data;
 
   return (
-    <SettingsSection title="Plan">
+    <SettingsSection id="plan" title="Plan">
       {planQuery.isLoading ? (
         <div className="bg-fill-muted h-5 w-48 animate-pulse rounded" />
       ) : planQuery.error || !data ? (
@@ -213,7 +213,7 @@ export function PasswordSection() {
 
   if (linkedAccountsQuery.isLoading) {
     return (
-      <SettingsSection title="Password">
+      <SettingsSection id="password" title="Password">
         <div className="bg-fill-muted h-32 animate-pulse rounded" />
       </SettingsSection>
     );
@@ -312,6 +312,7 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
 
   return (
     <SettingsSection
+      id="password"
       title={isSetMode ? "Set Password" : "Change Password"}
       description={
         isSetMode ? "Set a password to also sign in with your email address." : undefined

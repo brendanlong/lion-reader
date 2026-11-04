@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { CheckIcon, ShieldCheckIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
+import type { SettingsSectionId } from "../settings-search";
+
+const SECTION_ID: SettingsSectionId = "connected-apps";
 
 interface ConnectedApp {
   clientId: string;
@@ -50,7 +53,7 @@ export default function ConnectedAppsSettingsContent() {
   };
 
   return (
-    <section aria-labelledby="connected-apps-heading">
+    <section id={SECTION_ID} aria-labelledby="connected-apps-heading">
       <div className="mb-4 flex items-center justify-between">
         <h2 id="connected-apps-heading" className="ui-text-lg text-body font-semibold">
           Connected Apps

@@ -118,7 +118,11 @@ export function LinkedAccounts() {
 
   if (queryError) {
     return (
-      <SettingsSection title="Linked Accounts" error="Failed to load linked accounts">
+      <SettingsSection
+        id="linked-accounts"
+        title="Linked Accounts"
+        error="Failed to load linked accounts"
+      >
         <div />
       </SettingsSection>
     );
@@ -126,6 +130,7 @@ export function LinkedAccounts() {
 
   return (
     <SettingsSection
+      id="linked-accounts"
       title="Linked Accounts"
       description="Link an account to sign in with it."
       isLoading={isLoading}

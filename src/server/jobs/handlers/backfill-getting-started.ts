@@ -5,10 +5,10 @@
  */
 
 import { db } from "../../db";
-import { backfillGettingStartedArticles } from "../../services/getting-started";
+import { backfillGettingStartedCollections } from "../../services/getting-started";
 import type { JobHandlerResult } from "./types";
 
-/** Users given a Getting Started article per backfill run. */
+/** Users given a Getting Started collection per backfill run. */
 const GETTING_STARTED_BATCH_SIZE = 100;
 
 /** Gap between backfill runs while users are still waiting. */
@@ -26,7 +26,7 @@ const GETTING_STARTED_IDLE_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * See src/server/services/getting-started.ts.
  */
 export async function handleBackfillGettingStarted(): Promise<JobHandlerResult> {
-  const result = await backfillGettingStartedArticles(db, GETTING_STARTED_BATCH_SIZE);
+  const result = await backfillGettingStartedCollections(db, GETTING_STARTED_BATCH_SIZE);
 
   // Come back promptly while we're filling batches and getting somewhere. A
   // batch where *nothing* succeeded drops to the idle cadence rather than

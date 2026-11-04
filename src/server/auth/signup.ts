@@ -168,10 +168,10 @@ export async function runPostSignupTasks(db: Database, userId: string): Promise<
   try {
     // Dynamic import to keep the services graph out of the auth modules (see
     // subscribeToAnnouncementFeed).
-    const { tryCreateGettingStartedArticle } = await import("@/server/services/getting-started");
+    const { tryCreateGettingStartedCollection } = await import("@/server/services/getting-started");
     await Promise.all([
       subscribeToAnnouncementFeed(db, userId),
-      tryCreateGettingStartedArticle(db, userId),
+      tryCreateGettingStartedCollection(db, userId),
     ]);
   } catch (err) {
     logger.error("Post-signup tasks failed", { userId, err });
