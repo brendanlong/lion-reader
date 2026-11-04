@@ -244,3 +244,12 @@ resource "cloudflare_dns_record" "glama_claim" {
   ttl     = 300
   comment = "Glama MCP directory ownership claim"
 }
+
+resource "cloudflare_dns_record" "mcptry_verification" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "@"
+  type    = "TXT"
+  content = "\"mcptry-verify=GUqaEOYdAsac9QkN3GtgVb-67W76J4qd\""
+  ttl     = 300
+  comment = "mcptry.com MCP directory verification"
+}

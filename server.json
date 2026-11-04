@@ -8,7 +8,19 @@
     "source": "github"
   },
   "websiteUrl": "https://lionreader.com",
-  "version": "1.0.0",
+  "icons": [
+    {
+      "src": "https://lionreader.com/android-chrome-512x512.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    },
+    {
+      "src": "https://lionreader.com/android-chrome-192x192.png",
+      "mimeType": "image/png",
+      "sizes": ["192x192"]
+    }
+  ],
+  "version": "1.0.1",
   "remotes": [
     {
       "type": "streamable-http",
