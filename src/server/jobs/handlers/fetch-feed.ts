@@ -273,8 +273,8 @@ async function processSuccessfulFetch(
     alwaysUpdateVisibility: forceReprocess,
   });
 
-  // Fetch full content for what this fetch announced, if any subscriber has
-  // fetchFullContent enabled. This is done after processEntries so entries
+  // Fetch full content for what this fetch announced, if a subscriber wants it
+  // and their plan includes it (`feedWantsFullContent`). This is done after processEntries so entries
   // exist in the database. Archive re-announcements (see `isBackfilledEntry`)
   // are left out unless they reached someone as news: they must not spend the
   // per-fetch full-content budget that the genuinely new articles need.

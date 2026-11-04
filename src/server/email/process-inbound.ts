@@ -5,6 +5,7 @@
  * This module provides the core logic for handling emails from any provider.
  */
 
+import { consumePlanQuota } from "@/server/services/plans";
 import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "../db";
@@ -160,7 +161,8 @@ function generateEmailContentHash(subject: string, content: string): string {
  * 1. Extract token from recipient
  * 2. Find ingest address (reject if not found or deleted)
  * 3. Normalize sender email
- * 4. Check if sender is blocked (reject silently)
+ * 4. Check if sender is blocked (reject silently), then count it against the
+ *    user's plan (reject past it)
  * 5. Find, create or reactivate the subscription to the sender (the owner)
  * 6. Reject a duplicate Message-ID
  * 7. Process the content
@@ -229,6 +231,20 @@ export async function processInboundEmail(
   if (blockedSender) {
     logger.info("Email rejected: sender blocked", { senderEmail, userId });
     return { success: false, error: "Sender blocked" };
+  }
+
+  // 4b. Count it against the user's plan; past that, drop it. Answered like
+  // any other rejection, so Mailgun doesn't retry what would be refused again.
+  // An email we already have (a resend) is rejected below, without counting.
+  if (!(await hasEmailFrom(db, userId, senderEmail, email.messageId))) {
+    try {
+      await consumePlanQuota(db, userId, "newsletterEmails");
+    } catch (error) {
+      const code = getAppErrorCode(error);
+      if (code !== "QUOTA_EXCEEDED" && code !== "NOT_IN_PLAN") throw error;
+      logger.info("Email rejected: over the plan's newsletter emails", { senderEmail, userId });
+      return { success: false, error: "Over the plan's newsletter emails" };
+    }
   }
 
   // 5. The sender's subscription, which owns its emails (#1846): one per user
@@ -467,6 +483,22 @@ function rejectDuplicate(email: InboundEmail, subscriptionId: string): ProcessEm
 }
 
 /** The user's email subscription to `senderEmail` (active or not), if any. */
+/** Whether the user already has the email with `messageId` from this sender. */
+async function hasEmailFrom(
+  db: typeof dbType,
+  userId: string,
+  senderEmail: string,
+  messageId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .innerJoin(subscriptions, eq(subscriptions.id, entries.ownerSubscriptionId))
+    .where(and(emailSubscriptionFor(userId, senderEmail), eq(entries.guid, messageId)))
+    .limit(1);
+  return row !== undefined;
+}
+
 function emailSubscriptionFor(userId: string, senderEmail: string): SQL {
   return and(
     eq(subscriptions.userId, userId),

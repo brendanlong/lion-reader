@@ -23,12 +23,14 @@ describe("PlanSection", () => {
             maxSubscriptions: 150,
             maxIngestAddresses: null,
             serverKeyRouting: "cheapest",
+            backgroundFullContent: false,
             quotas: {
               pageFetches: { burst: 50, perDay: 200 },
               fileConversions: null,
               summaries: { burst: 3, perDay: 5 },
               narrationTextProcessing: "excluded",
               speechCharacters: null,
+              newsletterEmails: null,
             },
           },
           serverKeyModels: null,
@@ -41,7 +43,8 @@ describe("PlanSection", () => {
     expect(screen.getByText("12 of 150")).toBeTruthy();
     expect(screen.getByText("3 (no limit)")).toBeTruthy();
     expect(screen.getByText("200 a day, up to 50 at once")).toBeTruthy();
-    expect(screen.getAllByText("No limit")).toHaveLength(2);
+    expect(screen.getAllByText("No limit")).toHaveLength(3);
+    expect(screen.getByText("Fetched as you open each article in the web reader")).toBeTruthy();
     expect(screen.getByText("5 a day, up to 3 at once")).toBeTruthy();
     // A feature the plan excludes works only on the user's own key.
     expect(screen.getByText("With your own API key only")).toBeTruthy();

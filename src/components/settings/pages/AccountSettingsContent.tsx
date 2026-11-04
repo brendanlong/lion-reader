@@ -183,6 +183,14 @@ export function PlanSection() {
               {formatUsage(data.usage.ingestAddresses, data.limits.maxIngestAddresses)}
             </dd>
           </div>
+          <div>
+            <dt className="ui-text-sm text-muted font-medium">Full content of new articles</dt>
+            <dd className="ui-text-sm text-body mt-1">
+              {data.limits.backgroundFullContent
+                ? "Fetched in the background"
+                : "Fetched as you open each article in the web reader"}
+            </dd>
+          </div>
           {PLAN_QUOTAS.map((quota) => (
             <div key={quota}>
               <dt className="ui-text-sm text-muted font-medium">{PLAN_QUOTA_NAMES[quota]}</dt>
