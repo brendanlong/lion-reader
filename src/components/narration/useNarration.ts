@@ -157,6 +157,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // An answer changes the voice, which stops narration: take one only as an article opens.
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    // Offline, fail (to built-in voices) rather than wait, holding Listen.
+    networkMode: "always",
   });
   const canStreamAudio = useSyncExternalStore(
     () => () => {},
@@ -168,7 +170,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const isCheckingVoices =
     asksForCloudVoices &&
     canStreamAudio &&
-    (cloudVoicesQuery.isPending || (cloudVoicesQuery.isError && cloudVoicesQuery.isFetching));
+    (cloudVoicesQuery.isPending || cloudVoicesQuery.isFetching);
   const settings = useMemo(
     () =>
       prerecordedVoice

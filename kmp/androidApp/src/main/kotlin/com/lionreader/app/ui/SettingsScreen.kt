@@ -64,6 +64,7 @@ import com.lionreader.shared.api.ENHANCED_VOICES
 import com.lionreader.shared.api.EnhancedVoiceFiles
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
+import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.settings.AppSettings
 import com.lionreader.shared.settings.MarkReadOn
@@ -75,7 +76,6 @@ import com.lionreader.shared.settings.ThemeChoice
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 private val RETENTION_CHOICES = listOf(7, 14, 30, 90)
@@ -281,22 +281,21 @@ private fun NarrationSettings(
             value = runCatching { graph.systemTts.voices() }.getOrDefault(emptyList())
         }
     val account by graph.accounts.account.collectAsStateWithLifecycle()
-    // What narration last heard, until the server answers again.
-    val known by
-        remember(account) { account?.voiceModels ?: MutableStateFlow(null) }
-            .collectAsStateWithLifecycle()
-    var unreachable by remember(account) { mutableStateOf(false) }
+    // Null while loading, or when the server refused (with why).
+    var cloud by remember(account) { mutableStateOf<VoiceModels?>(null) }
+    var refused by remember(account) { mutableStateOf<String?>(null) }
     LaunchedEffect(account) {
+        val session = account
+        if (session == null) {
+            refused = "Sign in to use cloud voices."
+            return@LaunchedEffect
+        }
         try {
-            account?.fetchVoiceModels(settings.cloudVoiceModel, settings.cloudVoice)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            unreachable = true
+            cloud = session.cloudVoices(settings.cloudVoiceModel, settings.cloudVoice)
+        } catch (e: SpeechUnavailable) {
+            refused = e.message
         }
     }
-    // Null while loading; empty when this account has none, or the server can't be reached.
-    val cloud = if (unreachable || account == null) VoiceModels(emptyList(), "") else known
     val inUse = settings.narrationEngine.inUse(cloud)
     Section("Narration voices") {
         val engines =
@@ -344,7 +343,7 @@ private fun NarrationSettings(
                 val resolved = cloud?.resolve(settings.cloudVoiceModel, settings.cloudVoice)
                 if (resolved == null) {
                     Text(
-                        "Loading cloud voices…",
+                        refused ?: "Loading cloud voices…",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
