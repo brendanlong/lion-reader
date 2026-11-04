@@ -231,7 +231,7 @@ resource "cloudflare_dns_record" "mcp_registry" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "@"
   type    = "TXT"
-  content = "\"v=MCPv1; k=ed25519; p=TODO-public-key\""
+  content = "\"v=MCPv1; k=ed25519; p=Kenrju4OJ1cvGk969lijGAnSEWS/IhbyugxDE93xjpo=\""
   ttl     = 300
   comment = "MCP Registry namespace proof"
 }
