@@ -49,6 +49,16 @@ import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 // Types
 // ============================================================================
 
+/**
+ * MCP tool annotations with every hint required: the spec's defaults for an
+ * omitted hint (destructive, not idempotent, open world) are wrong for most of
+ * our tools, and clients use them to decide what needs the user's confirmation.
+ */
+type ToolHints = { title: string; openWorldHint: boolean } & (
+  | { readOnlyHint: true }
+  | { readOnlyHint: false; destructiveHint: boolean; idempotentHint: boolean }
+);
+
 interface Tool {
   name: string;
   description: string;
@@ -57,6 +67,7 @@ interface Tool {
     properties: Record<string, unknown>;
     required?: string[];
   };
+  annotations: ToolHints;
   handler: (db: typeof dbType, userId: string, args: unknown) => Promise<unknown>;
 }
 
@@ -396,6 +407,10 @@ const deleteTagArgs = z.object({
 // Tool Definitions
 // ============================================================================
 
+const readOnly = { readOnlyHint: true, openWorldHint: false } as const;
+const write = (hints: { destructiveHint: boolean; idempotentHint: boolean }) =>
+  ({ readOnlyHint: false, openWorldHint: false, ...hints }) as const;
+
 /**
  * Returns every MCP tool, each wrapping a service function.
  *
@@ -419,7 +434,14 @@ function buildTools(): Tool[] {
     {
       name: "list_entries",
       description:
-        "List feed entries with filters and pagination, sorted by time, score or a collection's position (see sortBy), or by relevance when `query` is given for full-text search. Returns summaries (title, snippet, score) without full content.",
+        "List the user's entries (feed items, newsletter issues and saved articles), newest first " +
+        "by default. Use this to browse or search: filter by subscription, tag, type, read or " +
+        "starred state, sort by date, score or a collection's position (see sortBy), or pass " +
+        "`query` for relevance-ranked full-text search. Returns a page of entries (id, title, " +
+        "summary, url, read/starred state, score, subscription IDs) without the body, and " +
+        "`nextCursor` when there are more: pass it as `cursor` for the next page. Use get_entry " +
+        "for an entry's content, and count_entries when you only need an unread count.",
+      annotations: { title: "List entries", ...readOnly },
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);
@@ -438,7 +460,12 @@ function buildTools(): Tool[] {
     {
       name: "get_entry",
       description:
-        "Get a single entry with its content (original and cleaned HTML, plus `fullContent`: the article fetched from its URL when the subscription has full content enabled).",
+        "Get one entry with its content: the original and cleaned HTML, plus `fullContent` (the " +
+        "article fetched from its URL) when its subscription has full content enabled. Use this " +
+        "to read an entry whose ID you got from list_entries, save_article or upload_article. " +
+        "Doesn't mark it read (use mark_entries_read). Fails with a not-found error if the entry " +
+        "doesn't exist or isn't visible to the user.",
+      annotations: { title: "Get entry", ...readOnly },
       inputSchema: toInputSchema(getEntryArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
@@ -448,7 +475,16 @@ function buildTools(): Tool[] {
 
     {
       name: "mark_entries_read",
-      description: `Mark entries as read or unread (bulk operation, max ${entryStateService.MAX_ENTRY_STATE_BATCH}). Returns updated entries and unread counts.`,
+      description:
+        `Mark up to ${entryStateService.MAX_ENTRY_STATE_BATCH} entries as read or unread in one ` +
+        "call. Reversible (call again with the opposite `read`) and idempotent: re-marking an " +
+        "entry in the same state changes nothing. IDs the user doesn't have are ignored. Returns " +
+        "the entries' new state and, when anything changed, the affected unread counts. To star " +
+        "entries use star_entries.",
+      annotations: {
+        title: "Mark entries read or unread",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(markEntriesReadArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(markEntriesReadArgs, args);
@@ -467,11 +503,18 @@ function buildTools(): Tool[] {
 
     {
       name: "star_entries",
-      // Single-entry, unlike mark_entries_read: the schema takes one `entryId`
-      // (and `toInputSchema` emits `additionalProperties: false`, so an `entryIds`
-      // array is an InvalidParams error, not a bulk call). The tool name is part
-      // of the published MCP surface, so it stays as-is.
-      description: "Star or unstar an entry. Starred entries remain visible after unsubscribing.",
+      // Single-entry despite the plural: the tool name is part of the
+      // published MCP surface, so it stays as-is.
+      description:
+        "Star or unstar one entry (call once per entry). Starred entries stay visible in the " +
+        "Starred list even after unsubscribing from their feed; unstarring one from a feed the " +
+        "user has left removes it from view. Idempotent. Fails with a not-found error if the " +
+        "entry isn't visible to the user. Returns the entry's new state. To group entries under a " +
+        "name instead, use a collection (add_to_collection); to rank them, set_entry_scores.",
+      annotations: {
+        title: "Star or unstar entry",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(starEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(starEntriesArgs, args);
@@ -492,11 +535,16 @@ function buildTools(): Tool[] {
     {
       name: "set_entry_scores",
       description:
-        "Set or clear scores on entries, to prioritize the user's reading: lists sorted by " +
-        "score (list_entries sortBy: score) show higher scores first, then unscored " +
-        "entries. A score is the user's, so it applies in every list the entry is in. " +
-        `Max ${entryScoresService.MAX_ENTRY_SCORE_BATCH} per call. Returns the entries whose ` +
-        "score changed and the IDs not found.",
+        `Set or clear (null) numeric scores on up to ${entryScoresService.MAX_ENTRY_SCORE_BATCH} ` +
+        "entries, to prioritize the user's reading: lists sorted by score (list_entries sortBy: " +
+        "score) show higher scores first, then unscored entries. A score is the user's, so it " +
+        "applies in every list the entry is in. Overwrites any previous score; idempotent. " +
+        "Returns the entries whose score changed and the IDs not found (nothing is set for " +
+        "those). To order a single collection by hand, use set_collection_positions instead.",
+      annotations: {
+        title: "Set entry scores",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(setEntryScoresArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(setEntryScoresArgs, args);
@@ -507,7 +555,12 @@ function buildTools(): Tool[] {
     {
       name: "count_entries",
       description:
-        "Get the unread count of one list: all entries by default, or at most one of subscriptionId, tagId, uncategorized, type and starredOnly.",
+        "Get the unread count of one list: all entries by default, or pass at most one of " +
+        "subscriptionId, tagId, uncategorized, type and starredOnly (passing more is an " +
+        "invalid-arguments error). Cheaper than paging through list_entries when you only need " +
+        "the number; list_tags and list_subscriptions also include unread counts per tag and " +
+        "subscription.",
+      annotations: { title: "Count unread entries", ...readOnly },
       inputSchema: toInputSchema(countEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(countEntriesArgs, args);
@@ -522,7 +575,22 @@ function buildTools(): Tool[] {
     {
       name: "save_article",
       description:
-        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article's metadata and excerpt (not its content; use get_entry for that), including when it was already saved (pass refetch=true to fetch an already-saved URL again and update it). Private Google Docs are supported when the user has linked their Google account and granted Google Docs access in the web app; otherwise a clear error explains how to authorize.",
+        "Save a web page by URL to the user's Saved list for later reading: fetches the page, " +
+        "extracts the article with Readability and stores it. For content you already have as " +
+        "text, use upload_article instead. Saving a URL that's already saved returns the existing " +
+        "article unchanged (pass refetch=true to fetch it again and update it). Returns the " +
+        "article's id and metadata with an excerpt, not the content (use get_entry for that). " +
+        "Fails with an error if the page can't be fetched or extracted, with an app error code in " +
+        "the error data (e.g. when the site rate limits us). Private Google Docs work when the " +
+        "user has linked their Google account and granted Google Docs access in the web app; " +
+        "otherwise the error explains how to authorize.",
+      annotations: {
+        title: "Save article from URL",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       inputSchema: toInputSchema(saveArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(saveArticleArgs, args);
@@ -546,7 +614,16 @@ function buildTools(): Tool[] {
 
     {
       name: "delete_saved_article",
-      description: "Delete a saved article. Returns success status.",
+      description:
+        "Permanently delete an article from the user's Saved list (saved by URL or uploaded), " +
+        "removing it from every collection too. This can't be undone. Only saved articles can be " +
+        "deleted: feed entries can't (to hide one, mark it read; to take it out of a collection, " +
+        "use remove_from_collection). Returns { deleted: true }, or { deleted: false } when the " +
+        "ID isn't one of the user's saved articles (including one already deleted).",
+      annotations: {
+        title: "Delete saved article",
+        ...write({ destructiveHint: true, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(deleteSavedArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(deleteSavedArticleArgs, args);
@@ -558,7 +635,15 @@ function buildTools(): Tool[] {
     {
       name: "upload_article",
       description:
-        "Upload an article with Markdown content directly, without a URL. Useful for saving content you've written or collected. Returns the saved article's metadata and excerpt (not its content).",
+        "Save an article from Markdown you provide (e.g. something you wrote, summarized or " +
+        "collected), with no URL to fetch. For a web page, use save_article instead. Each call " +
+        "creates a new article unless you pass the same idempotencyKey as an earlier call, which " +
+        "returns that article instead (use it when retrying). Returns the article's id and " +
+        "metadata with an excerpt, not the content (use get_entry for that).",
+      annotations: {
+        title: "Upload Markdown article",
+        ...write({ destructiveHint: false, idempotentHint: false }),
+      },
       inputSchema: toInputSchema(uploadArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(uploadArticleArgs, args);
@@ -581,7 +666,15 @@ function buildTools(): Tool[] {
     {
       name: "list_subscriptions",
       description:
-        "List active subscriptions — feeds, newsletters, collections (type 'collection') and, once the user has saved an article, their Saved subscription (type 'saved', which can't be tagged, renamed or removed) — with optional filtering and pagination. Supports case-insensitive title search, tag, type and unread-only filtering, and cursor-based pagination.",
+        "List the user's active subscriptions: web feeds (type 'web'), newsletters ('email'), " +
+        "collections ('collection') and, once the user has saved an article, their Saved list " +
+        "('saved', which can't be tagged, renamed or removed). Each has its id, title, type, tags " +
+        "and unread count. Use this to find a subscription or collection ID for list_entries, " +
+        "count_entries, set_subscription_tags or the collection tools; filter with a " +
+        "case-insensitive title search, tag, type or unread-only. Returns `nextCursor` when there " +
+        "are more: pass it as `cursor` for the next page. If you already have the ID, " +
+        "get_subscription returns just that one.",
+      annotations: { title: "List subscriptions", ...readOnly },
       inputSchema: toInputSchema(listSubscriptionsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listSubscriptionsArgs, args);
@@ -594,7 +687,11 @@ function buildTools(): Tool[] {
 
     {
       name: "get_subscription",
-      description: "Get details for a single subscription including unread count and tags.",
+      description:
+        "Get one subscription by ID (from list_subscriptions or an entry's subscription IDs), " +
+        "including its type, unread count and tags. Fails with a not-found error if the user has " +
+        "no active subscription with that ID.",
+      annotations: { title: "Get subscription", ...readOnly },
       inputSchema: toInputSchema(getSubscriptionArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(getSubscriptionArgs, args);
@@ -605,8 +702,16 @@ function buildTools(): Tool[] {
     {
       name: "set_subscription_tags",
       description:
-        "Replace the tags on a subscription (a feed or a collection). Tags group feeds and " +
-        "collections in the sidebar; one subscription can have several tags.",
+        "Replace the complete set of tags on a subscription (a feed, newsletter or collection; " +
+        "not Saved): tags not in tagIds are removed, and an empty array removes them all. To add " +
+        "one tag, pass the subscription's current tags (from get_subscription) plus the new one. " +
+        "Tags group subscriptions in the sidebar; create them with create_tag and find their IDs " +
+        "with list_tags. Idempotent. Fails with a not-found error if the subscription isn't the " +
+        "user's, and with an invalid-arguments error, changing nothing, if any tag isn't.",
+      annotations: {
+        title: "Set subscription tags",
+        ...write({ destructiveHint: true, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(setSubscriptionTagsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(setSubscriptionTagsArgs, args);
@@ -627,11 +732,16 @@ function buildTools(): Tool[] {
     {
       name: "create_collection",
       description:
-        "Create a collection: a list of articles you fill by hand, shown and tagged like a " +
-        "feed. Returns it as a subscription; its id is the collectionId for " +
-        "add_to_collection and the subscriptionId for list_entries and set_subscription_tags. " +
-        "If a collection with that name (ignoring case) already exists, returns it unchanged " +
-        "with created: false.",
+        "Create a collection: a named list of articles the user fills by hand (with " +
+        "add_to_collection), shown and tagged like a feed. For grouping whole feeds, use a tag " +
+        "(create_tag) instead. Returns it as a subscription; its id is the collectionId for the " +
+        "collection tools and the subscriptionId for list_entries and set_subscription_tags. If a " +
+        "collection with that name (ignoring case) already exists, returns it unchanged with " +
+        "created: false, so retrying is safe.",
+      annotations: {
+        title: "Create collection",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(createCollectionArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(createCollectionArgs, args);
@@ -647,8 +757,15 @@ function buildTools(): Tool[] {
     {
       name: "delete_collection",
       description:
-        "Delete a collection. Its articles stay in their feeds and in Saved unless " +
-        "deleteSavedArticles is set.",
+        "Delete a collection. This can't be undone. Its articles stay in their feeds and in Saved " +
+        "unless deleteSavedArticles is set, which also permanently deletes the saved articles " +
+        "that are in no other collection. To take only some articles out, use " +
+        "remove_from_collection instead. Fails with a not-found error if the user has no such " +
+        "collection (including one already deleted).",
+      annotations: {
+        title: "Delete collection",
+        ...write({ destructiveHint: true, idempotentHint: false }),
+      },
       inputSchema: toInputSchema(deleteCollectionArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(deleteCollectionArgs, args);
@@ -662,9 +779,16 @@ function buildTools(): Tool[] {
     {
       name: "add_to_collection",
       description:
-        "Add articles to a collection. Any visible article works (feed entries or saved " +
-        "articles); it stays in its own feed too, sharing read and starred state. Returns " +
-        "the IDs newly added (already-present and unknown IDs are skipped).",
+        "Add articles to a collection (find its ID with list_subscriptions, or make one with " +
+        "create_collection). Any article the user can see works, feed entry or saved article; it " +
+        "stays in its own feed too, sharing read and starred state. A collection holds at most " +
+        `${MAX_COLLECTION_ENTRIES} articles. Returns the IDs newly added: already-present and ` +
+        "unknown IDs are skipped, so retrying is safe. To order the collection, use " +
+        "set_collection_positions.",
+      annotations: {
+        title: "Add to collection",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(collectionEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(collectionEntriesArgs, args);
@@ -681,8 +805,15 @@ function buildTools(): Tool[] {
     {
       name: "remove_from_collection",
       description:
-        "Remove articles from a collection. The articles themselves are not deleted. Returns " +
-        "the IDs actually removed.",
+        "Remove articles from a collection without deleting them: they stay in their feeds and in " +
+        "Saved (to delete a saved article, use delete_saved_article; to delete the whole " +
+        "collection, delete_collection). Undo with add_to_collection, though the articles' " +
+        "positions are lost. Returns the IDs actually removed; IDs not in the collection are " +
+        "skipped.",
+      annotations: {
+        title: "Remove from collection",
+        ...write({ destructiveHint: true, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(collectionEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(collectionEntriesArgs, args);
@@ -699,12 +830,17 @@ function buildTools(): Tool[] {
     {
       name: "set_collection_positions",
       description:
-        "Set the order of articles in a collection (e.g. a book's chapters): a list sorted " +
-        "by position (list_entries with the collection's subscriptionId and sortBy: " +
-        "position) shows lower positions first, then articles without one. Pass entryIds " +
-        "in order to number them 1, 2, 3, …, or positions to set (or clear, with null) a " +
-        "few, e.g. 2.5 to place one between 2 and 3. Returns the IDs whose position " +
-        "changed and those not in the collection.",
+        "Set the order of articles in a collection (e.g. a book's chapters): a list sorted by " +
+        "position (list_entries with the collection's subscriptionId and sortBy: position) shows " +
+        "lower positions first, then articles without one. Pass exactly one of entryIds, to " +
+        "number those articles 1, 2, 3, … in that order, or positions, to set (or clear, with " +
+        "null) a few without renumbering the rest, e.g. 2.5 to place one between 2 and 3. " +
+        "Articles must already be in the collection (add_to_collection). Returns the IDs whose " +
+        "position changed and those not in the collection.",
+      annotations: {
+        title: "Order collection",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(collectionPositionsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(collectionPositionsArgs, args);
@@ -725,7 +861,11 @@ function buildTools(): Tool[] {
     {
       name: "list_tags",
       description:
-        "List all tags with feed counts and unread counts. Also returns uncategorized subscription counts.",
+        "List all the user's tags, each with its id, name, color, number of subscriptions and " +
+        "unread count, plus the subscription and unread counts of Uncategorized (subscriptions " +
+        "with no tag). Use this to find tag IDs for set_subscription_tags, list_entries, " +
+        "count_entries and list_subscriptions, or before create_tag to see what exists.",
+      annotations: { title: "List tags", ...readOnly },
       inputSchema: toInputSchema(listTagsArgs),
       handler: async (db, userId, args) => {
         parseArgs(listTagsArgs, args);
@@ -736,7 +876,14 @@ function buildTools(): Tool[] {
     {
       name: "create_tag",
       description:
-        "Create a tag for organizing subscriptions. If a tag with that name (ignoring case) already exists, returns it unchanged with created: false.",
+        "Create a tag for grouping subscriptions (apply it with set_subscription_tags). If a tag " +
+        "with that name (ignoring case) already exists, returns it unchanged with created: false, " +
+        "so retrying is safe; to rename or recolor a tag, use update_tag. Returns the tag (id, " +
+        "name, color, counts) and `created`.",
+      annotations: {
+        title: "Create tag",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(createTagArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(createTagArgs, args);
@@ -750,7 +897,16 @@ function buildTools(): Tool[] {
 
     {
       name: "update_tag",
-      description: "Update an existing tag's name or color.",
+      description:
+        "Rename or recolor one of the user's tags (find its ID with list_tags). Only the fields " +
+        "you pass change: omit name to keep it, omit color to keep it, or pass color: null to " +
+        "remove it. The tag keeps its subscriptions. Fails with a not-found error if the tag " +
+        "isn't the user's, and with an error if another of their tags already has the new name " +
+        "(ignoring case). Returns the updated tag.",
+      annotations: {
+        title: "Update tag",
+        ...write({ destructiveHint: false, idempotentHint: true }),
+      },
       inputSchema: toInputSchema(updateTagArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(updateTagArgs, args);
@@ -764,7 +920,15 @@ function buildTools(): Tool[] {
     {
       name: "delete_tag",
       description:
-        "Delete a tag. Uses soft delete for sync tracking. Subscription-tag associations are removed immediately.",
+        "Delete a tag and remove it from every subscription. The subscriptions themselves and " +
+        "their entries are kept (any left with no tag become Uncategorized). This can't be " +
+        "undone; recreating a tag with create_tag doesn't restore its subscriptions. To just " +
+        "rename it, use update_tag. Fails with a not-found error if the tag isn't the user's " +
+        "(including one already deleted).",
+      annotations: {
+        title: "Delete tag",
+        ...write({ destructiveHint: true, idempotentHint: false }),
+      },
       inputSchema: toInputSchema(deleteTagArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(deleteTagArgs, args);
