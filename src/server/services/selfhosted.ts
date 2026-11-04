@@ -62,16 +62,17 @@ function headers(apiKey: string): Record<string, string> {
 }
 
 /**
- * Requests aren't redirected (`redirect: "manual"`), so a redirect is Cloudflare
- * Access sending a refused service token to its sign-in page: a refused key, not
- * a page to read as voices or audio. It's refused as Access refuses a bad token
- * that isn't redirected: a 403.
+ * Requests don't follow redirects (`redirect: "manual"`): fetch would carry the
+ * Access headers to wherever one points, and the page there (Access's sign-in
+ * page, for a token it refuses) isn't voices or audio. A redirect is refused as
+ * Access refuses a bad token outright, as a 403, since retrying won't help.
  */
 async function failure(response: Response): Promise<Error> {
   const provider = aiProviderName("selfhosted");
   if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel();
     return new ProviderRejectedError(
-      `${provider} request was redirected to ${response.headers.get("location") ?? "a sign-in page"}`,
+      `${provider} request was redirected to ${response.headers.get("location")}`,
       provider,
       null,
       403

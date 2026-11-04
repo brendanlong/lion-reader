@@ -27,8 +27,8 @@ const requests: Array<{ model: string; key: string; body: Record<string, unknown
 const accessTokens: Array<{ id: unknown; secret: unknown }> = [];
 /** How the stand-in lists voices: Kokoro-FastAPI's older bare ids or newer objects. */
 let voiceShape: "ids" | "objects" = "objects";
-/** "302" and "403" are how Cloudflare Access turns a request away. */
-let selfHostedFails: "500" | "401" | "403" | "302" | false = false;
+/** "302" is Cloudflare Access sending a refused service token to its sign-in page. */
+let selfHostedFails: "500" | "401" | "302" | false = false;
 const saved = new Map<string, string | undefined>();
 
 /** A second of sound at 24 kHz mono, 16-bit. */
@@ -66,21 +66,18 @@ beforeAll(async () => {
           requests.push({ model: `selfhosted:${String(request.model)}`, key, body: request });
           if (selfHostedFails === "500") return json({ detail: "Internal Server Error" }, 500);
           if (selfHostedFails === "401") return json({ detail: "Invalid API key" }, 401);
-          if (selfHostedFails === "403") {
-            res.writeHead(403, { "Content-Type": "text/html" }).end("<h1>Forbidden</h1>");
-            return;
-          }
           if (selfHostedFails === "302") {
-            res.writeHead(302, { Location: `${base}/cdn-cgi/access/login` }).end("Redirecting");
+            res
+              .writeHead(302, {
+                Location: "https://example.cloudflareaccess.com/cdn-cgi/access/login",
+              })
+              .end("Redirecting");
             return;
           }
           res.writeHead(200, { "Content-Type": "audio/pcm" });
           res.end(speech());
           return;
         }
-        case "/cdn-cgi/access/login":
-          res.writeHead(200, { "Content-Type": "text/html" }).end("<h1>Sign in</h1>");
-          return;
         case "/together/models":
           return json([
             {
@@ -218,7 +215,7 @@ describe("self-hosted voices", () => {
     expect(asked.map((request) => request.model)).toEqual([TOGETHER_KOKORO]);
   });
 
-  it.each(["401", "403", "302"] as const)(
+  it.each(["401", "302"] as const)(
     "refuses, without asking users for a key of their own, when the server's is refused (%s)",
     async (status) => {
       selfHostedFails = status;
@@ -233,6 +230,7 @@ describe("self-hosted voices", () => {
     accessTokens.length = 0;
     await listSpeechModels({ plan: null });
     await speak(SELFHOSTED_KOKORO);
+    // A new key, so the voices are fetched again rather than served from the catalog.
     process.env.SELFHOSTED_API_KEY = randomUUID();
     process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID = "access-id";
     process.env.SELFHOSTED_CF_ACCESS_CLIENT_SECRET = "access-secret";
@@ -247,5 +245,10 @@ describe("self-hosted voices", () => {
     expect(checkSelfHostedConfig).not.toThrow();
     process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID = "access-id";
     expect(checkSelfHostedConfig).toThrow(/SELFHOSTED_CF_ACCESS_CLIENT_SECRET/);
+  });
+
+  it("refuses to start with a key but no server", () => {
+    delete process.env.SELFHOSTED_BASE_URL;
+    expect(checkSelfHostedConfig).toThrow(/SELFHOSTED_BASE_URL/);
   });
 });

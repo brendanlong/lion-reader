@@ -90,6 +90,10 @@ kill_timeout = 30
   # adds latency, so it's last.
   MODEL_FAILOVER = "selfhosted:kokoro,deepinfra:hexgrad/Kokoro-82M,together:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
 
+  # lionreader.com only. Our own Kokoro server, behind Cloudflare Access; its
+  # key and service token are secrets (see .env.example).
+  SELFHOSTED_BASE_URL = "https://kokoro.brendanlong.com/v1"
+
   WORKER_CONCURRENCY = "1"
 
   # lionreader.com only: the Apple, Discord and storage values below.
