@@ -100,6 +100,7 @@ describe("createGettingStartedCollection", () => {
       GETTING_STARTED_ARTICLES.map((article) => article.title)
     );
     expect(items.every((item) => !item.read && !item.starred)).toBe(true);
+    expect(items.every((item) => item.siteName === "Lion Reader")).toBe(true);
 
     // Newest-first lists show them in reading order too.
     const { items: saved } = await listEntries(db, { userId, type: "saved", showSpam: false });

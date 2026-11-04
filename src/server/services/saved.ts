@@ -1112,13 +1112,15 @@ export async function uploadArticle(
   return insertMarkdownArticle(db, userId, params, {
     beforeInsert: () => consumePlanQuota(db, userId, "fileConversions"),
     keepRelativeUrls: false,
+    siteName: "Uploaded Article",
   });
 }
 
 /**
  * Uploads an article we wrote ourselves (the Getting Started collection): its
  * root-relative links stay in-app links instead of resolving against a host
- * that never resolves, and it doesn't count against the user's upload quota.
+ * that never resolves, it doesn't count against the user's upload quota, and
+ * its source reads "Lion Reader".
  */
 export async function uploadOnboardingArticle(
   db: typeof dbType,
@@ -1128,6 +1130,7 @@ export async function uploadOnboardingArticle(
   return insertMarkdownArticle(db, userId, params, {
     beforeInsert: async () => {},
     keepRelativeUrls: true,
+    siteName: "Lion Reader",
   });
 }
 
@@ -1135,7 +1138,7 @@ async function insertMarkdownArticle(
   db: typeof dbType,
   userId: string,
   params: UploadArticleParams,
-  options: { beforeInsert: () => Promise<void>; keepRelativeUrls: boolean }
+  options: { beforeInsert: () => Promise<void>; keepRelativeUrls: boolean; siteName: string }
 ): Promise<SavedArticle> {
   assertUploadSize("Uploaded article", Buffer.byteLength(params.content, "utf8"));
 
@@ -1160,7 +1163,7 @@ async function insertMarkdownArticle(
         providedTitle: params.title,
         providedAuthor: params.author ?? null,
         providedExcerpt: params.excerpt ?? null,
-        siteName: "Uploaded Article",
+        siteName: options.siteName,
       },
       {
         keepRelativeUrls: options.keepRelativeUrls,
