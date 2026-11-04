@@ -16,9 +16,9 @@ export function NewsletterAddressCard() {
   const addressesQuery = trpc.ingestAddresses.list.useQuery();
 
   const createMutation = trpc.ingestAddresses.create.useMutation({
-    onSuccess: () => {
-      utils.ingestAddresses.list.invalidate();
-    },
+    // Stay pending until the list shows the new address, so the button can't
+    // be clicked again in between.
+    onSuccess: () => utils.ingestAddresses.list.invalidate(),
     onError: (error) => {
       toast.error("Failed to create email address", { description: error.message });
     },
