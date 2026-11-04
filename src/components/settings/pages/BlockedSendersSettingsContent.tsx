@@ -21,6 +21,9 @@ import {
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { ProhibitionIcon, CheckIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
+import type { SettingsSectionId } from "../settings-search";
+
+const SECTION_ID: SettingsSectionId = "blocked-senders";
 
 // ============================================================================
 // Types
@@ -43,7 +46,7 @@ export default function BlockedSendersSettingsContent() {
   const senders = blockedQuery.data?.items ?? [];
 
   return (
-    <div>
+    <div id={SECTION_ID}>
       {/* Page Header */}
       <div className="mb-6">
         <h2 className="ui-text-lg text-body font-semibold">Blocked Senders</h2>

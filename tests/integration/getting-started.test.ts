@@ -144,6 +144,21 @@ describe("createGettingStartedCollection", () => {
     expect(await createGettingStartedCollection(db, userId)).toBe(collectionId);
     expect(await savedEntryCount(userId)).toBe(GETTING_STARTED_ARTICLES.length);
   });
+  it("files the articles an earlier attempt uploaded into a new collection on retry", async () => {
+    const userId = await createUser();
+    const firstId = await createGettingStartedCollection(db, userId);
+    // What a retry can find: the articles uploaded, the collection gone.
+    await deleteCollection(db, userId, firstId!);
+    await db.update(users).set({ gettingStartedAt: null }).where(eq(users.id, userId));
+
+    const secondId = await createGettingStartedCollection(db, userId);
+    expect(secondId).not.toBe(firstId);
+    const { items } = await listEntries(db, { userId, subscriptionId: secondId!, showSpam: false });
+    expect(items.map((item) => item.title)).toEqual(
+      GETTING_STARTED_ARTICLES.map((article) => article.title)
+    );
+    expect(await savedEntryCount(userId)).toBe(GETTING_STARTED_ARTICLES.length);
+  });
 });
 
 describe("backfillGettingStartedCollections", () => {

@@ -17,6 +17,9 @@ import {
   DialogBody,
   DialogFooter,
 } from "@/components/ui/dialog";
+import type { SettingsSectionId } from "./settings-search";
+
+const SECTION_ID: SettingsSectionId = "delete-account";
 
 export function DeleteAccountSection() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -52,7 +55,7 @@ export function DeleteAccountSection() {
   };
 
   return (
-    <section>
+    <section id={SECTION_ID}>
       <h2 className="ui-text-lg text-danger mb-4 font-semibold">Delete Account</h2>
       <div className="bg-surface border-danger-border rounded-lg border p-4 sm:p-6">
         <p className="ui-text-sm text-muted">

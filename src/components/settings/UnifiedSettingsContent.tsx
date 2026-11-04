@@ -127,7 +127,7 @@ const READER_INPUT_EVENTS = ["wheel", "touchstart", "keydown", "pointerdown"] as
  */
 function useScrollToLinkedSection(pathname: string, content: RefObject<HTMLElement | null>) {
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    const id = window.location.hash.slice(1);
     if (!id || !content.current) return;
 
     const observer = new ResizeObserver(() => document.getElementById(id)?.scrollIntoView());

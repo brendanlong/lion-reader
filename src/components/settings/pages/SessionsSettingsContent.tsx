@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { MobileIcon, DesktopIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
+import type { SettingsSectionId } from "../settings-search";
+
+const SECTION_ID: SettingsSectionId = "sessions";
 
 /**
  * Parse user agent string to extract browser and platform info.
@@ -73,7 +76,7 @@ export default function SessionsSettingsContent() {
   };
 
   return (
-    <section aria-labelledby="sessions-heading">
+    <section id={SECTION_ID} aria-labelledby="sessions-heading">
       <div className="mb-4 flex items-center justify-between">
         <h2 id="sessions-heading" className="ui-text-lg text-body font-semibold">
           Active Sessions

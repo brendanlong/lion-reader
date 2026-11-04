@@ -10,8 +10,8 @@
  * collection is an ordinary collection, so afterwards the user can read,
  * rearrange, or delete any of it. `users.getting_started_at` is what stops us
  * re-adding them (issue #1383) — it records that we inserted them, not that
- * they still exist. Accounts that predate the collection already have it set
- * (they got the single article it replaced), so only new accounts get one.
+ * they still exist. Accounts that got the single article this replaced
+ * already have it set, so they don't get the collection.
  */
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -21,11 +21,7 @@ import type { Database } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
 import { uploadOnboardingArticle } from "@/server/services/saved";
-import {
-  createCollection,
-  setCollectionPositions,
-  type CollectionPosition,
-} from "@/server/services/collections";
+import { addEntriesToCollection, createCollection } from "@/server/services/collections";
 import {
   GETTING_STARTED_ARTICLES,
   GETTING_STARTED_COLLECTION_NAME,
@@ -38,12 +34,12 @@ import {
  * The flag is claimed *before* the inserts (`UPDATE ... WHERE
  * getting_started_at IS NULL RETURNING`), so a signup racing the backfill job
  * can't produce two copies. A failure releases the claim, and every step is
- * idempotent (the collection by name, each article by its upload key, the
- * positions by value), so the retry finishes the job without duplicates.
+ * idempotent (each article by its upload key, the collection by name, the
+ * filing by membership), so the retry finishes the job without duplicates.
  *
  * Deliberately biased toward missing over doubling: the claim commits on its
- * own, so a process that dies part-way leaves that one user with a partial
- * collection and nothing to retry it. Losing onboarding articles beats showing
+ * own, so a process that dies part-way leaves that one user with some of the
+ * articles in Saved, maybe no collection, and nothing to retry it. Losing onboarding articles beats showing
  * someone two copies.
  *
  * @returns the collection's id, or null if this user already had one.
@@ -63,22 +59,24 @@ export async function createGettingStartedCollection(
   }
 
   try {
-    const { subscription } = await createCollection(db, userId, GETTING_STARTED_COLLECTION_NAME);
     // Inserted last to first, so newest-first lists like All and Saved show
     // them in reading order too.
-    const positions: CollectionPosition[] = [];
+    const positions = new Map<string, number>();
     for (const [index, article] of [...GETTING_STARTED_ARTICLES.entries()].reverse()) {
       const saved = await uploadOnboardingArticle(db, userId, {
         content: article.markdown,
         title: article.title,
         excerpt: article.excerpt,
-        collectionIds: [subscription.id],
         // The colon keeps it out of the key space callers can use.
         idempotencyKey: `onboarding:getting-started:${article.key}`,
       });
-      positions.push({ entryId: saved.id, position: index + 1 });
+      positions.set(saved.id, index + 1);
     }
-    await setCollectionPositions(db, userId, subscription.id, positions);
+    // Filed in one call after the uploads, so a retry files articles an
+    // earlier attempt uploaded too, even into a new collection if the user
+    // renamed or deleted a partial one.
+    const { subscription } = await createCollection(db, userId, GETTING_STARTED_COLLECTION_NAME);
+    await addEntriesToCollection(db, userId, subscription.id, [...positions.keys()], positions);
     logger.info("Created Getting Started collection", {
       userId,
       subscriptionId: subscription.id,
