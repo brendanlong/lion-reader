@@ -35,6 +35,8 @@ export interface DemoEntry extends EntryListData {
   score: number;
   /** Pre-sanitized HTML content for the detail view */
   contentHtml: string;
+  /** `DemoArticle.fullContentHtml` */
+  fullContentHtml?: string;
   /** Pre-generated AI summary HTML for the summary card */
   summaryHtml: string;
   /** Model ID that generated `summaryHtml` (shown in the summary card footer). */
@@ -164,6 +166,11 @@ export function getDemoTag(tagId: string): DemoTag | undefined {
 
 export function getDemoEntry(entryId: string): DemoEntry | undefined {
   return entriesById.get(entryId);
+}
+
+/** Only articles with a fuller version than their feed's have one to show. */
+export function demoOffersFullContent(entryId: string): boolean {
+  return getDemoEntry(entryId)?.fullContentHtml !== undefined;
 }
 
 export function getDemoSubscription(subscriptionId: string): DemoSubscription | undefined {

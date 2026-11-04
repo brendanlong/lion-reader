@@ -59,10 +59,13 @@ async function buildCatalog(): Promise<Map<string, PrerecordedChunk>> {
   const voice = getDemoNarrationVoice();
   if (!voice) return catalog;
   for (const entry of DEMO_ENTRIES) {
-    for (const following of [undefined, NEXT_ARTICLE, NO_MORE_ARTICLES]) {
-      for (const text of cloudSpeechTexts(demoNarrationText(entry.contentHtml, following))) {
-        const key = await prerecordedSpeechKey(voice, text);
-        catalog.set(key, { voice, text });
+    for (const html of [entry.contentHtml, entry.fullContentHtml]) {
+      if (html === undefined) continue;
+      for (const following of [undefined, NEXT_ARTICLE, NO_MORE_ARTICLES]) {
+        for (const text of cloudSpeechTexts(demoNarrationText(html, following))) {
+          const key = await prerecordedSpeechKey(voice, text);
+          catalog.set(key, { voice, text });
+        }
       }
     }
   }

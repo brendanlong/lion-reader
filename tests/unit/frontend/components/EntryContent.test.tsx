@@ -21,6 +21,7 @@ import { patchServerEntryMetadata } from "@/lib/local-db/entries";
 import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import { useMarkReadOn, type MarkReadOn } from "@/lib/hooks/useMarkReadOn";
 import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
@@ -220,17 +221,43 @@ describe("EntryContent", () => {
   });
 
   it.each([
-    ["a feed article", { type: "web", subscriptionId: "sub-1" }, true],
+    ["a feed article", { type: "web", subscriptionId: "sub-1" }, {}, true],
     // Its origin is the saved subscription (#1846), which has no settings.
-    ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, false],
-  ])("offers the full-content toggle for %s: %s", async (_label, fields, offered) => {
-    renderEntryContent(<EntryContent entryId="entry-1" />, {
-      ...baseHandlers(),
-      "entries.get": () => ({ entry: createEntry(fields) }),
-    });
+    ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, {}, false],
+    [
+      "an entry the mount doesn't offer it for",
+      { type: "web", subscriptionId: "sub-1" },
+      { offersFullContent: (): boolean => false },
+      false,
+    ],
+    // Or a visitor who turned it on elsewhere couldn't turn it off here.
+    [
+      "an entry the mount doesn't offer it for, with the setting on",
+      {
+        type: "web",
+        subscriptionId: "sub-1",
+        fetchFullContent: true,
+        fullContentCleaned: "<p>Full body content here.</p>",
+        fullContentFetchedAt: new Date("2024-06-15T11:30:00Z"),
+      },
+      { offersFullContent: (): boolean => false },
+      true,
+    ],
+  ])("offers the full-content toggle for %s: %s", async (_label, fields, options, offered) => {
+    renderEntryContent(
+      <EntryContentOptionsProvider value={options}>
+        <EntryContent entryId="entry-1" />
+      </EntryContentOptionsProvider>,
+      {
+        ...baseHandlers(),
+        "entries.get": () => ({ entry: createEntry(fields) }),
+      }
+    );
     await screen.findByText("The Great Article");
     expect(
-      screen.queryByRole("button", { name: "Fetch and display full article content" }) !== null
+      screen.queryByRole("button", {
+        name: /^(Fetch and display full article content|Switch to feed content)$/,
+      }) !== null
     ).toBe(offered);
   });
 

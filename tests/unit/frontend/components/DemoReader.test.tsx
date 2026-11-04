@@ -24,7 +24,7 @@ import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOp
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
 import { createDemoStore } from "@/lib/demo/store";
 import { demoEntrySlots } from "@/app/(public)/demo/DemoEntrySlots";
-import { DEMO_ENTRIES } from "@/lib/demo/data";
+import { DEMO_ENTRIES, demoOffersFullContent } from "@/lib/demo/data";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({
@@ -51,7 +51,9 @@ function renderDemo() {
     handlers: store.handlers,
     wrapper: (children) => (
       <AppLocationProvider basePath="/demo">
-        <EntryContentOptionsProvider value={{ renderSlots: demoEntrySlots }}>
+        <EntryContentOptionsProvider
+          value={{ renderSlots: demoEntrySlots, offersFullContent: demoOffersFullContent }}
+        >
           <AppearanceProvider>
             <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
           </AppearanceProvider>
@@ -68,6 +70,7 @@ function renderDemo() {
   return { ...result, store, followNavigation };
 }
 
+const FETCH_FULL_CONTENT = "Fetch and display full article content";
 const STARRED = DEMO_ENTRIES.filter((e) => e.starred).length;
 
 describe("demo reader tree", () => {
@@ -200,6 +203,27 @@ describe("demo reader tree", () => {
     fireEvent.keyDown(reopened.search, { key: "Enter" });
     await vi.waitFor(() => expect(first).toHaveAttribute("aria-selected", "true"));
     expect(last).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("offers Full Content only on an article with a fuller version, and shows it", async () => {
+    mockSearch = "entry=welcome";
+    const { unmount } = renderDemo();
+    await screen.findByRole("heading", { name: "Welcome to Lion Reader", level: 1 });
+    expect(screen.queryByRole("button", { name: FETCH_FULL_CONTENT })).not.toBeInTheDocument();
+    unmount();
+
+    const teased = DEMO_ENTRIES.find((entry) => demoOffersFullContent(entry.id))!;
+    mockSearch = `entry=${teased.id}`;
+    renderDemo();
+    const fullOnlyText = new DOMParser()
+      .parseFromString(teased.fullContentHtml!, "text/html")
+      .body.querySelectorAll("p")[1].textContent;
+    const fullOnly = (_: string, element: Element | null) =>
+      element?.tagName === "P" && element.textContent === fullOnlyText;
+    const toggle = await screen.findByRole("button", { name: FETCH_FULL_CONTENT });
+    expect(screen.queryByText(fullOnly)).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(await screen.findByText(fullOnly)).toBeVisible();
   });
 
   it("shows the canned summary through the real summarize flow", async () => {
