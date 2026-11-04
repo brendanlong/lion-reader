@@ -235,10 +235,10 @@ export default function PrivacyPolicyPage() {
               </LegalParagraph>
               <LegalParagraph>
                 With built-in or downloaded voices, audio is generated entirely on your device.{" "}
-                <strong>Cloud Voices</strong> are the default (you can switch to built-in or
-                downloaded voices in narration settings): the text being narrated is sent to the
-                provider of the speech model in use to generate the audio. The default voice,
-                Kokoro, runs on our own speech server (see{" "}
+                <strong>Cloud Voices</strong> are the default when your account has them (otherwise
+                built-in voices are; you can switch in narration settings): the text being narrated
+                is sent to the provider of the speech model in use to generate the audio. The
+                default voice, Kokoro, runs on our own speech server (see{" "}
                 <TextLink href="#hosting">Hosting</TextLink>) or, when that isn&apos;t available, at
                 DeepInfra or through OpenRouter. Other voices you pick run at BreezeBlue, Together
                 AI or DeepInfra directly, or through OpenRouter, which forwards the text to the

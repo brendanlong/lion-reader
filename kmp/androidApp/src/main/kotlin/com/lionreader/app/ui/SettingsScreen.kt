@@ -297,10 +297,11 @@ private fun NarrationSettings(
         asked = true
     }
     val cloud = known ?: VoiceModels(emptyList(), "").takeIf { asked }
+    val inUse = settings.narrationEngine.inUse(known)
     Section("Narration voices") {
         val engines =
             NarrationEngine.entries.filter { engine ->
-                engine == settings.narrationEngine ||
+                engine == inUse ||
                     when (engine) {
                         NarrationEngine.DEVICE -> true
                         NarrationEngine.CLOUD -> !cloud?.models.isNullOrEmpty()
@@ -308,11 +309,11 @@ private fun NarrationSettings(
                     }
             }
         if (engines.size > 1) {
-            Choices(engines, settings.narrationEngine, { it.label }) { engine ->
+            Choices(engines, inUse, { it.label }) { engine ->
                 update { it.copy(narrationEngine = engine) }
             }
         }
-        when (settings.narrationEngine) {
+        when (inUse) {
             NarrationEngine.ENHANCED -> EnhancedVoiceSettings(graph, settings, update)
             NarrationEngine.DEVICE -> {
                 val voices = deviceVoices

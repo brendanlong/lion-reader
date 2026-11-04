@@ -206,6 +206,19 @@ export function loadNarrationSettings(): NarrationSettings {
 }
 
 /**
+ * The provider narration uses: built-in voices instead of cloud ones once
+ * `narration.listVoiceModels` lists none for the user (no provider key, or a
+ * plan without them) or fails. Until it answers, the choice stands.
+ */
+export function narrationProvider(
+  provider: TTSProviderId,
+  cloudVoices: { data?: { models: unknown[] }; isError: boolean }
+): TTSProviderId {
+  const unavailable = cloudVoices.data ? cloudVoices.data.models.length === 0 : cloudVoices.isError;
+  return provider === "cloud" && unavailable ? "browser" : provider;
+}
+
+/**
  * Saves narration settings to localStorage.
  *
  * @param settings - The settings to save.

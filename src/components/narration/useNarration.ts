@@ -15,7 +15,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
-import { useNarrationSettings } from "@/lib/narration/settings";
+import { narrationProvider, useNarrationSettings } from "@/lib/narration/settings";
 import { findVoiceByUri, waitForVoices } from "@/lib/narration/voices";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import {
@@ -150,10 +150,17 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const paragraphMapRef = useRef<ParagraphMapEntry[]>([]);
 
   const [storedSettings] = useNarrationSettings();
+  const cloudVoicesQuery = trpc.narration.listVoiceModels.useQuery(undefined, {
+    enabled: storedSettings.provider === "cloud" && !prerecordedVoice,
+    staleTime: 5 * 60 * 1000,
+  });
+  const provider = narrationProvider(storedSettings.provider, cloudVoicesQuery);
   const settings = useMemo(
     () =>
-      prerecordedVoice ? withPrerecordedVoice(storedSettings, prerecordedVoice) : storedSettings,
-    [storedSettings, prerecordedVoice]
+      prerecordedVoice
+        ? withPrerecordedVoice(storedSettings, prerecordedVoice)
+        : { ...storedSettings, provider },
+    [storedSettings, prerecordedVoice, provider]
   );
 
   // Until the model is downloaded (in settings, with its progress), browser

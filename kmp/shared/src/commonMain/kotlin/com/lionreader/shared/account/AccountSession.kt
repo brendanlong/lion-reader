@@ -118,10 +118,10 @@ internal constructor(
 
     /**
      * The cloud model and voice to narrate with: the chosen [model] and [voice] if the server still
-     * offers them, else its defaults. Throws the [com.lionreader.shared.narration.SpeechException]
-     * saying why there's none.
+     * offers them, else its defaults; null when it offers this account none. Throws the
+     * [com.lionreader.shared.narration.SpeechException] saying why it couldn't be asked.
      */
-    suspend fun cloudVoice(model: String?, voice: String?): ResolvedVoice {
+    suspend fun cloudVoice(model: String?, voice: String?): ResolvedVoice? {
         val available =
             try {
                 fetchVoiceModels(model, voice)
@@ -141,7 +141,6 @@ internal constructor(
                 }
             }
         return available.resolve(model, voice)
-            ?: throw SpeechUnavailable("Cloud voices aren't set up for your account.")
     }
 
     fun close() {

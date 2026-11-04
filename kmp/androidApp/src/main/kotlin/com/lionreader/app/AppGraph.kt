@@ -131,7 +131,9 @@ class AppGraph(
                 val session =
                     accounts.account.value
                         ?: throw SpeechUnavailable("Sign in to use cloud voices.")
-                val choice = session.cloudVoice(settings.cloudVoiceModel, settings.cloudVoice)
+                val choice =
+                    session.cloudVoice(settings.cloudVoiceModel, settings.cloudVoice)
+                        ?: return DeviceVoices(systemTts, settings.narrationVoice)
                 CloudVoices(
                     session.connection.api,
                     choice.model.id,

@@ -65,6 +65,15 @@ interface SpeechStub {
 
 let speech: SpeechStub;
 
+const CLOUD_MODEL = {
+  id: "deepinfra:hexgrad/Kokoro-82M",
+  displayName: "Kokoro",
+  provider: "deepinfra" as const,
+  providerDisplayName: "DeepInfra",
+  voices: [{ id: "af_heart", name: "af_heart" }],
+  defaultVoice: "af_heart",
+};
+
 beforeEach(() => {
   stubMemoryLocalStorage();
   localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "browser" }));
@@ -570,6 +579,30 @@ describe("narration that finishes generating after the user moved on", () => {
     expect(calls[1].input).toMatchObject({ showFullContent: true });
   });
 
+  it("reads with built-in voices when the server lists no cloud voices", async () => {
+    localStorage.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ useLlmNormalization: true, provider: "cloud" })
+    );
+    const { callsFor } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: {
+        "narration.listVoiceModels": () => ({ models: [], defaultModelId: "" }),
+        "narration.generate": () => ({
+          narration: "Server narration.",
+          cached: false,
+          source: "llm",
+          paragraphMap: [],
+        }),
+      },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+    await waitFor(() => expect(callsFor("narration.listVoiceModels")).toHaveLength(1));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(speech.speak).toHaveBeenCalledTimes(1));
+  });
+
   it("doesn't let an abandoned cloud request stop the playback that replaced it", async () => {
     localStorage.setItem(
       "lion-reader-narration-settings",
@@ -601,6 +634,10 @@ describe("narration that finishes generating after the user moved on", () => {
     let generateCalls = 0;
     const { callsFor, rerender } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
       handlers: {
+        "narration.listVoiceModels": () => ({
+          models: [CLOUD_MODEL],
+          defaultModelId: CLOUD_MODEL.id,
+        }),
         "narration.generate": () =>
           generateCalls++ === 0
             ? first.handler()
