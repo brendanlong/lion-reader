@@ -62,6 +62,7 @@ export function IntegrationsSettings() {
 
   return (
     <SettingsSection
+      id="ai-integrations"
       title="AI Integrations"
       description={
         <>

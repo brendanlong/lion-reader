@@ -337,7 +337,7 @@ export function SubscribeContent() {
           <p className="ui-text-sm text-muted mt-4">
             Moving from another reader? Bring everything over at once with{" "}
             <ClientLink
-              href="/settings/subscriptions"
+              href="/settings/subscriptions#import-export"
               className="text-accent hover:text-accent-hover font-medium"
             >
               OPML import

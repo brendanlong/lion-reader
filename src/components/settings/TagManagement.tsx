@@ -49,6 +49,7 @@ function TagManagementContent() {
 
   return (
     <SettingsSection
+      id="tags"
       title="Tags"
       description="Group your subscriptions into tags, which appear in the sidebar."
     >
@@ -73,7 +74,7 @@ function TagManagementContent() {
 
 function TagManagementError() {
   return (
-    <SettingsSection title="Tags" error="Failed to load tags">
+    <SettingsSection id="tags" title="Tags" error="Failed to load tags">
       <div />
     </SettingsSection>
   );
@@ -81,7 +82,7 @@ function TagManagementError() {
 
 function TagManagementSkeleton() {
   return (
-    <SettingsSection title="Tags" isLoading skeletonRows={3}>
+    <SettingsSection id="tags" title="Tags" isLoading skeletonRows={3}>
       <div />
     </SettingsSection>
   );

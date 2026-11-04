@@ -19,6 +19,7 @@ export function GoogleReaderApiSettings() {
 
   return (
     <SettingsSection
+      id="google-reader-api"
       title="Google Reader API"
       description={
         <>

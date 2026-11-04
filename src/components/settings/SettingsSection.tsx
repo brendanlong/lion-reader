@@ -8,12 +8,19 @@
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import type { ReactNode } from "react";
+import type { SettingsSectionId } from "./settings-search";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 interface SettingsSectionProps {
+  /**
+   * The section's settings-search id, also its element id, so
+   * `/settings/<page>#<id>` links straight to it.
+   */
+  id: SettingsSectionId;
+
   /**
    * The title displayed as the section heading.
    */
@@ -50,6 +57,7 @@ interface SettingsSectionProps {
 // ============================================================================
 
 export function SettingsSection({
+  id,
   title,
   children,
   description,
@@ -59,7 +67,7 @@ export function SettingsSection({
 }: SettingsSectionProps) {
   if (isLoading) {
     return (
-      <section>
+      <section id={id}>
         <SettingsSectionHeading>{title}</SettingsSectionHeading>
         <Card>
           <div className="space-y-4">
@@ -73,7 +81,7 @@ export function SettingsSection({
   }
 
   return (
-    <section>
+    <section id={id}>
       <SettingsSectionHeading>{title}</SettingsSectionHeading>
       <Card>
         {description && <p className="ui-text-sm text-muted mb-4">{description}</p>}

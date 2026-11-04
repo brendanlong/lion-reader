@@ -4,7 +4,7 @@ import { CONTACT_EMAIL, DISCORD_SERVER_URL } from "@/lib/contact";
 
 export function NativeAppSettings() {
   return (
-    <SettingsSection title="Lion Reader App">
+    <SettingsSection id="native-app" title="Lion Reader App">
       <p className="ui-text-sm text-muted">
         We have a native Android app in beta. If you&apos;d like to try it, email{" "}
         <TextLink href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</TextLink> or ask in our{" "}

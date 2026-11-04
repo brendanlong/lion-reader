@@ -1,4 +1,5 @@
 import { type DemoArticle } from "./types";
+import { WALLABAG_ANDROID_APP_URL, WALLABAG_IOS_APP_URL } from "@/lib/app-listings";
 
 const article: DemoArticle = {
   id: "wallabag-api",
@@ -16,7 +17,7 @@ const article: DemoArticle = {
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Lion Reader works with the free <a href="https://wallabag.org/" target="_blank" rel="noopener noreferrer">Wallabag</a> read-it-later apps for <a href="https://play.google.com/store/apps/details?id=fr.gaulupeau.apps.InThePoche" target="_blank" rel="noopener noreferrer">Android</a> and <a href="https://apps.apple.com/app/wallabag-2-official/id1170800946" target="_blank" rel="noopener noreferrer">iOS</a>. Once connected, tap <strong>Share</strong> in your browser, your social media app, or anywhere else, pick Wallabag, and the link is saved to Lion Reader. You don&rsquo;t need a Wallabag account; the app signs in with your Lion Reader account.</p>
+    <p>Lion Reader works with the free <a href="https://wallabag.org/" target="_blank" rel="noopener noreferrer">Wallabag</a> read-it-later apps for <a href="${WALLABAG_ANDROID_APP_URL}" target="_blank" rel="noopener noreferrer">Android</a> and <a href="${WALLABAG_IOS_APP_URL}" target="_blank" rel="noopener noreferrer">iOS</a>. Once connected, tap <strong>Share</strong> in your browser, your social media app, or anywhere else, pick Wallabag, and the link is saved to Lion Reader. You don&rsquo;t need a Wallabag account; the app signs in with your Lion Reader account.</p>
 
     <p>On iPhone and iPad, this is the easiest way to save from the share menu, since an <a href="/demo/all?entry=pwa">installed Lion Reader</a> can only receive shares on Android. You can also browse, star, archive (mark read), and delete your <a href="/demo/all?entry=save-for-later">saved articles</a> from inside the app, with changes synced back to Lion Reader, and read them offline.</p>
 

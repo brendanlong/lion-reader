@@ -54,7 +54,7 @@ type ImportState =
 
 export function OpmlImportExport() {
   return (
-    <SettingsSection title="Import / Export">
+    <SettingsSection id="import-export" title="Import / Export">
       <ImportSection />
       <CardSection>
         <ExportSection />

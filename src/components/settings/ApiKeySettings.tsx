@@ -150,6 +150,7 @@ export function AiProviderKeySettings() {
 
   return (
     <SettingsSection
+      id="ai-provider-keys"
       title="AI Provider API Keys"
       description={serverFeatures && keyRequirementText(serverFeatures)}
     >
@@ -228,6 +229,7 @@ export function SummarizationSettings() {
 
   return (
     <SettingsSection
+      id="summaries"
       title="Summaries"
       description={"Summarize articles on demand. Needs an API key from any provider above."}
     >

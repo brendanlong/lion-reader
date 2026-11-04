@@ -95,7 +95,7 @@ export function IngestAddressesSection() {
 
   if (addressesQuery.data?.enabled === false) {
     return (
-      <SettingsSection title="Newsletter Addresses">
+      <SettingsSection id="ingest-addresses" title="Newsletter Addresses">
         <p className="ui-text-sm text-muted">
           Email newsletters aren&apos;t set up on this server.
         </p>
@@ -361,7 +361,7 @@ export function SpamPreferenceSection() {
   };
 
   return (
-    <SettingsSection title="Spam">
+    <SettingsSection id="spam" title="Spam">
       <SwitchRow
         id="show-spam-label"
         label="Show spam entries"

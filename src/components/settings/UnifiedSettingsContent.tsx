@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { usePathname } from "next/navigation";
 import { ClientLink } from "@/components/ui/client-link";
 import { ChevronLeftIcon, CloseIcon, SearchIcon } from "@/components/ui/icons";
@@ -116,6 +116,33 @@ function SettingsContentRouter() {
   }
 }
 
+/** Input that means the reader has taken over scrolling. */
+const READER_INPUT_EVENTS = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+
+/**
+ * Keeps the section a `/settings/<page>#<section id>` link names in view. The
+ * browser jumps to it once, while the sections above are still skeletons, so
+ * it lands short when they fill in; this follows it as the content resizes,
+ * until the reader scrolls, taps, or types.
+ */
+function useScrollToLinkedSection(pathname: string, content: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id || !content.current) return;
+
+    const observer = new ResizeObserver(() => document.getElementById(id)?.scrollIntoView());
+    observer.observe(content.current);
+    const stop = () => observer.disconnect();
+    for (const type of READER_INPUT_EVENTS) {
+      window.addEventListener(type, stop, { once: true, passive: true });
+    }
+    return () => {
+      stop();
+      for (const type of READER_INPUT_EVENTS) window.removeEventListener(type, stop);
+    };
+  }, [pathname, content]);
+}
+
 /**
  * Unified settings content with layout and pathname-based routing.
  */
@@ -123,6 +150,8 @@ export function UnifiedSettingsContent() {
   const pathname = usePathname();
   const [query, setQuery] = useState("");
   const isSearching = query.trim() !== "";
+  const contentRef = useRef<HTMLDivElement>(null);
+  useScrollToLinkedSection(pathname, contentRef);
 
   // Leaving for a settings page (sidebar, a result's page link, back/forward)
   // ends the search — render-time state adjustment, not an effect.
@@ -187,7 +216,7 @@ export function UnifiedSettingsContent() {
         </nav>
 
         {/* Main Content */}
-        <div className="min-w-0 flex-1">
+        <div ref={contentRef} className="min-w-0 flex-1">
           <ErrorBoundary key={isSearching ? "search" : pathname} message="Failed to load settings">
             {isSearching ? (
               <SettingsSearchResults query={query} onNavigate={() => setQuery("")} />

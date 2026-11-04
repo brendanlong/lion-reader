@@ -18,7 +18,7 @@ export function KeyboardShortcutsSettings() {
   const { enabled, setEnabled, openShortcutsModal } = useKeyboardShortcutsContext();
 
   return (
-    <SettingsSection title="Keyboard Shortcuts">
+    <SettingsSection id="keyboard-shortcuts" title="Keyboard Shortcuts">
       <SwitchRow
         id="keyboard-shortcuts-label"
         label="Enable keyboard shortcuts"

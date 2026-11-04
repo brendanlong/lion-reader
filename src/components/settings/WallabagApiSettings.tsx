@@ -15,6 +15,7 @@ import { useAppBaseUrl } from "@/lib/hooks/useAppBaseUrl";
 import { QRCodeSVG } from "qrcode.react";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { WALLABAG_ANDROID_APP_URL, WALLABAG_IOS_APP_URL } from "@/lib/app-listings";
 import { Button } from "@/components/ui/button";
 import { CardSection } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -66,6 +67,7 @@ export function WallabagApiSettings() {
 
   return (
     <SettingsSection
+      id="wallabag-api"
       title="Wallabag API"
       description={
         <>
@@ -82,16 +84,13 @@ export function WallabagApiSettings() {
         <h3 className="ui-text-sm text-body font-medium">Compatible Apps</h3>
         <ul className="ui-text-sm text-muted mt-2 list-inside list-disc space-y-1">
           <li>
-            <TextLink
-              href="https://play.google.com/store/apps/details?id=fr.gaulupeau.apps.InThePoche"
-              external
-            >
+            <TextLink href={WALLABAG_ANDROID_APP_URL} external>
               wallabag
             </TextLink>{" "}
             (Android)
           </li>
           <li>
-            <TextLink href="https://apps.apple.com/app/wallabag-2-official/id1170800946" external>
+            <TextLink href={WALLABAG_IOS_APP_URL} external>
               wallabag 2
             </TextLink>{" "}
             (iOS)
