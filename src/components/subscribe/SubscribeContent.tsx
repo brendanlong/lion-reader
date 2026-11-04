@@ -21,6 +21,7 @@ import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { ClientLink } from "@/components/ui/client-link";
 import { FeedSiteLink } from "@/components/feeds/FeedSiteLink";
+import { NewsletterAddressCard } from "@/components/subscribe/NewsletterAddressCard";
 import {
   CheckCircleIcon,
   SpinnerIcon,
@@ -346,6 +347,8 @@ export function SubscribeContent() {
           </p>
         </Card>
       )}
+
+      {step === "input" && <NewsletterAddressCard />}
 
       {step === "discovery" && (
         <div className="space-y-4">
