@@ -26,6 +26,7 @@ import {
   OpenRouterChatError,
   openRouterChatCompletion,
   openRouterTextModelPrice,
+  type OpenRouterSort,
   pricePerMillionUnits,
   type OpenRouterModel,
 } from "@/server/services/openrouter";
@@ -348,6 +349,16 @@ interface TextCall {
   model: string;
   apiKey: string;
   onUserKey: boolean;
+  /** How OpenRouter picks a host (`PlanLimits.serverKeyRouting`). */
+  sort: OpenRouterSort;
+}
+
+/**
+ * Interactive calls prefer the fastest host, except where the user's plan
+ * asks for the cheapest on the server's key.
+ */
+function openRouterSort(keys: AiProviderKeys | undefined, onUserKey: boolean): OpenRouterSort {
+  return !onUserKey && keys?.plan?.limits.serverKeyRouting === "cheapest" ? "price" : "throughput";
 }
 
 /** The call for `ref` on `keys`, or why it can't be made. */
@@ -374,7 +385,8 @@ async function textCall(
   if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) {
     throw new Error(`JSON-object responses are not supported for ${aiProviderName(provider)}`);
   }
-  return { provider, model: ref.model, apiKey, onUserKey: isOnUserKey(provider, keys) };
+  const onUserKey = isOnUserKey(provider, keys);
+  return { provider, model: ref.model, apiKey, onUserKey, sort: openRouterSort(keys, onUserKey) };
 }
 
 /**
@@ -382,7 +394,7 @@ async function textCall(
  * in order: those the server has a key for that can do what's asked. A
  * user's own key is only used the way they picked, but the server's back
  * them up, whether or not users may pick that host (`model-failover.ts`),
- * as far as the user's plan lets the model run on the server's keys.
+ * where the user's plan lets that host run on the server's keys.
  */
 function textFailovers(
   first: TextCall,
@@ -394,9 +406,9 @@ function textFailovers(
     const { provider, model } = parseModelRef(id);
     const apiKey = getProviderApiKey(provider);
     if (!apiKey || !isTextAiProvider(provider)) return [];
-    if (!planAllowsOnServerKey(keys, firstRef) && !planAllowsOnServerKey(keys, id)) return [];
+    if (!planAllowsOnServerKey(keys, id)) return [];
     if (options.jsonObject && !TEXT_PROVIDER_ADAPTERS[provider].jsonObject) return [];
-    return [{ provider, model, apiKey, onUserKey: false }];
+    return [{ provider, model, apiKey, onUserKey: false, sort: openRouterSort(keys, false) }];
   });
 }
 
@@ -502,7 +514,7 @@ interface TextProviderAdapter {
    */
   jsonObject: boolean;
   /** The response text ("" for none) to `options` from `model` (provider-native). */
-  complete(call: ProviderCall, model: string, options: ChatCompletionOptions): Promise<string>;
+  complete(call: TextCall, model: string, options: ChatCompletionOptions): Promise<string>;
   listModels(call: ProviderCall, requirements: ModelRequirements): Promise<AiModel[]>;
 }
 
@@ -570,11 +582,12 @@ const TEXT_PROVIDER_ADAPTERS: Record<TextAiProvider, TextProviderAdapter> = {
   },
   openrouter: {
     jsonObject: true,
-    complete: ({ apiKey, onUserKey }, model, options) =>
+    complete: ({ apiKey, onUserKey, sort }, model, options) =>
       openRouterChatCompletion(
         apiKey,
         model,
         options,
+        sort,
         onUserKey ? null : serverKeyTokenPriceCaps(formatModelRef("openrouter", model)),
         TEXT_REQUEST_BUDGET_MS
       ),

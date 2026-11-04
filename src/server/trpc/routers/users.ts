@@ -401,6 +401,7 @@ export const usersRouter = createTRPCRouter({
           maxSubscriptions: z.number().nullable(),
           maxIngestAddresses: z.number().nullable(),
           serverKeyModels: z.array(z.string()).readonly().nullable(),
+          serverKeyRouting: z.enum(["cheapest", "fastest"]),
           quotas: z.record(
             z.enum(PLAN_QUOTAS),
             z.union([
