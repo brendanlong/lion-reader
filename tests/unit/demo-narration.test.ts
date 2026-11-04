@@ -17,24 +17,27 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** Every version of an article the reader can show: the feed's, and any fuller one. */
+const DEMO_HTML = DEMO_ENTRIES.flatMap((entry) => [
+  [entry.id, entry.contentHtml],
+  ...(entry.fullContentHtml ? [[`${entry.id} (full)`, entry.fullContentHtml]] : []),
+]);
+
 describe("demo narration catalog", () => {
-  it.each(DEMO_ENTRIES.map((entry) => [entry.id, entry.contentHtml]))(
-    "has the text the browser narrates: %s",
-    (_id, html) => {
-      expect(demoNarrationText(html)).toBe(
-        withEndOfArticle(htmlToClientNarration(html)).narrationText
-      );
-    }
-  );
+  it.each(DEMO_HTML)("has the text the browser narrates: %s", (_id, html) => {
+    expect(demoNarrationText(html)).toBe(
+      withEndOfArticle(htmlToClientNarration(html)).narrationText
+    );
+  });
 
   it("has every chunk the player asks for, however narration ends", async () => {
     vi.stubEnv("DEMO_NARRATION_MODEL", "selfhosted:kokoro");
     vi.stubEnv("DEMO_NARRATION_VOICE", "af_heart");
     const texts = new Set([...(await demoNarrationCatalog()).values()].map((chunk) => chunk.text));
-    for (const entry of DEMO_ENTRIES) {
+    for (const [, html] of DEMO_HTML) {
       for (const following of [undefined, NEXT_ARTICLE, NO_MORE_ARTICLES]) {
         for (const text of cloudSpeechTexts(
-          withEndOfArticle(htmlToClientNarration(entry.contentHtml), following).narrationText
+          withEndOfArticle(htmlToClientNarration(html), following).narrationText
         )) {
           expect(texts).toContain(text);
         }

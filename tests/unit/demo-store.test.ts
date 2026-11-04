@@ -338,11 +338,27 @@ describe("createDemoStore", () => {
   });
 
   describe("entries.get and summaries", () => {
+    it("fetches an article's fuller version as its full content, and others as they are", () => {
+      const { procedures } = createDemoStore();
+      const teased = DEMO_ENTRIES.find((e) => e.fullContentHtml !== undefined)!;
+      const complete = DEMO_ENTRIES.find((e) => e.fullContentHtml === undefined)!;
+      expect(procedures["entries.get"]({ id: teased.id }).entry.fullContentCleaned).toBeNull();
+
+      expect(
+        procedures["entries.fetchFullContent"]({ id: teased.id }).entry?.fullContentCleaned
+      ).toBe(teased.fullContentHtml);
+      expect(
+        procedures["entries.fetchFullContent"]({ id: complete.id }).entry?.fullContentCleaned
+      ).toBe(complete.contentHtml);
+    });
+
     it("returns the full article and its canned summary", () => {
       const { procedures } = createDemoStore();
       const welcome = DEMO_ENTRIES.find((e) => e.id === "welcome")!;
       const { entry } = procedures["entries.get"]({ id: "welcome" });
       expect(entry.contentCleaned).toBe(welcome.contentHtml);
+      expect(entry.fetchFullContent).toBe(false);
+      expect(entry.fullContentFetchedAt).toBeNull();
 
       const summary = procedures["summarization.generate"]({ entryId: "welcome" });
       expect(summary.summary).toContain("Lion Reader");

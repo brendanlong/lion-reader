@@ -20,6 +20,11 @@ export interface DemoArticle {
   score: number;
   starred: boolean;
   contentHtml: string;
+  /**
+   * The whole article, for one whose `contentHtml` is a teaser: what Full
+   * Content shows. Only articles with one offer the Full Content button.
+   */
+  fullContentHtml?: string;
   /** Pre-generated AI summary HTML (from Claude Sonnet) for the demo summary card */
   summaryHtml: string;
   /**

@@ -225,9 +225,9 @@ describe("EntryContent", () => {
     // Its origin is the saved subscription (#1846), which has no settings.
     ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, {}, false],
     [
-      "a mount that hides it",
+      "an entry the mount says has nothing more to fetch",
       { type: "web", subscriptionId: "sub-1" },
-      { hideFullContent: true },
+      { hasFullContent: () => false },
       false,
     ],
   ])("offers the full-content toggle for %s: %s", async (_label, fields, options, offered) => {

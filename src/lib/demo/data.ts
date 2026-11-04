@@ -35,6 +35,8 @@ export interface DemoEntry extends EntryListData {
   score: number;
   /** Pre-sanitized HTML content for the detail view */
   contentHtml: string;
+  /** `DemoArticle.fullContentHtml` */
+  fullContentHtml?: string;
   /** Pre-generated AI summary HTML for the summary card */
   summaryHtml: string;
   /** Model ID that generated `summaryHtml` (shown in the summary card footer). */
