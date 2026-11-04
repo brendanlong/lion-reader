@@ -48,7 +48,8 @@ process.env.INTERNAL_REVALIDATE_SECRET = randomUUID();
 
 /**
  * Re-render the statically-prerendered public pages with runtime env (issue
- * #1359): the login/register HTML bakes the signup/provider config, and the
+ * #1359): the login/register HTML bakes the signup/provider config, the demo
+ * its narration voice, and the
  * copy from `next build` was rendered with build-machine env (dummy values in
  * CI/Docker). Invalidate them via the internal route, then warm them so the
  * first real visitor gets the cached copy. Retries cover the window where the

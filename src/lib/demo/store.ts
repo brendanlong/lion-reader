@@ -14,6 +14,7 @@
  * is given, so mutating a returned object would change the cache behind its back.
  */
 
+import { DEFAULT_CLOUD_VOICE_MODEL } from "@/lib/narration/constants";
 import { ENTRY_SORT_DIRECTIONS, sortFieldOf } from "@/lib/entry-sort";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
@@ -67,6 +68,10 @@ export type DemoProcedures = {
   "subscriptions.setTags": Handler<
     Inputs["subscriptions"]["setTags"],
     Outputs["subscriptions"]["setTags"]
+  >;
+  "narration.listVoiceModels": Handler<
+    Inputs["narration"]["listVoiceModels"],
+    Outputs["narration"]["listVoiceModels"]
   >;
   "subscriptions.delete": Handler<
     Inputs["subscriptions"]["delete"],
@@ -740,6 +745,11 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       sub.tagIds = input.tagIds.filter((id) => tags.has(id));
       return toSubscription(sub);
     },
+
+    // No cloud voices without a session: narration plays the demo's
+    // recordings when the server records them, and the browser's voices when
+    // it doesn't.
+    "narration.listVoiceModels": () => ({ models: [], defaultModelId: DEFAULT_CLOUD_VOICE_MODEL }),
 
     "subscriptions.delete": (input) => {
       const sub = requireSubscription(input.id);

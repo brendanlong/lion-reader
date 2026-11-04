@@ -14,10 +14,14 @@
  * Only OpenRouter (text and speech), DeepInfra and Together (speech) report
  * prices, so other providers' models have to be listed.
  *
- * A user's plan can narrow this further (`PlanLimits.serverKeyModels`).
+ * A user's plan can narrow this further: `PLAN_<PLAN>_SERVER_KEY_MODELS`
+ * (e.g. `PLAN_FREE_SERVER_KEY_MODELS`), in the same format, lists the models
+ * that plan may run on the server's keys, failovers included; `none` for none,
+ * and unset for all of them ({@link planServerKeyModels}).
  */
 
 import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import type { PlanId } from "@/lib/plans";
 
 /** What a model costs, as far as its provider reports. */
 export interface ModelPrice {
@@ -41,12 +45,34 @@ function priceCapFromEnv(name: string): number | undefined {
   return raw ? Number(raw) : undefined;
 }
 
-function serverKeyModelPolicy(): ServerKeyModelPolicy | null {
-  const models = (process.env.SERVER_KEY_MODELS ?? "")
+function modelList(raw: string | undefined): string[] {
+  return (raw ?? "")
     .split(",")
     .map((model) => model.trim())
     .filter(Boolean)
     .map(normalizeModelRef);
+}
+
+/** Each plan's setting, read when asked, so tests can set it. */
+const PLAN_SERVER_KEY_MODELS_ENV: Record<PlanId, () => string | undefined> = {
+  free: () => process.env.PLAN_FREE_SERVER_KEY_MODELS,
+  paid: () => process.env.PLAN_PAID_SERVER_KEY_MODELS,
+  unlimited: () => process.env.PLAN_UNLIMITED_SERVER_KEY_MODELS,
+};
+
+/**
+ * The models `plan` may run on the server's keys, within the instance's own
+ * policy: `PLAN_<PLAN>_SERVER_KEY_MODELS`, `none` for none, or null (unset)
+ * for every model the instance allows.
+ */
+export function planServerKeyModels(plan: PlanId): readonly string[] | null {
+  const raw = PLAN_SERVER_KEY_MODELS_ENV[plan]()?.trim();
+  if (!raw) return null;
+  return raw === "none" ? [] : modelList(raw);
+}
+
+function serverKeyModelPolicy(): ServerKeyModelPolicy | null {
+  const models = modelList(process.env.SERVER_KEY_MODELS);
   const maxInputPrice = priceCapFromEnv("SERVER_KEY_MAX_INPUT_PRICE");
   const maxOutputPrice = priceCapFromEnv("SERVER_KEY_MAX_OUTPUT_PRICE");
   const maxSpeechPrice = priceCapFromEnv("SERVER_KEY_MAX_SPEECH_PRICE");

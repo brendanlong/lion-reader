@@ -26,6 +26,8 @@ export async function register() {
 
     const { checkSelfHostedConfig } = await import("./server/services/selfhosted");
     checkSelfHostedConfig();
+    const { getDemoNarrationVoice } = await import("./server/services/demo-narration");
+    getDemoNarrationVoice();
 
     // Start the internal Prometheus metrics server (port 9091) HERE, in the
     // Next.js runtime module graph — NOT in the custom server (scripts/server.ts).

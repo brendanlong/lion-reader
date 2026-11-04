@@ -12,10 +12,16 @@
  * URLs are served from the `/demo/entry/[id]` route by the next.config.ts
  * rewrite, so at prerender time neither the pathname nor the query Next sees
  * is the one the browser will show (see DemoApp).
+ *
+ * The demo's narration voice is deploy-time config, so these pages are
+ * re-rendered at startup (`/api/internal/revalidate-public`) to carry the
+ * running server's, not the build machine's.
  */
 
 import { type ReactNode } from "react";
 import { type Metadata } from "next";
+import { getDemoNarrationVoice } from "@/server/services/demo-narration";
+import { DemoNarrationVoiceProvider } from "./DemoNarrationVoice";
 
 export const dynamic = "force-static";
 
@@ -26,5 +32,9 @@ export const metadata: Metadata = {
 };
 
 export default function DemoLayout({ children }: { children: ReactNode }) {
-  return children;
+  return (
+    <DemoNarrationVoiceProvider voice={getDemoNarrationVoice()}>
+      {children}
+    </DemoNarrationVoiceProvider>
+  );
 }

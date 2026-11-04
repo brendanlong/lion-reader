@@ -30,7 +30,7 @@ import {
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { classifyProviderStatus } from "@/server/services/provider-errors";
 import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
-import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
+import { planServerKeyModels, serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
@@ -51,6 +51,7 @@ const ENV_VARS = [
   "ANTHROPIC_BASE_URL",
   "MODEL_FAILOVER",
   "CEREBRAS_BASE_URL",
+  "PLAN_FREE_SERVER_KEY_MODELS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_VARS.map((name) => [name, process.env[name]]));
@@ -348,7 +349,7 @@ describe("isModelAllowed", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     process.env.SERVER_KEY_MODELS = "cerebras:*";
     const plan = (serverKeyModels: readonly string[] | null) => ({
-      plan: { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyModels } },
+      plan: { userId: "u", limits: PLAN_LIMITS.paid, serverKeyModels },
     });
 
     expect(isModelAllowed("cerebras:gpt-oss-120b", plan(["cerebras:gpt-oss-120b"]))).toBe(true);
@@ -360,6 +361,16 @@ describe("isModelAllowed", () => {
     expect(isModelAllowed("cerebras:gpt-oss-120b", { cerebras: "csk-user", ...plan([]) })).toBe(
       true
     );
+  });
+
+  it("reads a plan's server-key models from its env var: a list, none, or unset for all", () => {
+    clearEnv();
+    process.env.PLAN_FREE_SERVER_KEY_MODELS = "selfhosted:*, claude-haiku-5";
+    expect(planServerKeyModels("free")).toEqual(["selfhosted:*", "anthropic:claude-haiku-5"]);
+    process.env.PLAN_FREE_SERVER_KEY_MODELS = "none";
+    expect(planServerKeyModels("free")).toEqual([]);
+    delete process.env.PLAN_FREE_SERVER_KEY_MODELS;
+    expect(planServerKeyModels("free")).toBeNull();
   });
 
   it("allows a whole provider with provider:*", () => {
@@ -674,7 +685,7 @@ describe("generateChatCompletion", () => {
 
       it("doesn't back the user's own key up with the server's beyond their plan (#2225)", async () => {
         cerebrasFailure = 402;
-        const plan = { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyModels: [] } };
+        const plan = { userId: "u", limits: PLAN_LIMITS.paid, serverKeyModels: [] };
         await expect(
           generateChatCompletion(model, { cerebras: "user-c", plan }, "summaries", options)
         ).rejects.toMatchObject({ failure: "rejected", usedUserKey: true });
@@ -685,7 +696,8 @@ describe("generateChatCompletion", () => {
         cerebrasFailure = 503;
         const plan = {
           userId: "u",
-          limits: { ...PLAN_LIMITS.paid, serverKeyModels: ["cerebras:some-model"] },
+          limits: PLAN_LIMITS.paid,
+          serverKeyModels: ["cerebras:some-model"],
         };
         await expect(
           generateChatCompletion(model, { plan }, "summaries", options)
@@ -737,7 +749,7 @@ describe("generateChatCompletion", () => {
 describe("plans on the server's keys (#2225)", () => {
   const onPlan = (plan: "free" | "paid", keys: Record<string, string> = {}) => ({
     ...keys,
-    plan: { userId: "u", limits: PLAN_LIMITS[plan] },
+    plan: { userId: "u", limits: PLAN_LIMITS[plan], serverKeyModels: planServerKeyModels(plan) },
   });
 
   // OpenRouter stood in for the whole block: its catalog (cached for the
@@ -787,6 +799,7 @@ describe("plans on the server's keys (#2225)", () => {
     process.env.SERVER_KEY_MODELS = "cerebras:gpt-oss-120b";
     process.env.SERVER_KEY_MAX_INPUT_PRICE = "0.35";
     process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "0.75";
+    process.env.PLAN_FREE_SERVER_KEY_MODELS = " selfhosted:* , openrouter:openai/gpt-oss-120b ";
     expect(await getSummarizationModelId(null, onPlan("free"))).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
@@ -799,10 +812,18 @@ describe("plans on the server's keys (#2225)", () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     const cheapest = {
-      plan: { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyRouting: "cheapest" as const } },
+      plan: {
+        userId: "u",
+        limits: { ...PLAN_LIMITS.paid, serverKeyRouting: "cheapest" as const },
+        serverKeyModels: null,
+      },
     };
     const fastest = {
-      plan: { userId: "u", limits: { ...PLAN_LIMITS.paid, serverKeyRouting: "fastest" as const } },
+      plan: {
+        userId: "u",
+        limits: { ...PLAN_LIMITS.paid, serverKeyRouting: "fastest" as const },
+        serverKeyModels: null,
+      },
     };
 
     const [onCheapest] = await openRouterBodies(() =>

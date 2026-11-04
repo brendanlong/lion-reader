@@ -6,8 +6,9 @@
  */
 
 import { DEMO_ENTRIES } from "@/lib/demo/data";
-import { DEMO_NARRATION_VOICE } from "@/lib/demo/narration";
 import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
+import { DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
+import { normalizeModelRef } from "@/lib/ai/model-ref";
 import {
   buildAlignedNarration,
   NEXT_ARTICLE,
@@ -35,13 +36,33 @@ export function demoNarrationText(html: string, following?: string): string {
   ).narrationText;
 }
 
+/**
+ * The voice the demo narrates in, run on the server's keys with no plan:
+ * `DEMO_NARRATION_MODEL` (a `provider:model` ref) and `DEMO_NARRATION_VOICE`.
+ * Pick one that costs nothing per character, like the operator's own speech
+ * server. Changing it records the demo again. Unset, the demo narrates with
+ * the browser's voices. Startup calls it, so setting only one fails there.
+ */
+export function getDemoNarrationVoice(): PrerecordedVoice | null {
+  const model = process.env.DEMO_NARRATION_MODEL?.trim();
+  const voice = process.env.DEMO_NARRATION_VOICE?.trim();
+  if (!model !== !voice) {
+    throw new Error("Set both DEMO_NARRATION_MODEL and DEMO_NARRATION_VOICE, or neither");
+  }
+  return model && voice
+    ? { model: normalizeModelRef(model), voice, pauseSeconds: DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS }
+    : null;
+}
+
 async function buildCatalog(): Promise<Map<string, PrerecordedChunk>> {
   const catalog = new Map<string, PrerecordedChunk>();
+  const voice = getDemoNarrationVoice();
+  if (!voice) return catalog;
   for (const entry of DEMO_ENTRIES) {
     for (const following of [undefined, NEXT_ARTICLE, NO_MORE_ARTICLES]) {
       for (const text of cloudSpeechTexts(demoNarrationText(entry.contentHtml, following))) {
-        const key = await prerecordedSpeechKey(DEMO_NARRATION_VOICE, text);
-        catalog.set(key, { voice: DEMO_NARRATION_VOICE, text });
+        const key = await prerecordedSpeechKey(voice, text);
+        catalog.set(key, { voice, text });
       }
     }
   }

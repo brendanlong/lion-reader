@@ -22,7 +22,6 @@ describe("PlanSection", () => {
           limits: {
             maxSubscriptions: 150,
             maxIngestAddresses: null,
-            serverKeyModels: null,
             serverKeyRouting: "cheapest",
             quotas: {
               pageFetches: { burst: 50, perDay: 200 },
@@ -32,6 +31,7 @@ describe("PlanSection", () => {
               speechCharacters: null,
             },
           },
+          serverKeyModels: null,
           usage: { subscriptions: 12, ingestAddresses: 3 },
         }),
       },

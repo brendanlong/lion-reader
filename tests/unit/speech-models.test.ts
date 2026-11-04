@@ -97,6 +97,7 @@ describe("OpenRouter speech models", () => {
         ...PLAN_LIMITS.paid,
         quotas: { ...PLAN_LIMITS.paid.quotas, speechCharacters: "excluded" as const },
       },
+      serverKeyModels: null,
     };
     expect(openRouterModels({ plan })).toEqual([]);
     expect(openRouterModels({ openrouter: "o", plan })).toHaveLength(3);

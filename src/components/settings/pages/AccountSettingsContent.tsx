@@ -188,8 +188,7 @@ export function PlanSection() {
               <dt className="ui-text-sm text-muted font-medium">{PLAN_QUOTA_NAMES[quota]}</dt>
               <dd className="ui-text-sm text-body mt-1 tabular-nums">
                 {AI_PLAN_QUOTAS.has(quota) &&
-                (data.limits.serverKeyModels?.length === 0 ||
-                  data.limits.quotas[quota] === "excluded")
+                (data.serverKeyModels?.length === 0 || data.limits.quotas[quota] === "excluded")
                   ? "With your own API key only"
                   : formatQuota(data.limits.quotas[quota])}
               </dd>
