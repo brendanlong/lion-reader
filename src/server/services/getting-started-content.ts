@@ -201,7 +201,7 @@ Your assistant can read, search, star, and save articles, upload articles it wri
 
 ## Connect
 
-[Settings → Integrations → AI Integrations](/settings/integrations#ai-integrations) has copy-and-paste setup for Claude Code, Claude Desktop, and claude.ai. Any other assistant that supports [MCP](https://modelcontextprotocol.io/) can connect the same way.
+[Settings → Integrations → AI Integrations](/settings/integrations#ai-integrations) shows how to connect Claude, Claude Code, or any other assistant that supports [MCP](https://modelcontextprotocol.io/).
 
 Its access is limited to your reader, and you can revoke it at any time under [Settings → Security](/settings/security).
 `.trim(),

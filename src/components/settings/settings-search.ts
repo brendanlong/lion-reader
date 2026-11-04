@@ -324,7 +324,15 @@ export const SETTINGS_SEARCH_INDEX = [
     page: "/settings/integrations",
     title: "AI Integrations",
     description: "Connect Lion Reader to AI assistants like Claude via MCP.",
-    keywords: ["mcp", "model context protocol", "claude", "claude code", "claude desktop", "agent"],
+    keywords: [
+      "mcp",
+      "model context protocol",
+      "claude",
+      "claude code",
+      "claude desktop",
+      "chatgpt",
+      "agent",
+    ],
   },
   {
     id: "sessions",
