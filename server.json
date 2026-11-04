@@ -8,7 +8,14 @@
     "source": "github"
   },
   "websiteUrl": "https://lionreader.com",
-  "version": "1.0.0",
+  "icons": [
+    {
+      "src": "https://lionreader.com/mcp-icon-256x256.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"]
+    }
+  ],
+  "version": "1.0.1",
   "remotes": [
     {
       "type": "streamable-http",
