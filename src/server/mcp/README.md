@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server exposing Lion Reader to AI assistants. See t
 
 ### Streamable HTTP (hosted)
 
-Remote clients (e.g. claude.ai) connect to `https://your-app/api/mcp` and authenticate with either:
+Remote clients (e.g. claude.ai) connect to `https://your-app/api/mcp`. Production is listed in the MCP Registry as `com.lionreader/lion-reader`; the listing is `server.json` at the repo root, published by `.github/workflows/mcp-registry.yml`. Clients authenticate with either:
 
 - **OAuth 2.1** — clients register via Dynamic Client Registration (or present a CIMD URL client_id) and go through the standard authorization flow (this is what Claude Code and Claude Desktop do automatically), or
 - **API token** — create a token with the `mcp` scope under Settings → Security → API Tokens and send it as `Authorization: Bearer <token>`. This is the supported path for the claude.ai web connector, whose OAuth flow is broken client-side (issue #986): use Authentication "None" plus an `Authorization` header.

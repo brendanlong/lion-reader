@@ -222,3 +222,25 @@ resource "cloudflare_dns_record" "discord_verification" {
   ttl     = 3600
   comment = "Discord domain verification"
 }
+
+# Proves we own the com.lionreader namespace in the MCP Registry; must be at the
+# apex. Key setup and rotation: ../docs/DEPLOYMENT.md "MCP Registry Listing".
+# Rotate by replacing this value, never by adding a second record: the registry
+# fails on a stale key it tries first.
+resource "cloudflare_dns_record" "mcp_registry" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "@"
+  type    = "TXT"
+  content = "\"v=MCPv1; k=ed25519; p=Kenrju4OJ1cvGk969lijGAnSEWS/IhbyugxDE93xjpo=\""
+  ttl     = 300
+  comment = "MCP Registry namespace proof"
+}
+
+resource "cloudflare_dns_record" "glama_claim" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "_glama-claim"
+  type    = "TXT"
+  content = "\"glama_claim_S00cKNLukTvxo6Yb7tUP1UpFFDSQe5CQ\""
+  ttl     = 300
+  comment = "Glama MCP directory ownership claim"
+}
