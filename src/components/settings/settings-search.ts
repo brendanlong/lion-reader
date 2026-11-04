@@ -294,6 +294,13 @@ export const SETTINGS_SEARCH_INDEX = [
     keywords: ["discord", "bot", "server", "react", "emoji", "dm"],
   },
   {
+    id: "native-app",
+    page: "/settings/integrations",
+    title: "Lion Reader App",
+    description: "Try the beta of our native Android app.",
+    keywords: ["android", "mobile app", "native app", "beta", "phone"],
+  },
+  {
     id: "google-reader-api",
     page: "/settings/integrations",
     title: "Google Reader API",

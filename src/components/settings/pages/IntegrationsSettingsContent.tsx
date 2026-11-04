@@ -2,8 +2,8 @@
  * Integrations Settings Content
  *
  * Page for the ways to save articles (browser extensions, bookmarklet, Wallabag
- * apps, the Discord bot), then other apps that use the account (Google Reader
- * clients, AI assistants).
+ * apps, the Discord bot), then other apps that use the account (our native app
+ * beta, Google Reader clients, AI assistants).
  */
 
 "use client";
@@ -13,6 +13,7 @@ import { DiscordBotSettings } from "@/components/settings/DiscordBotSettings";
 import { GoogleReaderApiSettings } from "@/components/settings/GoogleReaderApiSettings";
 import { WallabagApiSettings } from "@/components/settings/WallabagApiSettings";
 import { IntegrationsSettings } from "@/components/settings/IntegrationsSettings";
+import { NativeAppSettings } from "@/components/settings/NativeAppSettings";
 
 export default function IntegrationsSettingsContent() {
   return (
@@ -23,6 +24,7 @@ export default function IntegrationsSettingsContent() {
       <DiscordBotSettings />
 
       {/* Other apps using your account */}
+      <NativeAppSettings />
       <GoogleReaderApiSettings />
       <IntegrationsSettings />
     </div>
