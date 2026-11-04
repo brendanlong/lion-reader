@@ -158,7 +158,7 @@ describe("processOAuthCallback email verification", () => {
 
   describe("signing in by email to a verified account", () => {
     function createVerifiedUser(): Promise<string> {
-      return createTestUser({ email: VICTIM_EMAIL, emailVerifiedAt: new Date() });
+      return createTestUser({ email: VICTIM_EMAIL });
     }
 
     it("links the provider and keeps the password and other sessions", async () => {
@@ -194,7 +194,7 @@ describe("processOAuthCallback email verification", () => {
     it("claims it, removing every other way in but keeping the account", async () => {
       // Someone registered the victim's address with a password and set up
       // every kind of credential before the victim ever signed in.
-      const userId = await createTestUser({ email: VICTIM_EMAIL });
+      const userId = await createTestUser({ email: VICTIM_EMAIL, emailVerifiedAt: null });
       const { sessionId } = await createSession(db, { userId });
       const { id: apiTokenId } = await createApiToken(userId, ["mcp"]);
       await createTestOAuthLink(userId, "discord", { providerAccountId: "attacker-discord-id" });
@@ -238,7 +238,7 @@ describe("processOAuthCallback email verification", () => {
     });
 
     it("links only one of several concurrent first sign-ins with different accounts", async () => {
-      const userId = await createTestUser({ email: VICTIM_EMAIL });
+      const userId = await createTestUser({ email: VICTIM_EMAIL, emailVerifiedAt: null });
       const attempts = 5;
       // Open a pool connection per attempt first, so connection setup doesn't
       // stagger the attempts past the window between the lookup and the insert.
