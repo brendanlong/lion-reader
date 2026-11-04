@@ -62,10 +62,10 @@ class SettingsStorageTest {
     @Test
     fun settingsReadBackAsStored() {
         val prefs = mutablePreferencesOf()
-        prefs.store(changed)
+        prefs.update(AppSettings()) { changed }
         assertEquals(changed, prefs.toSettings())
 
-        prefs.store(AppSettings())
+        prefs.update(AppSettings()) { AppSettings() }
         assertEquals(AppSettings(), prefs.toSettings())
     }
 
@@ -107,7 +107,7 @@ class SettingsStorageTest {
     @Test
     fun storedValuesKeepTheirKeys() {
         val prefs = mutablePreferencesOf()
-        prefs.store(changed)
+        prefs.update(AppSettings()) { changed }
         val keys = prefs.asMap().keys.map { it.name }.toSet()
         assertEquals(
             setOf(
@@ -153,5 +153,16 @@ class SettingsStorageTest {
         assertEquals(false, themed.toSettings(defaults).animations)
         themed[booleanPreferencesKey("animations")] = true
         assertEquals(true, themed.toSettings(defaults).animations)
+    }
+
+    /** Changing one setting doesn't save the others, so they follow a later change of default. */
+    @Test
+    fun anUntouchedSettingFollowsANewDefault() {
+        val prefs = mutablePreferencesOf()
+        prefs.update(AppSettings()) { it.copy(narrationSpeed = 1.5f) }
+        assertEquals(setOf("narration_speed"), prefs.asMap().keys.map { it.name }.toSet())
+
+        val newDefaults = AppSettings(narrationEngine = NarrationEngine.ENHANCED)
+        assertEquals(newDefaults.copy(narrationSpeed = 1.5f), prefs.toSettings(newDefaults))
     }
 }

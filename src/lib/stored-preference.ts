@@ -69,3 +69,28 @@ export function createStoredChoice<T extends string>(
     (stored) => choices.find((choice) => choice === stored) ?? null
   );
 }
+
+/**
+ * Saves to localStorage under `key` the fields `next` changes from `prev`, on
+ * top of what's stored there, so a field the user never set isn't written and
+ * keeps following its default when that changes (#2280).
+ */
+export function storeChangedFields<T extends object>(key: string, prev: T, next: T): void {
+  try {
+    let stored: Partial<T> = {};
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "{}");
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        stored = parsed as Partial<T>;
+      }
+    } catch {
+      // Unreadable: start over from the changes alone.
+    }
+    for (const field of Object.keys(next) as (keyof T)[]) {
+      if (!Object.is(next[field], prev[field])) stored[field] = next[field];
+    }
+    localStorage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // Silently fail if localStorage is full or unavailable
+  }
+}

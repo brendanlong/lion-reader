@@ -14,7 +14,6 @@ vi.stubGlobal("window", { localStorage: localStorageMock });
 // Now import the module under test
 import {
   loadNarrationSettings,
-  saveNarrationSettings,
   DEFAULT_NARRATION_SETTINGS,
   narrationProvider,
   type NarrationSettings,
@@ -165,13 +164,13 @@ describe("loadNarrationSettings", () => {
   });
 });
 
-describe("saveNarrationSettings", () => {
+describe("stored settings", () => {
   beforeEach(() => {
     localStorageMock.clear();
     vi.clearAllMocks();
   });
 
-  it("roundtrips settings correctly", () => {
+  it("reads back every stored field", () => {
     const originalSettings: NarrationSettings = {
       enabled: false,
       provider: "phonon",
@@ -187,7 +186,7 @@ describe("saveNarrationSettings", () => {
       cloudPauseSeconds: 0.75,
     };
 
-    saveNarrationSettings(originalSettings);
+    localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify(originalSettings));
     const loadedSettings = loadNarrationSettings();
 
     expect(loadedSettings).toEqual(originalSettings);
