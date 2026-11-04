@@ -221,34 +221,29 @@ describe("EntryContent", () => {
   });
 
   it.each([
-    ["a feed article", { type: "web", subscriptionId: "sub-1" }, true],
+    ["a feed article", { type: "web", subscriptionId: "sub-1" }, {}, true],
     // Its origin is the saved subscription (#1846), which has no settings.
-    ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, false],
-  ])("offers the full-content toggle for %s: %s", async (_label, fields, offered) => {
-    renderEntryContent(<EntryContent entryId="entry-1" />, {
-      ...baseHandlers(),
-      "entries.get": () => ({ entry: createEntry(fields) }),
-    });
+    ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, {}, false],
+    [
+      "a mount that hides it",
+      { type: "web", subscriptionId: "sub-1" },
+      { hideFullContent: true },
+      false,
+    ],
+  ])("offers the full-content toggle for %s: %s", async (_label, fields, options, offered) => {
+    renderEntryContent(
+      <EntryContentOptionsProvider value={options}>
+        <EntryContent entryId="entry-1" />
+      </EntryContentOptionsProvider>,
+      {
+        ...baseHandlers(),
+        "entries.get": () => ({ entry: createEntry(fields) }),
+      }
+    );
     await screen.findByText("The Great Article");
     expect(
       screen.queryByRole("button", { name: "Fetch and display full article content" }) !== null
     ).toBe(offered);
-  });
-
-  it("offers the full content toggle unless the mount hides it", async () => {
-    const toggle = { name: "Fetch and display full article content" };
-    const { unmount } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
-    expect(await screen.findByRole("button", toggle)).toBeInTheDocument();
-    unmount();
-
-    renderEntryContent(
-      <EntryContentOptionsProvider value={{ hideFullContent: true }}>
-        <EntryContent entryId="entry-1" />
-      </EntryContentOptionsProvider>,
-      baseHandlers()
-    );
-    expect(await screen.findByRole("link", { name: "The Great Article" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", toggle)).not.toBeInTheDocument();
   });
 
   it("shows the error fallback when entries.get fails", async () => {

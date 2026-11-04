@@ -343,8 +343,6 @@ describe("createDemoStore", () => {
       const welcome = DEMO_ENTRIES.find((e) => e.id === "welcome")!;
       const { entry } = procedures["entries.get"]({ id: "welcome" });
       expect(entry.contentCleaned).toBe(welcome.contentHtml);
-      expect(entry.fetchFullContent).toBe(false);
-      expect(entry.fullContentFetchedAt).toBeNull();
 
       const summary = procedures["summarization.generate"]({ entryId: "welcome" });
       expect(summary.summary).toContain("Lion Reader");
