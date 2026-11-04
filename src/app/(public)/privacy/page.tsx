@@ -476,9 +476,9 @@ export default function PrivacyPolicyPage() {
 
           <LegalSubsection id="signup-captcha" title="Signup CAPTCHA (Cloudflare Turnstile)">
             <LegalParagraph tight>
-              When you create an account with an email address and password, the signup form runs
-              Cloudflare Turnstile to check that you&apos;re not an automated bot. Turnstile runs in
-              your browser on the signup page only, and Cloudflare receives your IP address and
+              When you start filling in the email-and-password signup form, it runs Cloudflare
+              Turnstile to check that you&apos;re not an automated bot. Turnstile runs in your
+              browser on the signup page only, and Cloudflare receives your IP address and
               information about your browser to make that check. It sets no advertising cookies.
             </LegalParagraph>
             <p className="mt-2">

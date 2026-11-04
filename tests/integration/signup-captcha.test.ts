@@ -50,8 +50,10 @@ beforeEach(() => {
   verified = [];
 });
 
-async function register(captchaToken: string | undefined) {
-  const email = `captcha-${generateUuidv7()}@example.com`;
+function register(
+  captchaToken: string | undefined,
+  email = `captcha-${generateUuidv7()}@example.com`
+) {
   const attempt = createCaller(createUnauthContext()).auth.register({
     email,
     password: "correct horse battery",
@@ -71,18 +73,25 @@ describe("password signup CAPTCHA", () => {
   });
 
   it("creates the account once Cloudflare passes the token", async () => {
-    const { email, attempt } = await register(PASSING_TOKEN);
+    const { email, attempt } = register(PASSING_TOKEN);
     await attempt;
 
     expect(await accountExists(email)).toBe(true);
     expect(verified[0].get("secret")).toBe("test-secret-key");
   });
 
+  it("checks the CAPTCHA before saying an address has an account", async () => {
+    const existing = register(PASSING_TOKEN);
+    await existing.attempt;
+
+    await expect(register("failing-token", existing.email).attempt).rejects.toThrow(/CAPTCHA/);
+  });
+
   it.each([
     ["a token Cloudflare fails", "failing-token"],
     ["no token", undefined],
   ])("refuses %s without creating the account", async (_, token) => {
-    const { email, attempt } = await register(token);
+    const { email, attempt } = register(token);
 
     await expect(attempt).rejects.toThrow(/CAPTCHA/);
     expect(await accountExists(email)).toBe(false);

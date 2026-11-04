@@ -76,6 +76,9 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  // Turnstile loads once someone starts on the email form, so Cloudflare sees
+  // only people signing up with a password (privacy policy).
+  const [captchaStarted, setCaptchaStarted] = useState(false);
   const turnstileSiteKey = signupConfigData?.turnstileSiteKey ?? null;
   const [errors, setErrors] = useState<{
     email?: string;
@@ -252,7 +255,11 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            onFocus={() => setCaptchaStarted(true)}
+            className="space-y-4"
+          >
             <Input
               id="email"
               type="email"
@@ -289,7 +296,7 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
               disabled={isSubmitting}
             />
 
-            {turnstileSiteKey && (
+            {turnstileSiteKey && captchaStarted && (
               <TurnstileWidget
                 siteKey={turnstileSiteKey}
                 onToken={setCaptchaToken}

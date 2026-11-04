@@ -7,13 +7,19 @@ function directive(policy: string, name: string): string {
   return policy.split("; ").find((d) => d.startsWith(`${name} `)) ?? "";
 }
 
+const ENV_KEYS = ["TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY"];
+const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+
 describe("Turnstile in the CSP", () => {
   afterEach(() => {
-    delete process.env.TURNSTILE_SITE_KEY;
-    delete process.env.TURNSTILE_SECRET_KEY;
+    for (const key of ENV_KEYS) {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    }
   });
 
   it("is allowed on the public pages only, and only when configured", () => {
+    for (const key of ENV_KEYS) delete process.env[key];
     expect(buildPublicContentSecurityPolicy()).not.toContain(TURNSTILE_ORIGIN);
 
     process.env.TURNSTILE_SITE_KEY = "site";

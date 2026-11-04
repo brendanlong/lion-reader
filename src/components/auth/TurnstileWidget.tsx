@@ -26,6 +26,7 @@ declare global {
 let scriptLoad: Promise<TurnstileApi> | null = null;
 
 function loadTurnstile(): Promise<TurnstileApi> {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
   scriptLoad ??= new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js?render=explicit`;
@@ -90,8 +91,8 @@ export function TurnstileWidget({
   if (loadFailed) {
     return (
       <p className="ui-text-sm text-danger">
-        The CAPTCHA didn&apos;t load. Reload the page, or check that nothing is blocking
-        challenges.cloudflare.com.
+        The CAPTCHA didn&apos;t load. Reload the page, or check that nothing is blocking{" "}
+        {new URL(TURNSTILE_ORIGIN).host}.
       </p>
     );
   }

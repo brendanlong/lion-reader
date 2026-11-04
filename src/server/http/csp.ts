@@ -98,7 +98,8 @@ export function buildContentSecurityPolicy(nonce: string): string {
 /**
  * Builds the static Content-Security-Policy for the public routes (demo,
  * login, register, terms, privacy — see `isPublicStaticPath` in
- * `src/proxy.ts`). Identical to the strict policy except for `script-src`:
+ * `src/proxy.ts`). Identical to the strict policy except for `script-src`
+ * (and `frame-src`, for Turnstile):
  *
  * - `'unsafe-inline'` instead of a nonce, so the statically-prerendered HTML's
  *   inline scripts (our head scripts, next-themes, Next's streamed flight-data
@@ -107,7 +108,6 @@ export function buildContentSecurityPolicy(nonce: string): string {
  *   browser IGNORE `'unsafe-inline'` and the host/`'self'` allowlist, which
  *   with no nonce would block every script on the page. Without it, chunk
  *   loading is covered by the `'self'`/CDN host allowlist.
- *
  * - When Turnstile is configured, its script and challenge frame, for the
  *   register page's CAPTCHA. The app's own pages load no third-party script.
  *
