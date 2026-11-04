@@ -25,6 +25,7 @@ import BlockedSendersSettingsContent from "./pages/BlockedSendersSettingsContent
 import { AiProviderKeySettings, SummarizationSettings } from "./ApiKeySettings";
 import { NarrationSettings } from "@/components/narration/NarrationSettings";
 import { BookmarkletSettings } from "./BookmarkletSettings";
+import { NativeAppSettings } from "./NativeAppSettings";
 import { GoogleReaderApiSettings } from "./GoogleReaderApiSettings";
 import { WallabagApiSettings } from "./WallabagApiSettings";
 import { IntegrationsSettings } from "./IntegrationsSettings";
@@ -63,6 +64,7 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   summaries: SummarizationSettings,
   narration: NarrationSettings,
   "save-to-lion-reader": BookmarkletSettings,
+  "native-app": NativeAppSettings,
   "google-reader-api": GoogleReaderApiSettings,
   "wallabag-api": WallabagApiSettings,
   "ai-integrations": IntegrationsSettings,
