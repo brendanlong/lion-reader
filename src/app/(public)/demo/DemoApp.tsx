@@ -27,7 +27,8 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { z } from "zod";
 import { HydrationBoundary } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { PageLink } from "@/components/ui/page-link";
@@ -56,17 +57,57 @@ import { DEMO_BASE_PATH } from "@/lib/routes";
 import { createDemoStore } from "@/lib/demo/store";
 import { buildDemoDehydratedState } from "./seed";
 import { demoEntrySlots } from "./DemoEntrySlots";
-import { DEMO_NARRATION_VOICE } from "@/lib/demo/narration";
+import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
-  // The demo has no server to synthesize speech, so it plays recordings.
-  prerecordedNarration: DEMO_NARRATION_VOICE,
   // A prerendered page can't know the visitor's zone. Formatting the article
   // date in a common one keeps the post-hydration switch to local time a small
   // correction for most visitors rather than a jump from the host's UTC.
   ssrDateTimeZone: "America/Los_Angeles",
   renderSlots: demoEntrySlots,
 };
+
+const demoVoiceResponseSchema = z.object({
+  voice: z.object({ model: z.string(), voice: z.string(), pauseSeconds: z.number() }).nullable(),
+});
+
+let demoVoice: Promise<PrerecordedVoice | null> | null = null;
+
+/**
+ * The voice the demo's narration is recorded in, asked of the server once per
+ * page load (the page is prerendered, so it can't carry the setting), or null
+ * for the browser's voices.
+ */
+function fetchDemoVoice(): Promise<PrerecordedVoice | null> {
+  demoVoice ??= fetch("/api/prerecorded-speech/voice")
+    .then(async (response) =>
+      response.ok ? demoVoiceResponseSchema.parse(await response.json()).voice : null
+    )
+    .catch(() => null);
+  return demoVoice;
+}
+
+/**
+ * The demo has no session to synthesize speech on, so it plays recordings, in
+ * the voice the server records them in (until it's known, the browser's).
+ */
+function useDemoEntryContentOptions(): EntryContentOptions {
+  const [voice, setVoice] = useState<PrerecordedVoice | null>(null);
+  useEffect(() => {
+    let current = true;
+    void fetchDemoVoice().then((fetched) => {
+      if (current) setVoice(fetched);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return useMemo(
+    () =>
+      voice ? { ...ENTRY_CONTENT_OPTIONS, prerecordedNarration: voice } : ENTRY_CONTENT_OPTIONS,
+    [voice]
+  );
+}
 
 interface DemoAppProps {
   /**
@@ -105,6 +146,7 @@ function DemoShell() {
 }
 
 export function DemoApp({ location }: DemoAppProps) {
+  const entryContentOptions = useDemoEntryContentOptions();
   // One store per page load, created identically on the server and the client
   // from the fixtures plus the prerendered location.
   const [store] = useState(() => createDemoStore());
@@ -137,7 +179,7 @@ export function DemoApp({ location }: DemoAppProps) {
       <HydrationBoundary state={dehydratedState}>
         <AppLocationProvider basePath={DEMO_BASE_PATH} ssrLocation={ssrLocation}>
           <PrerenderedCacheProvider>
-            <EntryContentOptionsProvider value={ENTRY_CONTENT_OPTIONS}>
+            <EntryContentOptionsProvider value={entryContentOptions}>
               <AppearanceProvider>
                 <KeyboardShortcutsProvider>
                   <ScrollContainerProvider>

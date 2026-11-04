@@ -95,6 +95,11 @@ kill_timeout = 30
   # hosts. Paid and unlimited get everything above.
   PLAN_FREE_SERVER_KEY_MODELS = "selfhosted:*,openrouter:openai/gpt-oss-120b"
 
+  # lionreader.com only. The demo's narration, recorded once on our own
+  # speech server (src/server/services/demo-narration.ts).
+  DEMO_NARRATION_MODEL = "selfhosted:kokoro"
+  DEMO_NARRATION_VOICE = "af_heart"
+
   # lionreader.com only. Our own Kokoro server, behind Cloudflare Access; its
   # key and service token are secrets (see .env.example).
   SELFHOSTED_BASE_URL = "https://kokoro.brendanlong.com/v1"
