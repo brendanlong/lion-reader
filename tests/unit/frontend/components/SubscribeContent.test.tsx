@@ -72,6 +72,7 @@ function planWith(subscriptions: number, limit: number | null) {
 function discoveryHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
     "users.me.plan": planWith(0, null),
+    "ingestAddresses.list": () => ({ enabled: false, items: [] }),
     "feeds.preview": (input: never) => {
       const { url } = input as { url: string };
       if (url === FEED_URL) return preview(FEED_URL, "Example Blog");
@@ -197,5 +198,68 @@ describe("SubscribeContent at the plan's subscription limit", () => {
     });
 
     await screen.findByRole("heading", { name: /we found 2 feeds on this site/i });
+  });
+});
+
+/** An `ingestAddresses.list` item for `token`. */
+function ingestAddress(token: string, createdAt: string) {
+  return {
+    id: `id-${token}`,
+    token,
+    email: `${token}@ingest.example.com`,
+    label: null,
+    createdAt: new Date(createdAt),
+  };
+}
+
+describe("SubscribeContent email address card", () => {
+  it("shows the oldest address with a copy button", async () => {
+    renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers({
+        // Newest first, as the server returns them.
+        "ingestAddresses.list": () => ({
+          enabled: true,
+          items: [
+            ingestAddress("newer", "2024-06-01T00:00:00Z"),
+            ingestAddress("older", "2024-01-01T00:00:00Z"),
+          ],
+        }),
+      }),
+    });
+
+    expect(await screen.findByText("older@ingest.example.com")).toBeInTheDocument();
+    expect(screen.queryByText("newer@ingest.example.com")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();
+  });
+
+  it("creates an address when the user has none", async () => {
+    let items: ReturnType<typeof ingestAddress>[] = [];
+    const { callsFor } = renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers({
+        "ingestAddresses.list": () => ({ enabled: true, items }),
+        "ingestAddresses.create": () => {
+          const address = ingestAddress("fresh", "2024-06-01T00:00:00Z");
+          items = [address];
+          return { address };
+        },
+      }),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /create an email address/i }));
+
+    expect(await screen.findByText("fresh@ingest.example.com")).toBeInTheDocument();
+    expect(callsFor("ingestAddresses.create")).toHaveLength(1);
+  });
+
+  it("is hidden when newsletters aren't set up on the server", async () => {
+    const { callsFor, queryClient } = renderWithTrpc(<SubscribeContent />, {
+      handlers: discoveryHandlers(),
+    });
+
+    await waitFor(() => {
+      expect(callsFor("ingestAddresses.list")).toHaveLength(1);
+      expect(queryClient.isFetching()).toBe(0);
+    });
+    expect(screen.queryByText(/subscribe by email/i)).not.toBeInTheDocument();
   });
 });
