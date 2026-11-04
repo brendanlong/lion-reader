@@ -345,8 +345,7 @@ private fun NarrationSettings(
                 if (resolved == null) {
                     Text(
                         if (cloud == null) "Loading cloud voices…"
-                        else
-                            "Cloud voices need a cloud voice provider's key (set on the web) and a connection.",
+                        else "Couldn't reach Lion Reader for cloud voices.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -68,7 +68,7 @@ export function NarrationSettings() {
     placeholderData: keepPreviousData,
   });
   const cloudVoiceModels = voiceModelsQuery.data?.models ?? [];
-  const provider = narrationProvider(settings.provider, voiceModelsQuery);
+  const provider = narrationProvider(settings.provider, voiceModelsQuery.data, canStreamAudio);
 
   // Load voices on mount (only if supported)
   useEffect(() => {
@@ -97,8 +97,10 @@ export function NarrationSettings() {
   const handleVoiceChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
+      // The browser's picker, so built-in voices, even while they stand in for cloud ones.
       setSettings((prev) => ({
         ...prev,
+        provider: "browser",
         voiceId: value || null,
       }));
     },

@@ -32,6 +32,7 @@ class NarrationEngineTest {
     @Test
     fun theDevicesVoicesWhenTheServerOffersNone() {
         assertEquals(NarrationEngine.DEVICE, NarrationEngine.CLOUD.inUse(none))
+        assertEquals(NarrationEngine.DEVICE, NarrationEngine.DEVICE.inUse(none))
         assertEquals(NarrationEngine.ENHANCED, NarrationEngine.ENHANCED.inUse(none))
     }
 }

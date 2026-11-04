@@ -154,7 +154,16 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     enabled: storedSettings.provider === "cloud" && !prerecordedVoice,
     staleTime: 5 * 60 * 1000,
   });
-  const provider = narrationProvider(storedSettings.provider, cloudVoicesQuery);
+  const canStreamAudio = useSyncExternalStore(
+    () => () => {},
+    () => getMediaSourceClass() !== null,
+    () => true
+  );
+  const provider = narrationProvider(
+    storedSettings.provider,
+    cloudVoicesQuery.data,
+    canStreamAudio
+  );
   const settings = useMemo(
     () =>
       prerecordedVoice

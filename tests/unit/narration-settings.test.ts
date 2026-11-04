@@ -16,6 +16,7 @@ import {
   loadNarrationSettings,
   saveNarrationSettings,
   DEFAULT_NARRATION_SETTINGS,
+  narrationProvider,
   type NarrationSettings,
 } from "../../src/lib/narration/settings";
 import {
@@ -257,5 +258,28 @@ describe("highlighting settings", () => {
 
     const settings = loadNarrationSettings();
     expect(settings.autoScrollEnabled).toBe(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled);
+  });
+});
+
+describe("narrationProvider", () => {
+  const listed = { models: [{}] };
+  const none = { models: [] };
+
+  it("uses cloud voices while the server lists some, or hasn't answered yet", () => {
+    expect(narrationProvider("cloud", listed, true)).toBe("cloud");
+    expect(narrationProvider("cloud", undefined, true)).toBe("cloud");
+  });
+
+  it("uses built-in voices when the server lists no cloud voices", () => {
+    expect(narrationProvider("cloud", none, true)).toBe("browser");
+  });
+
+  it("uses built-in voices when the browser can't stream cloud audio", () => {
+    expect(narrationProvider("cloud", listed, false)).toBe("browser");
+  });
+
+  it("leaves other choices alone", () => {
+    expect(narrationProvider("phonon", none, true)).toBe("phonon");
+    expect(narrationProvider("browser", listed, true)).toBe("browser");
   });
 });

@@ -584,6 +584,13 @@ describe("narration that finishes generating after the user moved on", () => {
       "lion-reader-narration-settings",
       JSON.stringify({ useLlmNormalization: true, provider: "cloud" })
     );
+    // So the browser could play cloud voices, and only the empty list rules them out.
+    vi.stubGlobal(
+      "MediaSource",
+      class extends EventTarget {
+        static isTypeSupported = () => true;
+      }
+    );
     const { callsFor } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
       handlers: {
         "narration.listVoiceModels": () => ({ models: [], defaultModelId: "" }),
