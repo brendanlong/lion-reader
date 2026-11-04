@@ -60,6 +60,7 @@ function planWith(subscriptions: number, limit: number | null) {
   return () => ({
     plan: "free",
     limits: { ...PLAN_LIMITS.free, maxSubscriptions: limit },
+    serverKeyModels: null,
     usage: { subscriptions, ingestAddresses: 0 },
   });
 }

@@ -70,14 +70,6 @@ export interface PlanLimits {
   /** Email addresses for receiving newsletters. */
   maxIngestAddresses: number | null;
   /**
-   * The models the plan may run on the server's AI keys, as `provider:model`
-   * refs (`provider:*` for all of a provider's), within those the instance
-   * allows (`server-key-models.ts`); null for every one it allows. Costs are
-   * controlled here: the AI quotas count uses, not spend. A user's own key
-   * isn't limited by it.
-   */
-  serverKeyModels: readonly string[] | null;
-  /**
    * How OpenRouter picks a host for the plan's text calls on the server's
    * key: the cheapest, or the fastest. A user's own key always gets the
    * fastest.
@@ -96,10 +88,6 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   free: {
     maxSubscriptions: 150,
     maxIngestAddresses: 1,
-    // Only what costs us (almost) nothing: our own speech server, and
-    // summaries on OpenRouter's cheapest gpt-oss-120b host. No failover onto
-    // paid speech hosts.
-    serverKeyModels: ["selfhosted:*", "openrouter:openai/gpt-oss-120b"],
     serverKeyRouting: "cheapest",
     quotas: {
       // Bursts above the daily refill: a new user's first session is
@@ -114,7 +102,6 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   paid: {
     maxSubscriptions: 1000,
     maxIngestAddresses: 5,
-    serverKeyModels: null,
     serverKeyRouting: "fastest",
     quotas: {
       pageFetches: { burst: 200, perDay: 2000 },
@@ -129,7 +116,6 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   unlimited: {
     maxSubscriptions: null,
     maxIngestAddresses: null,
-    serverKeyModels: null,
     serverKeyRouting: "fastest",
     quotas: {
       pageFetches: null,

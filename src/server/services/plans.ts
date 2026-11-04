@@ -16,13 +16,14 @@ import { consumeBucket } from "@/server/rate-limit";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
 import { planQuotaKey } from "@/server/services/plan-quota-keys";
+import { planServerKeyModels } from "@/server/services/server-key-models";
 import type { DbOrTx } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 import { countActiveSubscriptions } from "@/server/services/subscriptions";
 import { countIngestAddresses } from "@/server/services/ingest-addresses";
 
-async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
+export async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
   const [row] = await db
     .select({ plan: users.plan })
     .from(users)
@@ -100,6 +101,8 @@ export async function setUserPlan(db: DbOrTx, userId: string, plan: PlanId): Pro
 export interface PlanUsage {
   plan: PlanId;
   limits: PlanLimits;
+  /** The models the plan may run on the server's AI keys; null for all. */
+  serverKeyModels: readonly string[] | null;
   usage: {
     subscriptions: number;
     ingestAddresses: number;
@@ -116,6 +119,7 @@ export async function getPlanUsage(db: DbOrTx, userId: string): Promise<PlanUsag
   return {
     plan,
     limits: PLAN_LIMITS[plan],
+    serverKeyModels: planServerKeyModels(plan),
     usage: { subscriptions: subscriptionCount, ingestAddresses: addressCount },
   };
 }

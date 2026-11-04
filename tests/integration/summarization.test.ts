@@ -9,7 +9,7 @@
  * that in so the sanitize-on-read guarantee can't be silently dropped.
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
@@ -472,12 +472,15 @@ describe("summarization.generate provider failures", () => {
     it("isn't available on the server's key to a plan without its models", async () => {
       const { caller, entryId } = await onPlan("free");
 
-      await withPlanLimits("free", { serverKeyModels: [] }, async () => {
+      vi.stubEnv("PLAN_FREE_SERVER_KEY_MODELS", "none");
+      try {
         expect(await caller.summarization.isAvailable()).toEqual({ available: false });
         const error = await failure(caller.summarization.generate({ entryId }));
         expect(getAppErrorCode(error)).toBe("AI_NOT_CONFIGURED");
         expect(providerRequests).toBe(0);
-      });
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 

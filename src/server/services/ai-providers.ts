@@ -55,6 +55,8 @@ import {
 export interface AiPlanAccess {
   userId: string;
   limits: PlanLimits;
+  /** The models the plan may run on the server's keys (`planServerKeyModels`). */
+  serverKeyModels: readonly string[] | null;
 }
 
 /**
@@ -125,10 +127,10 @@ export function isModelAllowed(
 
 /**
  * Whether the user's plan lets the model run on the server's keys
- * (`PlanLimits.serverKeyModels`), the instance's own policy aside.
+ * (`planServerKeyModels`), the instance's own policy aside.
  */
 export function planAllowsOnServerKey(keys: AiProviderKeys | undefined, modelRef: string): boolean {
-  const models = keys?.plan?.limits.serverKeyModels ?? null;
+  const models = keys?.plan?.serverKeyModels ?? null;
   return models === null || modelListIncludes(models, modelRef);
 }
 

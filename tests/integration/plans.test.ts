@@ -211,6 +211,7 @@ describe("plans", () => {
     await expect(caller.users["me.plan"]()).resolves.toEqual({
       plan: "paid",
       limits: PLAN_LIMITS.paid,
+      serverKeyModels: null,
       usage: { subscriptions: 1, ingestAddresses: 0 },
     });
   });

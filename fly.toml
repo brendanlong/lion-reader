@@ -89,6 +89,11 @@ kill_timeout = 30
   # Kokoro server at $0.62 per million characters; OpenRouter and Together are
   # left out because OpenRouter can route Kokoro to Together at $4.
   MODEL_FAILOVER = "selfhosted:kokoro,deepinfra:hexgrad/Kokoro-82M;cerebras:gpt-oss-120b,openrouter:openai/gpt-oss-120b"
+  # What the free plan may run on the server's keys (src/lib/plans.ts):
+  # only what costs us (almost) nothing, our speech server and summaries on
+  # OpenRouter's cheapest gpt-oss-120b host, so no failover to paid speech
+  # hosts. Paid and unlimited get everything above.
+  PLAN_FREE_SERVER_KEY_MODELS = "selfhosted:*,openrouter:openai/gpt-oss-120b"
 
   # lionreader.com only. Our own Kokoro server, behind Cloudflare Access; its
   # key and service token are secrets (see .env.example).
