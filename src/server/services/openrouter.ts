@@ -66,15 +66,15 @@ function headers(apiKey?: string): Record<string, string> {
   };
 }
 
+/** How OpenRouter picks among a model's hosts. */
+export type OpenRouterSort = "price" | "throughput";
+
 /**
  * Builds the chat completion request body. Optional parameters are only sent
  * when the model's catalog entry lists them: JSON mode sets
  * `require_parameters`, which restricts routing to hosts supporting *every*
  * parameter sent, so an unsupported extra would leave no host at all.
  */
-/** How OpenRouter picks among a model's hosts. */
-export type OpenRouterSort = "price" | "throughput";
-
 export function buildChatCompletionBody(
   model: string,
   options: ChatCompletionOptions,

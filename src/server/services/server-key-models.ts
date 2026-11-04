@@ -115,8 +115,8 @@ export function isAllowedOnServerKey(modelRef: string, price: ModelPrice = {}): 
 /**
  * The token price caps a request for this model on the server's key must keep
  * to, or null if it isn't held to them (it's listed, or nothing's limited).
- * OpenRouter's catalog price is its cheapest host's, and we route for
- * throughput, so it's told to skip hosts charging more.
+ * OpenRouter's catalog price is its cheapest host's, and we don't always
+ * route to the cheapest, so it's told to skip hosts charging more.
  */
 export function serverKeyTokenPriceCaps(
   modelRef: string

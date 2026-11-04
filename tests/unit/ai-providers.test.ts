@@ -740,22 +740,41 @@ describe("plans on the server's keys (#2225)", () => {
     plan: { userId: "u", limits: PLAN_LIMITS[plan] },
   });
 
-  /** The OpenRouter request bodies sent while running `fn`, with OpenRouter stood in. */
-  async function openRouterBodies(
-    fn: () => Promise<unknown>
-  ): Promise<Array<{ provider: unknown }>> {
-    const bodies: Array<{ provider: unknown }> = [];
-    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-      if (String(url).endsWith("/models")) return Response.json({ data: [] });
+  // OpenRouter stood in for the whole block: its catalog (cached for the
+  // file, so stubbed before anything here reads it) lists gpt-oss-120b well
+  // under the server-key price caps, and chat completions record their bodies.
+  const bodies: Array<{ provider: unknown }> = [];
+  const realFetch = globalThis.fetch;
+  beforeAll(() => {
+    vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      if (!href.startsWith("https://openrouter.ai/")) return realFetch(url, init);
+      if (href.includes("/models")) {
+        return Response.json({
+          data: [
+            {
+              id: "openai/gpt-oss-120b",
+              name: "gpt-oss-120b",
+              pricing: { prompt: "0.0000001", completion: "0.0000005" },
+            },
+          ],
+        });
+      }
       bodies.push(JSON.parse(String(init?.body)));
       return Response.json({ choices: [{ message: { content: "hi" } }] });
     });
-    try {
-      await fn();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-    return bodies;
+  });
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The OpenRouter request bodies sent while running `fn`. */
+  async function openRouterBodies(
+    fn: () => Promise<unknown>
+  ): Promise<Array<{ provider: unknown }>> {
+    bodies.length = 0;
+    await fn();
+    return [...bodies];
   }
 
   const gptOss = parseModelRef("openrouter:openai/gpt-oss-120b");
