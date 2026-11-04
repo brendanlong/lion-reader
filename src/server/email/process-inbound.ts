@@ -235,12 +235,16 @@ export async function processInboundEmail(
 
   // 4b. Count it against the user's plan; past that, drop it. Answered like
   // any other rejection, so Mailgun doesn't retry what would be refused again.
-  try {
-    await consumePlanQuota(db, userId, "newsletterEmails");
-  } catch (error) {
-    if (getAppErrorCode(error) !== "QUOTA_EXCEEDED") throw error;
-    logger.info("Email rejected: over the plan's newsletter emails", { senderEmail, userId });
-    return { success: false, error: "Over the plan's newsletter emails" };
+  // An email we already have (a resend) is rejected below, without counting.
+  if (!(await hasEmailFrom(db, userId, senderEmail, email.messageId))) {
+    try {
+      await consumePlanQuota(db, userId, "newsletterEmails");
+    } catch (error) {
+      const code = getAppErrorCode(error);
+      if (code !== "QUOTA_EXCEEDED" && code !== "NOT_IN_PLAN") throw error;
+      logger.info("Email rejected: over the plan's newsletter emails", { senderEmail, userId });
+      return { success: false, error: "Over the plan's newsletter emails" };
+    }
   }
 
   // 5. The sender's subscription, which owns its emails (#1846): one per user
@@ -479,6 +483,22 @@ function rejectDuplicate(email: InboundEmail, subscriptionId: string): ProcessEm
 }
 
 /** The user's email subscription to `senderEmail` (active or not), if any. */
+/** Whether the user already has the email with `messageId` from this sender. */
+async function hasEmailFrom(
+  db: typeof dbType,
+  userId: string,
+  senderEmail: string,
+  messageId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .innerJoin(subscriptions, eq(subscriptions.id, entries.ownerSubscriptionId))
+    .where(and(emailSubscriptionFor(userId, senderEmail), eq(entries.guid, messageId)))
+    .limit(1);
+  return row !== undefined;
+}
+
 function emailSubscriptionFor(userId: string, senderEmail: string): SQL {
   return and(
     eq(subscriptions.userId, userId),

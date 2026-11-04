@@ -68,8 +68,8 @@ async function dropOverBudgetPush(feed: Feed, writeCount: number): Promise<void>
 }
 
 /**
- * Queues full-content fetching for the entries a push just created, if any
- * subscriber wants it — the same work a poll does inline for its new entries
+ * Queues full-content fetching for the entries a push just created, if a
+ * subscriber wants it and their plan includes it (`feedWantsFullContent`) — the same work a poll does inline for its new entries
  * (`fetchFullContentForNewEntries`). A push is ingested inside the hub's
  * callback request, so the slow article fetches go to the feed's pending
  * `fetch_full_content` job (see `enqueueFullContentFetch`) rather than holding

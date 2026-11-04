@@ -188,7 +188,7 @@ export function PlanSection() {
             <dd className="ui-text-sm text-body mt-1">
               {data.limits.backgroundFullContent
                 ? "Fetched in the background"
-                : "Fetched as you open each article"}
+                : "Fetched as you open each article in the web reader"}
             </dd>
           </div>
           {PLAN_QUOTAS.map((quota) => (

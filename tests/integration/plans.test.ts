@@ -213,12 +213,12 @@ describe("plans", () => {
     const userId = await createTestUser({ plan: "free" });
     const token = `token-${generateUuidv7()}`;
     await createTestIngestAddress(userId, { token });
-    const receive = () =>
+    const receive = (messageId = `<${generateUuidv7()}@example.com>`) =>
       processInboundEmail(db, {
         to: `${token}@ingest.lionreader.com`,
         from: { address: "news@example.com", name: "News" },
         subject: "Hello",
-        messageId: `<${generateUuidv7()}@example.com>`,
+        messageId,
         html: "<p>Hi</p>",
         headers: {},
       });
@@ -227,8 +227,12 @@ describe("plans", () => {
       "free",
       { quotas: { ...PLAN_LIMITS.free.quotas, newsletterEmails: { burst: 1, perDay: 1 } } },
       async () => {
-        expect((await receive()).success).toBe(true);
-        expect(await receive()).toMatchObject({ success: false });
+        const messageId = `<${generateUuidv7()}@example.com>`;
+        expect((await receive(messageId)).success).toBe(true);
+        // A resend of an email we have is a duplicate, and costs nothing…
+        expect(await receive(messageId)).toMatchObject({ error: "Duplicate email" });
+        // …so the quota is still what refuses the next new one.
+        expect(await receive()).toMatchObject({ error: "Over the plan's newsletter emails" });
       }
     );
     const emails = await db

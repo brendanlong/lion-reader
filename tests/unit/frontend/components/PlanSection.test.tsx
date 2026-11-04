@@ -44,7 +44,7 @@ describe("PlanSection", () => {
     expect(screen.getByText("3 (no limit)")).toBeTruthy();
     expect(screen.getByText("200 a day, up to 50 at once")).toBeTruthy();
     expect(screen.getAllByText("No limit")).toHaveLength(3);
-    expect(screen.getByText("Fetched as you open each article")).toBeTruthy();
+    expect(screen.getByText("Fetched as you open each article in the web reader")).toBeTruthy();
     expect(screen.getByText("5 a day, up to 3 at once")).toBeTruthy();
     // A feature the plan excludes works only on the user's own key.
     expect(screen.getByText("With your own API key only")).toBeTruthy();

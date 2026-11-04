@@ -231,8 +231,8 @@ export async function feedWantsFullContent(db: typeof dbType, feedId: string): P
 }
 
 /**
- * Fetches and stores full content for a feed's newly-arrived entries, if any
- * active subscriber has `fetch_full_content` enabled.
+ * Fetches and stores full content for a feed's newly-arrived entries, if a
+ * subscriber wants it and their plan includes it ({@link feedWantsFullContent}).
  *
  * The single background path for "fetch full content" subscriptions, however an
  * entry arrived: a poll calls it inline from the `fetch_feed` job, and a WebSub
