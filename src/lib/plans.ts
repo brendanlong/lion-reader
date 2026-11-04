@@ -20,6 +20,7 @@ export const PLAN_QUOTAS = [
   "summaries",
   "narrationTextProcessing",
   "speechCharacters",
+  "newsletterEmails",
 ] as const;
 export type PlanQuota = (typeof PLAN_QUOTAS)[number];
 
@@ -53,6 +54,8 @@ export const PLAN_QUOTA_NAMES: Record<PlanQuota, string> = {
   narrationTextProcessing: "Narration text cleanup",
   /** Characters spoken by cloud voices. */
   speechCharacters: "Cloud voice characters",
+  /** Emails received at the user's newsletter addresses. */
+  newsletterEmails: "Newsletter emails",
 };
 
 /**
@@ -75,6 +78,12 @@ export interface PlanLimits {
    * fastest.
    */
   serverKeyRouting: "cheapest" | "fastest";
+  /**
+   * Whether a feed's new articles get their full content fetched in the
+   * background for this plan's subscribers who turn it on. Fetching one
+   * article's full content works on every plan.
+   */
+  backgroundFullContent: boolean;
   quotas: Record<PlanQuota, QuotaLimit>;
 }
 
@@ -89,6 +98,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     maxSubscriptions: 150,
     maxIngestAddresses: 1,
     serverKeyRouting: "cheapest",
+    backgroundFullContent: false,
     quotas: {
       // Bursts above the daily refill: a new user's first session is
       // generous, and steady use is still held to the daily rate.
@@ -97,12 +107,14 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
       summaries: { burst: 50, perDay: 5 },
       narrationTextProcessing: "excluded",
       speechCharacters: { burst: 50_000, perDay: 100_000 },
+      newsletterEmails: { burst: 50, perDay: 50 },
     },
   },
   paid: {
     maxSubscriptions: 1000,
     maxIngestAddresses: 5,
     serverKeyRouting: "fastest",
+    backgroundFullContent: true,
     quotas: {
       pageFetches: { burst: 200, perDay: 2000 },
       fileConversions: { burst: 50, perDay: 100 },
@@ -111,18 +123,21 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
       // Cloud voices run on our own speech server, which costs us almost
       // nothing: paid listening isn't capped.
       speechCharacters: null,
+      newsletterEmails: { burst: 300, perDay: 300 },
     },
   },
   unlimited: {
     maxSubscriptions: null,
     maxIngestAddresses: null,
     serverKeyRouting: "fastest",
+    backgroundFullContent: true,
     quotas: {
       pageFetches: null,
       fileConversions: null,
       summaries: null,
       narrationTextProcessing: null,
       speechCharacters: null,
+      newsletterEmails: null,
     },
   },
 };

@@ -6,13 +6,18 @@ process.env.ALLOWLIST_SECRET = "test-admin-secret";
  * change it, and users can see it with their usage.
  */
 
+import { eq } from "drizzle-orm";
 import { describe, it, expect, beforeEach, afterAll, afterEach, vi } from "vitest";
 import { db } from "../../src/server/db";
-import { users } from "../../src/server/db/schema";
+import { entries, subscriptions, users } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import { createSubscription } from "../../src/server/services/subscribe";
+import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { saveArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
-import { fetchAndStoreFullContent } from "../../src/server/services/full-content";
+import {
+  feedWantsFullContent,
+  fetchAndStoreFullContent,
+} from "../../src/server/services/full-content";
 import { retrySubscriptionFeed } from "../../src/server/services/feeds";
 import { getAppErrorCode } from "../../src/server/errors";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -21,6 +26,7 @@ import {
   createAuthContext,
   createTestEntry,
   createTestFeed,
+  createTestIngestAddress,
   createTestSubscription,
   createTestUser,
   createUnauthContext,
@@ -200,6 +206,51 @@ describe("plans", () => {
           for (let i = 0; i < 2; i++) await upload(userId, `file-${i}`);
         }
       );
+    });
+  });
+
+  it("drops newsletter emails past the plan's quota, without adding them", async () => {
+    const userId = await createTestUser({ plan: "free" });
+    const token = `token-${generateUuidv7()}`;
+    await createTestIngestAddress(userId, { token });
+    const receive = () =>
+      processInboundEmail(db, {
+        to: `${token}@ingest.lionreader.com`,
+        from: { address: "news@example.com", name: "News" },
+        subject: "Hello",
+        messageId: `<${generateUuidv7()}@example.com>`,
+        html: "<p>Hi</p>",
+        headers: {},
+      });
+
+    await withPlanLimits(
+      "free",
+      { quotas: { ...PLAN_LIMITS.free.quotas, newsletterEmails: { burst: 1, perDay: 1 } } },
+      async () => {
+        expect((await receive()).success).toBe(true);
+        expect(await receive()).toMatchObject({ success: false });
+      }
+    );
+    const emails = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .innerJoin(subscriptions, eq(subscriptions.id, entries.ownerSubscriptionId))
+      .where(eq(subscriptions.userId, userId));
+    expect(emails).toHaveLength(1);
+  });
+
+  it("fetches a feed's full content in the background only for a plan that includes it", async () => {
+    const feedId = await createTestFeed();
+    const free = await createTestUser({ plan: "free" });
+    await createTestSubscription(free, feedId, { fetchFullContent: true });
+
+    await withPlanLimits("free", { backgroundFullContent: false }, async () => {
+      expect(await feedWantsFullContent(db, feedId)).toBe(false);
+      const paid = await createTestUser({ plan: "paid" });
+      await withPlanLimits("paid", { backgroundFullContent: true }, async () => {
+        await createTestSubscription(paid, feedId, { fetchFullContent: true });
+        expect(await feedWantsFullContent(db, feedId)).toBe(true);
+      });
     });
   });
 

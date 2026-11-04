@@ -10,7 +10,8 @@ import { consumePlanQuota } from "@/server/services/plans";
 import { createHash } from "crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, narrationContent, subscriptions } from "@/server/db/schema";
+import { entries, narrationContent, subscriptions, users } from "@/server/db/schema";
+import { PLAN_IDS, PLAN_LIMITS } from "@/lib/plans";
 import { HttpFetchError } from "@/server/http/fetch";
 import { getAppErrorCode } from "@/server/errors";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -205,18 +206,24 @@ export async function persistFullContentResult(
 export const MAX_FULL_CONTENT_ENTRIES_PER_BATCH = 10;
 
 /**
- * Whether any active subscriber of the feed has `fetch_full_content` on. Full
- * content lives on the shared entry row, so one such subscriber is enough.
+ * Whether any active subscriber of the feed whose plan includes background
+ * full content has `fetch_full_content` on. Full content lives on the shared
+ * entry row, so one such subscriber is enough. Other subscribers' readers
+ * fetch each article's full content as it's opened (`fetchAndStoreFullContent`).
  */
 export async function feedWantsFullContent(db: typeof dbType, feedId: string): Promise<boolean> {
+  const plans = PLAN_IDS.filter((plan) => PLAN_LIMITS[plan].backgroundFullContent);
+  if (plans.length === 0) return false;
   const rows = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
+    .innerJoin(users, eq(users.id, subscriptions.userId))
     .where(
       and(
         eq(subscriptions.feedId, feedId),
         isNull(subscriptions.unsubscribedAt),
-        eq(subscriptions.fetchFullContent, true)
+        eq(subscriptions.fetchFullContent, true),
+        inArray(users.plan, plans)
       )
     )
     .limit(1);

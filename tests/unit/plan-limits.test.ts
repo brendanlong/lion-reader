@@ -24,5 +24,8 @@ describe("plan limits", () => {
       expect(high.burst, `${quota} burst`).toBeGreaterThanOrEqual(low.burst);
       expect(high.perDay, `${quota} per day`).toBeGreaterThanOrEqual(low.perDay);
     }
+    if (PLAN_LIMITS[lower].backgroundFullContent) {
+      expect(PLAN_LIMITS[higher].backgroundFullContent).toBe(true);
+    }
   });
 });
