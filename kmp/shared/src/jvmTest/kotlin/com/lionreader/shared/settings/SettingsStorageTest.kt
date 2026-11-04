@@ -34,7 +34,7 @@ class SettingsStorageTest {
             narrationSpeed = 1.5f,
             narrationAutoScroll = false,
             narrationContinue = false,
-            narrationEngine = NarrationEngine.CLOUD,
+            narrationEngine = NarrationEngine.ENHANCED,
             cloudVoiceModel = "deepinfra:hexgrad/Kokoro-82M",
             cloudVoice = "af_heart",
             cloudVoicePauseSeconds = 0.5f,
@@ -80,7 +80,7 @@ class SettingsStorageTest {
                 intPreferencesKey("retention_days") to 7,
                 stringSetPreferencesKey("expanded_tags") to setOf("tag"),
                 floatPreferencesKey("narration_speed") to 1.5f,
-                stringPreferencesKey("narration_engine") to "CLOUD",
+                stringPreferencesKey("narration_engine") to "ENHANCED",
                 stringPreferencesKey("cloud_voice") to "af_heart",
             )
         assertEquals(
@@ -91,7 +91,7 @@ class SettingsStorageTest {
                 retentionDays = 7,
                 expandedTags = setOf("tag"),
                 narrationSpeed = 1.5f,
-                narrationEngine = NarrationEngine.CLOUD,
+                narrationEngine = NarrationEngine.ENHANCED,
                 cloudVoice = "af_heart",
             ),
             prefs.toSettings(),

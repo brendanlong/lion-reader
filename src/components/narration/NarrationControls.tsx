@@ -58,7 +58,8 @@ export interface NarrationControlsProps {
  * if the Web Speech API is supported in the current browser.
  */
 export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
-  const { state, play, pause, skipForward, skipBackward, isSupported } = narration;
+  const { state, play, pause, skipForward, skipBackward, isSupported, isCheckingVoices } =
+    narration;
   const phase = getNarrationPhase(state);
 
   // Enable keyboard shortcuts for narration (must be called before early return)
@@ -130,7 +131,7 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
         variant="secondary"
         size="sm"
         onClick={shouldPause ? pause : play}
-        disabled={isGenerating}
+        disabled={isGenerating || (isCheckingVoices && !shouldPause)}
         aria-label={mainButtonLabel}
       >
         {mainButtonIcon}

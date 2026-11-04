@@ -48,6 +48,9 @@ class AccountsTest {
     /** While set, /auth/me fails as the server being down. */
     @Volatile private var meDown = false
 
+    /** The cloud voice list's body; null: the server is down. */
+    @Volatile private var voiceModels: String? = null
+
     private val http =
         HttpClient(
             MockEngine { request ->
@@ -74,6 +77,9 @@ class AccountsTest {
                         json("""{"user":{"id":"$user","email":"$user@example.com"}}""")
                     }
                     "/oauth/revoke" -> respond("")
+                    "/api/v1/narration/voice-models" ->
+                        voiceModels?.let { json(it) }
+                            ?: respondError(HttpStatusCode.ServiceUnavailable)
                     else -> respondError(HttpStatusCode.NotFound)
                 }
             }
@@ -148,6 +154,23 @@ class AccountsTest {
             "account-v5-c1aba06838f2a8e074f9dd25.db",
             accounts().signInAndWait("alice").dbName,
         )
+    }
+
+    @Test
+    fun noCloudVoiceWhenTheServerOffersNoneOrCantBeReached() {
+        val session = accounts().signInAndWait("alice")
+        voiceModels =
+            """{"models":[{"id":"p:kokoro","displayName":"Kokoro",""" +
+                """"voices":[{"id":"heart","name":"Heart"}],"defaultVoice":"heart",""" +
+                """"provider":"p","providerDisplayName":"P"}],"defaultModelId":"p:kokoro"}"""
+        assertEquals("heart", runBlocking { session.cloudVoice(null, null) }?.voice)
+
+        // Even with the last answer still known: cloud voices couldn't play either.
+        voiceModels = null
+        assertNull(runBlocking { session.cloudVoice(null, null) })
+
+        voiceModels = """{"models":[],"defaultModelId":""}"""
+        assertNull(runBlocking { session.cloudVoice(null, null) })
     }
 
     @Test

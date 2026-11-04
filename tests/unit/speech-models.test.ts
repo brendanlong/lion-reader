@@ -21,6 +21,7 @@ import {
 } from "@/server/services/deepinfra";
 import type { OpenRouterModel } from "@/server/services/openrouter";
 import { ProviderRejectedError } from "@/server/services/provider-errors";
+import { PLAN_LIMITS } from "@/lib/plans";
 import {
   DEEPINFRA_KOKORO,
   DEFAULT_CLOUD_VOICES,
@@ -86,6 +87,19 @@ describe("OpenRouter speech models", () => {
   it("lists every model with voices on the server's key by default", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
     expect(openRouterModels({ plan: null })).toHaveLength(3);
+  });
+
+  it("lists none on the server's key for a plan without cloud voices, all on the user's own", () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    const plan = {
+      userId: "u",
+      limits: {
+        ...PLAN_LIMITS.paid,
+        quotas: { ...PLAN_LIMITS.paid.quotas, speechCharacters: "excluded" as const },
+      },
+    };
+    expect(openRouterModels({ plan })).toEqual([]);
+    expect(openRouterModels({ openrouter: "o", plan })).toHaveLength(3);
   });
 
   it("limits the server's key to models within the speech price cap", () => {

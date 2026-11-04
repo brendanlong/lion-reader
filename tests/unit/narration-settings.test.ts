@@ -16,6 +16,7 @@ import {
   loadNarrationSettings,
   saveNarrationSettings,
   DEFAULT_NARRATION_SETTINGS,
+  narrationProvider,
   type NarrationSettings,
 } from "../../src/lib/narration/settings";
 import {
@@ -257,5 +258,33 @@ describe("highlighting settings", () => {
 
     const settings = loadNarrationSettings();
     expect(settings.autoScrollEnabled).toBe(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled);
+  });
+});
+
+describe("narrationProvider", () => {
+  const listed = { data: { models: [{}] }, isError: false };
+  const none = { data: { models: [] }, isError: false };
+  const pending = { isError: false };
+  const failed = { isError: true };
+
+  it("uses cloud voices while the server lists some, or hasn't answered yet", () => {
+    expect(narrationProvider("cloud", listed, true)).toBe("cloud");
+    expect(narrationProvider("cloud", pending, true)).toBe("cloud");
+  });
+
+  it("uses built-in voices when the server lists no cloud voices or can't be reached", () => {
+    expect(narrationProvider("cloud", none, true)).toBe("browser");
+    expect(narrationProvider("cloud", failed, true)).toBe("browser");
+    // A refetch that failed keeps the old answer's data.
+    expect(narrationProvider("cloud", { ...listed, isError: true }, true)).toBe("browser");
+  });
+
+  it("uses built-in voices when the browser can't stream cloud audio", () => {
+    expect(narrationProvider("cloud", listed, false)).toBe("browser");
+  });
+
+  it("leaves other choices alone", () => {
+    expect(narrationProvider("phonon", none, true)).toBe("phonon");
+    expect(narrationProvider("browser", listed, true)).toBe("browser");
   });
 });

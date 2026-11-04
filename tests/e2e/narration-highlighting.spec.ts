@@ -73,6 +73,9 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
   await giveEntry(db, user.id, entryId, sql`${feed.subscriptionId}::uuid`);
 
   await loginAs(page.context(), user, baseURL!);
+  await page.addInitScript(() => {
+    localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "browser" }));
+  });
   await page.goto("/all");
   await page.locator(`[data-entry-id="${entryId}"]`).click();
 

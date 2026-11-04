@@ -26,6 +26,7 @@ import { logger } from "@/lib/logger";
 import {
   chargeServerKeyUse,
   planAllowsOnServerKey,
+  planIncludesFeature,
   getProviderApiKey,
   isModelAllowed,
   isOnUserKey,
@@ -175,7 +176,7 @@ export interface SpeechChoice {
 
 /**
  * The models with voices the user can pick: those allowed on the key they'd
- * run on (see `isModelAllowed`).
+ * run on (see `isModelAllowed`), by a plan that includes cloud voices there.
  */
 export function pickableSpeechModels(
   models: SpeechModel[],
@@ -184,6 +185,7 @@ export function pickableSpeechModels(
   return models.filter(
     (model) =>
       model.voices.length > 0 &&
+      planIncludesFeature(keys, model.provider, "speechCharacters") &&
       isModelAllowed(model.id, keys, { pricePerMillionCharacters: model.pricePerMillionCharacters })
   );
 }

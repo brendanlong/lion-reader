@@ -65,8 +65,18 @@ interface SpeechStub {
 
 let speech: SpeechStub;
 
+const CLOUD_MODEL = {
+  id: "deepinfra:hexgrad/Kokoro-82M",
+  displayName: "Kokoro",
+  provider: "deepinfra" as const,
+  providerDisplayName: "DeepInfra",
+  voices: [{ id: "af_heart", name: "af_heart" }],
+  defaultVoice: "af_heart",
+};
+
 beforeEach(() => {
   stubMemoryLocalStorage();
+  localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "browser" }));
 
   const voice = {
     voiceURI: "test-voice",
@@ -522,7 +532,7 @@ describe("narration that finishes generating after the user moved on", () => {
   beforeEach(() => {
     localStorage.setItem(
       "lion-reader-narration-settings",
-      JSON.stringify({ useLlmNormalization: true })
+      JSON.stringify({ provider: "browser", useLlmNormalization: true })
     );
   });
 
@@ -569,6 +579,59 @@ describe("narration that finishes generating after the user moved on", () => {
     expect(calls[1].input).toMatchObject({ showFullContent: true });
   });
 
+  it("reads with built-in voices when the server lists no cloud voices", async () => {
+    localStorage.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ useLlmNormalization: true, provider: "cloud" })
+    );
+    // So the browser could play cloud voices, and only the empty list rules them out.
+    vi.stubGlobal(
+      "MediaSource",
+      class extends EventTarget {
+        static isTypeSupported = () => true;
+      }
+    );
+    const { callsFor } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: {
+        "narration.listVoiceModels": () => ({ models: [], defaultModelId: "" }),
+        "narration.generate": () => ({
+          narration: "Server narration.",
+          cached: false,
+          source: "llm",
+          paragraphMap: [],
+        }),
+      },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+    await waitFor(() => expect(callsFor("narration.listVoiceModels")).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(speech.speak).toHaveBeenCalledTimes(1));
+  });
+
+  it("holds Listen until it knows whether cloud voices are available", async () => {
+    localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "cloud" }));
+    vi.stubGlobal(
+      "MediaSource",
+      class extends EventTarget {
+        static isTypeSupported = () => true;
+      }
+    );
+    let answer: (value: unknown) => void = () => {};
+    const { callsFor } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: {
+        "narration.listVoiceModels": () => new Promise((resolve) => (answer = resolve)),
+      },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+
+    await waitFor(() => expect(callsFor("narration.listVoiceModels")).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Listen" })).toBeDisabled();
+    await act(async () => answer({ models: [], defaultModelId: "" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeEnabled());
+  });
+
   it("doesn't let an abandoned cloud request stop the playback that replaced it", async () => {
     localStorage.setItem(
       "lion-reader-narration-settings",
@@ -600,6 +663,10 @@ describe("narration that finishes generating after the user moved on", () => {
     let generateCalls = 0;
     const { callsFor, rerender } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
       handlers: {
+        "narration.listVoiceModels": () => ({
+          models: [CLOUD_MODEL],
+          defaultModelId: CLOUD_MODEL.id,
+        }),
         "narration.generate": () =>
           generateCalls++ === 0
             ? first.handler()
@@ -608,6 +675,7 @@ describe("narration that finishes generating after the user moved on", () => {
       wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
     });
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Listen" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Listen" }));
     await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(1));
 

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.lionreader.shared.api.CloudSpeechPause
+import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.narration.resolveEnhancedVoice
 import com.lionreader.shared.sync.RetentionPolicy
 import kotlinx.coroutines.flow.Flow
@@ -64,7 +65,16 @@ enum class NarrationEngine {
     DEVICE,
     CLOUD,
     /** Phonon, on this device, once its model is downloaded. */
-    ENHANCED,
+    ENHANCED;
+
+    /**
+     * The engine narration uses: the device's voices instead of cloud ones when the server offers
+     * the account none (no provider key, or a plan without them) or couldn't be reached, for which
+     * pass an empty list. [cloudVoices] is null until the server has answered, when the choice
+     * stands. The web's `narrationProvider` is the same.
+     */
+    fun inUse(cloudVoices: VoiceModels?): NarrationEngine =
+        if (this == CLOUD && cloudVoices?.models?.isEmpty() == true) DEVICE else this
 }
 
 /** Per-device settings, like the web's localStorage ones. */
@@ -106,7 +116,7 @@ data class AppSettings(
     val narrationAutoScroll: Boolean = true,
     /** When an article ends, narration goes on to the next one in the list. */
     val narrationContinue: Boolean = true,
-    val narrationEngine: NarrationEngine = NarrationEngine.DEVICE,
+    val narrationEngine: NarrationEngine = NarrationEngine.CLOUD,
     /** The cloud voice model (`provider:model`) and voice; null for the server's defaults. */
     val cloudVoiceModel: String? = null,
     val cloudVoice: String? = null,

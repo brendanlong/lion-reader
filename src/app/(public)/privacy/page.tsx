@@ -218,12 +218,12 @@ export default function PrivacyPolicyPage() {
           <Card padding="md">
             <LegalSubsection
               id="audio-narration"
-              title="Audio Narration (Cerebras, OpenRouter, DeepInfra, BreezeBlue, Together AI) — Optional"
+              title="Audio Narration (Cerebras, OpenRouter, DeepInfra, BreezeBlue, Together AI)"
             >
               <LegalParagraph>
-                <strong>This feature is optional and disabled by default.</strong> When you enable
-                AI text processing in narration settings, article content is sent to the AI provider
-                you chose—Cerebras or OpenRouter—to convert it into speakable text. This
+                <strong>AI text processing is optional and disabled by default.</strong> When you
+                enable AI text processing in narration settings, article content is sent to the AI
+                provider you chose—Cerebras or OpenRouter—to convert it into speakable text. This
                 preprocessing expands abbreviations, formats numbers for speech, and improves
                 pronunciation. As with summaries, a request may go to another provider hosting the
                 same model when the one you chose is busy. The processed text is cached on our
@@ -234,17 +234,19 @@ export default function PrivacyPolicyPage() {
                 device.
               </LegalParagraph>
               <LegalParagraph>
-                With built-in or downloaded voices, audio is generated entirely on your device. If
-                you choose <strong>Cloud Voices</strong> (off by default), the text being narrated
-                is sent to the provider of the speech model you picked to generate the audio: our
-                own speech server (see <TextLink href="#hosting">Hosting</TextLink>) or DeepInfra
-                directly (the default voice, Kokoro), BreezeBlue or Together AI directly, or
-                OpenRouter, which forwards it to the company hosting that model (for example
-                DeepInfra or Together). When that provider is too busy or failing, the text may
-                instead be sent to another of these providers that hosts the same voice. The
-                generated audio is streamed back to your device and not stored on our servers. We
-                ask BreezeBlue not to save the text or audio in the generation history of the
-                account whose key was used.
+                With built-in or downloaded voices, audio is generated entirely on your device.{" "}
+                <strong>Cloud Voices</strong> are the default when your account has them (otherwise
+                built-in voices are; you can switch in narration settings): the text being narrated
+                is sent to the provider of the speech model in use to generate the audio. The
+                default voice, Kokoro, runs on our own speech server (see{" "}
+                <TextLink href="#hosting">Hosting</TextLink>) or, when that isn&apos;t available, at
+                DeepInfra or through OpenRouter. Other voices you pick run at BreezeBlue, Together
+                AI or DeepInfra directly, or through OpenRouter, which forwards the text to the
+                company hosting that model (for example DeepInfra or Together). When that provider
+                is too busy or failing, the text may instead be sent to another of these providers
+                that hosts the same voice. The generated audio is streamed back to your device and
+                not stored on our servers. We ask BreezeBlue not to save the text or audio in the
+                generation history of the account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, built-in voices send the article text to your device&apos;s

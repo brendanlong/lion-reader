@@ -10,7 +10,6 @@ import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.TokenStore
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
-import com.lionreader.shared.narration.SpeechInterrupted
 import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.sync.RetentionPolicy
 import com.lionreader.shared.sync.SyncEngine
@@ -104,45 +103,32 @@ internal constructor(
     /** The account's work that outlives the screen that asked for it (cloud speech), not it. */
     val work = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val _voiceModels = MutableStateFlow<VoiceModels?>(null)
-
-    /** The cloud voices the server last offered this account; null until it's been asked. */
-    val voiceModels: StateFlow<VoiceModels?> = _voiceModels.asStateFlow()
-
     /**
-     * Asks the server for its cloud voices, into [voiceModels]. It lists [model]'s [voice] while
-     * the provider has it, even once it no longer offers it, so a chosen voice stays chosen.
+     * The cloud voices the server offers this account: none when it has none, or can't be reached
+     * or is busy for now (cloud voices couldn't play either). It lists [model]'s [voice] while the
+     * provider has it, even once it no longer offers it, so a chosen voice stays chosen. Throws
+     * [SpeechUnavailable] when signed out or refused.
      */
-    suspend fun fetchVoiceModels(model: String?, voice: String?): VoiceModels =
-        connection.api.voiceModels(model, voice).also { _voiceModels.value = it }
+    suspend fun cloudVoices(model: String?, voice: String?): VoiceModels =
+        try {
+            connection.api.voiceModels(model, voice)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            when (val why = e.apiFailure()) {
+                ApiFailure.SignedOut -> throw SpeechUnavailable("Sign in to use cloud voices.")
+                is ApiFailure.Rejected ->
+                    throw SpeechUnavailable(why.message ?: "Cloud voices aren't available.")
+                else -> VoiceModels(emptyList(), defaultModelId = "")
+            }
+        }
 
     /**
      * The cloud model and voice to narrate with: the chosen [model] and [voice] if the server still
-     * offers them, else its defaults. Throws the [com.lionreader.shared.narration.SpeechException]
-     * saying why there's none.
+     * offers them, else its defaults; null when [cloudVoices] has none.
      */
-    suspend fun cloudVoice(model: String?, voice: String?): ResolvedVoice {
-        val available =
-            try {
-                fetchVoiceModels(model, voice)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                when (val why = e.apiFailure()) {
-                    ApiFailure.SignedOut -> throw SpeechUnavailable("Sign in to use cloud voices.")
-                    is ApiFailure.Rejected ->
-                        throw SpeechUnavailable(why.message ?: "Cloud voices aren't available.")
-                    // Moving to the next article mustn't need the network just to find out again.
-                    else ->
-                        voiceModels.value
-                            ?: throw SpeechInterrupted(
-                                "Couldn't reach Lion Reader for cloud voices."
-                            )
-                }
-            }
-        return available.resolve(model, voice)
-            ?: throw SpeechUnavailable("Cloud voices aren't set up for your account.")
-    }
+    suspend fun cloudVoice(model: String?, voice: String?): ResolvedVoice? =
+        cloudVoices(model, voice).resolve(model, voice)
 
     fun close() {
         work.cancel()

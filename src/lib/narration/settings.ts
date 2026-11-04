@@ -31,9 +31,9 @@ export interface NarrationSettings {
 
   /**
    * Which TTS provider to use.
-   * - "browser": Native Web Speech API voices (default)
+   * - "browser": Native Web Speech API voices
    * - "phonon": Downloaded voices via Phonon (requires download)
-   * - "cloud": Cloud voices (server-side speech models)
+   * - "cloud": Cloud voices (server-side speech models; default)
    */
   provider: TTSProviderId;
 
@@ -100,7 +100,7 @@ export interface NarrationSettings {
  */
 export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   enabled: true,
-  provider: "browser",
+  provider: "cloud",
   cloudModelId: null,
   voiceId: null,
   rate: DEFAULT_RATE,
@@ -203,6 +203,23 @@ export function loadNarrationSettings(): NarrationSettings {
     // If parsing fails, return defaults
     return DEFAULT_NARRATION_SETTINGS;
   }
+}
+
+/**
+ * The provider narration uses: built-in voices instead of cloud ones when the
+ * browser can't stream audio, or `narration.listVoiceModels` lists none for
+ * the user (no provider key, or a plan without them) or fails (the server
+ * can't be reached, so neither could cloud voices). Until it answers, the
+ * choice stands.
+ */
+export function narrationProvider(
+  provider: TTSProviderId,
+  cloudVoices: { data?: { models: unknown[] }; isError: boolean },
+  canStreamAudio: boolean
+): TTSProviderId {
+  const unavailable =
+    !canStreamAudio || cloudVoices.isError || cloudVoices.data?.models.length === 0;
+  return provider === "cloud" && unavailable ? "browser" : provider;
 }
 
 /**

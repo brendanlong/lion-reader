@@ -15,7 +15,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { ArticleNarrator } from "@/lib/narration/ArticleNarrator";
-import { useNarrationSettings } from "@/lib/narration/settings";
+import { narrationProvider, useNarrationSettings } from "@/lib/narration/settings";
 import { findVoiceByUri, waitForVoices } from "@/lib/narration/voices";
 import { isNarrationSupported } from "@/lib/narration/feature-detection";
 import {
@@ -150,10 +150,33 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const paragraphMapRef = useRef<ParagraphMapEntry[]>([]);
 
   const [storedSettings] = useNarrationSettings();
+  const asksForCloudVoices = storedSettings.provider === "cloud" && !prerecordedVoice;
+  const cloudVoicesQuery = trpc.narration.listVoiceModels.useQuery(undefined, {
+    enabled: asksForCloudVoices,
+    staleTime: 5 * 60 * 1000,
+    // An answer changes the voice, which stops narration: take one only as an article opens.
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    // Offline, fail (to built-in voices) rather than wait, holding Listen.
+    networkMode: "always",
+  });
+  const canStreamAudio = useSyncExternalStore(
+    () => () => {},
+    () => getMediaSourceClass() !== null,
+    () => true
+  );
+  const provider = narrationProvider(storedSettings.provider, cloudVoicesQuery, canStreamAudio);
+  // Listen waits for the answer, so it starts in the voice it'll keep.
+  const isCheckingVoices =
+    asksForCloudVoices &&
+    canStreamAudio &&
+    (cloudVoicesQuery.isPending || cloudVoicesQuery.isFetching);
   const settings = useMemo(
     () =>
-      prerecordedVoice ? withPrerecordedVoice(storedSettings, prerecordedVoice) : storedSettings,
-    [storedSettings, prerecordedVoice]
+      prerecordedVoice
+        ? withPrerecordedVoice(storedSettings, prerecordedVoice)
+        : { ...storedSettings, provider },
+    [storedSettings, prerecordedVoice, provider]
   );
 
   // Until the model is downloaded (in settings, with its progress), browser
@@ -329,7 +352,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
    * If narration hasn't been generated yet, generates it first.
    */
   const play = useCallback(async () => {
-    if (!isSupported) return;
+    if (!isSupported || isCheckingVoices) return;
 
     // pause/stop, and the article/voice/variant reset (including unmount), bump
     // this token. Every path re-checks it after each await, so narration that
@@ -465,6 +488,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     });
   }, [
     isSupported,
+    isCheckingVoices,
     usePhonon,
     useCloud,
     playerState.status,
@@ -635,5 +659,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     playFromElement,
     stop,
     isSupported,
+    isCheckingVoices,
   };
 }

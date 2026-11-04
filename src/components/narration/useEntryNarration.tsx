@@ -125,12 +125,13 @@ export function useEntryNarration({
   // passes over it if there's nothing to say.
   const play = narration?.play;
   const isSupported = narration?.isSupported ?? false;
+  const isCheckingVoices = narration?.isCheckingVoices ?? false;
   const startedRef = useRef(false);
   useEffect(() => {
-    if (!continued || !play || !isSupported || startedRef.current) return;
+    if (!continued || !play || !isSupported || isCheckingVoices || startedRef.current) return;
     startedRef.current = true;
     play();
-  }, [continued, play, isSupported]);
+  }, [continued, play, isSupported, isCheckingVoices]);
   const onNothingToSay = useCallback(() => {
     if (continued) goOn();
   }, [continued, goOn]);

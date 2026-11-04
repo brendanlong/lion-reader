@@ -474,6 +474,7 @@ describe("EntryContent click-to-seek narration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stubMemoryLocalStorage();
+    localStorage.setItem("lion-reader-narration-settings", JSON.stringify({ provider: "browser" }));
     speak = vi.fn();
     vi.stubGlobal("speechSynthesis", {
       speak,
