@@ -23,7 +23,7 @@ import { errors } from "@/server/errors";
 import { countActiveSubscriptions } from "@/server/services/subscriptions";
 import { countIngestAddresses } from "@/server/services/ingest-addresses";
 
-export async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
+async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
   const [row] = await db
     .select({ plan: users.plan })
     .from(users)
@@ -35,6 +35,15 @@ export async function getUserPlan(db: DbOrTx, userId: string): Promise<PlanId> {
 
 export async function getUserPlanLimits(db: DbOrTx, userId: string): Promise<PlanLimits> {
   return PLAN_LIMITS[await getUserPlan(db, userId)];
+}
+
+/** A user's plan with its limits and the models it may run on the server's AI keys. */
+export async function getUserPlanAccess(
+  db: DbOrTx,
+  userId: string
+): Promise<{ plan: PlanId; limits: PlanLimits; serverKeyModels: readonly string[] | null }> {
+  const plan = await getUserPlan(db, userId);
+  return { plan, limits: PLAN_LIMITS[plan], serverKeyModels: planServerKeyModels(plan) };
 }
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
@@ -111,15 +120,13 @@ export interface PlanUsage {
 
 /** A user's plan, its limits, and how much of each the user is using. */
 export async function getPlanUsage(db: DbOrTx, userId: string): Promise<PlanUsage> {
-  const [plan, subscriptionCount, addressCount] = await Promise.all([
-    getUserPlan(db, userId),
+  const [access, subscriptionCount, addressCount] = await Promise.all([
+    getUserPlanAccess(db, userId),
     countActiveSubscriptions(db, userId),
     countIngestAddresses(db, userId),
   ]);
   return {
-    plan,
-    limits: PLAN_LIMITS[plan],
-    serverKeyModels: planServerKeyModels(plan),
+    ...access,
     usage: { subscriptions: subscriptionCount, ingestAddresses: addressCount },
   };
 }

@@ -36,6 +36,7 @@ This creates the app on Fly.io and updates your `fly.toml` with the app name.
 - hands out newsletter addresses on lionreader.com's mail domain, so newsletters never reach you (`INGEST_EMAIL_DOMAIN`; delete it to turn newsletters off, or set up your own domain as in the README's "Email Newsletter Subscriptions");
 - asks every new user to certify they're outside the EU (`EU_RESTRICTED`; delete it);
 - names lionreader.com's operator as the contact in every outgoing request's User-Agent (`FETCHER_CONTACT_EMAIL`; set your own or delete it);
+- records the demo's narration on lionreader.com's own speech server, so the demo can't play it (`DEMO_NARRATION_*`; delete them for the browser's voices, or point them at your own);
 - points Sign in with Apple and Discord, the Discord bot's emoji and invite, and object storage at lionreader.com's accounts and buckets (the `APPLE_*`, `DISCORD_*` and `STORAGE_*` values; set your own or delete them).
 
 ---

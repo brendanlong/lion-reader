@@ -19,14 +19,12 @@ import {
 import { errors } from "@/server/errors";
 import type { AiPlanAccess, AiProviderKeys } from "@/server/services/ai-providers";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
-import { getUserPlan } from "@/server/services/plans";
-import { planServerKeyModels } from "@/server/services/server-key-models";
-import { PLAN_LIMITS } from "@/lib/plans";
+import { getUserPlanAccess } from "@/server/services/plans";
 
 /** What `userId`'s plan lets their AI calls run on the server's keys. */
 export async function getUserAiPlanAccess(userId: string): Promise<AiPlanAccess> {
-  const plan = await getUserPlan(db, userId);
-  return { userId, limits: PLAN_LIMITS[plan], serverKeyModels: planServerKeyModels(plan) };
+  const { limits, serverKeyModels } = await getUserPlanAccess(db, userId);
+  return { userId, limits, serverKeyModels };
 }
 
 /** The providers `userId` has their own API key for (not the keys). */

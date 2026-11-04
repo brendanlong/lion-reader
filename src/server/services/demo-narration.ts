@@ -8,6 +8,7 @@
 import { DEMO_ENTRIES } from "@/lib/demo/data";
 import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
 import { DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
+import { normalizeModelRef } from "@/lib/ai/model-ref";
 import {
   buildAlignedNarration,
   NEXT_ARTICLE,
@@ -40,7 +41,7 @@ export function demoNarrationText(html: string, following?: string): string {
  * `DEMO_NARRATION_MODEL` (a `provider:model` ref) and `DEMO_NARRATION_VOICE`.
  * Pick one that costs nothing per character, like the operator's own speech
  * server. Changing it records the demo again. Unset, the demo narrates with
- * the browser's voices.
+ * the browser's voices. Startup calls it, so setting only one fails there.
  */
 export function getDemoNarrationVoice(): PrerecordedVoice | null {
   const model = process.env.DEMO_NARRATION_MODEL?.trim();
@@ -48,7 +49,9 @@ export function getDemoNarrationVoice(): PrerecordedVoice | null {
   if (!model !== !voice) {
     throw new Error("Set both DEMO_NARRATION_MODEL and DEMO_NARRATION_VOICE, or neither");
   }
-  return model && voice ? { model, voice, pauseSeconds: DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS } : null;
+  return model && voice
+    ? { model: normalizeModelRef(model), voice, pauseSeconds: DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS }
+    : null;
 }
 
 async function buildCatalog(): Promise<Map<string, PrerecordedChunk>> {

@@ -8,7 +8,7 @@ Business logic shared by tRPC routers, the MCP server, the compat APIs and backg
 
 ## Plans and Quotas
 
-A per-user limit comes from the user's plan (`@/lib/plans`, #2222), read through `services/plans.ts` (`getUserPlanLimits`, `consumePlanQuota`) in the service every entry point calls — never a constant, an env var, or a check in one router. AI calls get the plan with the user's keys (`AiProviderKeys.plan`) and count against it where the call is made (`generateChatCompletion`, `streamSpeech`), so a failover from the user's own key onto the server's counts too. Quota buckets are durable Redis keys (`services/plan-quota-keys.ts`), which the deploy-time clear skips.
+A per-user limit comes from the user's plan (`@/lib/plans`, #2222), read through `services/plans.ts` (`getUserPlanLimits`, `getUserPlanAccess`, `consumePlanQuota`) in the service every entry point calls — never a constant, an ad-hoc env var, or a check in one router. A plan's models on the server's AI keys are deploy config (`PLAN_<PLAN>_SERVER_KEY_MODELS`), read only through `planServerKeyModels`. AI calls get the plan with the user's keys (`AiProviderKeys.plan`) and count against it where the call is made (`generateChatCompletion`, `streamSpeech`), so a failover from the user's own key onto the server's counts too. Quota buckets are durable Redis keys (`services/plan-quota-keys.ts`), which the deploy-time clear skips.
 
 ## New-Account Onboarding
 

@@ -28,7 +28,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { z } from "zod";
 import { HydrationBoundary } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { PageLink } from "@/components/ui/page-link";
@@ -57,7 +56,7 @@ import { DEMO_BASE_PATH } from "@/lib/routes";
 import { createDemoStore } from "@/lib/demo/store";
 import { buildDemoDehydratedState } from "./seed";
 import { demoEntrySlots } from "./DemoEntrySlots";
-import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
+import { useDemoNarrationVoice } from "./DemoNarrationVoice";
 
 const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
   // A prerendered page can't know the visitor's zone. Formatting the article
@@ -67,41 +66,12 @@ const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
   renderSlots: demoEntrySlots,
 };
 
-const demoVoiceResponseSchema = z.object({
-  voice: z.object({ model: z.string(), voice: z.string(), pauseSeconds: z.number() }).nullable(),
-});
-
-let demoVoice: Promise<PrerecordedVoice | null> | null = null;
-
-/**
- * The voice the demo's narration is recorded in, asked of the server once per
- * page load (the page is prerendered, so it can't carry the setting), or null
- * for the browser's voices.
- */
-function fetchDemoVoice(): Promise<PrerecordedVoice | null> {
-  demoVoice ??= fetch("/api/prerecorded-speech/voice")
-    .then(async (response) =>
-      response.ok ? demoVoiceResponseSchema.parse(await response.json()).voice : null
-    )
-    .catch(() => null);
-  return demoVoice;
-}
-
 /**
  * The demo has no session to synthesize speech on, so it plays recordings, in
- * the voice the server records them in (until it's known, the browser's).
+ * the voice the server records them in, if it records any.
  */
 function useDemoEntryContentOptions(): EntryContentOptions {
-  const [voice, setVoice] = useState<PrerecordedVoice | null>(null);
-  useEffect(() => {
-    let current = true;
-    void fetchDemoVoice().then((fetched) => {
-      if (current) setVoice(fetched);
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
+  const voice = useDemoNarrationVoice();
   return useMemo(
     () =>
       voice ? { ...ENTRY_CONTENT_OPTIONS, prerecordedNarration: voice } : ENTRY_CONTENT_OPTIONS,
