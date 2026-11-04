@@ -82,7 +82,27 @@ describe("validateClientMetadataDocument", () => {
     expect(parsed?.client_id).toBe(CLAUDE_CIMD_URL);
     expect(parsed?.client_name).toBe("Claude");
     expect(parsed?.redirect_uris).toEqual(["https://claude.ai/api/mcp/auth_callback"]);
-    expect(parsed?.token_endpoint_auth_method).toBe("none");
+  });
+
+  it("accepts ChatGPT's live document, which prefers private_key_jwt but supports none", () => {
+    const url = "https://chatgpt.com/oauth/JYzdAYkHyPRA/client.json";
+    // Fetched live 2026-11-03.
+    const doc = {
+      client_id: url,
+      client_uri: "https://chatgpt.com/",
+      redirect_uris: ["https://chatgpt.com/connector/oauth/JYzdAYkHyPRA"],
+      token_endpoint_auth_method: "private_key_jwt",
+      token_endpoint_auth_methods_supported: ["none", "private_key_jwt"],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      client_name: "ChatGPT",
+      logo_uri: "https://persistent.oaistatic.com/sonic/misc/openai-logo.png",
+      token_endpoint_auth_signing_alg: "RS256",
+      jwks_uri: "https://chatgpt.com/oauth/jwks.json",
+    };
+    const parsed = validateClientMetadataDocument(url, doc);
+    expect(parsed?.client_name).toBe("ChatGPT");
+    expect(parsed?.redirect_uris).toEqual(["https://chatgpt.com/connector/oauth/JYzdAYkHyPRA"]);
   });
 
   it("rejects a document whose client_id does not match the fetch URL", () => {
@@ -172,7 +192,7 @@ describe("validateClientMetadataDocument", () => {
     ]);
   });
 
-  it("rejects secret-based token_endpoint_auth_method (CIMD clients are public)", () => {
+  it("rejects a client that cannot authenticate as public (CIMD clients are public)", () => {
     for (const method of ["client_secret_basic", "client_secret_post", "private_key_jwt"]) {
       expect(
         validateClientMetadataDocument(CLAUDE_CIMD_URL, {
@@ -181,6 +201,19 @@ describe("validateClientMetadataDocument", () => {
         })
       ).toBeNull();
     }
+    // The plural list, when present, decides — even over a singular "none".
+    expect(
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+        ...CLAUDE_CIMD_DOC,
+        token_endpoint_auth_methods_supported: ["private_key_jwt"],
+      })
+    ).toBeNull();
+    expect(
+      validateClientMetadataDocument(CLAUDE_CIMD_URL, {
+        ...CLAUDE_CIMD_DOC,
+        token_endpoint_auth_methods_supported: "none",
+      })
+    ).toBeNull();
     // Absent is fine — defaults to public.
     const noMethod = { ...CLAUDE_CIMD_DOC, token_endpoint_auth_method: undefined };
     expect(validateClientMetadataDocument(CLAUDE_CIMD_URL, noMethod)).not.toBeNull();
@@ -246,6 +279,5 @@ describe("PINNED_CLIENT_METADATA", () => {
   it("pins claude.ai's connector client with its auth callback", () => {
     const doc = PINNED_CLIENT_METADATA.get(CLAUDE_CIMD_URL);
     expect(doc?.redirect_uris).toContain("https://claude.ai/api/mcp/auth_callback");
-    expect(doc?.token_endpoint_auth_method).toBe("none");
   });
 });

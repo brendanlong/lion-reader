@@ -21,7 +21,6 @@ export interface ClientMetadata {
   redirect_uris: string[];
   grant_types?: string[];
   scope?: string;
-  token_endpoint_auth_method?: string;
 }
 
 /**
@@ -109,9 +108,13 @@ function sanitizeDisplayName(name: string): string | undefined {
  *   between document and identifier, and it is what defeats
  *   normalization-alias and redirect games: a URL that merely *normalizes or
  *   redirects to* the document's location won't equal the `client_id` inside it
- * - `token_endpoint_auth_method`, if present, must be `none` — a CIMD client
- *   is inherently public; this server has no secret to verify, so a document
- *   demanding secret-based auth is misconfigured or malicious
+ * - the client must be able to authenticate with `none`: we treat every CIMD
+ *   client as public. The plural `token_endpoint_auth_methods_supported`
+ *   (MCP SEP-3149; the methods the client can use, which it intersects with
+ *   ours) must include `none` when present; otherwise the legacy singular
+ *   `token_endpoint_auth_method`, if present, must be `none`. ChatGPT's
+ *   document lists `["none", "private_key_jwt"]` with a singular
+ *   `private_key_jwt` preference.
  */
 export function validateClientMetadataDocument(
   url: string,
@@ -138,7 +141,7 @@ export function validateClientMetadataDocument(
   if (redirectUris.length === 0) {
     return null;
   }
-  if (doc.token_endpoint_auth_method !== undefined && doc.token_endpoint_auth_method !== "none") {
+  if (!supportsPublicClientAuth(doc)) {
     return null;
   }
   if (doc.client_name !== undefined && typeof doc.client_name !== "string") {
@@ -165,8 +168,15 @@ export function validateClientMetadataDocument(
     redirect_uris: redirectUris,
     grant_types: doc.grant_types as string[] | undefined,
     scope: doc.scope as string | undefined,
-    token_endpoint_auth_method: doc.token_endpoint_auth_method as string | undefined,
   };
+}
+
+function supportsPublicClientAuth(doc: Record<string, unknown>): boolean {
+  const methods = doc.token_endpoint_auth_methods_supported;
+  if (methods !== undefined) {
+    return Array.isArray(methods) && methods.includes("none");
+  }
+  return doc.token_endpoint_auth_method === undefined || doc.token_endpoint_auth_method === "none";
 }
 
 /**
@@ -235,7 +245,6 @@ export const PINNED_CLIENT_METADATA: ReadonlyMap<string, ClientMetadata> = new M
         "refresh_token",
         "urn:ietf:params:oauth:grant-type:jwt-bearer",
       ],
-      token_endpoint_auth_method: "none",
     }),
   ],
   [
@@ -245,7 +254,6 @@ export const PINNED_CLIENT_METADATA: ReadonlyMap<string, ClientMetadata> = new M
       client_name: "Claude Code",
       redirect_uris: ["http://localhost/callback", "http://127.0.0.1/callback"],
       grant_types: ["authorization_code", "refresh_token"],
-      token_endpoint_auth_method: "none",
     }),
   ],
 ]);
