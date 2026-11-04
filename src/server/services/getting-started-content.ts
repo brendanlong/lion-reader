@@ -216,7 +216,7 @@ Its access is limited to your reader, and you can revoke it at any time under [S
 Lion Reader is built in the open, and what people ask for shapes what we work on next.
 
 - **Join our [Discord server](${DISCORD_SERVER_URL})** to ask questions, suggest features, and hear about new ones first.
-- **Report a bug or request a feature** on [GitHub](${LION_READER_ISSUES_URL}), or tell us with [this feedback form](${FEEDBACK_FORM_URL}).
+- **Report a bug or request a feature** on [GitHub](${LION_READER_ISSUES_URL}), or tell us anonymously with [this feedback form](${FEEDBACK_FORM_URL}).
 - **Try the native Android app** before it's public: ${NATIVE_APP_BETA} to join the beta.
 - **Read the code or run your own server.** Lion Reader is [open source](${LION_READER_REPO_URL}).
 
