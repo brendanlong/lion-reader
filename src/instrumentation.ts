@@ -24,6 +24,9 @@ export async function register() {
     // Initialize plugins (happens at module import time)
     await import("./server/plugins");
 
+    const { checkSelfHostedConfig } = await import("./server/services/selfhosted");
+    checkSelfHostedConfig();
+
     // Start the internal Prometheus metrics server (port 9091) HERE, in the
     // Next.js runtime module graph — NOT in the custom server (scripts/server.ts).
     // The HTTP request metrics (http_requests_total / http_request_duration_seconds)
