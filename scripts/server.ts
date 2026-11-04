@@ -116,104 +116,112 @@ const app = next({
   turbopack: dev,
 });
 
-app.prepare().then(() => {
-  const handle = app.getRequestHandler();
-  const upgrade = app.getUpgradeHandler();
+app
+  .prepare()
+  .then(() => {
+    const handle = app.getRequestHandler();
+    const upgrade = app.getUpgradeHandler();
 
-  // Poll Redis for the maintenance flag so the per-request check below stays
-  // synchronous (no await on the hot path).
-  startMaintenancePoller();
+    // Poll Redis for the maintenance flag so the per-request check below stays
+    // synchronous (no await on the hot path).
+    startMaintenancePoller();
 
-  const server = createServer((req, res) => {
-    // Maintenance mode: short-circuit everything except the exempt surfaces
-    // (demo, admin, health, static). Demo stays up because it never touches the
-    // database, which is the whole point during a DB migration.
-    const maintenance = getCurrentMaintenance();
-    if (maintenance.enabled) {
-      const decision = evaluateRequest(
-        req.url || "/",
-        req.headers.cookie,
-        req.headers.authorization
-      );
-      if (decision !== "allow") {
-        res.statusCode = 503;
-        res.setHeader("Retry-After", "3600");
-        res.setHeader("Cache-Control", "no-store");
-        // These responses short-circuit before Next's handler, so they miss the
-        // security headers from next.config.ts and the nonce'd CSP from
-        // src/proxy.ts. Set the framing/sniffing protections here too so
-        // maintenance-mode pages aren't a coverage gap. The maintenance HTML
-        // has no scripts at all (inline <style> only), so this static policy
-        // can be stricter than the app's (`script-src 'none'`); keep it
-        // conceptually in sync with src/server/http/csp.ts.
-        res.setHeader("X-Frame-Options", "DENY");
-        res.setHeader("X-Content-Type-Options", "nosniff");
-        res.setHeader(
-          "Content-Security-Policy",
-          "script-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+    const server = createServer((req, res) => {
+      // Maintenance mode: short-circuit everything except the exempt surfaces
+      // (demo, admin, health, static). Demo stays up because it never touches the
+      // database, which is the whole point during a DB migration.
+      const maintenance = getCurrentMaintenance();
+      if (maintenance.enabled) {
+        const decision = evaluateRequest(
+          req.url || "/",
+          req.headers.cookie,
+          req.headers.authorization
         );
-        if (decision === "block-api") {
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(maintenanceJsonBody(maintenance.message));
-        } else {
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.end(renderMaintenanceHtml(maintenance.message));
+        if (decision !== "allow") {
+          res.statusCode = 503;
+          res.setHeader("Retry-After", "3600");
+          res.setHeader("Cache-Control", "no-store");
+          // These responses short-circuit before Next's handler, so they miss the
+          // security headers from next.config.ts and the nonce'd CSP from
+          // src/proxy.ts. Set the framing/sniffing protections here too so
+          // maintenance-mode pages aren't a coverage gap. The maintenance HTML
+          // has no scripts at all (inline <style> only), so this static policy
+          // can be stricter than the app's (`script-src 'none'`); keep it
+          // conceptually in sync with src/server/http/csp.ts.
+          res.setHeader("X-Frame-Options", "DENY");
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          res.setHeader(
+            "Content-Security-Policy",
+            "script-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+          );
+          if (decision === "block-api") {
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(maintenanceJsonBody(maintenance.message));
+          } else {
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.end(renderMaintenanceHtml(maintenance.message));
+          }
+          return;
         }
-        return;
       }
-    }
 
-    maybeCompressResponse(req, res);
-    handle(req, res);
-  });
-
-  // Handle WebSocket upgrades (needed for HMR in development)
-  server.on("upgrade", (req, socket, head) => {
-    upgrade(req, socket, head);
-  });
-
-  server.listen(port, hostname, () => {
-    logger.info(`Server started on http://${hostname}:${port}`, {
-      dev,
-      hostname,
-      port,
+      maybeCompressResponse(req, res);
+      handle(req, res);
     });
-    // Re-render the public pages with runtime env (see revalidatePublicPages).
-    // Dev has no prerender cache — every request renders fresh — so skip it.
-    if (!dev) {
-      void revalidatePublicPages();
-    }
-  });
 
-  // Graceful shutdown: stop accepting connections, let in-flight requests
-  // drain, sever long-lived connections (SSE streams never end on their own —
-  // destroying their sockets aborts the requests, which unsubscribes them
-  // from Redis), and only then close shared resources.
-  const shutdown = createShutdown({
-    drainTimeoutMs: DRAIN_TIMEOUT_MS,
-    deadlineMs: SHUTDOWN_DEADLINE_MS,
-    exit: (code) => process.exit(code),
-    drain: (timeout) =>
-      new Promise<void>((resolve) => {
-        // Stop accepting new connections. The callback fires once every
-        // existing connection has closed.
-        server.close(() => resolve());
-        // Idle keep-alive connections would otherwise hold the server open
-        // until their sockets time out.
-        server.closeIdleConnections();
-        // Sever whatever is still open (SSE, slow requests) after the drain
-        // period.
-        timeout.addEventListener("abort", () => server.closeAllConnections(), { once: true });
-      }),
-    // Close DB pool / Redis / metrics server, all registered by
-    // instrumentation.ts in the Next.js runtime module graph (a separate copy
-    // from this bundle's modules in production). The metrics server (port 9091)
-    // is started AND stopped there so it shares the registry the route handlers
-    // write to — see src/instrumentation.ts. Every connection is closed by now,
-    // drained or severed, so nothing is left using them.
-    cleanup: async () => {
-      await getResourceCleanup()?.();
-    },
+    // Handle WebSocket upgrades (needed for HMR in development)
+    server.on("upgrade", (req, socket, head) => {
+      upgrade(req, socket, head);
+    });
+
+    server.listen(port, hostname, () => {
+      logger.info(`Server started on http://${hostname}:${port}`, {
+        dev,
+        hostname,
+        port,
+      });
+      // Re-render the public pages with runtime env (see revalidatePublicPages).
+      // Dev has no prerender cache — every request renders fresh — so skip it.
+      if (!dev) {
+        void revalidatePublicPages();
+      }
+    });
+
+    // Graceful shutdown: stop accepting connections, let in-flight requests
+    // drain, sever long-lived connections (SSE streams never end on their own —
+    // destroying their sockets aborts the requests, which unsubscribes them
+    // from Redis), and only then close shared resources.
+    const shutdown = createShutdown({
+      drainTimeoutMs: DRAIN_TIMEOUT_MS,
+      deadlineMs: SHUTDOWN_DEADLINE_MS,
+      exit: (code) => process.exit(code),
+      drain: (timeout) =>
+        new Promise<void>((resolve) => {
+          // Stop accepting new connections. The callback fires once every
+          // existing connection has closed.
+          server.close(() => resolve());
+          // Idle keep-alive connections would otherwise hold the server open
+          // until their sockets time out.
+          server.closeIdleConnections();
+          // Sever whatever is still open (SSE, slow requests) after the drain
+          // period.
+          timeout.addEventListener("abort", () => server.closeAllConnections(), { once: true });
+        }),
+      // Close DB pool / Redis / metrics server, all registered by
+      // instrumentation.ts in the Next.js runtime module graph (a separate copy
+      // from this bundle's modules in production). The metrics server (port 9091)
+      // is started AND stopped there so it shares the registry the route handlers
+      // write to — see src/instrumentation.ts. Every connection is closed by now,
+      // drained or severed, so nothing is left using them.
+      cleanup: async () => {
+        await getResourceCleanup()?.();
+      },
+    });
+    handleProcessSignals(shutdown);
+  })
+  .catch((error: unknown) => {
+    // Exit rather than leave the rejection unhandled: Sentry's handler for those
+    // keeps the process alive, never listening.
+    logger.error("Server failed to start", { error: String(error) });
+    process.exit(1);
   });
-  handleProcessSignals(shutdown);
-});

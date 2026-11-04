@@ -327,7 +327,9 @@ export default function PrivacyPolicyPage() {
               For cost and performance reasons, some parts of the service, including the default
               cloud narration voice, may run on the developer&apos;s personal computer rather than
               on Fly.io. Data sent to these parts, such as the text being narrated, is processed
-              there under the same terms as the rest of this policy.
+              there under the same terms as the rest of this policy. It reaches that computer
+              through Cloudflare (a Cloudflare Tunnel, protected by Cloudflare Access), which
+              decrypts and forwards it but doesn&apos;t store it.
             </LegalParagraph>
           </LegalSubsection>
 

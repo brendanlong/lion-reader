@@ -16,15 +16,19 @@ import {
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { SELFHOSTED_KOKORO } from "../../src/lib/narration/constants";
+import { checkSelfHostedConfig } from "../../src/server/services/selfhosted";
 
 const TOGETHER_KOKORO = "together:hexgrad/Kokoro-82M";
 
 let server: Server;
 let base: string;
 const requests: Array<{ model: string; key: string; body: Record<string, unknown> }> = [];
+/** The Cloudflare Access headers each self-hosted request carried. */
+const accessTokens: Array<{ id: unknown; secret: unknown }> = [];
 /** How the stand-in lists voices: Kokoro-FastAPI's older bare ids or newer objects. */
 let voiceShape: "ids" | "objects" = "objects";
-let selfHostedFails: "500" | "401" | false = false;
+/** "302" is Cloudflare Access sending a refused service token to its sign-in page. */
+let selfHostedFails: "500" | "401" | "302" | false = false;
 const saved = new Map<string, string | undefined>();
 
 /** A second of sound at 24 kHz mono, 16-bit. */
@@ -44,6 +48,12 @@ beforeAll(async () => {
     req.on("data", (chunk: Buffer) => (body += chunk.toString()));
     req.on("end", () => {
       const key = String(req.headers.authorization).replace(/^Bearer /, "");
+      if (req.url?.startsWith("/selfhosted/")) {
+        accessTokens.push({
+          id: req.headers["cf-access-client-id"],
+          secret: req.headers["cf-access-client-secret"],
+        });
+      }
       switch (req.url) {
         case "/selfhosted/v1/audio/voices": {
           const voices = ["af_heart", "af_bella"];
@@ -56,6 +66,14 @@ beforeAll(async () => {
           requests.push({ model: `selfhosted:${String(request.model)}`, key, body: request });
           if (selfHostedFails === "500") return json({ detail: "Internal Server Error" }, 500);
           if (selfHostedFails === "401") return json({ detail: "Invalid API key" }, 401);
+          if (selfHostedFails === "302") {
+            res
+              .writeHead(302, {
+                Location: "https://example.cloudflareaccess.com/cdn-cgi/access/login",
+              })
+              .end("Redirecting");
+            return;
+          }
           res.writeHead(200, { "Content-Type": "audio/pcm" });
           res.end(speech());
           return;
@@ -94,7 +112,12 @@ beforeAll(async () => {
     SERVER_KEY_MODELS: undefined,
     ...Object.fromEntries(Object.values(AI_PROVIDER_ENV_KEYS).map((name) => [name, undefined])),
   };
-  for (const name of [...Object.keys(env), "SELFHOSTED_BASE_URL"]) {
+  for (const name of [
+    ...Object.keys(env),
+    "SELFHOSTED_BASE_URL",
+    "SELFHOSTED_CF_ACCESS_CLIENT_ID",
+    "SELFHOSTED_CF_ACCESS_CLIENT_SECRET",
+  ]) {
     saved.set(name, process.env[name]);
   }
   for (const [name, value] of Object.entries(env)) {
@@ -121,6 +144,8 @@ afterEach(() => {
   voiceShape = "objects";
   selfHostedFails = false;
   delete process.env.TOGETHER_API_KEY;
+  delete process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID;
+  delete process.env.SELFHOSTED_CF_ACCESS_CLIENT_SECRET;
 });
 
 async function speak(model: string | null) {
@@ -190,10 +215,40 @@ describe("self-hosted voices", () => {
     expect(asked.map((request) => request.model)).toEqual([TOGETHER_KOKORO]);
   });
 
-  it("doesn't ask users for a key of their own when the server's is refused", async () => {
-    selfHostedFails = "401";
-    const refusal = speak(SELFHOSTED_KOKORO);
-    await expect(refusal).rejects.toThrow(SpeechRejectedError);
-    await expect(refusal).rejects.not.toThrow(/own|Settings/);
+  it.each(["401", "302"] as const)(
+    "refuses, without asking users for a key of their own, when the server's is refused (%s)",
+    async (status) => {
+      selfHostedFails = status;
+      const refusal = speak(SELFHOSTED_KOKORO);
+      await expect(refusal).rejects.toThrow(SpeechRejectedError);
+      await expect(refusal).rejects.toThrow(/key was refused/);
+      await expect(refusal).rejects.not.toThrow(/own|Settings/);
+    }
+  );
+
+  it("sends the Cloudflare Access service token only when it's set", async () => {
+    accessTokens.length = 0;
+    await listSpeechModels({ plan: null });
+    await speak(SELFHOSTED_KOKORO);
+    // A new key, so the voices are fetched again rather than served from the catalog.
+    process.env.SELFHOSTED_API_KEY = randomUUID();
+    process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID = "access-id";
+    process.env.SELFHOSTED_CF_ACCESS_CLIENT_SECRET = "access-secret";
+    await listSpeechModels({ plan: null });
+    await speak(SELFHOSTED_KOKORO);
+    const none = { id: undefined, secret: undefined };
+    const token = { id: "access-id", secret: "access-secret" };
+    expect(accessTokens).toEqual([none, none, token, token]);
+  });
+
+  it("refuses to start with half a Cloudflare Access service token", () => {
+    expect(checkSelfHostedConfig).not.toThrow();
+    process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID = "access-id";
+    expect(checkSelfHostedConfig).toThrow(/SELFHOSTED_CF_ACCESS_CLIENT_SECRET/);
+  });
+
+  it("refuses to start with a key but no server", () => {
+    delete process.env.SELFHOSTED_BASE_URL;
+    expect(checkSelfHostedConfig).toThrow(/SELFHOSTED_BASE_URL/);
   });
 });
