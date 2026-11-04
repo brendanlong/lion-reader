@@ -12,6 +12,7 @@ import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import {
   listSpeechModels,
   SpeechRejectedError,
+  SpeechUnavailableError,
   streamSpeech,
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
@@ -29,6 +30,8 @@ const accessTokens: Array<{ id: unknown; secret: unknown }> = [];
 let voiceShape: "ids" | "objects" = "objects";
 /** "302" is Cloudflare Access sending a refused service token to its sign-in page. */
 let selfHostedFails: "500" | "401" | "302" | false = false;
+/** The server's voices can't be listed, as when it's down behind Cloudflare. */
+let voicesFail = false;
 const saved = new Map<string, string | undefined>();
 
 /** A second of sound at 24 kHz mono, 16-bit. */
@@ -56,6 +59,7 @@ beforeAll(async () => {
       }
       switch (req.url) {
         case "/selfhosted/v1/audio/voices": {
+          if (voicesFail) return json({ detail: "Service Unavailable" }, 503);
           const voices = ["af_heart", "af_bella"];
           return json({
             voices: voiceShape === "ids" ? voices : voices.map((id) => ({ id })),
@@ -143,7 +147,9 @@ beforeEach(() => {
 afterEach(() => {
   voiceShape = "objects";
   selfHostedFails = false;
+  voicesFail = false;
   delete process.env.TOGETHER_API_KEY;
+  delete process.env.SERVER_KEY_MODELS;
   delete process.env.SELFHOSTED_CF_ACCESS_CLIENT_ID;
   delete process.env.SELFHOSTED_CF_ACCESS_CLIENT_SECRET;
 });
@@ -213,6 +219,34 @@ describe("self-hosted voices", () => {
 
     const asked = await speak(null);
     expect(asked.map((request) => request.model)).toEqual([TOGETHER_KOKORO]);
+  });
+
+  it("stays listed, said by another host, while the server's voices can't be listed", async () => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    // Together's Kokoro may only run as a failover.
+    process.env.SERVER_KEY_MODELS = "selfhosted:*";
+    voicesFail = true;
+    const { models } = await listSpeechModels({ plan: null });
+    expect(models.map((model) => [model.id, model.voices.map((voice) => voice.id)])).toEqual([
+      [SELFHOSTED_KOKORO, ["af_bella"]],
+    ]);
+    const asked = await speak(SELFHOSTED_KOKORO);
+    expect(asked.map((request) => [request.model, request.body.voice])).toEqual([
+      [TOGETHER_KOKORO, "af_bella"],
+    ]);
+  });
+
+  it("refuses for now, rather than change voices, when the other host lacks the picked one", async () => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    voicesFail = true;
+    const before = requests.length;
+    await expect(
+      streamSpeech(
+        { plan: null },
+        { model: SELFHOSTED_KOKORO, voice: "af_heart", text: "Hello.", userId: randomUUID() }
+      )
+    ).rejects.toThrow(SpeechUnavailableError);
+    expect(requests.length).toBe(before);
   });
 
   it.each(["401", "302"] as const)(

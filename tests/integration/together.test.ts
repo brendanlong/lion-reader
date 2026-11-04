@@ -207,6 +207,8 @@ const modelsOf = (asked: typeof requests) => asked.map((request) => request.mode
 
 describe("Together voices", () => {
   it("lists the speech models it serves serverless, with their voices and price", async () => {
+    // Listed as one model otherwise.
+    process.env.MODEL_FAILOVER = "";
     const { models } = await listSpeechModels({ together: randomUUID(), plan: null });
     expect(
       models.map((model) => [model.id, model.displayName, model.pricePerMillionCharacters])

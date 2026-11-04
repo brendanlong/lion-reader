@@ -454,7 +454,7 @@ export const narrationRouter = createTRPCRouter({
         voice: input?.voice ?? null,
         userId: ctx.session.user.id,
       });
-      const models = speechModels.map((model) => ({
+      const models = speechModels.map(({ hosts: _hosts, ...model }) => ({
         ...model,
         providerDisplayName: aiProviderName(model.provider),
         defaultVoice: defaultVoiceFor(model),

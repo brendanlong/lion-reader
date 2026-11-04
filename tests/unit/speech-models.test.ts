@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import {
   defaultSpeechModelId,
   defaultVoiceFor,
@@ -6,13 +6,14 @@ import {
   resolveSpeechModel,
   SpeechRejectedError,
   SpeechUnavailableError,
+  type SpeechHost,
   type SpeechModel,
   targetSpeechModelId,
   toDeepInfraSpeechModels,
   toSpeechModels,
 } from "@/server/services/speech";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
-import type { AiProviderKeys } from "@/server/services/ai-providers";
+import { isOnUserKey, type AiProviderKeys } from "@/server/services/ai-providers";
 import type { SpeechProvider } from "@/lib/ai/providers";
 import {
   canNarrate,
@@ -26,6 +27,7 @@ import {
   DEEPINFRA_KOKORO,
   DEFAULT_CLOUD_VOICES,
   OPENROUTER_KOKORO,
+  SELFHOSTED_KOKORO,
 } from "@/lib/narration/constants";
 
 const catalog: OpenRouterModel[] = [
@@ -53,6 +55,8 @@ const catalog: OpenRouterModel[] = [
 const ENV_VARS = [
   "OPENROUTER_API_KEY",
   "DEEPINFRA_API_KEY",
+  "SELFHOSTED_API_KEY",
+  "MODEL_FAILOVER",
   "SERVER_KEY_MODELS",
   "SERVER_KEY_MAX_SPEECH_PRICE",
 ] as const;
@@ -65,8 +69,12 @@ afterEach(() => {
   }
 });
 
-const openRouterModels = (keys: Parameters<typeof pickableSpeechModels>[1]) =>
-  pickableSpeechModels(toSpeechModels(catalog), keys);
+/** Hosts as listed to the key they'd run on: the user's own, if they have one. */
+const onTheirKey = (models: SpeechModel[], keys: AiProviderKeys): SpeechHost[] =>
+  models.map((model) => ({ model, onUserKey: isOnUserKey(model.provider, keys) }));
+
+const openRouterModels = (keys: AiProviderKeys) =>
+  pickableSpeechModels(onTheirKey(toSpeechModels(catalog), keys), keys);
 
 describe("OpenRouter speech models", () => {
   it("lists every model with voices on the user's own key, priced per character", () => {
@@ -113,6 +121,81 @@ describe("OpenRouter speech models", () => {
   });
 });
 
+describe("a model with several hosts", () => {
+  const kokoro = (id: string, provider: SpeechProvider, voices: string[]): SpeechModel => ({
+    id,
+    displayName: `${provider} Kokoro`,
+    provider,
+    voices: voices.map((voice) => ({ id: voice, name: voice })),
+  });
+  const selfHosted = kokoro(SELFHOSTED_KOKORO, "selfhosted", ["af_heart", "af_bella"]);
+  const deepInfra = kokoro(DEEPINFRA_KOKORO, "deepinfra", ["af_heart", "bm_george"]);
+  const ours = (model: SpeechModel): SpeechHost => ({ model, onUserKey: false });
+  const theirs = (model: SpeechModel): SpeechHost => ({ model, onUserKey: true });
+  const selfHostedDown = [{ provider: "selfhosted" as const, onUserKey: false }];
+  const freePlan = (serverKeyModels: string[]) => ({
+    userId: "u",
+    limits: PLAN_LIMITS.free,
+    serverKeyModels,
+  });
+
+  beforeEach(() => {
+    process.env.SELFHOSTED_API_KEY = "self";
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    process.env.MODEL_FAILOVER = `${SELFHOSTED_KOKORO},${DEEPINFRA_KOKORO}`;
+    // DeepInfra's Kokoro may only run as a failover.
+    process.env.SERVER_KEY_MODELS = "selfhosted:*";
+  });
+
+  it("is listed once, under its first host's id, with every host's voices", () => {
+    const models = pickableSpeechModels([ours(deepInfra), ours(selfHosted)], { plan: null });
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: SELFHOSTED_KOKORO,
+        provider: "selfhosted",
+        voices: ["af_heart", "af_bella", "bm_george"].map((id) => ({ id, name: id })),
+        hosts: [ours(selfHosted), ours(deepInfra)],
+      }),
+    ]);
+  });
+
+  it("is said on the user's own key first, backed up by the other hosts on ours", () => {
+    const [model] = pickableSpeechModels([ours(selfHosted), theirs(deepInfra), ours(deepInfra)], {
+      deepinfra: "d",
+      plan: null,
+    });
+    expect(model.hosts).toEqual([theirs(deepInfra), ours(selfHosted)]);
+  });
+
+  it("stays listed, said by the other hosts, while its first host's catalog is down", () => {
+    const [model] = pickableSpeechModels([ours(deepInfra)], { plan: null }, selfHostedDown);
+    expect(model).toEqual(
+      expect.objectContaining({
+        id: SELFHOSTED_KOKORO,
+        provider: "deepinfra",
+        hosts: [ours(deepInfra)],
+      })
+    );
+  });
+
+  it("isn't listed through a failover host alone", () => {
+    process.env.SERVER_KEY_MODELS = "openrouter:*";
+    expect(pickableSpeechModels([ours(deepInfra)], { plan: null }, selfHostedDown)).toEqual([]);
+  });
+
+  it("isn't said by a host the user's plan doesn't allow on the server's key", () => {
+    const plan = freePlan(["selfhosted:*"]);
+    expect(pickableSpeechModels([ours(deepInfra)], { plan }, selfHostedDown)).toEqual([]);
+    const [model] = pickableSpeechModels([ours(selfHosted), ours(deepInfra)], { plan });
+    expect(model.hosts).toEqual([ours(selfHosted)]);
+  });
+
+  it("is run for a request naming any of its hosts", () => {
+    const models = pickableSpeechModels([ours(selfHosted), ours(deepInfra)], { plan: null });
+    expect(targetSpeechModelId(models, { plan: null }, DEEPINFRA_KOKORO)).toBe(SELFHOSTED_KOKORO);
+  });
+});
+
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
     const [kokoro, minimax] = openRouterModels({ openrouter: "o", plan: null });
@@ -130,8 +213,8 @@ const deepInfraCatalog: DeepInfraSpeechModel[] = [
   },
 ];
 
-const deepInfraModels = (keys: Parameters<typeof pickableSpeechModels>[1]) =>
-  pickableSpeechModels(toDeepInfraSpeechModels(deepInfraCatalog), keys);
+const deepInfraModels = (keys: AiProviderKeys) =>
+  pickableSpeechModels(onTheirKey(toDeepInfraSpeechModels(deepInfraCatalog), keys), keys);
 
 describe("DeepInfra speech models", () => {
   it("lists every model on the user's own key, named like OpenRouter's", () => {
@@ -261,16 +344,17 @@ describe("resolveSpeechModel", () => {
   const catalog = (
     models: SpeechModel[],
     unavailable: SpeechProvider[] = [],
-    error: unknown = new Error("timed out")
+    error: unknown = new Error("timed out"),
+    onUserKey = false
   ) => ({
-    models,
-    unavailable: unavailable.map((provider) => ({ provider, error })),
+    models: models.map((model) => ({ ...model, hosts: [{ model, onUserKey }] })),
+    unavailable: unavailable.map((provider) => ({ provider, onUserKey, error })),
   });
 
   it("uses the default model and voice when nothing is chosen", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
     expect(resolveSpeechModel(catalog([deepInfraKokoro]), { plan: null }, null, null)).toEqual({
-      model: deepInfraKokoro,
+      model: expect.objectContaining(deepInfraKokoro),
       voice: DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO],
     });
   });
@@ -281,7 +365,7 @@ describe("resolveSpeechModel", () => {
     expect(
       resolveSpeechModel(catalog([deepInfraKokoro]), { plan: null }, OPENROUTER_KOKORO, "bm_george")
     ).toEqual({
-      model: deepInfraKokoro,
+      model: expect.objectContaining(deepInfraKokoro),
       voice: "bm_george",
     });
   });
@@ -292,15 +376,15 @@ describe("resolveSpeechModel", () => {
     expect(
       resolveSpeechModel(catalog([deepInfraKokoro]), { plan: null }, qwen.id, "Vivian")
     ).toEqual({
-      model: deepInfraKokoro,
+      model: expect.objectContaining(deepInfraKokoro),
       voice: DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO],
     });
   });
 
   it("keeps a model chosen on the user's own key, even if it's no longer listed", () => {
     const keys = { deepinfra: "d", plan: null };
-    expect(resolveSpeechModel(catalog([deepInfraKokoro, qwen]), keys, qwen.id, null).model).toBe(
-      qwen
+    expect(resolveSpeechModel(catalog([deepInfraKokoro, qwen]), keys, qwen.id, null).model.id).toBe(
+      qwen.id
     );
     expect(() => resolveSpeechModel(catalog([deepInfraKokoro]), keys, qwen.id, null)).toThrow(
       "Speech model not available"
@@ -324,7 +408,12 @@ describe("resolveSpeechModel", () => {
     const refusal = (keys: AiProviderKeys, status = 402) => {
       const refused = new ProviderRejectedError("", "OpenRouter", "Insufficient credits", status);
       try {
-        resolveSpeechModel(catalog([], ["openrouter"], refused), keys, OPENROUTER_KOKORO, null);
+        resolveSpeechModel(
+          catalog([], ["openrouter"], refused, isOnUserKey("openrouter", keys)),
+          keys,
+          OPENROUTER_KOKORO,
+          null
+        );
       } catch (error) {
         expect(error).toBeInstanceOf(SpeechRejectedError);
         return (error as Error).message;

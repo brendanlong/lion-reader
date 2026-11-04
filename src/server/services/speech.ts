@@ -66,7 +66,7 @@ import {
   SELFHOSTED_KOKORO_MODEL,
   selfHostedSpeech,
 } from "@/server/services/selfhosted";
-import { failoverModels } from "@/server/services/model-failover";
+import { canonicalModelRef, failoverGroup, hasFailover } from "@/server/services/model-failover";
 
 export interface SpeechVoice {
   /** What the provider calls the voice; what's stored and sent. */
@@ -75,6 +75,7 @@ export interface SpeechVoice {
   name: string;
 }
 
+/** A speech model as one host's catalog lists it. */
 export interface SpeechModel {
   /** `provider:model` ref. */
   id: string;
@@ -83,6 +84,38 @@ export interface SpeechModel {
   voices: SpeechVoice[];
   /** USD per million input characters. */
   pricePerMillionCharacters?: number;
+}
+
+/**
+ * A model the user can pick: one per model, however many hosts it has
+ * (`MODEL_FAILOVER`), going by its group's first id. Its name, provider and
+ * price are its first host's; its voices are all of theirs.
+ */
+export interface PickableSpeechModel extends SpeechModel {
+  /**
+   * Who can say it, in the order to ask: a host on the user's own key, then
+   * the group's on the server's keys.
+   */
+  hosts: SpeechHost[];
+}
+
+/** A host's model, as its catalog lists it to the key that would say it. */
+export interface SpeechHost {
+  model: SpeechModel;
+  /** On the user's own key, not the server's. */
+  onUserKey: boolean;
+}
+
+/** A provider's catalog that couldn't be fetched with the key, and why. */
+interface UnlistedCatalog {
+  provider: SpeechProvider;
+  onUserKey: boolean;
+  error: unknown;
+}
+
+/** The keys a call on the user's own key, or else the server's, runs with. */
+function keysFor(keys: AiProviderKeys | undefined, onUserKey: boolean): AiProviderKeys {
+  return onUserKey && keys ? keys : { plan: keys?.plan ?? null };
 }
 
 /**
@@ -156,9 +189,9 @@ function voicesNamedById(ids: string[]): SpeechVoice[] {
 
 export interface SpeechCatalog {
   /** Models with at least one voice that the user can pick. */
-  models: SpeechModel[];
-  /** Providers with a key whose catalog couldn't be fetched just now, and why. */
-  unavailable: { provider: SpeechProvider; error: unknown }[];
+  models: PickableSpeechModel[];
+  /** Catalogs that couldn't be fetched just now, and why. */
+  unavailable: UnlistedCatalog[];
   /**
    * The picked voice is missing from its model's voices only because it
    * couldn't be checked just now (a failed or rate-limited lookup), not
@@ -175,39 +208,105 @@ export interface SpeechChoice {
 }
 
 /**
- * The models with voices the user can pick: those allowed on the key they'd
- * run on (see `isModelAllowed`), by a plan that includes cloud voices there.
+ * The models with voices the user can pick, from the hosts' `catalog`: those
+ * with a host allowed on the key it'd run on (see `isModelAllowed`), by a plan
+ * that includes cloud voices there. A host whose catalog is `unlisted` still
+ * counts, if allowing it doesn't take its price, so its model stays while the
+ * other hosts say it. A model is said on the user's own key by the first host
+ * they have one for, and backed up by the others on the server's, which any
+ * host of a model with several may run on where the plan lets it.
  */
 export function pickableSpeechModels(
-  models: SpeechModel[],
-  keys: AiProviderKeys | undefined
-): SpeechModel[] {
-  return models.filter(
-    (model) =>
-      model.voices.length > 0 &&
-      planIncludesFeature(keys, model.provider, "speechCharacters") &&
-      isModelAllowed(model.id, keys, { pricePerMillionCharacters: model.pricePerMillionCharacters })
-  );
+  catalog: SpeechHost[],
+  keys: AiProviderKeys | undefined,
+  unlisted: readonly Omit<UnlistedCatalog, "error">[] = []
+): PickableSpeechModel[] {
+  const listed = (id: string, onUserKey: boolean) =>
+    catalog.find((host) => host.onUserKey === onUserKey && normalizeModelRef(host.model.id) === id);
+  const includesSpeech = (provider: SpeechProvider, onUserKey: boolean) =>
+    planIncludesFeature(keysFor(keys, onUserKey), provider, "speechCharacters");
+  const usable = (host: SpeechHost | undefined): host is SpeechHost =>
+    !!host && host.model.voices.length > 0 && includesSpeech(host.model.provider, host.onUserKey);
+  const allowed = (host: SpeechHost) =>
+    isModelAllowed(host.model.id, keysFor(keys, host.onUserKey), {
+      pricePerMillionCharacters: host.model.pricePerMillionCharacters,
+    });
+  const allowedWhileDown = (id: string) =>
+    unlisted.some(
+      ({ provider, onUserKey }) =>
+        provider === parseModelRef(id).provider &&
+        includesSpeech(provider, onUserKey) &&
+        isModelAllowed(id, keysFor(keys, onUserKey))
+    );
+  const groups = new Map(catalog.map(({ model }) => [canonicalModelRef(model.id), model.id]));
+  return [...groups.entries()].flatMap(([id, member]): PickableSpeechModel[] => {
+    const group = failoverGroup(member);
+    const own = group.map((hostId) => listed(hostId, true)).find(usable);
+    const backups = group
+      .filter((hostId) => hostId !== (own && normalizeModelRef(own.model.id)))
+      .map((hostId) => listed(hostId, false))
+      .filter(usable);
+    const isPickable =
+      !!own || backups.some(allowed) || group.some((hostId) => allowedWhileDown(hostId));
+    const hosts = [
+      ...(own ? [own] : []),
+      ...backups.filter(
+        (host) => allowed(host) || (group.length > 1 && planAllowsOnServerKey(keys, host.model.id))
+      ),
+    ];
+    const [first] = hosts;
+    if (!isPickable || !first) return [];
+    const voices = new Map(
+      hosts.flatMap((host) => host.model.voices).map((voice) => [voice.id, voice])
+    );
+    return [
+      {
+        id,
+        displayName: first.model.displayName,
+        provider: first.model.provider,
+        voices: [...voices.values()],
+        pricePerMillionCharacters: first.model.pricePerMillionCharacters,
+        hosts,
+      },
+    ];
+  });
 }
 
 /**
- * Speech models the user can pick, across the providers that have a key. A
- * provider whose catalog can't be fetched is logged and left out, so the
- * others still show up. Given the user's pick, its voice is kept among its
- * model's voices while the provider has it ({@link keepPickedVoice}).
+ * The catalogs to fetch: each provider's on the user's own key, else on the
+ * server's, and on the server's too where it backs theirs up.
+ */
+function catalogKeys(keys: AiProviderKeys): { provider: SpeechProvider; onUserKey: boolean }[] {
+  return SPEECH_PROVIDERS.flatMap((provider) => {
+    const own = isOnUserKey(provider, keys);
+    const fetches = [];
+    if (own && getProviderApiKey(provider, keys)) fetches.push({ provider, onUserKey: true });
+    if ((!own || hasFailover(provider)) && getProviderApiKey(provider, keysFor(keys, false))) {
+      fetches.push({ provider, onUserKey: false });
+    }
+    return fetches;
+  });
+}
+
+/**
+ * Speech models the user can pick, across the providers that have a key, each
+ * host's catalog fetched with the key it would speak with. A catalog that
+ * can't be fetched is logged and left out, so the others still show up and
+ * say its models they host too. Given the user's pick, its voice is kept
+ * among its model's voices while the provider has it ({@link keepPickedVoice}).
  */
 export async function listSpeechModels(
   keys: AiProviderKeys,
   picked?: SpeechChoice
 ): Promise<SpeechCatalog> {
-  const unavailable: SpeechCatalog["unavailable"] = [];
+  const unavailable: UnlistedCatalog[] = [];
   const lists = await Promise.all(
-    SPEECH_PROVIDERS.flatMap((provider) => {
-      const apiKey = getProviderApiKey(provider, keys);
-      return apiKey ? [{ provider, apiKey }] : [];
-    }).map(async ({ provider, apiKey }) => {
+    catalogKeys(keys).map(async ({ provider, onUserKey }): Promise<SpeechHost[]> => {
+      const apiKey = getProviderApiKey(provider, keysFor(keys, onUserKey));
       try {
-        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey);
+        if (!apiKey) return [];
+        const models = await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey);
+        return models.map((model) => ({ model, onUserKey }));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (error instanceof ProviderRejectedError) {
@@ -215,13 +314,13 @@ export async function listSpeechModels(
         } else {
           logger.error("Failed to list speech models", { provider, error: message });
         }
-        unavailable.push({ provider, error });
+        unavailable.push({ provider, onUserKey, error });
         return [];
       }
     })
   );
-  const models = pickableSpeechModels(lists.flat(), keys).sort(byDisplayName);
-  const kept = picked?.voice ? await keepPickedVoice(models, keys, picked) : "listed";
+  const models = pickableSpeechModels(lists.flat(), keys, unavailable).sort(byDisplayName);
+  const kept = picked?.voice ? await keepPickedVoice(models, keys, picked, unavailable) : "listed";
   return { models, unavailable, ...(kept === "unchecked" ? { pickedVoiceUnchecked: true } : {}) };
 }
 
@@ -258,26 +357,36 @@ const keptVoices = new Map<
  * use. Lookups are cached per user and rate-limited, since on the server's
  * key they're made with the operator's account. A voice the key doesn't have
  * is left out (the request falls back to the model's default voice); one that
- * couldn't be checked is left out too, but reported "unchecked", so speech
- * can refuse for now rather than say it in the wrong voice.
+ * couldn't be checked, or that a host whose catalog is `unlisted` may have, is
+ * left out too, but reported "unchecked", so speech can refuse for now rather
+ * than say it in the wrong voice.
  */
 async function keepPickedVoice(
-  models: SpeechModel[],
+  models: PickableSpeechModel[],
   keys: AiProviderKeys | undefined,
-  { model: pickedModel, voice, userId }: SpeechChoice
+  { model: pickedModel, voice, userId }: SpeechChoice,
+  unlisted: readonly UnlistedCatalog[]
 ): Promise<"listed" | "kept" | "missing" | "unchecked"> {
   if (!voice) return "listed";
   const id = targetSpeechModelId(models, keys, pickedModel);
   // The voice was picked for a model this request won't run on.
-  if (pickedModel && id !== normalizeModelRef(pickedModel)) return "listed";
+  if (pickedModel && id !== canonicalModelRef(pickedModel)) return "listed";
   const index = models.findIndex((candidate) => candidate.id === id);
   const model = models[index];
-  const findVoice = model && SPEECH_PROVIDER_ADAPTERS[model.provider].findVoice;
   if (!model || hasVoice(model, voice)) return "listed";
-  const apiKey = getProviderApiKey(model.provider, keys);
-  if (!findVoice || !apiKey) return "missing";
+  const hostDown = failoverGroup(model.id).some((hostId) =>
+    unlisted.some(({ provider }) => provider === parseModelRef(hostId).provider)
+  );
+  if (hostDown) return "unchecked";
+  const host = model.hosts.find(
+    ({ model: { provider } }) => SPEECH_PROVIDER_ADAPTERS[provider].findVoice
+  );
+  const provider = host?.model.provider;
+  const findVoice = provider && SPEECH_PROVIDER_ADAPTERS[provider].findVoice;
+  const apiKey = host && provider && getProviderApiKey(provider, keysFor(keys, host.onUserKey));
+  if (!host || !provider || !findVoice || !apiKey) return "missing";
 
-  const slot = JSON.stringify([userId, model.provider, apiKey]);
+  const slot = JSON.stringify([userId, provider, apiKey]);
   const now = Date.now();
   let entry = keptVoices.get(slot);
   if (!entry || entry.voice !== voice || now >= entry.expiresAt) {
@@ -301,7 +410,7 @@ async function keepPickedVoice(
         return await findVoice(apiKey, voice);
       } catch (error) {
         logger.warn("Couldn't look up a picked speech voice", {
-          provider: model.provider,
+          provider,
           error: error instanceof Error ? error.message : String(error),
         });
         lookup.expiresAt = Date.now() + KEPT_VOICE_FAILURE_TTL_MS;
@@ -320,7 +429,15 @@ async function keepPickedVoice(
   const kept = await entry.found;
   if (kept === "unchecked") return kept;
   if (!kept) return "missing";
-  models[index] = { ...model, voices: [...model.voices, kept] };
+  models[index] = {
+    ...model,
+    voices: [...model.voices, kept],
+    hosts: model.hosts.map((candidate) =>
+      candidate === host
+        ? { ...host, model: { ...host.model, voices: [...host.model.voices, kept] } }
+        : candidate
+    ),
+  };
   return "kept";
 }
 
@@ -383,9 +500,10 @@ export function defaultSpeechModelId(models: SpeechModel[]): string {
 }
 
 /**
- * The model a request for `requestedModel` (null: the default) runs on: the
- * one asked for if it's listed or on the user's own key (which is then an
- * error if the provider stopped listing it), else the default.
+ * The model a request for `requestedModel` (null: the default; any of its
+ * hosts' ids) runs on: the one asked for if it's listed or on the user's own
+ * key (which is then an error if the provider stopped listing it), else the
+ * default.
  */
 export function targetSpeechModelId(
   models: SpeechModel[],
@@ -393,8 +511,8 @@ export function targetSpeechModelId(
   requestedModel: string | null
 ): string {
   if (!requestedModel) return defaultSpeechModelId(models);
-  const requested = normalizeModelRef(requestedModel);
-  return isOnUserKey(parseModelRef(requested).provider, keys) ||
+  const requested = canonicalModelRef(requestedModel);
+  return isOnUserKey(parseModelRef(requestedModel).provider, keys) ||
     models.some((candidate) => candidate.id === requested)
     ? requested
     : defaultSpeechModelId(models);
@@ -503,10 +621,10 @@ export function speechErrorAnswer(
 function speechRejection(
   provider: SpeechProvider,
   error: ProviderRejectedError,
-  keys: AiProviderKeys
+  onUserKey: boolean
 ): SpeechRejectedError {
   const name = aiProviderName(provider);
-  if (!isOnUserKey(provider, keys)) {
+  if (!onUserKey) {
     const ownKey = AI_PROVIDER_INFO[provider].userKey
       ? `, or add your own ${name} API key in Settings`
       : "";
@@ -527,24 +645,31 @@ function speechRejection(
 /**
  * The model and voice to synthesize with: the model by
  * {@link targetSpeechModelId}, refused for now if the user's own key for it
- * can't be read.
+ * can't be read, or if it isn't listed because its hosts' catalogs couldn't
+ * be fetched.
  */
 export function resolveSpeechModel(
   { models, unavailable }: Pick<SpeechCatalog, "models" | "unavailable">,
   keys: AiProviderKeys,
   requestedModel: string | null,
   requestedVoice: string | null
-): { model: SpeechModel; voice: string } {
+): { model: PickableSpeechModel; voice: string } {
   const requestedProvider = requestedModel ? parseModelRef(requestedModel).provider : null;
   if (requestedProvider && keys[requestedProvider] === UNREADABLE_API_KEY) {
     throw new SpeechRejectedError(new UnreadableApiKeyError(requestedProvider).message);
   }
+  const requested = requestedModel ? canonicalModelRef(requestedModel) : null;
+  const requestedHosts = requested
+    ? failoverGroup(requested).map((hostId) => parseModelRef(hostId).provider)
+    : [];
   const failed =
-    unavailable.find(({ provider }) => provider === requestedProvider) ??
+    (models.some((candidate) => candidate.id === requested)
+      ? undefined
+      : unavailable.find(({ provider }) => requestedHosts.includes(provider))) ??
     (models.length === 0 ? unavailable[0] : undefined);
   if (failed) {
     if (failed.error instanceof ProviderRejectedError) {
-      throw speechRejection(failed.provider, failed.error, keys);
+      throw speechRejection(failed.provider, failed.error, failed.onUserKey);
     }
     throw new SpeechUnavailableError(
       `Couldn't get ${aiProviderName(failed.provider)}'s cloud voices; try again shortly`
@@ -586,39 +711,12 @@ export const speechRequestSchema = z.object({
 /** Longest a provider gets to finish a chunk. */
 const SPEECH_TIMEOUT_MS = 120_000;
 
-/** A model and voice to say a chunk in, and the key that pays for it. */
+/** A host to say a chunk, and the key that pays for it. */
 interface SpeechCandidate {
   model: SpeechModel;
-  voice: string;
   apiKey: string;
   /** The key is the user's own, so the call doesn't count against their plan. */
   onUserKey: boolean;
-}
-
-/**
- * Where to say a chunk when `first` fails: the other hosts of its model
- * ({@link failoverModels}) that have the same voice, in order, on the
- * server's keys, where the user's plan lets that host run on them. A
- * user's own key is only used the way they picked, but the server's back
- * them up. A host whose catalog can't be fetched is passed over.
- */
-async function failoverCandidates(
-  first: SpeechModel,
-  voice: string,
-  keys: AiProviderKeys
-): Promise<SpeechCandidate[]> {
-  const candidates = await Promise.all(
-    failoverModels(first.id).map(async (id): Promise<SpeechCandidate[]> => {
-      const { provider } = parseModelRef(id);
-      const apiKey = getProviderApiKey(provider);
-      if (!apiKey || !isSpeechProvider(provider)) return [];
-      if (!planAllowsOnServerKey(keys, id)) return [];
-      const models = await SPEECH_PROVIDER_ADAPTERS[provider].listModels(apiKey).catch(() => []);
-      const model = models.find((candidate) => candidate.id === id);
-      return model && hasVoice(model, voice) ? [{ model, voice, apiKey, onUserKey: false }] : [];
-    })
-  );
-  return candidates.flat();
 }
 
 /**
@@ -629,6 +727,7 @@ async function failoverCandidates(
  */
 async function speakWithFirstFree(
   candidates: SpeechCandidate[],
+  voice: string,
   text: string,
   signal: AbortSignal,
   chargeServerKey: () => Promise<void>
@@ -636,7 +735,7 @@ async function speakWithFirstFree(
   let firstError: unknown = null;
   for (const [index, candidate] of candidates.entries()) {
     signal.throwIfAborted();
-    const { model, voice, apiKey } = candidate;
+    const { model, apiKey } = candidate;
     // Out of quota, the user's own key's failure is what they hear.
     if (!candidate.onUserKey && index > 0) {
       try {
@@ -682,8 +781,8 @@ async function speakWithFirstFree(
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request. A
- * provider that fails is passed over for another host of the same model and
- * voice at once ({@link failoverCandidates}, {@link speakWithFirstFree}).
+ * host that fails is passed over for the model's next one with the voice at
+ * once ({@link speakWithFirstFree}).
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
@@ -705,12 +804,18 @@ export async function streamSpeech(
   }
   if (
     options.exact &&
-    (model.id !== normalizeModelRef(options.model ?? "") || voice !== options.voice)
+    (model.id !== canonicalModelRef(options.model ?? "") || voice !== options.voice)
   ) {
     throw new SpeechRequestError(`${options.model} voice ${options.voice} isn't available`);
   }
-  const apiKey = getProviderApiKey(model.provider, keys);
-  if (!apiKey) {
+  const candidates = model.hosts
+    .filter((host) => hasVoice(host.model, voice))
+    .flatMap(({ model: host, onUserKey }): SpeechCandidate[] => {
+      const apiKey = getProviderApiKey(host.provider, keysFor(keys, onUserKey));
+      return apiKey ? [{ model: host, apiKey, onUserKey }] : [];
+    });
+  const [first] = candidates;
+  if (!first) {
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
   // Counted once per request, before the first call on the server's keys
@@ -719,24 +824,19 @@ export async function streamSpeech(
   let charge: Promise<void> | null = null;
   const chargeServerKey = () =>
     (charge ??= chargeServerKeyUse(keys, "speechCharacters", options.text.length));
-  const onUserKey = isOnUserKey(model.provider, keys);
-  if (!onUserKey) await chargeServerKey();
-  const candidates = [
-    { model, voice, apiKey, onUserKey },
-    ...(await failoverCandidates(model, voice, keys)),
-  ];
+  if (!first.onUserKey) await chargeServerKey();
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let pcm: PcmStream;
   try {
     pcm = await speakWhenFree(
-      () => speakWithFirstFree(candidates, options.text, combined, chargeServerKey),
+      () => speakWithFirstFree(candidates, voice, options.text, combined, chargeServerKey),
       combined
     );
   } catch (error) {
     if (error instanceof ProviderRejectedError) {
-      logger.warn("Speech provider refused", { model: model.id, error: error.message });
-      throw speechRejection(model.provider, error, keys);
+      logger.warn("Speech provider refused", { model: first.model.id, error: error.message });
+      throw speechRejection(first.model.provider, error, first.onUserKey);
     }
     // A provider that couldn't be reached is busy too: the client is told to
     // come back later, as for a 503.
