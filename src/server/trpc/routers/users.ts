@@ -34,6 +34,7 @@ import {
   setUserApiKeys,
 } from "@/server/services/user-api-keys";
 import { revokeUserClientTokens } from "@/server/oauth/grants";
+import { deleteEmailTokens } from "@/server/auth/email-token";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 
 // ============================================================================
@@ -206,6 +207,7 @@ export const usersRouter = createTRPCRouter({
           .returning({ id: users.id });
         if (rows.length > 0) {
           await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+          await deleteEmailTokens(tx, userId, "reset_password");
         }
         return rows;
       });
@@ -262,7 +264,7 @@ export const usersRouter = createTRPCRouter({
       const newPasswordHash = await hashPassword(newPassword);
 
       // Wallabag tokens are minted from the password (password grant), so they
-      // must not outlive it.
+      // must not outlive it, and nor may a reset link that would undo it.
       await ctx.db.transaction(async (tx) => {
         await tx
           .update(users)
@@ -272,6 +274,7 @@ export const usersRouter = createTRPCRouter({
           })
           .where(eq(users.id, userId));
         await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
+        await deleteEmailTokens(tx, userId, "reset_password");
       });
 
       // Revoke every other session so a stolen/lingering credential can't survive

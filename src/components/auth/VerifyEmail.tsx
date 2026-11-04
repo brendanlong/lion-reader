@@ -17,15 +17,15 @@ export function VerifyEmail({ token }: { token: string }) {
   // Once only: the token is single-use, so a second (Strict Mode) call would fail.
   const started = useRef(false);
   useEffect(() => {
-    if (started.current) return;
+    if (started.current || !token) return;
     started.current = true;
     verifyMutation.mutate({ token });
   }, [token, verifyMutation]);
 
-  if (verifyMutation.isError) {
+  if (!token || verifyMutation.isError) {
     return (
       <Alert variant="error">
-        {verifyMutation.error.message}{" "}
+        {verifyMutation.error?.message ?? "This verification link is incomplete."}{" "}
         <PageLink href="/complete-signup" className="underline">
           Send a new link
         </PageLink>

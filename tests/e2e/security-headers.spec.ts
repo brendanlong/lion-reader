@@ -90,7 +90,15 @@ test("each dynamic request gets a fresh nonce", async ({ request }) => {
 });
 
 test("public pages carry the relaxed static CSP with no nonce", async ({ request }) => {
-  for (const path of ["/login", "/register", "/terms", "/privacy", "/demo/all"]) {
+  for (const path of [
+    "/login",
+    "/register",
+    "/forgot-password",
+    "/reset-password",
+    "/terms",
+    "/privacy",
+    "/demo/all",
+  ]) {
     const response = await request.get(path);
     expect(response.status(), path).toBe(200);
 

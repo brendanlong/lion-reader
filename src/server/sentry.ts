@@ -15,9 +15,9 @@ import { SENTRY_DATA_COLLECTION } from "@/lib/sentry/data-collection";
 // Some clients pass these in the URL even on a POST — notably FeedMe sends the
 // Google Reader `Passwd` (and `Email`) on the ClientLogin URL — so any captured
 // request data would otherwise carry a plaintext password. Matched
-// case-insensitively to cover `Passwd` (Google Reader) and
-// `password`/`client_secret` (OAuth).
-const SENSITIVE_QUERY_PARAMS = ["passwd", "password", "email", "client_secret"];
+// case-insensitively to cover `Passwd` (Google Reader), `password`/`client_secret`
+// (OAuth) and `token` (emailed verification and reset links).
+const SENSITIVE_QUERY_PARAMS = ["passwd", "password", "email", "client_secret", "token"];
 
 // The Google Reader write/session token is passed as `T` in the URL by some
 // clients — worth redacting. Matched CASE-SENSITIVELY (uppercase only) so it

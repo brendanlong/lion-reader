@@ -21,6 +21,7 @@ import {
   createEmailToken,
   consumeEmailToken,
   EMAIL_TOKEN_LIFETIME_MS,
+  HOUR_MS,
 } from "@/server/auth/email-token";
 import { hashPassword } from "@/server/auth/password";
 import { sendEmail } from "@/server/email/send";
@@ -29,7 +30,7 @@ import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 import { removeUnverifiedHolderCredentials } from "@/server/services/account-credentials";
 
 function linkLifetime(purpose: EmailTokenPurpose): string {
-  const hours = Math.round(EMAIL_TOKEN_LIFETIME_MS[purpose] / (60 * 60 * 1000));
+  const hours = Math.round(EMAIL_TOKEN_LIFETIME_MS[purpose] / HOUR_MS);
   return hours === 1 ? "an hour" : `${hours} hours`;
 }
 
@@ -152,10 +153,6 @@ export async function resetPassword(
     if (!userId) {
       throw errors.validation("This password reset link is invalid or has expired.");
     }
-    const [user] = await tx
-      .select({ emailVerifiedAt: users.emailVerifiedAt })
-      .from(users)
-      .where(eq(users.id, userId));
     const now = new Date();
 
     // Sessions before the user row, the order `updateLastActiveAt` takes them in.
@@ -163,24 +160,25 @@ export async function resetPassword(
       .update(sessions)
       .set({ revokedAt: now })
       .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
-    // An unverified account's agreements were the registrant's, not the owner's.
-    const unverifiedReset = user.emailVerifiedAt
-      ? {}
-      : {
-          emailVerifiedAt: now,
-          tosAgreedAt: null,
-          privacyPolicyAgreedAt: null,
-          notEuAgreedAt: null,
-        };
-    await tx
+    // Decided on the locked row, so a provider sign-in that verified the
+    // account meanwhile keeps its link. An unverified account's agreements were
+    // the registrant's, not the owner's.
+    const claimed = await tx
       .update(users)
-      .set({ passwordHash, ...unverifiedReset, updatedAt: now })
-      .where(eq(users.id, userId));
+      .set({
+        emailVerifiedAt: now,
+        tosAgreedAt: null,
+        privacyPolicyAgreedAt: null,
+        notEuAgreedAt: null,
+      })
+      .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
+      .returning({ id: users.id });
+    await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, userId));
 
-    if (user.emailVerifiedAt) {
-      await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
-    } else {
+    if (claimed.length > 0) {
       await removeUnverifiedHolderCredentials(tx, userId, now);
+    } else {
+      await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
     }
     return userId;
   });

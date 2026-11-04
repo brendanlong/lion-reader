@@ -15,11 +15,12 @@ import {
   oauthTokenGrants,
 } from "@/server/db/schema";
 import { deleteTokenGrants } from "@/server/oauth/service";
+import { deleteEmailTokens } from "@/server/auth/email-token";
 
 /**
  * Removes every credential an account has besides its password and sessions,
  * which the callers replace and revoke themselves: provider links, API tokens,
- * OAuth grants and unredeemed codes. The account's data is kept, including its
+ * OAuth grants, unredeemed codes and password-reset links. The account's data is kept, including its
  * AI provider keys and newsletter addresses: an unverified account can't create
  * those, so they only exist on accounts from before verification, whose owners
  * we invited.
@@ -38,4 +39,5 @@ export async function removeUnverifiedHolderCredentials(
   await tx.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.userId, userId));
   await tx.delete(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId));
   await deleteTokenGrants(eq(oauthTokenGrants.userId, userId), tx);
+  await deleteEmailTokens(tx, userId, "reset_password");
 }

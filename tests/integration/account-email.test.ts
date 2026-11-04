@@ -226,9 +226,37 @@ describe("password reset", () => {
     ).rejects.toThrow(/invalid or has expired/);
   });
 
+  it("refuses a verification link as a reset link", async () => {
+    const userId = await createTestUser({ emailVerifiedAt: null });
+    await createCaller(await createAuthContext(userId)).auth.resendVerificationEmail({});
+
+    await expect(
+      anonymous().auth.resetPassword({
+        token: linkToken(sent[0], "/verify-email"),
+        newPassword: NEW_PASSWORD,
+      })
+    ).rejects.toThrow(/invalid or has expired/);
+  });
+
+  it("refuses an older link once the password changes another way", async () => {
+    const email = uniqueEmail("changer");
+    const userId = await createTestUser({ email, passwordHash: await hashPassword(PASSWORD) });
+    const token = await resetToken(email);
+
+    await createCaller(await createAuthContext(userId)).users["me.changePassword"]({
+      currentPassword: PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    await expect(
+      anonymous().auth.resetPassword({ token, newPassword: "a third password" })
+    ).rejects.toThrow(/invalid or has expired/);
+  });
+
   it("claims an unverified account from whoever registered the address", async () => {
     const email = uniqueEmail("victim");
     const userId = await createTestUser({ email, emailVerifiedAt: null });
+    const { sessionId } = await createSession(db, { userId });
     const { id: apiTokenId } = await createApiToken(userId, ["mcp"]);
     await createTestOAuthLink(userId, "discord");
     const token = await resetToken(email);
@@ -238,6 +266,8 @@ describe("password reset", () => {
     const [row] = await db.select().from(users).where(eq(users.id, userId));
     expect(row.emailVerifiedAt).not.toBeNull();
     expect(row.tosAgreedAt).toBeNull();
+    const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId));
+    expect(session.revokedAt).not.toBeNull();
     const [apiToken] = await db.select().from(apiTokens).where(eq(apiTokens.id, apiTokenId));
     expect(apiToken.revokedAt).not.toBeNull();
     expect(await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId))).toEqual(

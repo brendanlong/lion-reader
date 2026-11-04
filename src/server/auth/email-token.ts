@@ -12,7 +12,7 @@ import { emailTokens, type EmailTokenPurpose } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { generateToken, hashToken } from "@/server/oauth/utils";
 
-const HOUR_MS = 60 * 60 * 1000;
+export const HOUR_MS = 60 * 60 * 1000;
 
 export const EMAIL_TOKEN_LIFETIME_MS: Record<EmailTokenPurpose, number> = {
   verify_email: 24 * HOUR_MS,
@@ -71,4 +71,18 @@ export async function consumeEmailToken(
     .where(and(eq(emailTokens.userId, match.userId), eq(emailTokens.purpose, purpose)))
     .returning({ tokenHash: emailTokens.tokenHash });
   return deleted.some((row) => row.tokenHash === tokenHash) ? match.userId : null;
+}
+
+/**
+ * Deletes a user's live tokens of `purpose`: a password change or account claim
+ * must not leave an older reset link able to undo it.
+ */
+export async function deleteEmailTokens(
+  db: DbOrTx,
+  userId: string,
+  purpose: EmailTokenPurpose
+): Promise<void> {
+  await db
+    .delete(emailTokens)
+    .where(and(eq(emailTokens.userId, userId), eq(emailTokens.purpose, purpose)));
 }

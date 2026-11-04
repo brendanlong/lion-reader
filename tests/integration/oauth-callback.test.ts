@@ -13,6 +13,7 @@ import {
   sessions,
   oauthAccounts,
   apiTokens,
+  emailTokens,
   oauthAuthorizationCodes,
   oauthConsentGrants,
   oauthTokenGrants,
@@ -22,6 +23,7 @@ import { processOAuthCallback } from "../../src/server/auth/oauth/callback";
 import { createSession } from "../../src/server/auth/session";
 import { createApiToken } from "../../src/server/auth/api-token";
 import { createAuthorizationCode } from "../../src/server/oauth/service";
+import { createEmailToken } from "../../src/server/auth/email-token";
 import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { createTestOAuthLink, createTestTokenGrant, createTestUser, deleteUsers } from "./helpers";
 
@@ -199,6 +201,7 @@ describe("processOAuthCallback email verification", () => {
       await createTestOAuthLink(userId, "discord", { providerAccountId: "attacker-discord-id" });
       await createTestTokenGrant(userId);
       await createTestTokenGrant(userId, { clientId: WALLABAG_CLIENT_ID });
+      await createEmailToken(db, userId, "reset_password");
       await createAuthorizationCode({
         clientId: "test-client",
         userId,
@@ -228,6 +231,7 @@ describe("processOAuthCallback email verification", () => {
       expect(
         await db.select().from(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId))
       ).toEqual([]);
+      expect(await db.select().from(emailTokens).where(eq(emailTokens.userId, userId))).toEqual([]);
       expect(
         await db
           .select()

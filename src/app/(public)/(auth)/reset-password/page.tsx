@@ -50,7 +50,11 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    const token = new URLSearchParams(window.location.search).get("token") ?? "";
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (!token) {
+      setErrors({ form: "This password reset link is incomplete." });
+      return;
+    }
     resetMutation.mutate({ token, newPassword: password });
   };
 

@@ -7,6 +7,8 @@ import { outboundEmailConfig } from "@/server/config/env";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { logger } from "@/lib/logger";
 
+const MAILGUN_TIMEOUT_MS = 10_000;
+
 export interface OutgoingEmail {
   to: string;
   subject: string;
@@ -40,8 +42,13 @@ export async function sendEmail(email: OutgoingEmail): Promise<void> {
       subject: email.subject,
       text: email.text,
     }),
+    signal: AbortSignal.timeout(MAILGUN_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new Error(`Mailgun rejected the email: ${response.status} ${await response.text()}`);
+    logger.error("Mailgun rejected an email", {
+      status: response.status,
+      body: await response.text(),
+    });
+    throw new Error("We couldn't send the email. Please try again later.");
   }
 }

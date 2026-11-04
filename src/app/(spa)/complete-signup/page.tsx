@@ -12,6 +12,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -63,9 +64,12 @@ export default function CompleteSignupPage() {
   });
 
   const resendMutation = trpc.auth.resendVerificationEmail.useMutation({
-    onError: (err) => {
-      setError(err.message);
-    },
+    onSuccess: () =>
+      toast.success("Verification email sent", {
+        description: "Check your inbox, and your spam folder.",
+      }),
+    onError: (err) =>
+      toast.error("Failed to send the verification email", { description: err.message }),
   });
 
   const deleteMutation = trpc.users["me.deleteAccount"].useMutation({
@@ -97,6 +101,10 @@ export default function CompleteSignupPage() {
     deleteMutation.mutate({ confirmation: deleteConfirmation });
   }
 
+  if (!user || !signupConfigData) {
+    return <p className="ui-text-sm text-muted text-center">Loading…</p>;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -110,25 +118,18 @@ export default function CompleteSignupPage() {
 
       {error && <Alert variant="error">{error}</Alert>}
 
-      {needsVerification && user && (
+      {needsVerification && (
         <div className="border-edge-input space-y-3 rounded-md border p-4">
           <h3 className="ui-text-base text-body font-semibold">Verify your email</h3>
           <p className="ui-text-sm text-muted">
-            Open the verification link emailed to{" "}
-            <span className="text-body font-medium">{user.email}</span> in this browser, while
-            signed in. This page continues on its own once you&apos;re verified. Didn&apos;t get
-            one?
+            Open the link we email to <span className="text-body font-medium">{user.email}</span> in
+            this browser, while signed in. New accounts get one at signup; if yours hasn&apos;t
+            arrived, send another. This page continues on its own once you&apos;re verified.
           </p>
-          {resendMutation.isSuccess && (
-            <Alert variant="success">Sent. Check your inbox (and spam folder).</Alert>
-          )}
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              setError(null);
-              resendMutation.mutate({});
-            }}
+            onClick={() => resendMutation.mutate({})}
             loading={resendMutation.isPending}
           >
             Send verification email
