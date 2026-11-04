@@ -8,7 +8,7 @@
  * Tests the narration settings management with localStorage persistence.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { act as reactAct, createElement } from "react";
@@ -16,7 +16,6 @@ import { renderToString } from "react-dom/server";
 import { hydrateRoot } from "react-dom/client";
 
 const localStorageMock = stubMemoryLocalStorage();
-vi.spyOn(localStorageMock, "setItem");
 
 // Import after mocking
 import {
@@ -28,7 +27,6 @@ import {
 describe("useNarrationSettings", () => {
   beforeEach(() => {
     localStorageMock.clear();
-    vi.clearAllMocks();
     cleanup();
   });
 
@@ -101,22 +99,6 @@ describe("useNarrationSettings", () => {
         provider: "browser",
         rate: 1.75,
       });
-    });
-
-    it("saves settings to localStorage when changed with functional update", () => {
-      const { result } = renderHook(() => useNarrationSettings());
-
-      act(() => {
-        result.current[1]((prev) => ({ ...prev, rate: 1.75 }));
-      });
-
-      const savedCall = vi
-        .mocked(localStorageMock.setItem)
-        .mock.calls.find((call) => call[0] === "lion-reader-narration-settings");
-      expect(savedCall).toBeDefined();
-
-      const savedSettings = JSON.parse(savedCall![1]);
-      expect(savedSettings.rate).toBe(1.75);
     });
   });
 

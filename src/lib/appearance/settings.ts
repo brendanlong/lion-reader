@@ -103,7 +103,7 @@ export function useAppearanceSettings(): [
 
   // Save and update settings, then notify subscribers
   const setSettings = useCallback((newSettings: AppearanceSettings) => {
-    storeChangedFields(APPEARANCE_STORAGE_KEY, getSnapshot(), newSettings);
+    storeChangedFields(APPEARANCE_STORAGE_KEY, loadAppearanceSettings(), newSettings);
     notifySubscribers();
   }, []);
 

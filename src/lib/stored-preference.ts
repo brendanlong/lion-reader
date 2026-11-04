@@ -80,7 +80,9 @@ export function storeChangedFields<T extends object>(key: string, prev: T, next:
     let stored: Partial<T> = {};
     try {
       const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "{}");
-      if (typeof parsed === "object" && parsed !== null) stored = parsed as Partial<T>;
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        stored = parsed as Partial<T>;
+      }
     } catch {
       // Unreadable: start over from the changes alone.
     }
