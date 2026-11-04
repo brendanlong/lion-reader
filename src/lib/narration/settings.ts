@@ -8,6 +8,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { storeChangedFields } from "@/lib/stored-preference";
 import { TTS_PROVIDER_IDS, type TTSProviderId } from "./types";
 import {
   DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS,
@@ -223,28 +224,6 @@ export function narrationProvider(
 }
 
 /**
- * Saves narration settings to localStorage.
- *
- * @param settings - The settings to save.
- *
- * @example
- * ```ts
- * saveNarrationSettings({ ...loadNarrationSettings(), rate: 1.25 });
- * ```
- */
-export function saveNarrationSettings(settings: NarrationSettings): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Silently fail if localStorage is full or unavailable
-  }
-}
-
-/**
  * Type for the setSettings function - supports both direct value and functional updates.
  */
 export type SetNarrationSettings = (
@@ -308,9 +287,10 @@ function subscribe(callback: () => void): () => void {
 }
 
 const setNarrationSettings: SetNarrationSettings = (settingsOrUpdater) => {
+  const prev = getSnapshot();
   const next =
-    typeof settingsOrUpdater === "function" ? settingsOrUpdater(getSnapshot()) : settingsOrUpdater;
-  saveNarrationSettings(next);
+    typeof settingsOrUpdater === "function" ? settingsOrUpdater(prev) : settingsOrUpdater;
+  storeChangedFields(STORAGE_KEY, prev, next);
   // Cache the value itself rather than re-parsing storage, so the new settings
   // hold for this session even if localStorage is full or unavailable.
   cachedRaw = readRaw();
@@ -324,7 +304,8 @@ const setNarrationSettings: SetNarrationSettings = (settingsOrUpdater) => {
  * Reads a module-level store through useSyncExternalStore, so every caller
  * shares one value and the server/hydration render always sees the defaults
  * (the stored settings apply right after hydration — see src/CLAUDE.md).
- * The setter persists to localStorage and supports both direct values and
+ * The setter persists to localStorage only the fields it changes, so the
+ * rest keep following their defaults, and supports both direct values and
  * functional updates (like React's useState).
  *
  * @returns A tuple of [settings, setSettings].

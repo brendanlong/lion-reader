@@ -10,6 +10,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { storeChangedFields } from "@/lib/stored-preference";
 import {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_APPEARANCE_SETTINGS,
@@ -51,23 +52,6 @@ function loadAppearanceSettings(): AppearanceSettings {
   } catch {
     // If parsing fails, return defaults
     return DEFAULT_APPEARANCE_SETTINGS;
-  }
-}
-
-/**
- * Saves appearance settings to localStorage.
- *
- * @param settings - The settings to save.
- */
-function saveAppearanceSettings(settings: AppearanceSettings): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Silently fail if localStorage is full or unavailable
   }
 }
 
@@ -119,7 +103,7 @@ export function useAppearanceSettings(): [
 
   // Save and update settings, then notify subscribers
   const setSettings = useCallback((newSettings: AppearanceSettings) => {
-    saveAppearanceSettings(newSettings);
+    storeChangedFields(APPEARANCE_STORAGE_KEY, getSnapshot(), newSettings);
     notifySubscribers();
   }, []);
 

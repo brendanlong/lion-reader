@@ -134,7 +134,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, val defaults
     val settings: Flow<AppSettings> = store.data.map { it.toSettings(defaults) }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
-        store.edit { prefs -> prefs.store(transform(prefs.toSettings(defaults))) }
+        store.edit { prefs -> prefs.update(defaults, transform) }
     }
 }
 
@@ -201,8 +201,17 @@ internal val STORED_SETTINGS: List<Stored<*>> =
 internal fun Preferences.toSettings(defaults: AppSettings = AppSettings()): AppSettings =
     STORED_SETTINGS.fold(defaults) { settings, stored -> stored.read(this, settings) }
 
-internal fun MutablePreferences.store(settings: AppSettings) {
-    STORED_SETTINGS.forEach { it.write(this, settings) }
+/**
+ * Stores only the settings [transform] changes, so one the user never set isn't written and keeps
+ * following [defaults] when they change (#2280).
+ */
+internal fun MutablePreferences.update(
+    defaults: AppSettings,
+    transform: (AppSettings) -> AppSettings,
+) {
+    val old = toSettings(defaults)
+    val new = transform(old)
+    STORED_SETTINGS.forEach { it.writeIfChanged(this, old, new) }
 }
 
 /**
@@ -218,8 +227,10 @@ internal class Stored<S : Any>(
     fun read(prefs: Preferences, settings: AppSettings): AppSettings =
         prefs[key]?.let { settings.set(it) } ?: settings
 
-    fun write(prefs: MutablePreferences, settings: AppSettings) {
-        settings.get()?.let { prefs[key] = it } ?: prefs.remove(key)
+    fun writeIfChanged(prefs: MutablePreferences, old: AppSettings, new: AppSettings) {
+        val value = new.get()
+        if (value == old.get()) return
+        value?.let { prefs[key] = it } ?: prefs.remove(key)
     }
 }
 

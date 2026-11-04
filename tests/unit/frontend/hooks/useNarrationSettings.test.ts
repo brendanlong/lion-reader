@@ -79,10 +79,28 @@ describe("useNarrationSettings", () => {
         result.current[1](newSettings);
       });
 
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      expect(JSON.parse(localStorageMock.getItem("lion-reader-narration-settings")!)).toEqual({
+        enabled: false,
+        rate: 1.5,
+      });
+    });
+
+    it("stores only the fields changed, on top of earlier choices (#2280)", () => {
+      localStorageMock.setItem(
         "lion-reader-narration-settings",
-        JSON.stringify(newSettings)
+        JSON.stringify({ provider: "browser" })
       );
+      const { result } = renderHook(() => useNarrationSettings());
+
+      act(() => {
+        result.current[1]((prev) => ({ ...prev, rate: 1.75 }));
+      });
+
+      // Fields the user never set aren't saved, so they follow their defaults.
+      expect(JSON.parse(localStorageMock.getItem("lion-reader-narration-settings")!)).toEqual({
+        provider: "browser",
+        rate: 1.75,
+      });
     });
 
     it("saves settings to localStorage when changed with functional update", () => {
