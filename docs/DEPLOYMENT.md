@@ -208,6 +208,22 @@ The deploy job runs in the `production` environment, so the token is an environm
 
 `.github/workflows/release.yml` drafts each week's GitHub release with Claude. Give it an Anthropic API key as the `ANTHROPIC_API_KEY` secret of a `release-notes` environment limited to `master`, like `production` above.
 
+### 5. MCP Registry Listing
+
+`.github/workflows/mcp-registry.yml` publishes `server.json` to the MCP Registry, logging in with the Ed25519 key whose public half is the `mcp_registry` TXT record in `terraform/cloudflare.tf`. Make the key and its `mcp-registry` environment (limited to `master`) with:
+
+```sh
+openssl genpkey -algorithm Ed25519 -out mcp-key.pem
+gh api -X PUT repos/brendanlong/lion-reader/environments/mcp-registry --input - <<<'{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}'
+gh api -X POST repos/brendanlong/lion-reader/environments/mcp-registry/deployment-branch-policies -f name=master -f type=branch
+openssl pkey -in mcp-key.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n' \
+  | gh secret set MCP_REGISTRY_PRIVATE_KEY --env mcp-registry -R brendanlong/lion-reader
+openssl pkey -in mcp-key.pem -pubout -outform DER | tail -c 32 | base64  # the TXT record's p=
+rm mcp-key.pem
+```
+
+To rotate, rerun it (the branch-policy call then fails because the policy exists; that's fine), replace the record's `p=` value, and `terraform apply`.
+
 ---
 
 ## First Deployment

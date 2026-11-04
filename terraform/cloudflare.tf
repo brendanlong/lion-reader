@@ -223,11 +223,10 @@ resource "cloudflare_dns_record" "discord_verification" {
   comment = "Discord domain verification"
 }
 
-# Proves we own the com.lionreader namespace in the MCP Registry. Must be at the
-# apex. The private key is the MCP_REGISTRY_PRIVATE_KEY secret on the
-# mcp-registry GitHub environment (.github/workflows/mcp-registry.yml); when
-# rotating, replace this record rather than adding a second one, since the
-# registry fails on a stale key it tries first.
+# Proves we own the com.lionreader namespace in the MCP Registry; must be at the
+# apex. Key setup and rotation: ../docs/DEPLOYMENT.md "MCP Registry Listing".
+# Rotate by replacing this value, never by adding a second record: the registry
+# fails on a stale key it tries first.
 resource "cloudflare_dns_record" "mcp_registry" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "@"
