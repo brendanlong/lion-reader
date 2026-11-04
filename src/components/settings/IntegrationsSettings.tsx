@@ -12,9 +12,10 @@ import { CardSection } from "@/components/ui/card";
 import { CodeBlock, CopyButton } from "@/components/ui/copy-button";
 import { InlineCode } from "@/components/ui/inline-code";
 import { TextLink } from "@/components/ui/text-link";
+import mcpRegistryListing from "../../../server.json";
 
-/** The server the Claude directory listing connects to; self-hosted instances aren't listed. */
-const LISTED_MCP_URL = "https://lionreader.com/api/mcp";
+// Self-hosted instances aren't listed, so only the listed server gets the directory link.
+const LISTED_MCP_URL = mcpRegistryListing.remotes[0].url;
 const CLAUDE_DIRECTORY_URL = "https://claude.ai/directory/lion-reader";
 
 export function IntegrationsSettings() {
@@ -58,9 +59,9 @@ export function IntegrationsSettings() {
 
       {baseUrl && (
         <CardSection>
-          <h3 className="ui-text-sm text-body font-medium">Other MCP clients</h3>
+          <h3 className="ui-text-sm text-body font-medium">Server URL</h3>
           <p className="ui-text-sm text-muted mt-1">
-            Add a remote MCP server with this URL and sign in when asked:
+            Add this as a remote MCP server in any other client, and sign in when asked:
           </p>
           <p className="ui-text-sm text-muted mt-3">
             <InlineCode>{mcpUrl}</InlineCode>

@@ -32,7 +32,7 @@ const article: DemoArticle = {
 
     <h3>Connecting</h3>
 
-    <p>Settings has copy-and-paste setup steps for Claude on the web, on desktop, and in Claude Code. Other assistants that support the <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a>, the open standard for plugging tools into AI assistants, can connect the same way.</p>
+    <p>Add Lion Reader from <a href="https://claude.ai/directory/lion-reader" target="_blank" rel="noopener noreferrer">Claude&rsquo;s connector directory</a> and sign in, and it works in Claude on the web, on desktop, and on mobile. Settings has the one-line setup for Claude Code and the address for other assistants that support the <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol (MCP)</a>, the open standard for plugging tools into AI assistants.</p>
 
     <p>You stay in control of what an assistant can reach: its access is limited to your reader, and you can revoke it at any time from Settings. The articles it looks up are shared with your assistant&rsquo;s provider, the same as anything else you show it.</p>
   `,

@@ -4,7 +4,7 @@ Covers `src/server/oauth/` plus the routes under `src/app/(spa)/oauth/`, `src/ap
 
 ## claude.ai
 
-The claude.ai **web** connector's OAuth flow is broken client-side (#986, upstream anthropics/claude-ai-mcp#546); the supported path is auth "None" plus an `Authorization: Bearer` MCP-scoped API token. **We run no claude.ai-specific server workarounds** — a dedicated `mcp.*` host, root-path aliases, a `/register` method split and trailing-slash normalization were each tried, matched Linear/Sentry/Notion byte for byte, and didn't help. Don't add them back without evidence the client bug is fixed.
+Connecting from Claude's directory listing (`claude.ai/directory/lion-reader`) completes OAuth. claude.ai's custom-connector OAuth had a client-side bug (#986, upstream anthropics/claude-ai-mcp#546); an MCP-scoped API token in an `Authorization: Bearer` header with auth "None" works around it. **We run no claude.ai-specific server workarounds** — a dedicated `mcp.*` host, root-path aliases, a `/register` method split and trailing-slash normalization were each tried, matched Linear/Sentry/Notion byte for byte, and didn't help. Don't add them back without evidence the client bug is fixed.
 
 ## Discovery
 
