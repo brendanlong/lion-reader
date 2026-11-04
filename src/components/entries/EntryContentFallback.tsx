@@ -43,7 +43,7 @@ export function EntryContentFallback({
   // Star/read work optimistically even while the full entry loads
   const { setStarred } = useEntryMutations();
   const [narrationSettings] = useNarrationSettings();
-  const { hasFullContent } = useEntryContentOptions();
+  const { offersFullContent } = useEntryContentOptions();
 
   return (
     <ScrollContainer className="h-full overflow-y-auto">
@@ -69,7 +69,7 @@ export function EntryContentFallback({
                 onToggle={() => onSetRead(!cachedEntry.read)}
               />
               <CollectionsButton entryId={entryId} />
-              {cachedEntry.url && hasFullContent?.(entryId) !== false && (
+              {cachedEntry.url && offersFullContent?.(entryId) !== false && (
                 <Button variant="secondary" size="sm" disabled>
                   Full Content
                 </Button>

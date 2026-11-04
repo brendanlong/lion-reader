@@ -80,7 +80,7 @@ function EntryContentInner({
   nextEntryId,
   previousEntryId,
 }: EntryContentProps) {
-  const { prerecordedNarration, ssrDateTimeZone, hasFullContent, renderSlots } =
+  const { prerecordedNarration, ssrDateTimeZone, offersFullContent, renderSlots } =
     useEntryContentOptions();
 
   // False during SSR + first client render. The cache-reading fallback below
@@ -326,7 +326,9 @@ function EntryContentInner({
         isAwaitingFullContent={isAwaitingFullContent}
         narrationContinued={narrationContinued}
         onToggleFetchFullContent={
-          hasFullContent?.(entryId) === false ? undefined : toggleFetchFullContent
+          offersFullContent?.(entryId) === false && !fetchFullContent
+            ? undefined
+            : toggleFetchFullContent
         }
         // Summarization props
         isSummarizationAvailable={isSummarizationAvailable}

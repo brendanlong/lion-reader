@@ -35,11 +35,12 @@ export interface EntryContentOptions {
    */
   ssrDateTimeZone?: string;
   /**
-   * Whether an entry has more to fetch than it arrived with, for where most
-   * don't. The full content toggle shows only for those. Unset, it shows for
-   * every entry with a URL.
+   * Whether to offer turning full content on for an entry, for mounts where
+   * most entries are already complete. The toggle still shows while the
+   * setting is on, so it can be turned off. Unset, every entry with a URL
+   * offers it.
    */
-  hasFullContent?: (entryId: string) => boolean;
+  offersFullContent?: (entryId: string) => boolean;
   /** Extra content to render around a specific entry's body. */
   renderSlots?: (entryId: string) => EntryContentSlots | undefined;
 }

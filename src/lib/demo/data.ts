@@ -168,6 +168,11 @@ export function getDemoEntry(entryId: string): DemoEntry | undefined {
   return entriesById.get(entryId);
 }
 
+/** Only articles with a fuller version than their feed's have one to show. */
+export function demoOffersFullContent(entryId: string): boolean {
+  return getDemoEntry(entryId)?.fullContentHtml !== undefined;
+}
+
 export function getDemoSubscription(subscriptionId: string): DemoSubscription | undefined {
   return subscriptionsById.get(subscriptionId);
 }

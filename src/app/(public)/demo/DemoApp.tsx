@@ -54,7 +54,7 @@ import { useEntryListScrollResetOnNavigate } from "@/lib/hooks/useEntryListScrol
 import { clientReplace } from "@/lib/navigation";
 import { DEMO_BASE_PATH } from "@/lib/routes";
 import { createDemoStore } from "@/lib/demo/store";
-import { getDemoEntry } from "@/lib/demo/data";
+import { demoOffersFullContent } from "@/lib/demo/data";
 import { buildDemoDehydratedState } from "./seed";
 import { demoEntrySlots } from "./DemoEntrySlots";
 import { useDemoNarrationVoice } from "./DemoNarrationVoice";
@@ -64,7 +64,7 @@ const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
   // date in a common one keeps the post-hydration switch to local time a small
   // correction for most visitors rather than a jump from the host's UTC.
   ssrDateTimeZone: "America/Los_Angeles",
-  hasFullContent: (entryId) => getDemoEntry(entryId)?.fullContentHtml !== undefined,
+  offersFullContent: demoOffersFullContent,
   renderSlots: demoEntrySlots,
 };
 

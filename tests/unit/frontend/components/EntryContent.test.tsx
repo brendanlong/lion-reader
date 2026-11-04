@@ -225,10 +225,23 @@ describe("EntryContent", () => {
     // Its origin is the saved subscription (#1846), which has no settings.
     ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, {}, false],
     [
-      "an entry the mount says has nothing more to fetch",
+      "an entry the mount doesn't offer it for",
       { type: "web", subscriptionId: "sub-1" },
-      { hasFullContent: () => false },
+      { offersFullContent: (): boolean => false },
       false,
+    ],
+    // Or a visitor who turned it on elsewhere couldn't turn it off here.
+    [
+      "an entry the mount doesn't offer it for, with the setting on",
+      {
+        type: "web",
+        subscriptionId: "sub-1",
+        fetchFullContent: true,
+        fullContentCleaned: "<p>Full body content here.</p>",
+        fullContentFetchedAt: new Date("2024-06-15T11:30:00Z"),
+      },
+      { offersFullContent: (): boolean => false },
+      true,
     ],
   ])("offers the full-content toggle for %s: %s", async (_label, fields, options, offered) => {
     renderEntryContent(
@@ -242,7 +255,9 @@ describe("EntryContent", () => {
     );
     await screen.findByText("The Great Article");
     expect(
-      screen.queryByRole("button", { name: "Fetch and display full article content" }) !== null
+      screen.queryByRole("button", {
+        name: /^(Fetch and display full article content|Switch to feed content)$/,
+      }) !== null
     ).toBe(offered);
   });
 
