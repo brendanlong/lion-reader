@@ -12,6 +12,7 @@ import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import {
   listSpeechModels,
   SpeechRejectedError,
+  SpeechUnavailableError,
   streamSpeech,
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
@@ -233,6 +234,19 @@ describe("self-hosted voices", () => {
     expect(asked.map((request) => [request.model, request.body.voice])).toEqual([
       [TOGETHER_KOKORO, "af_bella"],
     ]);
+  });
+
+  it("refuses for now, rather than change voices, when the other host lacks the picked one", async () => {
+    process.env.TOGETHER_API_KEY = "server-together";
+    voicesFail = true;
+    const before = requests.length;
+    await expect(
+      streamSpeech(
+        { plan: null },
+        { model: SELFHOSTED_KOKORO, voice: "af_heart", text: "Hello.", userId: randomUUID() }
+      )
+    ).rejects.toThrow(SpeechUnavailableError);
+    expect(requests.length).toBe(before);
   });
 
   it.each(["401", "302"] as const)(
