@@ -5,9 +5,7 @@
  * A request for one that fails (busy, down, or its key refused) goes to the
  * others in its group, on the server's keys: a user's own key is only used
  * the way they picked. Listing a model here allows it on the server's key as
- * a failover, even if `SERVER_KEY_MODELS` doesn't let users pick it. While a
- * host's catalog can't be fetched, its models here stay listed and go to the
- * others.
+ * a failover, even if `SERVER_KEY_MODELS` doesn't let users pick it.
  */
 
 import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
