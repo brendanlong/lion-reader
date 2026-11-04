@@ -194,8 +194,8 @@ export function pickableSpeechModels(
  * Speech models the user can pick, across the providers that have a key. A
  * provider whose catalog can't be fetched is logged and left out, so the
  * others still show up, but its models with other hosts are stood in for
- * ({@link failoverStandIns}). Given the user's pick, its voice is kept among its
- * model's voices while the provider has it ({@link keepPickedVoice}).
+ * ({@link failoverStandIns}). Given the user's pick, its voice is kept among
+ * its model's voices while the provider has it ({@link keepPickedVoice}).
  */
 export async function listSpeechModels(
   keys: AiProviderKeys,
@@ -615,9 +615,10 @@ interface SpeechCandidate {
 
 /**
  * The other hosts of model `id` ({@link failoverModels}), in order, as each
- * host's catalog lists it, on the server's keys, where the user's plan lets that host run on
- * them. A user's own key is only used the way they picked, but the server's
- * back them up. A host whose catalog can't be fetched is passed over.
+ * host's catalog lists it, on the server's keys, where the user's plan lets
+ * that host run on them. A user's own key is only used the way they picked,
+ * but the server's back them up. A host whose catalog can't be fetched is
+ * passed over.
  */
 async function failoverHosts(
   id: string,
@@ -653,8 +654,8 @@ async function failoverCandidates(
  * fetched on the server's key: each listed under its own id, so the user's
  * pick holds, with the voices its {@link failoverHosts} have. A picked voice
  * none of them has is refused for now rather than said in another
- * ({@link keepPickedVoice}). Speech for one goes
- * straight to those hosts ({@link streamSpeech}).
+ * ({@link keepPickedVoice}). Speech for one goes straight to those hosts
+ * ({@link streamSpeech}).
  */
 async function failoverStandIns(
   provider: SpeechProvider,
