@@ -10,14 +10,9 @@
   "websiteUrl": "https://lionreader.com",
   "icons": [
     {
-      "src": "https://lionreader.com/android-chrome-512x512.png",
+      "src": "https://lionreader.com/mcp-icon-256x256.png",
       "mimeType": "image/png",
-      "sizes": ["512x512"]
-    },
-    {
-      "src": "https://lionreader.com/android-chrome-192x192.png",
-      "mimeType": "image/png",
-      "sizes": ["192x192"]
+      "sizes": ["256x256"]
     }
   ],
   "version": "1.0.1",
