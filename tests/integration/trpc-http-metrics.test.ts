@@ -3,17 +3,25 @@
  * HTTP request metric must wait for the body to end.
  *
  * `metricsEnabled` is read from the environment at module load, so we set
- * METRICS_ENABLED before dynamically importing the modules.
+ * METRICS_ENABLED before dynamically importing the modules. Integration only
+ * because `http.ts` imports the database client.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 let metrics: typeof import("@/server/metrics/metrics");
 let http: typeof import("@/server/trpc/http");
+
+const metricsEnabled = process.env.METRICS_ENABLED;
 
 beforeAll(async () => {
   process.env.METRICS_ENABLED = "true";
   metrics = await import("@/server/metrics/metrics");
   http = await import("@/server/trpc/http");
+});
+
+afterAll(() => {
+  if (metricsEnabled === undefined) delete process.env.METRICS_ENABLED;
+  else process.env.METRICS_ENABLED = metricsEnabled;
 });
 
 async function requestCount(path: string): Promise<number> {

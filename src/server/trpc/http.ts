@@ -60,8 +60,9 @@ function timedBody(
   }
   let ended = false;
   const end = () => {
-    if (!ended) onEnd();
+    if (ended) return;
     ended = true;
+    onEnd();
   };
   const reader = body.getReader();
   return new ReadableStream({

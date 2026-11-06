@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { initTRPC } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
@@ -92,7 +92,7 @@ describe("TRPCProvider links", () => {
         <Calls />
       </TRPCProvider>
     );
-    screen.getByRole("button").click();
+    fireEvent.click(screen.getByRole("button"));
 
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests.map(isStreamed)).toEqual([false, false]);
