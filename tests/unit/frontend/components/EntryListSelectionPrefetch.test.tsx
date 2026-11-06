@@ -47,10 +47,7 @@ function renderList() {
   };
   const listed = () =>
     [...document.querySelectorAll("[data-entry-id]")].map((el) => el.getAttribute("data-entry-id"));
-  const fetched = () =>
-    rendered
-      .callsFor("entries.get")
-      .map((c) => [(c.input as { id: string }).id, c.context.skipBatch]);
+  const fetched = () => rendered.callsFor("entries.get").map((c) => (c.input as { id: string }).id);
   return { setOpenEntry, listed, fetched, queryClient: rendered.queryClient };
 }
 
@@ -67,7 +64,7 @@ describe("entry list selection prefetch", () => {
     vi.useRealTimers();
   });
 
-  it("prefetches the entry j selects, unbatched", async () => {
+  it("prefetches the entry j selects", async () => {
     const { listed, fetched } = renderList();
     await vi.waitFor(() => expect(listed().length).toBeGreaterThan(1));
     expect(fetched()).toEqual([]);
@@ -75,7 +72,7 @@ describe("entry list selection prefetch", () => {
     pressJ();
     pressJ();
 
-    await vi.waitFor(() => expect(fetched()).toEqual([[listed()[1], true]]));
+    await vi.waitFor(() => expect(fetched()).toEqual([listed()[1]]));
   });
 
   it("doesn't refetch a cached entry, even a stale one, on selecting it again", async () => {
@@ -83,7 +80,7 @@ describe("entry list selection prefetch", () => {
     await vi.waitFor(() => expect(listed().length).toBeGreaterThan(1));
     const entryId = listed()[0]!;
     setOpenEntry(entryId);
-    await vi.waitFor(() => expect(fetched().some(([id]) => id === entryId)).toBe(true));
+    await vi.waitFor(() => expect(fetched()).toContain(entryId));
     const fetchesWhileOpen = fetched().length;
 
     // Long past the query's staleTime by the time the reader closes it.

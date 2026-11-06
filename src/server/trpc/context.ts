@@ -63,6 +63,8 @@ export interface Context {
    * on login/logout (see src/server/auth/session-cookie.ts). Absent on the
    * REST/OpenAPI path (that adapter doesn't supply it), where auth clients read
    * the token from the response body instead, so cookie writes there are no-ops.
+   * The browser streams its batched queries, whose headers are sent before any
+   * procedure runs, except the auth router's (`src/lib/trpc/provider.tsx`).
    */
   resHeaders?: Headers;
   /**

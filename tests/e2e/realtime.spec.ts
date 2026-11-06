@@ -120,6 +120,7 @@ async function seedAndOpenAll(
   // Each SSE connect runs a sync.events catch-up. If its query lands after a
   // test's write, it replays the change and (legitimately) refetches the
   // sidebar lists, which the tests would count as stray refetches (#1831).
+  // Queries stream, so their headers arrive before they run: wait for the body.
   const catchUpResponse = page.waitForResponse(
     (response) => trpcProcedures(response.url()).includes("sync.events"),
     { timeout: 90_000 }
@@ -138,7 +139,7 @@ async function seedAndOpenAll(
   // The SSE handler subscribes to Redis channels asynchronously after the
   // response starts; wait until it's actually listening before publishing.
   await waitForChannelSubscriber(channelFor({ user, taggedFeed }));
-  await catchUpResponse;
+  await (await catchUpResponse).finished();
 
   return { user, taggedFeed, tagId, taggedEntries, trpcCalls };
 }
@@ -369,7 +370,7 @@ test("a saved article's new_entry joins the open Saved list by its membership wi
     trpcProcedures(response.url()).includes("entries.list")
   );
   await savedLink.click();
-  await savedListLoaded;
+  await (await savedListLoaded).finished();
   await expect(page.locator('[aria-label*="article: Saved earlier"]')).toBeVisible();
   await expect(savedLink).toContainText("(1)");
 

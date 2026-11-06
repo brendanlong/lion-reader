@@ -45,6 +45,46 @@ export function withFailingBody(req: Request, error: TRPCError): Request {
   return withBody(req, body);
 }
 
+/**
+ * `body`, calling `onEnd` once it's been read or cancelled: a streamed
+ * batch's response is returned before its procedures finish, so the request
+ * ends when its body does.
+ */
+function timedBody(
+  body: ReadableStream<Uint8Array> | null,
+  onEnd: () => void
+): ReadableStream<Uint8Array> | null {
+  if (!body) {
+    onEnd();
+    return null;
+  }
+  let ended = false;
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    onEnd();
+  };
+  const reader = body.getReader();
+  return new ReadableStream({
+    async pull(controller) {
+      const { done, value } = await reader.read().catch((error: unknown) => {
+        end();
+        throw error;
+      });
+      if (done) {
+        end();
+        controller.close();
+      } else {
+        controller.enqueue(value);
+      }
+    },
+    cancel(reason) {
+      end();
+      return reader.cancel(reason);
+    },
+  });
+}
+
 type Reject = (error: TRPCError, onError: TrpcErrorHandler) => Response | Promise<Response>;
 
 type Handle = (
@@ -113,7 +153,8 @@ async function serveUpload(
  * upload's through {@link serveUpload}, whose `reject` answers with an error
  * in the adapter's format without reading the body. Records
  * its HTTP metrics under `metricsPath`, and returns its response with a
- * rejected request's rate-limit headers and `extraHeaders` added.
+ * rejected request's rate-limit headers (unless it's a streamed batch, whose
+ * headers are sent before its procedures run) and `extraHeaders` added.
  *
  * Every response is `private, no-store`: these responses carry per-user data
  * (and change across deploys), and the CDN fronting the site caches whatever
@@ -150,16 +191,17 @@ export async function serveTrpcHttp(
       )
     : await handle(req, onError);
 
-  endTimer(response.status);
-
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, no-store");
   for (const [key, value] of Object.entries({ ...errorHeaders, ...options.extraHeaders })) {
     headers.set(key, value);
   }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  return new Response(
+    timedBody(response.body, () => endTimer(response.status)),
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    }
+  );
 }

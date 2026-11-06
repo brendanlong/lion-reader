@@ -13,7 +13,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
-import { trpc, UNBATCHED } from "@/lib/trpc/client";
+import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useFullContent } from "@/lib/hooks/useFullContent";
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
@@ -130,10 +130,9 @@ function EntryContentInner({
       : undefined
   );
 
-  // Keep the neighbours cached for swiping and j/k. Unbatched, or the open
-  // entry's response would wait on theirs.
-  trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId, ...UNBATCHED });
-  trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId, ...UNBATCHED });
+  // Keep the neighbours cached for swiping and j/k.
+  trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
+  trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
 
   // Entry mutations for marking read, starring, etc.
   const { markRead, setStarred } = useEntryMutations();

@@ -9,7 +9,13 @@
 
 import { useState, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, httpLink, splitLink, type TRPCLink } from "@trpc/client";
+import {
+  httpBatchLink,
+  httpBatchStreamLink,
+  httpLink,
+  splitLink,
+  type TRPCLink,
+} from "@trpc/client";
 import superjson from "superjson";
 import { UPLOAD_PROCEDURES } from "@/lib/upload-limits";
 import type { AppRouter } from "@/server/trpc/root";
@@ -49,9 +55,17 @@ function createHttpLinks(): TRPCLink<AppRouter>[] {
   };
   return [
     splitLink({
-      condition: (op) => op.context.skipBatch === true || UPLOAD_PROCEDURES.has(op.path),
+      condition: (op) => UPLOAD_PROCEDURES.has(op.path),
       true: httpLink(options),
-      false: httpBatchLink(options),
+      false: splitLink({
+        // A streamed batch answers each call as it finishes, so a slow one
+        // doesn't hold up the rest, but it sends its headers before any call
+        // runs: whatever sets a cookie (the auth router, account deletion)
+        // goes in a plain batch.
+        condition: (op) => op.type === "query" && !op.path.startsWith("auth."),
+        true: httpBatchStreamLink(options),
+        false: httpBatchLink(options),
+      }),
     }),
   ];
 }

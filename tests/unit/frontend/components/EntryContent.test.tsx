@@ -201,7 +201,7 @@ describe("EntryContent", () => {
     expect(await screen.findByRole("link", { name: "Renamed Article" })).toBeInTheDocument();
   });
 
-  it("prefetches the neighbours outside the open entry's request batch", async () => {
+  it("prefetches the neighbours", async () => {
     const { callsFor } = renderEntryContent(
       <EntryContent entryId="entry-1" nextEntryId="entry-next" previousEntryId="entry-prev" />,
       baseHandlers()
@@ -210,13 +210,8 @@ describe("EntryContent", () => {
     await screen.findByRole("link", { name: "The Great Article" });
 
     await vi.waitFor(() => {
-      const unbatched = Object.fromEntries(
-        callsFor("entries.get").map((c) => [
-          (c.input as { id: string }).id,
-          c.context.skipBatch === true,
-        ])
-      );
-      expect(unbatched).toEqual({ "entry-1": false, "entry-next": true, "entry-prev": true });
+      const fetched = callsFor("entries.get").map((c) => (c.input as { id: string }).id);
+      expect(fetched.sort()).toEqual(["entry-1", "entry-next", "entry-prev"]);
     });
   });
 
