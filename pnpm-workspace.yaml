@@ -71,6 +71,9 @@ overrides:
   "@babel/core@7": ^7.29.6
   # GHSA-p498-v437-472g: until eslint wants @humanfs/node >=0.16.8
   "@humanfs/node@0": ^0.16.8
+  # GHSA-3g3m-2fjr-6pw4: until @sentry/bundler-plugins (via @sentry/nextjs) wants
+  # glob >=14.0.2, which 11.11.0 does
+  "@sentry/bundler-plugins>glob": ^14.0.2
   # GHSA-q2hr-2g5m-vwhr and earlier: until minimatch 3/5/10 want the patched
   # brace-expansion. It's pulled in at three majors, each patched separately, so
   # it needs one floor per major rather than one range dragging all onto 5.x.
