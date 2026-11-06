@@ -3,48 +3,56 @@
  */
 
 /**
- * The HTTP link chain batches queries issued together into one request, except
- * those marked UNBATCHED, which go out on their own so a speculative fetch
- * can't hold up the batch's response.
+ * The HTTP link chain batches calls issued together into one request and
+ * streams queries' results back as each finishes, so a slow query doesn't
+ * hold up the rest. Calls that may set a cookie (the auth router, mutations)
+ * go in a plain batch, whose headers wait for its calls.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import { initTRPC } from "@trpc/server";
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
+import { z } from "zod";
 import { TRPCProvider } from "@/lib/trpc/provider";
-import { trpc, UNBATCHED } from "@/lib/trpc/client";
+import { trpc } from "@/lib/trpc/client";
 
-const entry = (id: string) => superjson.serialize({ entry: { id } });
+/** Stands in for the app router: real tRPC, procedures named like the app's. */
+function serveTestRouter(slow: Promise<void>) {
+  const t = initTRPC.create({ transformer: superjson });
+  const router = t.router({
+    entries: t.router({
+      get: t.procedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+        if (input.id === "slow") await slow;
+        return { entry: { id: input.id } };
+      }),
+      markRead: t.procedure.input(z.unknown()).mutation(() => ({ ok: true })),
+    }),
+    auth: t.router({
+      providers: t.procedure.query(() => ({ providers: [] })),
+    }),
+  });
 
-/** Answers each tRPC GET with an `entries.get`-shaped result per call. */
-function stubFetch() {
-  const urls: URL[] = [];
+  const requests: Request[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input), "http://localhost");
-      urls.push(url);
-      const inputs = JSON.parse(url.searchParams.get("input")!) as
-        Record<string, { json: { id: string } }> | { json: { id: string } };
-      const body =
-        url.searchParams.get("batch") === "1"
-          ? Object.values(inputs as Record<string, { json: { id: string } }>).map((i) => ({
-              result: { data: entry(i.json.id) },
-            }))
-          : { result: { data: entry((inputs as { json: { id: string } }).json.id) } };
-      return new Response(JSON.stringify(body), {
-        headers: { "content-type": "application/json" },
-      });
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(new URL(String(input), "http://localhost"), init);
+      requests.push(request);
+      return fetchRequestHandler({ endpoint: "/api/trpc", req: request, router });
     })
   );
-  return urls;
+  return requests;
 }
 
-function Entries() {
-  trpc.entries.get.useQuery({ id: "open" });
-  trpc.entries.get.useQuery({ id: "other" });
-  trpc.entries.get.useQuery({ id: "neighbour" }, UNBATCHED);
-  return null;
+function Entry({ id }: { id: string }) {
+  const { data } = trpc.entries.get.useQuery({ id });
+  return data ? <p>loaded {data.entry.id}</p> : null;
+}
+
+function isStreamed(request: Request): boolean {
+  return request.headers.get("trpc-accept") === "application/jsonl";
 }
 
 describe("TRPCProvider links", () => {
@@ -52,19 +60,41 @@ describe("TRPCProvider links", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sends UNBATCHED queries in their own request", async () => {
-    const urls = stubFetch();
+  it("answers a batched query before a slow one in the same batch finishes", async () => {
+    let finishSlow!: () => void;
+    const requests = serveTestRouter(new Promise<void>((resolve) => (finishSlow = resolve)));
 
     render(
       <TRPCProvider>
-        <Entries />
+        <Entry id="fast" />
+        <Entry id="slow" />
       </TRPCProvider>
     );
 
-    await waitFor(() => expect(urls).toHaveLength(2));
-    const requestedIds = urls.map((url) =>
-      [...url.searchParams.get("input")!.matchAll(/"id":"(\w+)"/g)].map((m) => m[1]).sort()
+    expect(await screen.findByText("loaded fast")).toBeInTheDocument();
+    expect(screen.queryByText("loaded slow")).not.toBeInTheDocument();
+    expect(requests).toHaveLength(1);
+
+    finishSlow();
+    expect(await screen.findByText("loaded slow")).toBeInTheDocument();
+  });
+
+  it("sends auth queries and mutations in a plain batch", async () => {
+    const requests = serveTestRouter(Promise.resolve());
+    function Calls() {
+      trpc.auth.providers.useQuery();
+      const markRead = trpc.entries.markRead.useMutation();
+      return <button onClick={() => markRead.mutate({ entries: [], read: true })}>mark</button>;
+    }
+
+    render(
+      <TRPCProvider>
+        <Calls />
+      </TRPCProvider>
     );
-    expect(requestedIds).toEqual(expect.arrayContaining([["open", "other"], ["neighbour"]]));
+    screen.getByRole("button").click();
+
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests.map(isStreamed)).toEqual([false, false]);
   });
 });

@@ -21,7 +21,7 @@
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { trpc, UNBATCHED } from "@/lib/trpc/client";
+import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -215,7 +215,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Prefetch entry on mousedown (fires ~100-200ms before click)
   const handleEntryMouseDown = useCallback(
     (entryId: string) => {
-      void utils.entries.get.prefetch({ id: entryId }, UNBATCHED);
+      void utils.entries.get.prefetch({ id: entryId });
     },
     [utils]
   );
@@ -246,11 +246,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   useEffect(() => {
     if (!selectedEntryId || openEntryId) return;
     const timer = setTimeout(
-      () =>
-        void utils.entries.get.prefetch(
-          { id: selectedEntryId },
-          { ...UNBATCHED, staleTime: Infinity }
-        ),
+      () => void utils.entries.get.prefetch({ id: selectedEntryId }, { staleTime: Infinity }),
       SELECTION_PREFETCH_DELAY_MS
     );
     return () => clearTimeout(timer);
