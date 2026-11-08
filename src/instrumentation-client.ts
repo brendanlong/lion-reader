@@ -15,20 +15,16 @@
  * https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
-import { bufferEarlyErrorsUntilLoaded, loadSentry } from "@/lib/sentry/client";
-
-type SentrySdk = NonNullable<Awaited<ReturnType<typeof loadSentry>>>;
-
-let sentry: SentrySdk | null = null;
+import {
+  bufferEarlyErrorsUntilLoaded,
+  captureRouterTransitionStart,
+  loadSentry,
+} from "@/lib/sentry/client";
 
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
   bufferEarlyErrorsUntilLoaded();
 
-  const start = () => {
-    void loadSentry().then((loaded) => {
-      sentry = loaded;
-    });
-  };
+  const start = () => void loadSentry();
   const startWhenIdle = () => {
     if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 5000 });
     else setTimeout(start, 0);
@@ -48,5 +44,5 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
 // mainly covers initial-load route changes (none before the SDK loads);
 // exported to follow the convention.
 export function onRouterTransitionStart(href: string, navigationType: string): void {
-  sentry?.captureRouterTransitionStart(href, navigationType);
+  captureRouterTransitionStart(href, navigationType);
 }
