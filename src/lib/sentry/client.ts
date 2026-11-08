@@ -19,6 +19,7 @@ const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
 let sdk: Promise<SentrySdk | null> | null = null;
 let earlyErrors: EarlyErrorBuffer | null = null;
+let routerTransitionStart: SentrySdk["captureRouterTransitionStart"] | null = null;
 
 /** Buffers uncaught errors until `loadSentry()` has initialized the SDK. */
 export function bufferEarlyErrorsUntilLoaded(): void {
@@ -31,6 +32,7 @@ export function loadSentry(): Promise<SentrySdk | null> {
     ? import("./client-sdk").then(
         (loaded) => {
           loaded.initSentry(dsn);
+          routerTransitionStart = loaded.captureRouterTransitionStart;
           // Sentry's own global handlers take over from here.
           earlyErrors?.flush(loaded);
           return loaded;
@@ -46,4 +48,9 @@ export function loadSentry(): Promise<SentrySdk | null> {
 
 export function captureClientException(error: unknown): void {
   void loadSentry().then((loaded) => loaded?.captureException(error));
+}
+
+/** Traces a Next.js router transition. A no-op until `loadSentry()` has initialized the SDK. */
+export function captureRouterTransitionStart(href: string, navigationType: string): void {
+  routerTransitionStart?.(href, navigationType);
 }
