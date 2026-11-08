@@ -10,7 +10,7 @@
 
 import { describe, it, expect, afterAll } from "vitest";
 import crypto from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
 import {
@@ -28,7 +28,7 @@ import {
   waitForLockWaiter,
 } from "./helpers";
 import { createCaller } from "../../src/server/trpc/root";
-import { hasConsent, recordConsent } from "../../src/server/oauth/grants";
+import { recordConsent } from "../../src/server/oauth/grants";
 import {
   createAuthorizationCode,
   rotateRefreshToken,
@@ -58,6 +58,14 @@ async function createRegisteredClient(name: string): Promise<string> {
   const clientId = await createTestOAuthClient({ name });
   createdClientIds.push(clientId);
   return clientId;
+}
+
+async function hasConsentGrant(userId: string, clientId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: oauthConsentGrants.id })
+    .from(oauthConsentGrants)
+    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)));
+  return rows.length > 0;
 }
 
 async function callerFor(userId: string) {
@@ -184,7 +192,7 @@ describe("oauthGrants.revoke", () => {
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId });
 
-    expect(await hasConsent(userId, clientId, ["mcp"])).toBe(false);
+    expect(await hasConsentGrant(userId, clientId)).toBe(false);
     expect(await validateAccessToken(accessToken)).toBeNull();
     expect(await rotateRefreshToken(refreshToken, clientId)).toBeNull();
   });
@@ -200,7 +208,7 @@ describe("oauthGrants.revoke", () => {
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId: revokedClientId });
 
-    expect(await hasConsent(userId, keptClientId, ["mcp"])).toBe(true);
+    expect(await hasConsentGrant(userId, keptClientId)).toBe(true);
     expect(await validateAccessToken(kept.accessToken)).not.toBeNull();
   });
 
@@ -218,7 +226,7 @@ describe("oauthGrants.revoke", () => {
     const caller = await callerFor(userId);
     await expect(caller.oauthGrants.revoke({ clientId })).rejects.toThrow(TRPCError);
 
-    expect(await hasConsent(otherUserId, clientId, ["mcp"])).toBe(true);
+    expect(await hasConsentGrant(otherUserId, clientId)).toBe(true);
     expect(await validateAccessToken(otherTokens.accessToken)).not.toBeNull();
   });
 

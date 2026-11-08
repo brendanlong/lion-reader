@@ -499,8 +499,9 @@ export const oauthRefreshTokens = pgTable(
 );
 
 /**
- * OAuth consent grants table - tracks user consent for clients.
- * Avoids re-prompting users who have already authorized a client.
+ * OAuth consent grants table - a user's approval of a client, which Connected
+ * Apps lists and revokes and every token grant hangs off. It never skips the
+ * consent screen (SECURITY.md §6).
  */
 export const oauthConsentGrants = pgTable(
   "oauth_consent_grants",

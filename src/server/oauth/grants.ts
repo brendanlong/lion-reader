@@ -1,5 +1,5 @@
 /**
- * OAuth consent grants: recording and checking a user's consent to a client,
+ * OAuth consent grants: recording a user's consent to a client,
  * and the Settings → Connected Apps listing and revocation.
  */
 
@@ -16,29 +16,6 @@ import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
 import { deleteTokenGrants } from "./service";
 import { logger } from "@/lib/logger";
-
-/**
- * Checks if user has already consented to the client with required scopes.
- */
-export async function hasConsent(
-  userId: string,
-  clientId: string,
-  scopes: string[]
-): Promise<boolean> {
-  const result = await db
-    .select({ scopes: oauthConsentGrants.scopes })
-    .from(oauthConsentGrants)
-    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
-    .limit(1);
-
-  if (result.length === 0) {
-    return false;
-  }
-
-  // Check if all requested scopes are in the granted scopes
-  const grantedScopes = result[0].scopes;
-  return scopes.every((scope) => grantedScopes.includes(scope));
-}
 
 /**
  * Records user consent for a client and returns the consent grant's id.
@@ -134,10 +111,8 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
 
 /**
  * Revokes the user's consent for a client: deleting the consent grant deletes
- * every token grant under it, and with them every token. The client can't walk
- * back in silently either, since consent is what suppresses the prompt, and an
- * unredeemed authorization code is worthless without it
- * (`exchangeAuthorizationCode`).
+ * every token grant under it, and with them every token. An unredeemed
+ * authorization code is worthless without it (`exchangeAuthorizationCode`).
  *
  * Returns false if the user has no active grant for the client.
  */

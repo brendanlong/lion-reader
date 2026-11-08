@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateSession } from "@/server/auth/session";
 import { getSessionCookie } from "@/server/auth/session-cookie";
 import { resolveClient } from "@/server/oauth/clients";
-import { hasConsent, recordConsent } from "@/server/oauth/grants";
+import { recordConsent } from "@/server/oauth/grants";
 import { createAuthorizationCode } from "@/server/oauth/service";
 import {
   isValidCodeChallenge,
@@ -205,55 +205,19 @@ export async function GET(request: NextRequest) {
   // above, so bind the token to the client's canonical audience in all cases.
   const effectiveResource = getTokenAudienceForClient(clientId);
 
-  // Check if user is authenticated
-  const sessionToken = getSessionCookie(request.cookies);
-  if (!sessionToken) {
-    // Redirect to login with return URL
-    const loginUrl = new URL("/login", getIssuer());
-    loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
-    return NextResponse.redirect(loginUrl.toString());
+  // Always ask: consent applies to the host the screen names, and a client can
+  // register several (it also handles signing in). Remembering consent would let
+  // an approval for one silently send codes to another.
+  const consentUrl = new URL("/oauth/consent", getIssuer());
+  consentUrl.searchParams.set("client_id", clientId);
+  consentUrl.searchParams.set("redirect_uri", redirectUri);
+  consentUrl.searchParams.set("scope", validScopes.join(" "));
+  consentUrl.searchParams.set("code_challenge", codeChallenge);
+  if (state) {
+    consentUrl.searchParams.set("state", state);
   }
-
-  const session = await validateSession(sessionToken);
-  if (!session) {
-    // Session invalid, redirect to login
-    const loginUrl = new URL("/login", getIssuer());
-    loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
-    return NextResponse.redirect(loginUrl.toString());
-  }
-
-  const userId = session.user.id;
-
-  // Check if user has already consented
-  const alreadyConsented = await hasConsent(userId, clientId, validScopes);
-
-  if (!alreadyConsented) {
-    // Redirect to consent page
-    const consentUrl = new URL("/oauth/consent", getIssuer());
-    // Pass all OAuth parameters to consent page
-    consentUrl.searchParams.set("client_id", clientId);
-    consentUrl.searchParams.set("redirect_uri", redirectUri);
-    consentUrl.searchParams.set("scope", validScopes.join(" "));
-    consentUrl.searchParams.set("code_challenge", codeChallenge);
-    if (state) {
-      consentUrl.searchParams.set("state", state);
-    }
-    consentUrl.searchParams.set("resource", effectiveResource);
-    return NextResponse.redirect(consentUrl.toString());
-  }
-
-  // User has consented, generate authorization code
-  const code = await createAuthorizationCode({
-    clientId,
-    userId,
-    redirectUri,
-    scopes: validScopes,
-    codeChallenge,
-    resource: effectiveResource,
-    state,
-  });
-
-  return buildSuccessRedirect(redirectUri, code, state);
+  consentUrl.searchParams.set("resource", effectiveResource);
+  return NextResponse.redirect(consentUrl.toString());
 }
 
 /**

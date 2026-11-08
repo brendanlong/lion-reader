@@ -20,12 +20,12 @@ claude.ai connectors, from the directory listing (`claude.ai/directory/lion-read
 
 ## Clients
 
-- **CIMD** (an HTTPS URL as `client_id`): validation in `cimd.ts`, fetch and cache in `clients.ts`. **The fetch never follows redirects**, and the vendored pins cover **transport failures only**, never a withdrawn (404/410) or invalid document, which would defeat revocation. The consent screen leads with the client_id's hostname, not the self-asserted `client_name`. The advertising gate is at `client_id_metadata_document_supported` in `config.ts`.
-- **Dynamic registration** stores only recognized scopes and rejects a registration with none (never falls back to "all scopes"). `SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS` (`utils.ts`) is the one list behind both the metadata and registration, so they can't disagree (strict clients abort on a mismatch).
+- **CIMD** (an HTTPS URL as `client_id`): validation in `cimd.ts`, fetch and cache in `clients.ts`. **The fetch never follows redirects**, and the vendored pins cover **transport failures only**, never a withdrawn (404/410) or invalid document, which would defeat revocation. The advertising gate is at `client_id_metadata_document_supported` in `config.ts`.
+- **Dynamic registration** is open by design (MCP clients register themselves; claude.ai does on every connect): never gate it behind an allowlist or initial access token. The consent screen is what stops a client posing as another (SECURITY.md §6). It stores only recognized scopes and rejects a registration with none (never falls back to "all scopes"). `SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS` (`utils.ts`) is the one list behind both the metadata and registration, so they can't disagree (strict clients abort on a mismatch).
 
 ## Revocation
 
-Settings → Connected Apps (`oauthGrants`, session-only) revokes a `(user, client)` consent grant by deleting it, which cascades to every token grant under it (SECURITY.md §6). That **must close every path back in**: consent is what suppresses the prompt, and the code exchange refuses a code without it. Wallabag apps have no consent grant; they're signed out from their own settings section (`oauthGrants.revokeWallabag`) or by a password change.
+Settings → Connected Apps (`oauthGrants`, session-only) revokes a `(user, client)` consent grant by deleting it, which cascades to every token grant under it (SECURITY.md §6). That **must close every path back in**: the code exchange refuses a code without it. Wallabag apps have no consent grant; they're signed out from their own settings section (`oauthGrants.revokeWallabag`) or by a password change.
 
 ## Rate limiting & CORS
 
