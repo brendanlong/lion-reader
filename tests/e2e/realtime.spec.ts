@@ -40,7 +40,7 @@ import {
   loginAs,
   waitForChannelSubscriber,
   recordTrpcProcedures,
-  trpcProcedures,
+  waitForTrpcResults,
   closeTestConnections,
   type TestUser,
   type TestFeed,
@@ -120,11 +120,7 @@ async function seedAndOpenAll(
   // Each SSE connect runs a sync.events catch-up. If its query lands after a
   // test's write, it replays the change and (legitimately) refetches the
   // sidebar lists, which the tests would count as stray refetches (#1831).
-  // Queries stream, so their headers arrive before they run: wait for the body.
-  const catchUpResponse = page.waitForResponse(
-    (response) => trpcProcedures(response.url()).includes("sync.events"),
-    { timeout: 90_000 }
-  );
+  const catchUp = waitForTrpcResults(page, "sync.events");
 
   await page.goto("/all");
   await expect(page.locator('[aria-label*="article: First post"]')).toBeVisible();
@@ -139,7 +135,7 @@ async function seedAndOpenAll(
   // The SSE handler subscribes to Redis channels asynchronously after the
   // response starts; wait until it's actually listening before publishing.
   await waitForChannelSubscriber(channelFor({ user, taggedFeed }));
-  await (await catchUpResponse).finished();
+  await catchUp;
 
   return { user, taggedFeed, tagId, taggedEntries, trpcCalls };
 }
@@ -366,11 +362,9 @@ test("a saved article's new_entry joins the open Saved list by its membership wi
   const savedLink = page.getByRole("link", { name: /^Saved( \(\d+\))?$/ });
   // Wait for the Saved list itself: the loading fallback already shows the
   // stored article, and a list whose fetch predates the save wouldn't hold it.
-  const savedListLoaded = page.waitForResponse((response) =>
-    trpcProcedures(response.url()).includes("entries.list")
-  );
+  const savedListLoaded = waitForTrpcResults(page, "entries.list", '"type":"saved"');
   await savedLink.click();
-  await (await savedListLoaded).finished();
+  await savedListLoaded;
   await expect(page.locator('[aria-label*="article: Saved earlier"]')).toBeVisible();
   await expect(savedLink).toContainText("(1)");
 
