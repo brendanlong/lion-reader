@@ -116,8 +116,7 @@ interface AuthCodeExchange {
  *
  * The new grant references the consent grant, so a Connected Apps revoke
  * (which deletes the consent) either cascades to it or makes the insert fail
- * its foreign key; checking consent at /oauth/authorize alone wouldn't stop a
- * code issued just after a revoke.
+ * its foreign key, so a code issued just before a revoke can't be redeemed.
  */
 export async function exchangeAuthorizationCode(
   code: string,

@@ -470,16 +470,22 @@ describe("/oauth/authorize audience binding", () => {
     }
   });
 
-  it("refuses the /api/v1 audience to any other client", async () => {
+  it.each([
+    ["consent request", false],
+    ["approval", true],
+  ])("refuses the /api/v1 audience to any other client on the %s", async (_, approving) => {
     const userId = await createUser();
     const clientId = await createTestOAuthClient({ scopes: ["reader:full-access"] });
 
-    const location = await approve(userId, {
+    const params = {
       client_id: clientId,
       redirect_uri: "https://example.com/callback",
       scope: OAUTH_SCOPES.READER_FULL_ACCESS,
       resource: getAppResourceIdentifier(),
-    });
+    };
+    const location = approving
+      ? await approve(userId, params)
+      : new URL((await authorizeResponse(userId, params)).headers.get("location") ?? "");
     expect(location.searchParams.get("error")).toBe("invalid_target");
   });
 });
