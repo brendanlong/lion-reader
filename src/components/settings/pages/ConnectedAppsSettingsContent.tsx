@@ -98,7 +98,11 @@ function appDisplayName(app: ConnectedApp): string {
   return app.clientHost ?? app.clientName ?? app.clientId;
 }
 
-/** Every place the app could have sent its sign-in, since we don't record which one it used. */
+/**
+ * Every place the app could have sent its sign-in, since we don't record which
+ * one it used. Not the consent screen's "an app on this device": the device
+ * viewing Settings may not be the one that connected.
+ */
 function destinations(app: ConnectedApp): string | null {
   const places = app.redirectsToLocalApp
     ? [...app.redirectHosts, "a local app"]

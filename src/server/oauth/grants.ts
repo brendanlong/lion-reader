@@ -48,9 +48,9 @@ export async function recordConsent(
  *
  * CIMD clients are never stored in `oauth_clients`, so a grant to one has no
  * name here: `clientHost` (the client_id URL's hostname) is its only identity
- * we can vouch for, matching what the consent screen leads with. We
- * deliberately don't re-fetch metadata documents to label a list — that would
- * be one outbound fetch per row, on a page render, for a self-asserted name.
+ * we can vouch for. We deliberately don't re-fetch metadata documents to label
+ * a list — that would be one outbound fetch per row, on a page render, for a
+ * self-asserted name and redirect URIs.
  */
 export interface UserConsentGrantSummary extends ReturnType<typeof connectedAppDestinations> {
   clientId: string;

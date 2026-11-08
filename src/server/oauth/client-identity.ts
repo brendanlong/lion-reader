@@ -12,10 +12,13 @@ import { isLoopbackUrl } from "./utils";
 
 const LOOPBACK_DESTINATION = "an app on this device";
 
+/** `redirectUris` are every URI the authorization may have used, so all must qualify. */
 function isVerifiedClient(clientId: string, redirectUris: readonly string[]): boolean {
   return (
     clientId === APP_CLIENT_ID ||
-    (PINNED_CLIENT_METADATA.has(clientId) && redirectUris.some((uri) => !isLoopbackUrl(uri)))
+    (PINNED_CLIENT_METADATA.has(clientId) &&
+      redirectUris.length > 0 &&
+      redirectUris.every((uri) => !isLoopbackUrl(uri)))
   );
 }
 
@@ -36,7 +39,7 @@ export function consentClientIdentity(
 /**
  * Where an approved client's codes may have gone, for Connected Apps. We don't
  * record which redirect URI each authorization used, so this is every one the
- * client has.
+ * client has (for a vendored client, as of our copy of its document).
  */
 export function connectedAppDestinations(
   clientId: string,
