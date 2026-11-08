@@ -44,10 +44,11 @@ describe("consent screen client identity", () => {
     expect(screen.getByText(/unverified/i)).toBeTruthy();
   });
 
-  it("doesn't mark a vendored client unverified", () => {
+  it("doesn't mark a vendored client unverified, except on a loopback redirect", () => {
     const [clientId, metadata] = [...PINNED_CLIENT_METADATA][0];
     renderConsent(clientId, metadata.client_name ?? "", metadata.redirect_uris[0]);
     expect(screen.queryByText(/unverified/i)).toBeNull();
+    expect(consentClientIdentity(clientId, "http://localhost:4000/cb").unverified).toBe(true);
   });
 
   it("shows our own app by name, verified", () => {
