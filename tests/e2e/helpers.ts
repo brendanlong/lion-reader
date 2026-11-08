@@ -14,7 +14,7 @@ import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import Redis from "ioredis";
-import type { BrowserContext, Page } from "@playwright/test";
+import type { BrowserContext, Page, Request } from "@playwright/test";
 import * as schema from "../../src/server/db/schema";
 import { timestamptzRawParserConfig } from "../../src/server/db/temporal";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -378,8 +378,33 @@ export function recordTrpcProcedures(page: Page): string[] {
   return calls;
 }
 
+/**
+ * Resolves once a request calling `procedure` has delivered its results to the
+ * page. Queries stream (`httpBatchStreamLink`), so their headers arrive before
+ * they run, and the client aborts the fetch as soon as it has parsed every
+ * result, often before the body's end arrives. Such a request fails rather
+ * than finishes, which `response.finished()` never settles on. Call it before
+ * the action that sends the request.
+ */
+export function waitForTrpcResults(page: Page, procedure: string): Promise<void> {
+  return new Promise((resolve) => {
+    const onEnd = (request: Request) => {
+      if (!trpcProcedures(request.url()).includes(procedure)) return;
+      void request.response().then((response) => {
+        // Failed before it was answered: keep waiting for the retry.
+        if (!response) return;
+        page.off("requestfinished", onEnd);
+        page.off("requestfailed", onEnd);
+        resolve();
+      });
+    };
+    page.on("requestfinished", onEnd);
+    page.on("requestfailed", onEnd);
+  });
+}
+
 /** The tRPC procedures a (possibly batched) request URL calls. */
-export function trpcProcedures(url: string): string[] {
+function trpcProcedures(url: string): string[] {
   const match = url.match(/\/api\/trpc\/([^?]+)/);
   return match ? decodeURIComponent(match[1]).split(",") : [];
 }
