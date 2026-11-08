@@ -511,6 +511,8 @@ export const oauthConsentGrants = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     clientId: text("client_id").notNull(),
     scopes: text("scopes").array().notNull(), // Approved scopes
+    /** Matched with `validateRedirectUri`, so a loopback URI covers every port. */
+    redirectUris: text("redirect_uris").array().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

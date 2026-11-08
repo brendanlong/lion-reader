@@ -13,6 +13,7 @@ import {
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
 import { getRegistrationClientUri } from "./config";
+import { sanitizeDisplayName } from "./cimd";
 
 /**
  * Client registration request as defined in RFC 7591
@@ -202,7 +203,9 @@ export async function registerClient(
 
   // Generate client ID
   const clientId = generateClientId();
-  const clientName = request.client_name ?? "Unknown Application";
+  const requestedName =
+    typeof request.client_name === "string" ? sanitizeDisplayName(request.client_name) : undefined;
+  const clientName = requestedName ?? "Unknown Application";
 
   // Store client in database
   const now = new Date();
@@ -248,8 +251,8 @@ export async function registerClient(
   }
 
   // Add optional fields if provided
-  if (request.client_name) {
-    response.client_name = request.client_name;
+  if (requestedName) {
+    response.client_name = requestedName;
   }
   if (request.client_uri) {
     response.client_uri = request.client_uri;

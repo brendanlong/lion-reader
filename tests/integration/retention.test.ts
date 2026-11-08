@@ -386,7 +386,7 @@ describe("runRetentionCleanup", () => {
 
     // Old but has an active consent grant (tokens all expired): kept.
     const withConsent = await createClient("dcr-consent", old);
-    await recordConsent(userId, withConsent, ["mcp"]);
+    await recordConsent(userId, withConsent, ["mcp"], "https://example.com/callback");
 
     const result = await runRetentionCleanup(db);
 

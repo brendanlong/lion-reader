@@ -495,7 +495,9 @@ export async function createTestTokenGrant(
     userId,
     clientId,
     consentGrantId:
-      clientId === WALLABAG_CLIENT_ID ? null : await recordConsent(userId, clientId, ["mcp"]),
+      clientId === WALLABAG_CLIENT_ID
+        ? null
+        : await recordConsent(userId, clientId, ["mcp"], "https://example.com/callback"),
     scopes: ["mcp"],
     ...overrides,
   });
@@ -531,7 +533,12 @@ export async function createTestOAuthTokens(
   const consentGrantId =
     params.clientId === WALLABAG_CLIENT_ID
       ? null
-      : await recordConsent(params.userId, params.clientId, params.scopes);
+      : await recordConsent(
+          params.userId,
+          params.clientId,
+          params.scopes,
+          "https://example.com/callback"
+        );
   return createTokens({ ...params, consentGrantId });
 }
 

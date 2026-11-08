@@ -387,7 +387,12 @@ describe("/oauth/authorize audience binding", () => {
 
   it("binds the app client's codes to the /api/v1 audience", async () => {
     const userId = await createUser();
-    await recordConsent(userId, APP_CLIENT_ID, [OAUTH_SCOPES.READER_FULL_ACCESS]);
+    await recordConsent(
+      userId,
+      APP_CLIENT_ID,
+      [OAUTH_SCOPES.READER_FULL_ACCESS],
+      getAppRedirectUri()
+    );
 
     const location = await authorize(userId, {
       client_id: APP_CLIENT_ID,
@@ -411,7 +416,6 @@ describe("/oauth/authorize audience binding", () => {
 
   it("sends the debug app's codes to its own path, once it has a key", async () => {
     const userId = await createUser();
-    await recordConsent(userId, APP_CLIENT_ID, [OAUTH_SCOPES.READER_FULL_ACCESS]);
     const issuer = process.env.NEXT_PUBLIC_APP_URL;
     // A deployed server: a dev one on localhost takes the path regardless.
     process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
@@ -421,6 +425,12 @@ describe("/oauth/authorize audience binding", () => {
       scope: OAUTH_SCOPES.READER_FULL_ACCESS,
     });
     try {
+      await recordConsent(
+        userId,
+        APP_CLIENT_ID,
+        [OAUTH_SCOPES.READER_FULL_ACCESS],
+        getDebugAppRedirectUri()
+      );
       // No app can claim the path, so nothing may be sent there.
       const refused = await authorizeResponse(userId, request());
       expect(refused.headers.get("location")).toBeNull();
@@ -439,7 +449,12 @@ describe("/oauth/authorize audience binding", () => {
   it("refuses the /api/v1 audience to any other client", async () => {
     const userId = await createUser();
     const clientId = await createTestOAuthClient({ scopes: ["reader:full-access"] });
-    await recordConsent(userId, clientId, [OAUTH_SCOPES.READER_FULL_ACCESS]);
+    await recordConsent(
+      userId,
+      clientId,
+      [OAUTH_SCOPES.READER_FULL_ACCESS],
+      "https://example.com/callback"
+    );
 
     const location = await authorize(userId, {
       client_id: clientId,

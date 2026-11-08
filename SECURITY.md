@@ -170,6 +170,12 @@ fetches user-influenced URLs and must never be usable to reach internal services
   one can be revoked from Connected Apps.
 - **The consent POST re-validates scopes/redirect/client server-side — never trust
   the form.**
+- **Consent covers one redirect URI, and the consent screen names its host.** Anyone
+  can register a client, or host a metadata document, named "Claude", so the screen
+  leads with where the code goes and labels every client but our app and the
+  vendored ones unverified (`consentClientIdentity`). `hasConsent` must match the
+  redirect URI, or a client gets a harmless URI approved and then silently sends
+  codes to another it registered.
 - **OAuth access tokens are accepted only by the resource their audience names.**
   **Only the pinned first-party app client (`app-client.ts`) may be minted the
   `/api/v1` audience** — dynamic registration lets any client request any scope, so

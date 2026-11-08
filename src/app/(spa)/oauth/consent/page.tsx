@@ -94,7 +94,7 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
     description: SCOPE_DESCRIPTIONS[s as OAuthScope] ?? `Access to ${s}`,
   }));
 
-  const { host, unverified } = consentClientIdentity(client_id, client, redirect_uri);
+  const { host, unverified } = consentClientIdentity(client_id, redirect_uri);
 
   return (
     <ConsentLayout>

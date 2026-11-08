@@ -50,10 +50,8 @@ export function isValidClientIdMetadataUrl(clientId: string): boolean {
  *
  * A CIMD client's `client_name` is self-asserted in a document whoever holds
  * the hostname controls, so the hostname is the only part of its identity we
- * can vouch for and it has to lead everywhere the client is named — the consent
- * screen and the Connected Apps settings list. A registered client
- * (`fromDatabase`) has no such hostname; the consent screen identifies it by
- * its redirect URI instead (`consentClientIdentity`).
+ * can vouch for, so the Connected Apps settings list leads with it. A
+ * registered client (`fromDatabase`) has no such hostname and is listed by name.
  */
 export function cimdClientHost(
   clientId: string,
@@ -86,7 +84,7 @@ const SCOPE_MAX_LENGTH = 512;
  * U+202E right-to-left override must not be able to reorder or hide the
  * hostname the consent screen renders next to it.
  */
-function sanitizeDisplayName(name: string): string | undefined {
+export function sanitizeDisplayName(name: string): string | undefined {
   const cleaned = name
 
     .replaceAll(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")

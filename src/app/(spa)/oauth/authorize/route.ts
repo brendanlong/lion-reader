@@ -225,7 +225,7 @@ export async function GET(request: NextRequest) {
   const userId = session.user.id;
 
   // Check if user has already consented
-  const alreadyConsented = await hasConsent(userId, clientId, validScopes);
+  const alreadyConsented = await hasConsent(userId, clientId, validScopes, redirectUri);
 
   if (!alreadyConsented) {
     // Redirect to consent page
@@ -364,7 +364,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "approve") {
     // Record consent
-    await recordConsent(userId, clientId, scopes);
+    await recordConsent(userId, clientId, scopes, redirectUri);
 
     // Generate authorization code
     const code = await createAuthorizationCode({

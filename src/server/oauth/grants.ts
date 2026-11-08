@@ -3,7 +3,7 @@
  * and the Settings → Connected Apps listing and revocation.
  */
 
-import { eq, and, desc, max } from "drizzle-orm";
+import { eq, and, desc, max, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthClients,
@@ -15,18 +15,23 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
 import { deleteTokenGrants } from "./service";
+import { validateRedirectUri } from "./utils";
 import { logger } from "@/lib/logger";
 
 /**
- * Checks if user has already consented to the client with required scopes.
+ * Checks if the user has already consented to the client sending codes to
+ * `redirectUri` with the required scopes. Consent is per redirect URI because
+ * the consent screen names the requested URI's host, and a client may register
+ * several.
  */
 export async function hasConsent(
   userId: string,
   clientId: string,
-  scopes: string[]
+  scopes: string[],
+  redirectUri: string
 ): Promise<boolean> {
   const result = await db
-    .select({ scopes: oauthConsentGrants.scopes })
+    .select({ scopes: oauthConsentGrants.scopes, redirectUris: oauthConsentGrants.redirectUris })
     .from(oauthConsentGrants)
     .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)))
     .limit(1);
@@ -35,19 +40,23 @@ export async function hasConsent(
     return false;
   }
 
-  // Check if all requested scopes are in the granted scopes
-  const grantedScopes = result[0].scopes;
-  return scopes.every((scope) => grantedScopes.includes(scope));
+  const [grant] = result;
+  return (
+    validateRedirectUri(redirectUri, grant.redirectUris) &&
+    scopes.every((scope) => grant.scopes.includes(scope))
+  );
 }
 
 /**
  * Records user consent for a client and returns the consent grant's id.
- * Re-consenting to a live grant keeps it, and the token grants under it.
+ * Re-consenting to a live grant keeps it, and the token grants under it, and
+ * adds `redirectUri` to the URIs it covers.
  */
 export async function recordConsent(
   userId: string,
   clientId: string,
-  scopes: string[]
+  scopes: string[],
+  redirectUri: string
 ): Promise<string> {
   const [grant] = await db
     .insert(oauthConsentGrants)
@@ -56,10 +65,17 @@ export async function recordConsent(
       userId,
       clientId,
       scopes,
+      redirectUris: [redirectUri],
     })
     .onConflictDoUpdate({
       target: [oauthConsentGrants.userId, oauthConsentGrants.clientId],
-      set: { scopes, updatedAt: new Date() },
+      set: {
+        scopes,
+        redirectUris: sql`CASE WHEN ${redirectUri} = ANY(${oauthConsentGrants.redirectUris})
+          THEN ${oauthConsentGrants.redirectUris}
+          ELSE array_append(${oauthConsentGrants.redirectUris}, ${redirectUri}) END`,
+        updatedAt: new Date(),
+      },
     })
     .returning({ id: oauthConsentGrants.id });
   return grant.id;

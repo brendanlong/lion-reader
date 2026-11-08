@@ -1,29 +1,25 @@
-import { cimdClientHost } from "@/server/oauth/cimd";
+import { APP_CLIENT_ID } from "@/server/oauth/app-client";
+import { PINNED_CLIENT_METADATA } from "@/server/oauth/cimd";
 import { isLoopbackUrl } from "@/server/oauth/utils";
-
-export interface ConsentClientIdentity {
-  /** What the consent screen leads with instead of the self-asserted name; null shows the name. */
-  host: string | null;
-  unverified: boolean;
-}
 
 const LOOPBACK_DESTINATION = "an app on this device";
 
 /**
- * Anyone can register a client with any name, so a registered client is
- * unverified and is identified by where its code will be sent: otherwise a
- * client named "Claude" with an attacker's redirect URI reads as Claude.
+ * What the consent screen identifies a client by. A third-party client's name
+ * is self-asserted (anyone can register one, or host a metadata document,
+ * called "Claude"), so it leads with the host the code will be sent to, which
+ * is what consent covers (`hasConsent`). Only our own app and the clients we
+ * vendor metadata for are verified.
  */
 export function consentClientIdentity(
   clientId: string,
-  client: { fromDatabase: boolean },
   redirectUri: string
-): ConsentClientIdentity {
-  if (!client.fromDatabase) {
-    return { host: cimdClientHost(clientId, client), unverified: false };
+): { host: string | null; unverified: boolean } {
+  if (clientId === APP_CLIENT_ID) {
+    return { host: null, unverified: false };
   }
   return {
     host: isLoopbackUrl(redirectUri) ? LOOPBACK_DESTINATION : new URL(redirectUri).hostname,
-    unverified: true,
+    unverified: !PINNED_CLIENT_METADATA.has(clientId),
   };
 }

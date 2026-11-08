@@ -81,7 +81,7 @@ async function createTestClient(): Promise<string> {
 }
 
 async function createTestAuthCode(userId: string, clientId: string): Promise<string> {
-  await recordConsent(userId, clientId, ["mcp"]);
+  await recordConsent(userId, clientId, ["mcp"], REDIRECT_URI);
   return createAuthorizationCode({
     clientId,
     userId,

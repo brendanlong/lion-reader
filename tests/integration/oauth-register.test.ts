@@ -115,3 +115,23 @@ describe("OAuth Dynamic Client Registration scope handling", () => {
     }
   });
 });
+
+describe("OAuth Dynamic Client Registration client_name", () => {
+  it("strips direction overrides from the name the consent screen shows", async () => {
+    const result = await registerClient({
+      redirect_uris: ["https://example.com/callback"],
+      client_name: "Claude‮ moc.rekcatta",
+      token_endpoint_auth_method: "none",
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    registeredClientIds.push(result.data.client_id);
+
+    const [stored] = await db
+      .select({ name: oauthClients.name })
+      .from(oauthClients)
+      .where(inArray(oauthClients.clientId, [result.data.client_id]));
+    expect(stored.name).not.toContain("‮");
+    expect(result.data.client_name).toBe(stored.name);
+  });
+});
