@@ -1317,13 +1317,6 @@
       "when": 1793836800000,
       "tag": "0188_email_tokens",
       "breakpoints": true
-    },
-    {
-      "idx": 188,
-      "version": "7",
-      "when": 1793923200000,
-      "tag": "0189_oauth_consent_redirect_uris",
-      "breakpoints": true
     }
   ]
 }

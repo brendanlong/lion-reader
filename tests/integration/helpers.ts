@@ -52,9 +52,6 @@ import type { Context } from "../../src/server/trpc/context";
 // Users
 // ============================================================================
 
-/** The redirect URI test consents are recorded for. */
-export const TEST_REDIRECT_URI = "https://example.com/callback";
-
 export interface CreateTestUserOptions extends Partial<typeof users.$inferInsert> {
   /**
    * Prefix for the generated unique email, so a failing test's rows are
@@ -475,7 +472,7 @@ export async function createTestOAuthClient(
     id: generateUuidv7(),
     clientId,
     name: `Test Client ${clientId.slice(-6)}`,
-    redirectUris: [TEST_REDIRECT_URI],
+    redirectUris: ["https://example.com/callback"],
     scopes: ["mcp"],
     isPublic: true,
     ...overrides,
@@ -498,9 +495,7 @@ export async function createTestTokenGrant(
     userId,
     clientId,
     consentGrantId:
-      clientId === WALLABAG_CLIENT_ID
-        ? null
-        : await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI),
+      clientId === WALLABAG_CLIENT_ID ? null : await recordConsent(userId, clientId, ["mcp"]),
     scopes: ["mcp"],
     ...overrides,
   });
@@ -536,7 +531,7 @@ export async function createTestOAuthTokens(
   const consentGrantId =
     params.clientId === WALLABAG_CLIENT_ID
       ? null
-      : await recordConsent(params.userId, params.clientId, params.scopes, TEST_REDIRECT_URI);
+      : await recordConsent(params.userId, params.clientId, params.scopes);
   return createTokens({ ...params, consentGrantId });
 }
 

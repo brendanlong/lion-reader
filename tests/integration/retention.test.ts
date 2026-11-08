@@ -35,7 +35,6 @@ import {
   createTestSubscription,
   createTestTokenGrant,
   createTestUser,
-  TEST_REDIRECT_URI,
 } from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -106,7 +105,7 @@ async function createClient(clientId: string, createdAt: Date): Promise<string> 
     id: generateUuidv7(),
     clientId,
     name: "Test DCR Client",
-    redirectUris: [TEST_REDIRECT_URI],
+    redirectUris: ["https://example.com/callback"],
     createdAt,
     updatedAt: createdAt,
   });
@@ -120,7 +119,7 @@ async function createAuthCode(userId: string, expiresAt: Date): Promise<string> 
     codeHash: `hash-${id}`,
     clientId: TEST_CLIENT_ID,
     userId,
-    redirectUri: TEST_REDIRECT_URI,
+    redirectUri: "https://example.com/callback",
     scopes: ["mcp"],
     codeChallenge: "challenge",
     codeChallengeMethod: "S256",
@@ -387,7 +386,7 @@ describe("runRetentionCleanup", () => {
 
     // Old but has an active consent grant (tokens all expired): kept.
     const withConsent = await createClient("dcr-consent", old);
-    await recordConsent(userId, withConsent, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, withConsent, ["mcp"]);
 
     const result = await runRetentionCleanup(db);
 

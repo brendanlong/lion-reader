@@ -43,7 +43,10 @@ import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { GET as restHandler } from "../../src/app/api/v1/[...path]/route";
-import { GET as authorizeGet } from "../../src/app/(spa)/oauth/authorize/route";
+import {
+  GET as authorizeGet,
+  POST as authorizePost,
+} from "../../src/app/(spa)/oauth/authorize/route";
 import { openSseStream } from "../utils/sse";
 import {
   createTestEntry,
@@ -366,35 +369,62 @@ describe("GET /auth/me", () => {
 });
 
 describe("/oauth/authorize audience binding", () => {
-  async function authorize(userId: string, params: Record<string, string>): Promise<URL> {
-    const res = await authorizeResponse(userId, params);
-    return new URL(res.headers.get("location") ?? "");
+  function withPkce(params: Record<string, string>): Record<string, string> {
+    return {
+      response_type: "code",
+      code_challenge: CODE_CHALLENGE,
+      code_challenge_method: "S256",
+      ...params,
+    };
   }
 
   async function authorizeResponse(userId: string, params: Record<string, string>) {
     const { token } = await createSession(db, { userId });
     const url = new URL("http://localhost:3000/oauth/authorize");
-    for (const [key, value] of Object.entries({
-      response_type: "code",
-      code_challenge: CODE_CHALLENGE,
-      code_challenge_method: "S256",
-      ...params,
-    })) {
+    for (const [key, value] of Object.entries(withPkce(params))) {
       url.searchParams.set(key, value);
     }
     return authorizeGet(new NextRequest(url, { headers: { cookie: `session=${token}` } }));
   }
 
+  /** Submits the consent form's Authorize button. */
+  async function approve(userId: string, params: Record<string, string>): Promise<URL> {
+    const { token } = await createSession(db, { userId });
+    const res = await authorizePost(
+      new NextRequest("http://localhost:3000/oauth/authorize", {
+        method: "POST",
+        headers: { cookie: `session=${token}` },
+        body: new URLSearchParams({ ...withPkce(params), user_action: "approve" }),
+      })
+    );
+    return new URL(res.headers.get("location") ?? "");
+  }
+
+  it("shows the consent screen even to a client the user approved before", async () => {
+    const userId = await createUser();
+    const clientId = await createTestOAuthClient();
+    await recordConsent(userId, clientId, ["mcp"]);
+
+    const res = await authorizeResponse(userId, {
+      client_id: clientId,
+      redirect_uri: "https://example.com/callback",
+      scope: "mcp",
+    });
+    const location = new URL(res.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/oauth/consent");
+    expect(location.searchParams.get("redirect_uri")).toBe("https://example.com/callback");
+    expect(
+      await db
+        .select()
+        .from(oauthAuthorizationCodes)
+        .where(eq(oauthAuthorizationCodes.userId, userId))
+    ).toEqual([]);
+  });
+
   it("binds the app client's codes to the /api/v1 audience", async () => {
     const userId = await createUser();
-    await recordConsent(
-      userId,
-      APP_CLIENT_ID,
-      [OAUTH_SCOPES.READER_FULL_ACCESS],
-      getAppRedirectUri()
-    );
 
-    const location = await authorize(userId, {
+    const location = await approve(userId, {
       client_id: APP_CLIENT_ID,
       redirect_uri: getAppRedirectUri(),
       scope: OAUTH_SCOPES.READER_FULL_ACCESS,
@@ -425,18 +455,12 @@ describe("/oauth/authorize audience binding", () => {
       scope: OAUTH_SCOPES.READER_FULL_ACCESS,
     });
     try {
-      await recordConsent(
-        userId,
-        APP_CLIENT_ID,
-        [OAUTH_SCOPES.READER_FULL_ACCESS],
-        getDebugAppRedirectUri()
-      );
       // No app can claim the path, so nothing may be sent there.
       const refused = await authorizeResponse(userId, request());
       expect(refused.headers.get("location")).toBeNull();
 
       process.env.ANDROID_DEBUG_APP_CERT_SHA256 = Array(32).fill("CC").join(":");
-      const location = await authorize(userId, request());
+      const location = await approve(userId, request());
       expect(location.origin + location.pathname).toBe(getDebugAppRedirectUri());
       expect(location.searchParams.get("code")).toBeTruthy();
     } finally {
@@ -449,14 +473,8 @@ describe("/oauth/authorize audience binding", () => {
   it("refuses the /api/v1 audience to any other client", async () => {
     const userId = await createUser();
     const clientId = await createTestOAuthClient({ scopes: ["reader:full-access"] });
-    await recordConsent(
-      userId,
-      clientId,
-      [OAUTH_SCOPES.READER_FULL_ACCESS],
-      "https://example.com/callback"
-    );
 
-    const location = await authorize(userId, {
+    const location = await approve(userId, {
       client_id: clientId,
       redirect_uri: "https://example.com/callback",
       scope: OAUTH_SCOPES.READER_FULL_ACCESS,

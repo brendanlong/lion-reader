@@ -7,10 +7,9 @@ const LOOPBACK_DESTINATION = "an app on this device";
 /**
  * What the consent screen identifies a client by. A third-party client's name
  * is self-asserted (anyone can register one, or host a metadata document,
- * called "Claude"), so it leads with the host the code will be sent to, which
- * is what consent covers (`hasConsent`). Only our own app and the clients we
- * vendor metadata for are verified, and not on a loopback redirect: any local
- * process can claim to be one of those.
+ * called "Claude"), so it leads with the host the code will be sent to. Only
+ * our own app and the clients we vendor metadata for are verified, and not on
+ * a loopback redirect: any local process can claim to be one of those.
  */
 export function consentClientIdentity(
   clientId: string,

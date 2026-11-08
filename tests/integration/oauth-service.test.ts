@@ -31,7 +31,6 @@ import {
   createTestOAuthTokens,
   holdTransaction,
   waitForLockWaiter,
-  TEST_REDIRECT_URI,
 } from "./helpers";
 import {
   createAuthorizationCode,
@@ -60,6 +59,7 @@ async function backdateRevocation(refreshTokenPlaintext: string): Promise<void> 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
 
+const REDIRECT_URI = "https://example.com/callback";
 const CODE_VERIFIER = "test-code-verifier-that-is-long-enough-for-rfc-7636";
 const CODE_CHALLENGE = crypto
   .createHash("sha256")
@@ -75,17 +75,17 @@ async function createUser(): Promise<string> {
 }
 
 async function createTestClient(): Promise<string> {
-  const clientId = await createTestOAuthClient({ redirectUris: [TEST_REDIRECT_URI] });
+  const clientId = await createTestOAuthClient({ redirectUris: [REDIRECT_URI] });
   createdClientIds.push(clientId);
   return clientId;
 }
 
 async function createTestAuthCode(userId: string, clientId: string): Promise<string> {
-  await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+  await recordConsent(userId, clientId, ["mcp"]);
   return createAuthorizationCode({
     clientId,
     userId,
-    redirectUri: TEST_REDIRECT_URI,
+    redirectUri: REDIRECT_URI,
     scopes: ["mcp"],
     codeChallenge: CODE_CHALLENGE,
   });
@@ -107,18 +107,13 @@ describe("exchangeAuthorizationCode", () => {
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
-    const first = await exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER);
+    const first = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(first).not.toBeNull();
     expect(first?.userId).toBe(userId);
     expect(first?.tokens.scope).toBe("mcp");
     expect(await validateAccessToken(first!.tokens.accessToken)).not.toBeNull();
 
-    const second = await exchangeAuthorizationCode(
-      code,
-      clientId,
-      TEST_REDIRECT_URI,
-      CODE_VERIFIER
-    );
+    const second = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(second).toBeNull();
   });
 
@@ -129,7 +124,7 @@ describe("exchangeAuthorizationCode", () => {
 
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
-        exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER)
+        exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
       )
     );
 
@@ -142,17 +137,12 @@ describe("exchangeAuthorizationCode", () => {
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
-    const bad = await exchangeAuthorizationCode(
-      code,
-      clientId,
-      TEST_REDIRECT_URI,
-      "wrong-verifier"
-    );
+    const bad = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, "wrong-verifier");
     expect(bad).toBeNull();
 
     // The failed attempt consumed the code; a later attempt with the correct
     // verifier must not succeed (an attacker can't retry verifiers).
-    const retry = await exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER);
+    const retry = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(retry).toBeNull();
   });
 });

@@ -873,8 +873,7 @@ CREATE TABLE public.oauth_consent_grants (
     client_id text NOT NULL,
     scopes text[] NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    redirect_uris text[] DEFAULT '{}'::text[] NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.oauth_refresh_tokens (

@@ -13,11 +13,7 @@ import { insertUserEntriesWithMemberships } from "../src/server/services/subscri
 import { generateUuidv7 } from "../src/lib/uuidv7";
 import { createTokens } from "../src/server/oauth/service";
 import { recordConsent } from "../src/server/oauth/grants";
-import {
-  APP_CLIENT_ID,
-  getAppRedirectUri,
-  getAppResourceIdentifier,
-} from "../src/server/oauth/app-client";
+import { APP_CLIENT_ID, getAppResourceIdentifier } from "../src/server/oauth/app-client";
 import { getIssuer } from "../src/server/oauth/config";
 import { OAUTH_SCOPES } from "../src/server/oauth/utils";
 
@@ -72,7 +68,7 @@ async function main(): Promise<void> {
   const tokens = await createTokens({
     clientId: APP_CLIENT_ID,
     userId,
-    consentGrantId: await recordConsent(userId, APP_CLIENT_ID, scopes, getAppRedirectUri()),
+    consentGrantId: await recordConsent(userId, APP_CLIENT_ID, scopes),
     scopes,
     resource: getAppResourceIdentifier(),
   });

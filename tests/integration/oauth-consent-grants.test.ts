@@ -10,7 +10,7 @@
 
 import { describe, it, expect, afterAll } from "vitest";
 import crypto from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
 import {
@@ -26,10 +26,9 @@ import {
   createTestOAuthTokens,
   holdTransaction,
   waitForLockWaiter,
-  TEST_REDIRECT_URI,
 } from "./helpers";
 import { createCaller } from "../../src/server/trpc/root";
-import { hasConsent, recordConsent } from "../../src/server/oauth/grants";
+import { recordConsent } from "../../src/server/oauth/grants";
 import {
   createAuthorizationCode,
   rotateRefreshToken,
@@ -41,6 +40,7 @@ import { hashToken, LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
 
+const REDIRECT_URI = "https://example.com/callback";
 const CODE_VERIFIER = "test-code-verifier-that-is-long-enough-for-rfc-7636";
 const CODE_CHALLENGE = crypto
   .createHash("sha256")
@@ -60,6 +60,14 @@ async function createRegisteredClient(name: string): Promise<string> {
   return clientId;
 }
 
+async function hasConsentGrant(userId: string, clientId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: oauthConsentGrants.id })
+    .from(oauthConsentGrants)
+    .where(and(eq(oauthConsentGrants.userId, userId), eq(oauthConsentGrants.clientId, clientId)));
+  return rows.length > 0;
+}
+
 async function callerFor(userId: string) {
   return createCaller(await createAuthContext(userId));
 }
@@ -77,7 +85,7 @@ describe("oauthGrants.list", () => {
   it("returns registered clients by name with their scope descriptions", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Test MCP Client");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
 
     const caller = await callerFor(userId);
     const grants = await caller.oauthGrants.list();
@@ -95,7 +103,7 @@ describe("oauthGrants.list", () => {
   it("identifies a CIMD client by its client_id hostname, with no name", async () => {
     const userId = await createUser();
     const clientId = "https://claude.ai/api/mcp/client-metadata.json";
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
 
     const caller = await callerFor(userId);
     const grants = await caller.oauthGrants.list();
@@ -108,7 +116,7 @@ describe("oauthGrants.list", () => {
   it("reports the most recent access-token use", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Used Client");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
     const { accessToken } = await createTestOAuthTokens({ clientId, userId, scopes: ["mcp"] });
 
     const caller = await callerFor(userId);
@@ -152,7 +160,7 @@ describe("oauthGrants.list", () => {
     const userId = await createUser();
     const otherUserId = await createUser();
     const clientId = await createRegisteredClient("Other User's Client");
-    await recordConsent(otherUserId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(otherUserId, clientId, ["mcp"]);
 
     const caller = await callerFor(userId);
     expect(await caller.oauthGrants.list()).toEqual([]);
@@ -161,7 +169,7 @@ describe("oauthGrants.list", () => {
   it("omits revoked grants", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Revoked Client");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
 
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId });
@@ -174,7 +182,7 @@ describe("oauthGrants.revoke", () => {
   it("drops the consent and kills the client's access and refresh tokens", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Revocable Client");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
     const { accessToken, refreshToken } = await createTestOAuthTokens({
       clientId,
       userId,
@@ -184,7 +192,7 @@ describe("oauthGrants.revoke", () => {
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId });
 
-    expect(await hasConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI)).toBe(false);
+    expect(await hasConsentGrant(userId, clientId)).toBe(false);
     expect(await validateAccessToken(accessToken)).toBeNull();
     expect(await rotateRefreshToken(refreshToken, clientId)).toBeNull();
   });
@@ -193,14 +201,14 @@ describe("oauthGrants.revoke", () => {
     const userId = await createUser();
     const revokedClientId = await createRegisteredClient("Revoked Client");
     const keptClientId = await createRegisteredClient("Kept Client");
-    await recordConsent(userId, revokedClientId, ["mcp"], TEST_REDIRECT_URI);
-    await recordConsent(userId, keptClientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, revokedClientId, ["mcp"]);
+    await recordConsent(userId, keptClientId, ["mcp"]);
     const kept = await createTestOAuthTokens({ clientId: keptClientId, userId, scopes: ["mcp"] });
 
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId: revokedClientId });
 
-    expect(await hasConsent(userId, keptClientId, ["mcp"], TEST_REDIRECT_URI)).toBe(true);
+    expect(await hasConsentGrant(userId, keptClientId)).toBe(true);
     expect(await validateAccessToken(kept.accessToken)).not.toBeNull();
   });
 
@@ -208,7 +216,7 @@ describe("oauthGrants.revoke", () => {
     const userId = await createUser();
     const otherUserId = await createUser();
     const clientId = await createRegisteredClient("Shared Client");
-    await recordConsent(otherUserId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(otherUserId, clientId, ["mcp"]);
     const otherTokens = await createTestOAuthTokens({
       clientId,
       userId: otherUserId,
@@ -218,7 +226,7 @@ describe("oauthGrants.revoke", () => {
     const caller = await callerFor(userId);
     await expect(caller.oauthGrants.revoke({ clientId })).rejects.toThrow(TRPCError);
 
-    expect(await hasConsent(otherUserId, clientId, ["mcp"], TEST_REDIRECT_URI)).toBe(true);
+    expect(await hasConsentGrant(otherUserId, clientId)).toBe(true);
     expect(await validateAccessToken(otherTokens.accessToken)).not.toBeNull();
   });
 
@@ -240,11 +248,11 @@ describe("oauthGrants.revoke closes the paths back in", () => {
     // 30-day refresh chain — silently undoing the revocation.
     const userId = await createUser();
     const clientId = await createRegisteredClient("Client With A Pending Code");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
     const code = await createAuthorizationCode({
       clientId,
       userId,
-      redirectUri: TEST_REDIRECT_URI,
+      redirectUri: REDIRECT_URI,
       scopes: ["mcp"],
       codeChallenge: CODE_CHALLENGE,
     });
@@ -252,9 +260,7 @@ describe("oauthGrants.revoke closes the paths back in", () => {
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId });
 
-    expect(
-      await exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER)
-    ).toBeNull();
+    expect(await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)).toBeNull();
   });
 
   it("refuses a code issued after the revoke", async () => {
@@ -262,30 +268,28 @@ describe("oauthGrants.revoke closes the paths back in", () => {
     // revoke had already burned the outstanding ones.
     const userId = await createUser();
     const clientId = await createRegisteredClient("Client Issuing Late");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId });
 
     const code = await createAuthorizationCode({
       clientId,
       userId,
-      redirectUri: TEST_REDIRECT_URI,
+      redirectUri: REDIRECT_URI,
       scopes: ["mcp"],
       codeChallenge: CODE_CHALLENGE,
     });
-    expect(
-      await exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER)
-    ).toBeNull();
+    expect(await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)).toBeNull();
   });
 
   it("refuses a code exchange that waited on an uncommitted revoke", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Client Waiting On A Revoke");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
     const code = await createAuthorizationCode({
       clientId,
       userId,
-      redirectUri: TEST_REDIRECT_URI,
+      redirectUri: REDIRECT_URI,
       scopes: ["mcp"],
       codeChallenge: CODE_CHALLENGE,
     });
@@ -293,7 +297,7 @@ describe("oauthGrants.revoke closes the paths back in", () => {
     const held = await holdTransaction((tx) =>
       tx.delete(oauthConsentGrants).where(eq(oauthConsentGrants.userId, userId))
     );
-    const exchange = exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER);
+    const exchange = exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     await waitForLockWaiter('%insert into "oauth_token_grants"%');
     await held.commit();
 
@@ -303,18 +307,18 @@ describe("oauthGrants.revoke closes the paths back in", () => {
   it("leaves nothing usable when the revoke races a code exchange", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Client Racing A Revoke");
-    await recordConsent(userId, clientId, ["mcp"], TEST_REDIRECT_URI);
+    await recordConsent(userId, clientId, ["mcp"]);
     const code = await createAuthorizationCode({
       clientId,
       userId,
-      redirectUri: TEST_REDIRECT_URI,
+      redirectUri: REDIRECT_URI,
       scopes: ["mcp"],
       codeChallenge: CODE_CHALLENGE,
     });
 
     const caller = await callerFor(userId);
     const [exchange] = await Promise.all([
-      exchangeAuthorizationCode(code, clientId, TEST_REDIRECT_URI, CODE_VERIFIER),
+      exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER),
       caller.oauthGrants.revoke({ clientId }),
     ]);
 
@@ -344,36 +348,3 @@ async function waitForLastUsedAt(accessToken: string): Promise<void> {
   }
   throw new Error("last_used_at was never recorded");
 }
-
-describe("hasConsent", () => {
-  it("covers only the redirect URIs the user approved", async () => {
-    const userId = await createUser();
-    const clientId = await createRegisteredClient("Two Redirects");
-    const grantId = await recordConsent(userId, clientId, ["mcp"], "http://localhost:4000/cb");
-
-    expect(await hasConsent(userId, clientId, ["mcp"], "https://attacker.example/cb")).toBe(false);
-
-    expect(await recordConsent(userId, clientId, ["mcp"], "https://attacker.example/cb")).toBe(
-      grantId
-    );
-    expect(await hasConsent(userId, clientId, ["mcp"], "https://attacker.example/cb")).toBe(true);
-    expect(await hasConsent(userId, clientId, ["mcp"], "http://localhost:4000/cb")).toBe(true);
-
-    await recordConsent(userId, clientId, ["mcp"], "https://attacker.example/cb");
-    const [grant] = await db
-      .select({ redirectUris: oauthConsentGrants.redirectUris })
-      .from(oauthConsentGrants)
-      .where(eq(oauthConsentGrants.id, grantId));
-    expect(grant.redirectUris).toHaveLength(2);
-  });
-
-  it("covers a loopback redirect on any port", async () => {
-    const userId = await createUser();
-    const clientId = await createRegisteredClient("Loopback Client");
-    await recordConsent(userId, clientId, ["mcp"], "http://127.0.0.1:4000/callback");
-
-    expect(await hasConsent(userId, clientId, ["mcp"], "http://127.0.0.1:5000/callback")).toBe(
-      true
-    );
-  });
-});
