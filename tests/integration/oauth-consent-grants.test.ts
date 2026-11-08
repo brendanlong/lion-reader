@@ -35,7 +35,9 @@ import {
   validateAccessToken,
   exchangeAuthorizationCode,
 } from "../../src/server/oauth/service";
-import { hashToken, LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
+import { hashToken, isLoopbackUrl, LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
+import { APP_CLIENT_ID } from "../../src/server/oauth/app-client";
+import { PINNED_CLIENT_METADATA } from "../../src/server/oauth/cimd";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -111,6 +113,56 @@ describe("oauthGrants.list", () => {
     expect(grants).toHaveLength(1);
     expect(grants[0].clientName).toBeNull();
     expect(grants[0].clientHost).toBe("claude.ai");
+    expect(grants[0]).toMatchObject({
+      redirectHosts: [],
+      redirectsToLocalApp: false,
+      unverified: true,
+    });
+  });
+
+  it("lists every host a registered client can send codes to, and marks it unverified", async () => {
+    const userId = await createUser();
+    const clientId = await createTestOAuthClient({
+      name: "Claude",
+      redirectUris: [
+        "https://attacker.example/cb",
+        "https://attacker.example/other",
+        "http://localhost/cb",
+      ],
+    });
+    createdClientIds.push(clientId);
+    await recordConsent(userId, clientId, ["mcp"]);
+
+    const [grant] = await (await callerFor(userId)).oauthGrants.list();
+    expect(grant.redirectHosts).toEqual(["attacker.example"]);
+    expect(grant.redirectsToLocalApp).toBe(true);
+    expect(grant.unverified).toBe(true);
+  });
+
+  it("treats our app and vendored clients off loopback as verified, and loopback ones not", async () => {
+    const userId = await createUser();
+    const pinned = [...PINNED_CLIENT_METADATA.values()];
+    const remote = pinned.find((m) => !m.redirect_uris.some(isLoopbackUrl));
+    const local = pinned.find((m) => m.redirect_uris.every(isLoopbackUrl));
+    if (!remote || !local) throw new Error("expected a remote and a loopback vendored client");
+    for (const clientId of [APP_CLIENT_ID, remote.client_id, local.client_id]) {
+      await recordConsent(userId, clientId, ["mcp"]);
+    }
+
+    const grants = new Map(
+      (await (await callerFor(userId)).oauthGrants.list()).map((g) => [g.clientId, g])
+    );
+    expect(grants.get(APP_CLIENT_ID)).toMatchObject({ unverified: false, redirectHosts: [] });
+    expect(grants.get(remote.client_id)).toMatchObject({
+      unverified: false,
+      redirectHosts: [...new Set(remote.redirect_uris.map((uri) => new URL(uri).hostname))],
+      redirectsToLocalApp: false,
+    });
+    expect(grants.get(local.client_id)).toMatchObject({
+      unverified: true,
+      redirectHosts: [],
+      redirectsToLocalApp: true,
+    });
   });
 
   it("reports the most recent access-token use", async () => {

@@ -13,7 +13,8 @@ import {
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
-import { cimdClientHost } from "./cimd";
+import { cimdClientHost, PINNED_CLIENT_METADATA } from "./cimd";
+import { connectedAppDestinations } from "./client-identity";
 import { deleteTokenGrants } from "./service";
 import { logger } from "@/lib/logger";
 
@@ -47,11 +48,11 @@ export async function recordConsent(
  *
  * CIMD clients are never stored in `oauth_clients`, so a grant to one has no
  * name here: `clientHost` (the client_id URL's hostname) is its only identity
- * we can vouch for, matching what the consent screen leads with. We
- * deliberately don't re-fetch metadata documents to label a list — that would
- * be one outbound fetch per row, on a page render, for a self-asserted name.
+ * we can vouch for. We deliberately don't re-fetch metadata documents to label
+ * a list — that would be one outbound fetch per row, on a page render, for a
+ * self-asserted name and redirect URIs.
  */
-export interface UserConsentGrantSummary {
+export interface UserConsentGrantSummary extends ReturnType<typeof connectedAppDestinations> {
   clientId: string;
   /** Name from our own client registry; null for CIMD clients. */
   clientName: string | null;
@@ -75,6 +76,7 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
     .select({
       clientId: oauthConsentGrants.clientId,
       clientName: oauthClients.name,
+      redirectUris: oauthClients.redirectUris,
       scopes: oauthConsentGrants.scopes,
       grantedAt: oauthConsentGrants.updatedAt,
     })
@@ -102,6 +104,12 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
       clientId: grant.clientId,
       clientName,
       clientHost: cimdClientHost(grant.clientId, { fromDatabase: clientName !== null }),
+      // A CIMD client's redirect URIs aren't stored, and we don't fetch its
+      // document to label a list (see above), so only pinned ones are known.
+      ...connectedAppDestinations(
+        grant.clientId,
+        grant.redirectUris ?? PINNED_CLIENT_METADATA.get(grant.clientId)?.redirect_uris ?? []
+      ),
       scopes: grant.scopes,
       grantedAt: grant.grantedAt,
       lastUsedAt: lastUsedByClient.get(grant.clientId) ?? null,

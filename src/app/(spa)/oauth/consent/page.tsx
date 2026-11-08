@@ -17,7 +17,7 @@ import {
   type OAuthScope,
 } from "@/server/oauth/utils";
 import { ConsentForm } from "./ConsentForm";
-import { consentClientIdentity } from "./client-identity";
+import { consentClientIdentity } from "@/server/oauth/client-identity";
 
 interface ConsentPageProps {
   searchParams: Promise<{

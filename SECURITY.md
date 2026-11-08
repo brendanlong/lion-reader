@@ -174,7 +174,7 @@ fetches user-influenced URLs and must never be usable to reach internal services
   host.** Anyone can register a client, or host a metadata document, named
   "Claude", so the screen leads with where the code goes and labels every client
   but our app and the vendored ones (off loopback) unverified
-  (`consentClientIdentity`). Never skip it for a client the user approved before: a
+  (`src/server/oauth/client-identity.ts`, which Connected Apps shares). Never skip it for a client the user approved before: a
   client can register several redirect URIs, so an approval for a harmless one
   would silently send codes to another.
 - **OAuth access tokens are accepted only by the resource their audience names.**
