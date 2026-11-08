@@ -10,7 +10,6 @@ import { WarningTriangleIcon } from "@/components/ui/icons";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
 import { getRequestSession } from "@/server/auth/request-session";
 import { resolveClient } from "@/server/oauth/clients";
-import { cimdClientHost } from "@/server/oauth/cimd";
 import {
   validateRedirectUri,
   isValidRedirectUriFormat,
@@ -18,6 +17,7 @@ import {
   type OAuthScope,
 } from "@/server/oauth/utils";
 import { ConsentForm } from "./ConsentForm";
+import { consentClientIdentity } from "./client-identity";
 
 interface ConsentPageProps {
   searchParams: Promise<{
@@ -94,13 +94,14 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
     description: SCOPE_DESCRIPTIONS[s as OAuthScope] ?? `Access to ${s}`,
   }));
 
-  const clientHost = cimdClientHost(client_id, client);
+  const { host, unverified } = consentClientIdentity(client_id, client, redirect_uri);
 
   return (
     <ConsentLayout>
       <ConsentForm
         clientName={client.name}
-        clientHost={clientHost}
+        clientHost={host}
+        unverified={unverified}
         clientId={client_id}
         redirectUri={redirect_uri}
         scopes={scopeInfo}

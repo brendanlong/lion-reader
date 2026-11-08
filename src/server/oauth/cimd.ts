@@ -51,9 +51,9 @@ export function isValidClientIdMetadataUrl(clientId: string): boolean {
  * A CIMD client's `client_name` is self-asserted in a document whoever holds
  * the hostname controls, so the hostname is the only part of its identity we
  * can vouch for and it has to lead everywhere the client is named — the consent
- * screen and the Connected Apps settings list. A client that registered with us
- * (`fromDatabase`) went through our own registration, so it keeps name-only
- * display.
+ * screen and the Connected Apps settings list. A registered client
+ * (`fromDatabase`) has no such hostname; the consent screen identifies it by
+ * its redirect URI instead (`consentClientIdentity`).
  */
 export function cimdClientHost(
   clientId: string,

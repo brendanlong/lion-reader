@@ -16,8 +16,9 @@ interface ScopeInfo {
 
 interface ConsentFormProps {
   clientName: string;
-  /** Hostname of a CIMD client's metadata document; null for registered clients. */
+  /** Leads in place of the self-asserted name (`consentClientIdentity`); null shows the name. */
   clientHost: string | null;
+  unverified: boolean;
   clientId: string;
   redirectUri: string;
   scopes: ScopeInfo[];
@@ -30,6 +31,7 @@ interface ConsentFormProps {
 export function ConsentForm({
   clientName,
   clientHost,
+  unverified,
   clientId,
   redirectUri,
   scopes,
@@ -45,9 +47,13 @@ export function ConsentForm({
         <div className="control-outline bg-surface-muted mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
           <ShieldCheckIcon className="text-muted h-8 w-8" />
         </div>
-        {/* The hostname must lead: the name under it is self-asserted by
-            whoever hosts the metadata document. */}
+        {/* The hostname must lead: the name under it is self-asserted. */}
         <h2 className="ui-text-lg text-body font-semibold">Authorize {clientHost ?? clientName}</h2>
+        {unverified && (
+          <p className="ui-text-xs border-warning-border bg-warning-subtle text-warning-subtle-foreground mt-2 inline-block rounded-full border px-2 py-0.5 font-medium">
+            Unverified app
+          </p>
+        )}
         {clientHost && (
           <p className="ui-text-sm text-muted mt-1">
             identifies itself as &ldquo;{clientName}&rdquo;
