@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ConsentForm } from "@/app/(spa)/oauth/consent/ConsentForm";
-import { consentClientIdentity } from "@/app/(spa)/oauth/consent/client-identity";
+import { consentClientIdentity } from "@/server/oauth/client-identity";
 import { APP_CLIENT_ID } from "@/server/oauth/app-client";
 import { PINNED_CLIENT_METADATA } from "@/server/oauth/cimd";
 

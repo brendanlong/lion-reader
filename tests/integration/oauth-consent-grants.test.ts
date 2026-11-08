@@ -36,6 +36,8 @@ import {
   exchangeAuthorizationCode,
 } from "../../src/server/oauth/service";
 import { hashToken, LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
+import { APP_CLIENT_ID } from "../../src/server/oauth/app-client";
+import { PINNED_CLIENT_METADATA } from "../../src/server/oauth/cimd";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -111,6 +113,42 @@ describe("oauthGrants.list", () => {
     expect(grants).toHaveLength(1);
     expect(grants[0].clientName).toBeNull();
     expect(grants[0].clientHost).toBe("claude.ai");
+    expect(grants[0].unverified).toBe(true);
+  });
+
+  it("lists every host a registered client can send codes to, and marks it unverified", async () => {
+    const userId = await createUser();
+    const clientId = await createTestOAuthClient({
+      name: "Claude",
+      redirectUris: [
+        "https://attacker.example/cb",
+        "https://attacker.example/other",
+        "http://localhost/cb",
+      ],
+    });
+    createdClientIds.push(clientId);
+    await recordConsent(userId, clientId, ["mcp"]);
+
+    const [grant] = await (await callerFor(userId)).oauthGrants.list();
+    expect(grant.redirectHosts).toEqual(["attacker.example"]);
+    expect(grant.redirectsToLocalApp).toBe(true);
+    expect(grant.unverified).toBe(true);
+  });
+
+  it("treats our app and vendored clients off loopback as verified, and loopback ones not", async () => {
+    const userId = await createUser();
+    const pinned = [...PINNED_CLIENT_METADATA.values()];
+    const remote = pinned.find((m) => m.redirect_uris.every((u) => u.startsWith("https:")));
+    const local = pinned.find((m) => m.redirect_uris.every((u) => u.startsWith("http:")));
+    for (const clientId of [APP_CLIENT_ID, remote!.client_id, local!.client_id]) {
+      await recordConsent(userId, clientId, ["mcp"]);
+    }
+
+    const grants = await (await callerFor(userId)).oauthGrants.list();
+    const unverified = new Map(grants.map((g) => [g.clientId, g.unverified]));
+    expect(unverified.get(APP_CLIENT_ID)).toBe(false);
+    expect(unverified.get(remote!.client_id)).toBe(false);
+    expect(unverified.get(local!.client_id)).toBe(true);
   });
 
   it("reports the most recent access-token use", async () => {

@@ -2,8 +2,8 @@
  * Connected Apps Settings Page
  *
  * Lists the OAuth applications the user has authorized and lets them revoke
- * one. Revoking is what the consent screen promises: it drops the stored
- * consent (so the app has to ask again) and kills its live tokens.
+ * one. Revoking is what the consent screen promises: it drops the consent and
+ * kills the app's live tokens.
  */
 
 "use client";
@@ -22,6 +22,9 @@ interface ConnectedApp {
   clientId: string;
   clientName: string | null;
   clientHost: string | null;
+  redirectHosts: string[];
+  redirectsToLocalApp: boolean;
+  unverified: boolean;
   scopes: { name: string; description: string }[];
   grantedAt: Date;
   lastUsedAt: Date | null;
@@ -95,6 +98,14 @@ function appDisplayName(app: ConnectedApp): string {
   return app.clientHost ?? app.clientName ?? app.clientId;
 }
 
+/** Every place the app could have sent its sign-in, since we don't record which one it used. */
+function destinations(app: ConnectedApp): string | null {
+  const places = app.redirectsToLocalApp
+    ? [...app.redirectHosts, "a local app"]
+    : app.redirectHosts;
+  return places.length > 0 ? places.join(", ") : null;
+}
+
 function ConnectedAppCard({
   app,
   onRevoke,
@@ -113,8 +124,20 @@ function ConnectedAppCard({
               <ShieldCheckIcon className="text-muted h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-body font-medium break-all">{appDisplayName(app)}</p>
+              <p className="text-body font-medium break-all">
+                {appDisplayName(app)}
+                {app.unverified && (
+                  <span className="ui-text-xs border-warning-border bg-warning-subtle text-warning-subtle-foreground ml-2 inline-block rounded-full border px-2 py-0.5 align-middle font-medium">
+                    Unverified
+                  </span>
+                )}
+              </p>
               {app.clientHost && <p className="ui-text-xs text-muted break-all">{app.clientId}</p>}
+              {destinations(app) && (
+                <p className="ui-text-xs text-muted break-all">
+                  Sends access to {destinations(app)}
+                </p>
+              )}
             </div>
           </div>
 
