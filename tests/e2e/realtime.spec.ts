@@ -362,7 +362,7 @@ test("a saved article's new_entry joins the open Saved list by its membership wi
   const savedLink = page.getByRole("link", { name: /^Saved( \(\d+\))?$/ });
   // Wait for the Saved list itself: the loading fallback already shows the
   // stored article, and a list whose fetch predates the save wouldn't hold it.
-  const savedListLoaded = waitForTrpcResults(page, "entries.list");
+  const savedListLoaded = waitForTrpcResults(page, "entries.list", '"type":"saved"');
   await savedLink.click();
   await savedListLoaded;
   await expect(page.locator('[aria-label*="article: Saved earlier"]')).toBeVisible();

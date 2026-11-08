@@ -379,24 +379,34 @@ export function recordTrpcProcedures(page: Page): string[] {
 }
 
 /**
- * Resolves once a request calling `procedure` has delivered its results to the
- * page. Queries stream (`httpBatchStreamLink`), so their headers arrive before
- * they run, and the client aborts the fetch as soon as it has parsed every
- * result, often before the body's end arrives. Such a request fails rather
- * than finishes, which `response.finished()` never settles on. Call it before
- * the action that sends the request.
+ * Resolves once a request calling `procedure` (with an input containing
+ * `inputIncludes`, if given) has delivered its results to the page. Queries
+ * stream (`httpBatchStreamLink`), so their headers arrive before they run, and
+ * the client aborts the fetch as soon as it has parsed every result, often
+ * before the body's end arrives. Such a request fails rather than finishes,
+ * which `response.finished()` never settles on. An answered request the client
+ * aborted for another reason (every query in it cancelled) also counts. Call
+ * it before the action that sends the request.
  */
-export function waitForTrpcResults(page: Page, procedure: string): Promise<void> {
+export function waitForTrpcResults(
+  page: Page,
+  procedure: string,
+  inputIncludes = ""
+): Promise<void> {
   return new Promise((resolve) => {
     const onEnd = (request: Request) => {
-      if (!trpcProcedures(request.url()).includes(procedure)) return;
-      void request.response().then((response) => {
-        // Failed before it was answered: keep waiting for the retry.
-        if (!response) return;
-        page.off("requestfinished", onEnd);
-        page.off("requestfailed", onEnd);
-        resolve();
-      });
+      const url = request.url();
+      if (!trpcProcedures(url).includes(procedure)) return;
+      if (!decodeURIComponent(new URL(url).search).includes(inputIncludes)) return;
+      // Anything else, like a failure before an answer or a truncated body,
+      // is retried: keep waiting.
+      const failure = request.failure();
+      if (!request.existingResponse() || (failure && failure.errorText !== "net::ERR_ABORTED")) {
+        return;
+      }
+      page.off("requestfinished", onEnd);
+      page.off("requestfailed", onEnd);
+      resolve();
     };
     page.on("requestfinished", onEnd);
     page.on("requestfailed", onEnd);
