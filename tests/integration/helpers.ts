@@ -373,23 +373,24 @@ export async function createTestEntrySummary(
 }
 
 /**
- * Puts a user's article in `subscriptionId` (#1846), as a redirect merge
- * copies an old feed's articles into the survivor, creating the user's row
+ * Puts a user's articles in `subscriptionId` (#1846), as a redirect merge
+ * copies an old feed's articles into the survivor, creating the user's rows
  * (unread unless `read`) if they have none.
  */
 export async function createTestMembership(
   subscriptionId: string,
   userId: string,
-  entryId: string,
+  entryIds: string | string[],
   { read = false }: { read?: boolean } = {}
 ): Promise<void> {
+  const ids = `{${[entryIds].flat().join(",")}}`;
   await insertUserEntriesWithMemberships(
     db,
     sql`
       SELECT ${subscriptionId}::uuid AS subscription_id, ${userId}::uuid AS user_id, e.id AS entry_id,
              COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
              e.is_spam, ${read}::boolean AS read
-      FROM entries e WHERE e.id = ${entryId}
+      FROM entries e WHERE e.id = ANY(${ids}::uuid[])
     `
   );
 }
