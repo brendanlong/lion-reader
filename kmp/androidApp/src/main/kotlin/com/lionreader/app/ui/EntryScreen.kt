@@ -424,6 +424,8 @@ internal fun EntryScreen(
                         narration =
                             ReaderNarration(
                                 paragraph = narration?.takeIf { it.entryId == pageId }?.paragraph,
+                                playing =
+                                    narration?.takeIf { it.entryId == pageId }?.playing == true,
                                 autoScroll = settings.narrationAutoScroll,
                                 onParagraphs = { paragraphs ->
                                     pageId?.let { articles.extracted(it, paragraphs) }

@@ -185,7 +185,7 @@ fun ReaderWebView(
                     view.isFocusable = !hidden
                     view.smoothScroll = paging.smoothScroll
                     view.pageScrolling = paging.swipes
-                    view.highlight(narration.paragraph, narration.autoScroll)
+                    view.highlight(narration.paragraph, narration.autoScroll, narration.playing)
                     view.onListenFrom = narration.onListenFrom
                     // Here, not in the factory: each article has its own linkPress.
                     view.onLinkLongPress = { linkPress = it }
@@ -288,10 +288,12 @@ internal const val MAX_RENDERER_CRASHES = 3
  * exactly as the web does, offline included. [paragraph] is the one to highlight, if any.
  * [onParagraphs] gets the text to speak once the page has extracted it, [onSeek] the paragraph the
  * user tapped, and [onListenFrom] the paragraph a selection starts in, when its menu's Listen is
- * tapped (offered only when this is given).
+ * tapped (offered only when this is given). Starting to [play], it scrolls to [paragraph], as each
+ * new paragraph does.
  */
 data class ReaderNarration(
     val paragraph: Int? = null,
+    val playing: Boolean = false,
     val autoScroll: Boolean = true,
     val onParagraphs: (List<String>) -> Unit = {},
     val onSeek: (Int) -> Unit = {},
@@ -355,6 +357,10 @@ private class ReaderView(context: Context) : WebView(context) {
         // Nothing is shown afresh: a new visit to an empty page is the same empty page.
         val sameVisit = visit == this.visit || content.isEmpty()
         if (shell == this.shell && content == this.content && sameVisit) return
+        // The article it shows, with its summary on or off: the reader stays where they are,
+        // unless their place is the top (where a summary coming on shows).
+        val keepPlace =
+            visit == this.visit && !this.content.isNullOrEmpty() && (position.fraction ?: 0f) > 0f
         if (visit != this.visit && zoomed) zoomBy(resources.displayMetrics.density / pageScale)
         this.content = content
         this.visit = visit
@@ -368,10 +374,16 @@ private class ReaderView(context: Context) : WebView(context) {
         if (shell == this.shell && shellLoaded) {
             // Its scripts (narration.js) and the reader's place go with it, so the page is as a
             // load of it would leave it.
+            val place =
+                if (keepPlace) ""
+                else
+                    "window.scrollTo(0, ${position.fraction ?: 0f} * document.documentElement.scrollHeight);"
             evaluateJavascript(
-                "lionNarration.replaceArticle(${JSONObject.quote(content)});" +
-                    " window.scrollTo(0, ${position.fraction ?: 0f} * document.documentElement.scrollHeight)"
-            ) {
+                "lionNarration.replaceArticle(${JSONObject.quote(content)}, $keepPlace); $place" +
+                    " window.scrollY / document.documentElement.scrollHeight"
+            ) { fraction ->
+                // Kept in place, the page has moved under the reader's old fraction.
+                if (keepPlace) fraction.toFloatOrNull()?.let { position.fraction = it }
                 restoring = false
             }
             reportWhenDrawn(content)
@@ -612,10 +624,14 @@ private class ReaderView(context: Context) : WebView(context) {
         }
     }
 
-    fun highlight(paragraph: Int?, autoScroll: Boolean) {
+    private var playing = false
+
+    fun highlight(paragraph: Int?, autoScroll: Boolean, playing: Boolean = this.playing) {
         wanted = paragraph
         scroll = autoScroll
-        if (!pageReady || rendererLost || shown == paragraph) return
+        val started = playing && !this.playing
+        this.playing = playing
+        if (!pageReady || rendererLost || (shown == paragraph && !started)) return
         shown = paragraph
         evaluateJavascript(
             "window.lionNarration && " +
