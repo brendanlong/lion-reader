@@ -298,10 +298,13 @@ function setup(
     sources[0]?.buffers[0]?.ranges.some(([start, end]) => start <= time && time < end) ?? false;
   const requests = new Map<string, FakeSynthesis>();
   const calls: string[] = [];
+  /** The texts asked for while playback waited at them. */
+  const waitedFor: string[] = [];
   const player = new MediaSourcePlayer({
-    synthesize: (text, signal) => {
+    synthesize: (text, signal, waiting) => {
       const request = new FakeSynthesis(signal);
       calls.push(text);
+      if (waiting) waitedFor.push(text);
       requests.set(text, request);
       return request.stream();
     },
@@ -364,6 +367,7 @@ function setup(
     buffer,
     requests,
     calls,
+    waitedFor,
     player,
     statuses,
     paragraphsSeen,
@@ -469,6 +473,30 @@ describe("MediaSourcePlayer", () => {
     expect(calls).toEqual(["1.", "2."]);
     await respond("2.");
     expect(calls).toEqual(["1.", "2.", "3."]);
+  });
+
+  it("says which chunk playback is waiting for, and which are fetched ahead", async () => {
+    const paragraphs = Array.from({ length: 20 }, (_, i) => `${i}.`);
+    const { calls, waitedFor, player, respond } = setup(paragraphs);
+    void player.play();
+    await flush();
+    expect(waitedFor).toEqual(["0."]);
+    await respond("0.");
+    await player.skipTo(10);
+    await flush();
+    expect(calls).toContain("11.");
+    expect(waitedFor).toEqual(["0.", "10."]);
+  });
+
+  it("says playback is waiting for a chunk asked for again once the audio before it ran out", async () => {
+    const { audio, waitedFor, player, respond, failSynthesis } = setup(["0.", "1.", "2."]);
+    void player.play();
+    await respond("0.");
+    expect(waitedFor).toEqual(["0."]);
+    audio.advanceTo(1);
+    await failSynthesis("1.", new TransientSynthesisError("Busy"));
+    await flush();
+    expect(waitedFor).toEqual(["0.", "1."]);
   });
 
   it("drops queued synthesis that a skip left behind", async () => {

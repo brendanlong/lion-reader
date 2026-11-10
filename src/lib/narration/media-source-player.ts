@@ -111,9 +111,10 @@ export interface MediaSourcePlayerOptions {
   /**
    * Speaks one chunk as a complete fragmented MP4 of type {@link loadMimeType},
    * delivered as consecutive pieces of its bytes; each is played as soon as it
-   * arrives. Stop when `signal` aborts.
+   * arrives. Stop when `signal` aborts. `waiting`: playback is at this chunk,
+   * so it's needed now rather than ahead.
    */
-  synthesize: (text: string, signal: AbortSignal) => AsyncIterable<Uint8Array>;
+  synthesize: (text: string, signal: AbortSignal, waiting: boolean) => AsyncIterable<Uint8Array>;
   /**
    * The MIME type (with codec) of what `synthesize` produces. Rejects, with a
    * message for the listener, when this browser can't play it; nothing is
@@ -310,7 +311,7 @@ function rangeEndFrom(buffer: SourceBuffer, start: number): number {
 
 export class MediaSourcePlayer {
   private readonly audio: HTMLAudioElement;
-  private readonly synthesize: (text: string, signal: AbortSignal) => AsyncIterable<Uint8Array>;
+  private readonly synthesize: MediaSourcePlayerOptions["synthesize"];
   private readonly loadMimeType: () => Promise<string>;
   private readonly chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
   private readonly maxConcurrentSyntheses: number;
@@ -836,7 +837,10 @@ export class MediaSourcePlayer {
     this.getMimeType()
       .then(() =>
         this.scheduleSynthesis(chunk, epoch, audio, async () => {
-          for await (const piece of this.synthesize(text, audio.signal)) {
+          // Where a run starts, or next once playback has caught up with the audio.
+          const waiting =
+            chunk === this.index || (chunk === this.nextAppend && !this.isPlayheadBuffered());
+          for await (const piece of this.synthesize(text, audio.signal, waiting)) {
             if (audio.finished) return;
             audio.add(piece);
           }

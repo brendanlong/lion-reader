@@ -75,6 +75,8 @@ export interface PlanLimits {
    * fastest.
    */
   serverKeyRouting: "cheapest" | "fastest";
+  /** Where the plan's cloud voice requests queue on our own speech server, when it's busy. */
+  speechPriority: "high" | "low";
   quotas: Record<PlanQuota, QuotaLimit>;
 }
 
@@ -89,6 +91,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     maxSubscriptions: 150,
     maxIngestAddresses: 1,
     serverKeyRouting: "cheapest",
+    speechPriority: "low",
     quotas: {
       // Bursts above the daily refill: a new user's first session is
       // generous, and steady use is still held to the daily rate.
@@ -103,6 +106,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     maxSubscriptions: 1000,
     maxIngestAddresses: 5,
     serverKeyRouting: "fastest",
+    speechPriority: "high",
     quotas: {
       pageFetches: { burst: 200, perDay: 2000 },
       fileConversions: { burst: 50, perDay: 100 },
@@ -117,6 +121,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     maxSubscriptions: null,
     maxIngestAddresses: null,
     serverKeyRouting: "fastest",
+    speechPriority: "high",
     quotas: {
       pageFetches: null,
       fileConversions: null,

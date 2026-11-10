@@ -15,6 +15,7 @@ import {
   AAC_MIME_TYPE,
   getMediaSourceClass,
   MediaSourcePlayer,
+  type MediaSourcePlayerOptions,
   UNSUPPORTED_MESSAGE,
 } from "./media-source-player";
 import { StreamInterruptedError, TransientSynthesisError } from "./playback-policy";
@@ -180,9 +181,7 @@ export function cloudSpeechTexts(narration: string): string[] {
   return chunkCloudSpeech(splitNarrationParagraphs(narration)).map((chunk) => chunk.text);
 }
 
-function createPlayer(
-  synthesize: (text: string, signal: AbortSignal) => AsyncIterable<Uint8Array>
-): MediaSourcePlayer {
+function createPlayer(synthesize: MediaSourcePlayerOptions["synthesize"]): MediaSourcePlayer {
   return new MediaSourcePlayer({
     synthesize,
     loadMimeType: loadCloudMimeType,
@@ -193,14 +192,14 @@ function createPlayer(
 
 /** A player for cloud voices; `voice` is read for each chunk it synthesizes. */
 export function createCloudSpeechPlayer(voice: () => CloudVoice): MediaSourcePlayer {
-  return createPlayer((text, signal) => {
+  return createPlayer((text, signal, waiting) => {
     const { model, voice: voiceId, pauseSeconds } = voice();
     return streamSpeechResponse(
       () =>
         fetch(SPEECH_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, voice: voiceId, text, pauseSeconds }),
+          body: JSON.stringify({ model, voice: voiceId, text, pauseSeconds, waiting }),
           signal,
         }),
       signal
