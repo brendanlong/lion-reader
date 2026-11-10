@@ -42,13 +42,15 @@ const PCM_FORMAT = { sampleRate: 24_000, channels: 1 };
 
 /**
  * The server's request priorities (0–255, higher first; only their order
- * matters): the chunk a listener is waiting for before chunks fetched ahead,
- * and within each, paid plans before free. They must be at most the
- * `max_priority` of the server's key for Lion Reader, or it answers 400.
+ * matters): paid plans before free, and within each, the chunk a listener is
+ * waiting for before chunks fetched ahead. Paid prefetches go ahead of free
+ * first chunks so a paid listener, once started, doesn't stall behind free
+ * ones. They must be at most the `max_priority` of the server's key for Lion
+ * Reader, or it answers 400.
  */
 const SELFHOSTED_PRIORITIES = {
-  waiting: { high: 240, low: 200 },
-  ahead: { high: 140, low: 100 },
+  high: { waiting: 240, ahead: 200 },
+  low: { waiting: 140, ahead: 100 },
 } as const;
 
 /** Voices as ids, or (newer Kokoro-FastAPI) objects with an id. */
@@ -144,7 +146,7 @@ export async function selfHostedSpeech(
       input,
       response_format: "pcm",
       stream: true,
-      priority: SELFHOSTED_PRIORITIES[waiting ? "waiting" : "ahead"][planPriority],
+      priority: SELFHOSTED_PRIORITIES[planPriority][waiting ? "waiting" : "ahead"],
     }),
   });
   if (!response.ok || !response.body) throw await failure(response);

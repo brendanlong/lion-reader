@@ -810,8 +810,8 @@ export async function streamSpeech(
   if (!candidates[0].onUserKey) await chargeServerKey();
   const urgency: SpeechUrgency = {
     waiting: options.waiting ?? false,
-    // The operator's own calls (the demo's recordings) rank with free plans'.
-    planPriority: keys.plan?.limits.speechPriority ?? "low",
+    // The operator's own calls: the demo's recordings, made while a visitor listens.
+    planPriority: keys.plan?.limits.speechPriority ?? "high",
   };
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;

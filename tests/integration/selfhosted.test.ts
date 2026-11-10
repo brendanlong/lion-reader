@@ -226,7 +226,7 @@ describe("self-hosted voices", () => {
     }
   );
 
-  it("puts chunks being waited for first, then paid plans' ahead of free ones", async () => {
+  it("puts paid plans' chunks first, then within a plan the chunk being waited for", async () => {
     const priority = async (plan: "paid" | "free" | null, waiting: boolean) => {
       const userId = randomUUID();
       const before = requests.length;
@@ -241,11 +241,11 @@ describe("self-hosted voices", () => {
     const freeWaiting = await priority("free", true);
     const paidAhead = await priority("paid", false);
     const freeAhead = await priority("free", false);
-    expect(paidWaiting).toBeGreaterThan(freeWaiting);
-    expect(freeWaiting).toBeGreaterThan(paidAhead);
-    expect(paidAhead).toBeGreaterThan(freeAhead);
-    // The demo's recordings, made once and kept, don't jump ahead of listeners.
-    expect(await priority(null, false)).toBe(freeAhead);
+    expect(paidWaiting).toBeGreaterThan(paidAhead);
+    expect(paidAhead).toBeGreaterThan(freeWaiting);
+    expect(freeWaiting).toBeGreaterThan(freeAhead);
+    // The demo's recordings, made while a visitor listens, rank as paid.
+    expect(await priority(null, true)).toBe(paidWaiting);
   });
 
   it("leaves the default to another host while the server can't be reached", async () => {
