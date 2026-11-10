@@ -33,10 +33,13 @@ import { getBulkEntryRelatedCounts, getUserUnreadCounts } from "../../src/server
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { deleteSavedArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { createCaller } from "../../src/server/trpc/root";
+import { MAX_COLLECTION_ENTRIES } from "../../src/lib/collections";
 import {
   createAuthContext,
   createTestEntry,
+  createTestEntryBatch,
   createTestFeed,
+  createTestMembership,
   createTestSubscription,
   createTestTag,
   createTestUser,
@@ -308,6 +311,25 @@ describe("collections", () => {
       expect(await getEntries(db, userId, [entryA])).toHaveLength(1);
     });
   });
+
+  it("counts only newly added articles toward the size cap (#2288)", async () => {
+    const { userId, feedId, collectionId } = await setup();
+    const members = await createTestEntryBatch(feedId, MAX_COLLECTION_ENTRIES, {
+      start: new Date("2025-01-01T00:00:00Z"),
+    });
+    await createTestMembership(collectionId, userId, members);
+    const [extra] = await createTestEntryBatch(feedId, 1, { start: new Date() });
+    await createTestUserEntries({ userId, entryId: extra });
+
+    const retry = await addEntriesToCollection(db, userId, collectionId, [members[0]]);
+    expect(retry.entryIds).toEqual([]);
+
+    await expect(
+      addEntriesToCollection(db, userId, collectionId, [members[0], extra])
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const [rejected] = await getEntries(db, userId, [extra]);
+    expect(rejected.subscriptionIds).not.toContain(collectionId);
+  }, 30_000);
 
   it("keeps the counters exact when a collection is deleted while being added to", async () => {
     for (let i = 0; i < 5; i++) {
