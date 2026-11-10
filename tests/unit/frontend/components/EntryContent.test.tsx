@@ -577,6 +577,7 @@ describe("EntryContent click-to-seek narration", () => {
 
   it("turning the summary on goes to the top and pauses narration; off stays put", async () => {
     const scrollTo = vi.spyOn(Element.prototype, "scrollTo");
+    onTestFinished(() => scrollTo.mockRestore());
     renderEntryContent(
       <EntryContent entryId="entry-1" />,
       baseHandlers({

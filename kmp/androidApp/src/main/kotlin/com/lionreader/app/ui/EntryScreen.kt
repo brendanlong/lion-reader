@@ -783,7 +783,8 @@ internal fun rememberShownArticle(visit: Any?, latest: EntryDetail?): EntryDetai
  */
 @Composable
 internal fun SummaryGoesToTop(visit: Any?, summaryShown: Boolean, position: ReadingPosition) {
-    // Not state: it only says what the page last showed.
+    // Not state: it only says what the page last showed. Set in composition, not an effect: the
+    // WebView's update reads the position before effects run.
     val wasShown = rememberSaveable(visit) { booleanArrayOf(summaryShown) }
     if (summaryShown && !wasShown[0]) position.fraction = 0f
     wasShown[0] = summaryShown

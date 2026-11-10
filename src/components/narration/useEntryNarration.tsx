@@ -82,6 +82,8 @@ interface EntryNarration {
   pause: () => void;
 }
 
+const noop = () => {};
+
 /**
  * Whether narration went on to `articleId` from the article before: for the
  * entry view to call as it opens, before its content loads, so closing it
@@ -126,8 +128,6 @@ export function useEntryNarration({
   // Narration that went on to this article plays once its engine is ready, and
   // passes over it if there's nothing to say.
   const play = narration?.play;
-  const narrationPause = narration?.pause;
-  const pause = useCallback(() => narrationPause?.(), [narrationPause]);
   const isSupported = narration?.isSupported ?? false;
   const isCheckingVoices = narration?.isCheckingVoices ?? false;
   const startedRef = useRef(false);
@@ -251,6 +251,6 @@ export function useEntryNarration({
     // The closing paragraphs are the only ones with no element (`withEndOfArticle`).
     narratedToEnd: isNarrationActive && narrationState.currentParagraph === -1,
     isPlaying: getNarrationPhase(narrationState).shouldPause,
-    pause,
+    pause: narration?.pause ?? noop,
   };
 }
