@@ -22,6 +22,7 @@ import {
   MAX_CLOUD_SPEECH_PAUSE_SECONDS,
 } from "@/lib/narration/constants";
 import { jittered } from "@/lib/jitter";
+import type { PlanLimits } from "@/lib/plans";
 import { logger } from "@/lib/logger";
 import {
   chargeServerKeyUse,
@@ -85,6 +86,13 @@ export interface SpeechModel {
   pricePerMillionCharacters?: number;
 }
 
+/** How soon a chunk is needed, for a provider that queues requests by priority. */
+export interface SpeechUrgency {
+  /** The listener is waiting for it, rather than it being fetched ahead. */
+  waiting: boolean;
+  plan: PlanLimits["speechPriority"];
+}
+
 /**
  * A cloud voice provider's catalog and synthesis. A provider is also an
  * `AiProvider` (`@/lib/ai/providers`), which is where its name and key live.
@@ -106,7 +114,8 @@ interface SpeechProviderAdapter {
     model: string,
     voice: string,
     text: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    urgency: SpeechUrgency
   ): Promise<PcmStream>;
 }
 
@@ -604,6 +613,11 @@ export const speechRequestSchema = z.object({
   text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
   /** Silence after the speech, so chunks played back to back pause like sentences do. */
   pauseSeconds: z.number().min(0).max(MAX_CLOUD_SPEECH_PAUSE_SECONDS).default(0),
+  /**
+   * The listener is waiting for this chunk (playback is there), so it goes
+   * ahead of chunks fetched in advance.
+   */
+  waiting: z.boolean().default(false),
 });
 
 /** Longest a provider gets to finish a chunk. */
@@ -691,6 +705,7 @@ async function speakWithFirstFree(
   candidates: SpeechCandidate[],
   text: string,
   signal: AbortSignal,
+  urgency: SpeechUrgency,
   chargeServerKey: () => Promise<void>
 ): Promise<PcmStream> {
   let firstError: unknown = null;
@@ -711,7 +726,8 @@ async function speakWithFirstFree(
         parseModelRef(model.id).model,
         voice,
         text,
-        signal
+        signal,
+        urgency
       );
       if (index > 0) {
         logger.info("Speech failed over", {
@@ -750,6 +766,8 @@ export async function streamSpeech(
   options: SpeechChoice & {
     text: string;
     pauseSeconds?: number;
+    /** See {@link speechRequestSchema}. */
+    waiting?: boolean;
     /** Refuse rather than fall back to the default model or voice. */
     exact?: boolean;
   },
@@ -788,12 +806,17 @@ export async function streamSpeech(
   const chargeServerKey = () =>
     (charge ??= chargeServerKeyUse(keys, "speechCharacters", options.text.length));
   if (!candidates[0].onUserKey) await chargeServerKey();
+  const urgency: SpeechUrgency = {
+    waiting: options.waiting ?? false,
+    // The operator's own calls (the demo's recordings, kept once made) wait for listeners'.
+    plan: keys.plan?.limits.speechPriority ?? "low",
+  };
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let pcm: PcmStream;
   try {
     pcm = await speakWhenFree(
-      () => speakWithFirstFree(candidates, options.text, combined, chargeServerKey),
+      () => speakWithFirstFree(candidates, options.text, combined, urgency, chargeServerKey),
       combined
     );
   } catch (error) {

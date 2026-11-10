@@ -15683,6 +15683,10 @@
                     "type": "number",
                     "minimum": 0,
                     "maximum": 2
+                  },
+                  "waiting": {
+                    "default": false,
+                    "type": "boolean"
                   }
                 },
                 "required": [

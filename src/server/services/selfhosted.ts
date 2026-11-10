@@ -8,6 +8,11 @@
  * Behind Cloudflare Access, set `SELFHOSTED_CF_ACCESS_CLIENT_ID` and
  * `SELFHOSTED_CF_ACCESS_CLIENT_SECRET` to a service token and every request
  * carries it.
+ *
+ * Requests carry a priority ({@link SELFHOSTED_PRIORITIES}). When the server
+ * is too busy to start one soon it answers 503 at once, before any audio, and
+ * the request goes to another host of the model (`MODEL_FAILOVER`); audio it
+ * has started is never cut short by load.
  */
 
 import { z } from "zod";
@@ -16,6 +21,7 @@ import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 import { providerError, ProviderRejectedError } from "@/server/services/provider-errors";
 import { CatalogCache } from "@/server/services/catalog-cache";
+import type { SpeechUrgency } from "@/server/services/speech";
 
 function apiUrl(): string {
   const url = process.env.SELFHOSTED_BASE_URL;
@@ -34,6 +40,17 @@ const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
 const CATALOG_FAILURE_TTL_MS = 30 * 1000;
 /** What Kokoro's `pcm` is. */
 const PCM_FORMAT = { sampleRate: 24_000, channels: 1 };
+
+/**
+ * The server's request priorities (0–255, higher first; only their order
+ * matters): the chunk a listener is waiting for before chunks fetched ahead,
+ * and within each, paid plans before free. They must be at most the
+ * `max_priority` of the server's key for Lion Reader, or it answers 400.
+ */
+const SELFHOSTED_PRIORITIES = {
+  waiting: { high: 240, low: 200 },
+  ahead: { high: 140, low: 100 },
+} as const;
 
 /** Voices as ids, or (newer Kokoro-FastAPI) objects with an id. */
 const voicesSchema = z.object({
@@ -114,14 +131,22 @@ export async function selfHostedSpeech(
   model: string,
   voice: string,
   input: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  { waiting, plan }: SpeechUrgency
 ): Promise<PcmStream> {
   const response = await fetch(`${apiUrl()}/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
     redirect: "manual",
     signal,
-    body: JSON.stringify({ model, voice, input, response_format: "pcm", stream: true }),
+    body: JSON.stringify({
+      model,
+      voice,
+      input,
+      response_format: "pcm",
+      stream: true,
+      priority: SELFHOSTED_PRIORITIES[waiting ? "waiting" : "ahead"][plan],
+    }),
   });
   if (!response.ok || !response.body) throw await failure(response);
   return pcmOrWav(response.body, PCM_FORMAT);

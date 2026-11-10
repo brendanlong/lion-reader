@@ -18,6 +18,7 @@ import {
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { SELFHOSTED_KOKORO } from "../../src/lib/narration/constants";
 import { checkSelfHostedConfig } from "../../src/server/services/selfhosted";
+import { PLAN_LIMITS } from "../../src/lib/plans";
 
 const TOGETHER_KOKORO = "together:hexgrad/Kokoro-82M";
 
@@ -28,8 +29,11 @@ const requests: Array<{ model: string; key: string; body: Record<string, unknown
 const accessTokens: Array<{ id: unknown; secret: unknown }> = [];
 /** How the stand-in lists voices: Kokoro-FastAPI's older bare ids or newer objects. */
 let voiceShape: "ids" | "objects" = "objects";
-/** "302" is Cloudflare Access sending a refused service token to its sign-in page. */
-let selfHostedFails: "500" | "401" | "302" | false = false;
+/**
+ * "302" is Cloudflare Access sending a refused service token to its sign-in
+ * page; "overloaded" the server shedding load; "429" the key's streams all in use.
+ */
+let selfHostedFails: "500" | "401" | "302" | "overloaded" | "429" | false = false;
 /** The server's voices can't be listed: down behind Cloudflare, or its key refused. */
 let voicesFail: 503 | 401 | false = false;
 let togetherRefuses = false;
@@ -73,6 +77,14 @@ beforeAll(async () => {
           requests.push({ model: `selfhosted:${String(request.model)}`, key, body: request });
           if (selfHostedFails === "500") return json({ detail: "Internal Server Error" }, 500);
           if (selfHostedFails === "401") return json({ detail: "Invalid API key" }, 401);
+          if (selfHostedFails === "overloaded") {
+            res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "1" });
+            res.end(JSON.stringify({ detail: { error: "overloaded", message: "Overloaded" } }));
+            return;
+          }
+          if (selfHostedFails === "429") {
+            return json({ detail: { error: "rate_limited", message: "Too many streams" } }, 429);
+          }
           if (selfHostedFails === "302") {
             res
               .writeHead(302, {
@@ -204,14 +216,42 @@ describe("self-hosted voices", () => {
     ]);
   });
 
-  it("fails over to another host of Kokoro, in the same voice, when the server fails", async () => {
-    process.env.TOGETHER_API_KEY = "server-together";
-    selfHostedFails = "500";
-    const asked = await speak(SELFHOSTED_KOKORO);
-    expect(asked.map((request) => [request.model, request.body.voice])).toEqual([
-      [SELFHOSTED_KOKORO, "af_bella"],
-      [TOGETHER_KOKORO, "af_bella"],
-    ]);
+  it.each(["500", "overloaded", "429"] as const)(
+    "fails over to another host of Kokoro at once, in the same voice, when the server fails (%s)",
+    async (failure) => {
+      process.env.TOGETHER_API_KEY = "server-together";
+      selfHostedFails = failure;
+      const asked = await speak(SELFHOSTED_KOKORO);
+      expect(asked.map((request) => [request.model, request.body.voice])).toEqual([
+        [SELFHOSTED_KOKORO, "af_bella"],
+        [TOGETHER_KOKORO, "af_bella"],
+      ]);
+    }
+  );
+
+  it("puts chunks being waited for first, then paid plans' ahead of free ones", async () => {
+    const priority = async (plan: "paid" | "free" | null, waiting: boolean) => {
+      const userId = randomUUID();
+      const before = requests.length;
+      await streamSpeech(
+        { plan: plan && { userId, limits: PLAN_LIMITS[plan], serverKeyModels: null } },
+        { model: SELFHOSTED_KOKORO, voice: "af_bella", text: "Hello.", userId, waiting }
+      );
+      const [asked] = requests.slice(before);
+      return asked.body.priority as number;
+    };
+    const paidWaiting = await priority("paid", true);
+    const freeWaiting = await priority("free", true);
+    const paidAhead = await priority("paid", false);
+    const freeAhead = await priority("free", false);
+    expect(paidWaiting).toBeGreaterThan(freeWaiting);
+    expect(freeWaiting).toBeGreaterThan(paidAhead);
+    expect(paidAhead).toBeGreaterThan(freeAhead);
+    // The demo's recordings, made once and kept, don't jump ahead of listeners.
+    expect(await priority(null, false)).toBe(freeAhead);
+    for (const value of [paidWaiting, freeAhead]) {
+      expect(Number.isInteger(value) && value >= 0 && value <= 255).toBe(true);
+    }
   });
 
   it("leaves the default to another host while the server can't be reached", async () => {
