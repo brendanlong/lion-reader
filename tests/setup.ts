@@ -34,6 +34,11 @@ if (typeof window !== "undefined") {
       IntersectionObserverStub as unknown as typeof IntersectionObserver;
   }
 
+  // jsdom doesn't scroll elements; the reader scrolls its container (e.g. to a summary).
+  if (typeof Element.prototype.scrollTo !== "function") {
+    Element.prototype.scrollTo = () => {};
+  }
+
   // Bundlers that emit CommonJS from ESM source replace `import.meta.url` with a
   // shim that picks its branch by sniffing `typeof document`. jsdom breaks that
   // assumption: `document` exists, but the module is still a real CJS file that

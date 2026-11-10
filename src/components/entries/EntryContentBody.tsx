@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
@@ -23,6 +23,7 @@ import { useShortcutHotkeys } from "@/components/keyboard/useShortcutHotkeys";
 import { SHORTCUTS } from "@/components/keyboard/shortcuts";
 import { ENTRY_ACTION_BAR_CLASSES, EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
+import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 /**
@@ -228,6 +229,19 @@ export function EntryContentBody({
     if (finished) onFinished?.();
   }, [finished, onFinished]);
 
+  // Turning the summary on goes to the top, where it shows, and pauses narration, which doesn't
+  // read it; playing again goes on from where it was. Turning it off leaves the reader in place.
+  const scrollContainerRef = useScrollContainer();
+  const summaryOn = showSummary && Boolean(summary);
+  const pauseNarration = narration.pause;
+  const handleSummarize = useCallback(() => {
+    if (!summaryOn) {
+      pauseNarration();
+      scrollContainerRef?.current?.scrollTo({ top: 0 });
+    }
+    onSummarize?.();
+  }, [summaryOn, pauseNarration, scrollContainerRef, onSummarize]);
+
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
@@ -349,9 +363,9 @@ export function EntryContentBody({
             {/* Summarize button */}
             {isSummarizationAvailable && onSummarize && (
               <Button
-                variant={showSummary && summary ? "primary" : "secondary"}
+                variant={summaryOn ? "primary" : "secondary"}
                 size="sm"
-                onClick={onSummarize}
+                onClick={handleSummarize}
                 disabled={isSummarizing}
                 aria-label={summary ? "Toggle summary" : "Generate AI summary"}
               >

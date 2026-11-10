@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, onTestFinished, vi } from "vitest";
 import {
   htmlToClientNarration,
   processHtmlForHighlighting,
@@ -150,5 +150,37 @@ describe("the app reader's narration", () => {
     expect(document.querySelector(".lr-narrating")?.getAttribute("data-para-id")).toBe(
       `para-${nextWeb.paragraphMap[1].o}`
     );
+  });
+
+  it("keeps the article's text in place when its summary goes off", () => {
+    const header = '<header class="lr-header"><h1>Title</h1></header>';
+    const summary = '<aside class="lr-summary"><p>Summary</p></aside>';
+    window.lionNarration?.replaceArticle(header + summary + ARTICLE);
+    // jsdom lays nothing out: each element is 100px tall, under a 50px header and a 300px summary.
+    let scrollY = 1000;
+    const scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(((_x: number, y: number) => {
+      scrollY += y;
+    }) as typeof window.scrollBy);
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element
+    ) {
+      const index = Number(this.getAttribute("data-para-id")?.slice("para-".length));
+      const above = 50 + (document.querySelector(".lr-summary") ? 300 : 0);
+      const top = above + index * 100 - scrollY;
+      return { top, bottom: top + 100 } as DOMRect;
+    });
+    onTestFinished(() => {
+      scrollBy.mockRestore();
+      rect.mockRestore();
+    });
+    const onScreen = () =>
+      Array.from(document.querySelectorAll("[data-para-id]")).map(
+        (el) => el.getBoundingClientRect().top
+      );
+    const before = onScreen();
+
+    window.lionNarration?.replaceArticle(header + ARTICLE, true);
+
+    expect(onScreen()).toEqual(before);
   });
 });

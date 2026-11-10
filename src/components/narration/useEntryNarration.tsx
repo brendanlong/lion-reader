@@ -78,7 +78,11 @@ interface EntryNarration {
   narratedToEnd: boolean;
   /** Playing, or about to (buffering). */
   isPlaying: boolean;
+  /** Pauses narration (or a play that's starting), keeping its place. */
+  pause: () => void;
 }
+
+const noop = () => {};
 
 /**
  * Whether narration went on to `articleId` from the article before: for the
@@ -247,5 +251,6 @@ export function useEntryNarration({
     // The closing paragraphs are the only ones with no element (`withEndOfArticle`).
     narratedToEnd: isNarrationActive && narrationState.currentParagraph === -1,
     isPlaying: getNarrationPhase(narrationState).shouldPause,
+    pause: narration?.pause ?? noop,
   };
 }

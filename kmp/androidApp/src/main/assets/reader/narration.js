@@ -569,9 +569,16 @@
       );
       return element === null ? null : narrationParagraphForElement(paragraphMap, element);
     },
-    replaceArticle(html) {
+    replaceArticle(html, keepPlace = false) {
+      const anchor = keepPlace ? Array.from(document.querySelectorAll("[data-para-id]")).find(
+        (el) => el.getBoundingClientRect().bottom > 0
+      ) : void 0;
+      const id = anchor?.getAttribute("data-para-id");
+      const top = anchor?.getBoundingClientRect().top ?? 0;
       document.body.innerHTML = html;
       paragraphMap = prepare();
+      const again = id ? document.querySelector(`[data-para-id="${id}"]`) : null;
+      if (again) window.scrollBy(0, again.getBoundingClientRect().top - top);
     }
   };
   var hadSelectionAtPointerDown = false;

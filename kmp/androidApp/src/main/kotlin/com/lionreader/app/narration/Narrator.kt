@@ -340,6 +340,11 @@ class Narrator(
         player.play()
     }
 
+    /** Keeps its place, so playing again goes on from there. */
+    fun pause() {
+        player.pause()
+    }
+
     fun togglePlaying() {
         if (_state.value == null) return
         if (player.playWhenReady) player.pause() else player.play()

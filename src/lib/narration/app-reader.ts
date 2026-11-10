@@ -36,8 +36,12 @@ declare global {
       /** `smooth`: scroll to it smoothly rather than jumping (off when the app's animations are). */
       highlight(paragraph: number | null, scroll: boolean, smooth?: boolean): void;
       selectedParagraph(): number | null;
-      /** Replaces the article (header, summary and body), as loading a page with it would. */
-      replaceArticle(html: string): void;
+      /**
+       * Replaces the article (header, summary and body), as loading a page with it would.
+       * `keepPlace` (the same article, its summary on or off): the article's text stays where
+       * it is on screen.
+       */
+      replaceArticle(html: string, keepPlace?: boolean): void;
     };
   }
 }
@@ -118,9 +122,19 @@ window.lionNarration = {
     return element === null ? null : narrationParagraphForElement(paragraphMap, element);
   },
 
-  replaceArticle(html) {
+  replaceArticle(html, keepPlace = false) {
+    // The first of its elements still on screen goes back where it was.
+    const anchor = keepPlace
+      ? Array.from(document.querySelectorAll("[data-para-id]")).find(
+          (el) => el.getBoundingClientRect().bottom > 0
+        )
+      : undefined;
+    const id = anchor?.getAttribute("data-para-id");
+    const top = anchor?.getBoundingClientRect().top ?? 0;
     document.body.innerHTML = html;
     paragraphMap = prepare();
+    const again = id ? document.querySelector(`[data-para-id="${id}"]`) : null;
+    if (again) window.scrollBy(0, again.getBoundingClientRect().top - top);
   },
 };
 
