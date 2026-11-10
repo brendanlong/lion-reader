@@ -360,7 +360,10 @@ private class ReaderView(context: Context) : WebView(context) {
         // The article it shows, with its summary on or off: the reader stays where they are,
         // unless their place is the top (where a summary coming on shows).
         val keepPlace =
-            visit == this.visit && !this.content.isNullOrEmpty() && (position.fraction ?: 0f) > 0f
+            visit == this.visit &&
+                content.isNotEmpty() &&
+                !this.content.isNullOrEmpty() &&
+                (position.fraction ?: 0f) > 0f
         if (visit != this.visit && zoomed) zoomBy(resources.displayMetrics.density / pageScale)
         this.content = content
         this.visit = visit
