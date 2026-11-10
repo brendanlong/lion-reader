@@ -300,12 +300,14 @@ export async function addEntriesToCollection(
       .returning({ entryId: subscriptionEntries.entryId, position: subscriptionEntries.position });
     // Counted after the insert so ids already present or skipped don't count
     // toward the cap; throwing rolls the insert back.
-    const [{ count }] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(subscriptionEntries)
-      .where(eq(subscriptionEntries.subscriptionId, subscriptionId));
-    if (count > MAX_COLLECTION_ENTRIES) {
-      throw errors.validation(`A collection can hold at most ${MAX_COLLECTION_ENTRIES} articles`);
+    if (inserted.length > 0) {
+      const [{ count }] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(subscriptionEntries)
+        .where(eq(subscriptionEntries.subscriptionId, subscriptionId));
+      if (count > MAX_COLLECTION_ENTRIES) {
+        throw errors.validation(`A collection can hold at most ${MAX_COLLECTION_ENTRIES} articles`);
+      }
     }
     await touchUserEntries(
       tx,
