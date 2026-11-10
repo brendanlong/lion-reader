@@ -201,9 +201,10 @@ fun ReaderWebView(
 /**
  * How far down the article the reader is ([fraction] of its height), kept outside the WebView,
  * which can be replaced (the system reclaims renderers of apps in the background) or reload (text
- * size, the summary), so the page comes back there rather than to the top.
+ * size, the summary), so the page comes back there rather than to the top. Null until the reader
+ * has a place on this visit, when paused narration's paragraph is scrolled to instead.
  */
-class ReadingPosition(var fraction: Float = 0f) {
+class ReadingPosition(var fraction: Float? = null) {
     companion object {
         val Saver: Saver<ReadingPosition, Float> =
             Saver(save = { it.fraction }, restore = { ReadingPosition(it) })
@@ -369,7 +370,7 @@ private class ReaderView(context: Context) : WebView(context) {
             // load of it would leave it.
             evaluateJavascript(
                 "lionNarration.replaceArticle(${JSONObject.quote(content)});" +
-                    " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight)"
+                    " window.scrollTo(0, ${position.fraction ?: 0f} * document.documentElement.scrollHeight)"
             ) {
                 restoring = false
             }
@@ -399,7 +400,7 @@ private class ReaderView(context: Context) : WebView(context) {
         shellLoaded = true
         if (!restoring) return
         evaluateJavascript(
-            "window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight)"
+            "window.scrollTo(0, ${position.fraction ?: 0f} * document.documentElement.scrollHeight)"
         ) {
             restoring = false
         }
@@ -549,7 +550,7 @@ private class ReaderView(context: Context) : WebView(context) {
                 shown = null
                 // The reader's place wins over paused narration's; playing, the next paragraph
                 // scrolls to it.
-                highlight(wanted, scroll && position.fraction == 0f)
+                highlight(wanted, scroll && position.fraction == null)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
             "end" -> {

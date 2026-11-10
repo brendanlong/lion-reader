@@ -78,6 +78,8 @@ interface EntryNarration {
   narratedToEnd: boolean;
   /** Playing, or about to (buffering). */
   isPlaying: boolean;
+  /** Pauses narration (or a play that's starting), keeping its place. */
+  pause: () => void;
 }
 
 /**
@@ -124,6 +126,8 @@ export function useEntryNarration({
   // Narration that went on to this article plays once its engine is ready, and
   // passes over it if there's nothing to say.
   const play = narration?.play;
+  const narrationPause = narration?.pause;
+  const pause = useCallback(() => narrationPause?.(), [narrationPause]);
   const isSupported = narration?.isSupported ?? false;
   const isCheckingVoices = narration?.isCheckingVoices ?? false;
   const startedRef = useRef(false);
@@ -247,5 +251,6 @@ export function useEntryNarration({
     // The closing paragraphs are the only ones with no element (`withEndOfArticle`).
     narratedToEnd: isNarrationActive && narrationState.currentParagraph === -1,
     isPlaying: getNarrationPhase(narrationState).shouldPause,
+    pause,
   };
 }

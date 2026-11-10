@@ -252,6 +252,9 @@ internal fun EntryScreen(
                 shown = articles.summaryShown(current.id),
             ) {
                 val id = current.id
+                // Narration doesn't read the summary, so it waits while the summary's on.
+                val turningOn = current.summary == null || !articles.summaryShown(id)
+                if (turningOn && narration?.entryId == id) graph.narrator.pause()
                 if (current.summary != null) {
                     articles.toggleSummary(id)
                 } else if (articles.startSummarizing(id)) {
@@ -601,6 +604,7 @@ private fun EntryPage(
         else {
             val header = ReaderHeader(entry.title ?: "Untitled", byline(context, entry), entry.url)
             val summary = entry.summary?.takeIf { showSummary }
+            SummaryGoesToTop(visit, summary != null, position)
             // Not rebuilt on every recomposition (each narration step is one).
             remember(header, summary, body) { readerContent(header, summary, body) }
         }
@@ -770,6 +774,19 @@ internal fun rememberShownArticle(visit: Any?, latest: EntryDetail?): EntryDetai
         }
     shown[0] = current
     return current
+}
+
+/**
+ * A summary coming on during this [visit] goes to the top of [position], where it shows; one going
+ * off, or on when the page first shows, leaves the reader where they were. Saved like [position],
+ * so a restored page stays put.
+ */
+@Composable
+internal fun SummaryGoesToTop(visit: Any?, summaryShown: Boolean, position: ReadingPosition) {
+    // Not state: it only says what the page last showed.
+    val wasShown = rememberSaveable(visit) { booleanArrayOf(summaryShown) }
+    if (summaryShown && !wasShown[0]) position.fraction = 0f
+    wasShown[0] = summaryShown
 }
 
 /** Whether the page's body download failed, and a way to try it again. */

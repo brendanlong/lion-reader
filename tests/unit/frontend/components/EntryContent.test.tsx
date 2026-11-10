@@ -575,6 +575,47 @@ describe("EntryContent click-to-seek narration", () => {
     expect(callsFor("entries.markRead")).toHaveLength(0);
   });
 
+  it("turning the summary on goes to the top and pauses narration; off stays put", async () => {
+    const scrollTo = vi.spyOn(Element.prototype, "scrollTo");
+    renderEntryContent(
+      <EntryContent entryId="entry-1" />,
+      baseHandlers({
+        "entries.get": () => ({
+          entry: createEntry({ contentCleaned: "<p>First</p><p>Second</p><p>Third</p>" }),
+        }),
+        "summarization.isAvailable": () => ({ available: true }),
+        "summarization.generate": () => ({
+          summary: "<p>The summary.</p>",
+          modelId: "test-model",
+          generatedAt: null,
+          settingsChanged: false,
+        }),
+      })
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(lastSpoken()).toBe("First"));
+    act(() => (speak.mock.lastCall?.[0] as { onend: () => void }).onend());
+    await waitFor(() => expect(lastSpoken()).toBe("Second"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate AI summary" }));
+    expect(await screen.findByText("The summary.")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+    const resume = screen.getByRole("button", { name: "Resume" });
+
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle summary" }));
+    expect(screen.queryByText("The summary.")).not.toBeInTheDocument();
+    expect(scrollTo).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle summary" }));
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+
+    const spoken = speak.mock.calls.length;
+    fireEvent.click(resume);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
+    expect(speechSynthesis.resume).toHaveBeenCalled();
+    expect(speak.mock.calls.length).toBe(spoken);
+  });
+
   it("narrates from the clicked paragraph", async () => {
     const content = await renderAndStartNarration();
 
