@@ -9,10 +9,9 @@
  * `SELFHOSTED_CF_ACCESS_CLIENT_SECRET` to a service token and every request
  * carries it.
  *
- * Requests carry a priority ({@link SELFHOSTED_PRIORITIES}). When the server
- * is too busy to start one soon it answers 503 at once, before any audio, and
- * the request goes to another host of the model (`MODEL_FAILOVER`); audio it
- * has started is never cut short by load.
+ * Requests carry a priority ({@link SELFHOSTED_PRIORITIES}). A request the
+ * server is too busy to start soon gets a 503 at once, before any audio, so
+ * it fails over like any busy answer; audio it has started isn't cut short.
  */
 
 import { z } from "zod";
@@ -132,7 +131,7 @@ export async function selfHostedSpeech(
   voice: string,
   input: string,
   signal: AbortSignal,
-  { waiting, plan }: SpeechUrgency
+  { waiting, planPriority }: SpeechUrgency
 ): Promise<PcmStream> {
   const response = await fetch(`${apiUrl()}/audio/speech`, {
     method: "POST",
@@ -145,7 +144,7 @@ export async function selfHostedSpeech(
       input,
       response_format: "pcm",
       stream: true,
-      priority: SELFHOSTED_PRIORITIES[waiting ? "waiting" : "ahead"][plan],
+      priority: SELFHOSTED_PRIORITIES[waiting ? "waiting" : "ahead"][planPriority],
     }),
   });
   if (!response.ok || !response.body) throw await failure(response);

@@ -837,7 +837,9 @@ export class MediaSourcePlayer {
     this.getMimeType()
       .then(() =>
         this.scheduleSynthesis(chunk, epoch, audio, async () => {
-          const waiting = chunk === this.index;
+          // Where a run starts, or next once playback has caught up with the audio.
+          const waiting =
+            chunk === this.index || (chunk === this.nextAppend && !this.isPlayheadBuffered());
           for await (const piece of this.synthesize(text, audio.signal, waiting)) {
             if (audio.finished) return;
             audio.add(piece);

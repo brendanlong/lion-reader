@@ -488,6 +488,17 @@ describe("MediaSourcePlayer", () => {
     expect(waitedFor).toEqual(["0.", "10."]);
   });
 
+  it("says playback is waiting for a chunk asked for again once the audio before it ran out", async () => {
+    const { audio, waitedFor, player, respond, failSynthesis } = setup(["0.", "1.", "2."]);
+    void player.play();
+    await respond("0.");
+    expect(waitedFor).toEqual(["0."]);
+    audio.advanceTo(1);
+    await failSynthesis("1.", new TransientSynthesisError("Busy"));
+    await flush();
+    expect(waitedFor).toEqual(["0.", "1."]);
+  });
+
   it("drops queued synthesis that a skip left behind", async () => {
     const paragraphs = Array.from({ length: 20 }, (_, i) => `${i}.`);
     const { calls, player, respond } = setup(paragraphs, { maxConcurrentSyntheses: 1 });

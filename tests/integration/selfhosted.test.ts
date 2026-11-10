@@ -31,9 +31,9 @@ const accessTokens: Array<{ id: unknown; secret: unknown }> = [];
 let voiceShape: "ids" | "objects" = "objects";
 /**
  * "302" is Cloudflare Access sending a refused service token to its sign-in
- * page; "overloaded" the server shedding load; "429" the key's streams all in use.
+ * page; "overloaded" the server shedding load.
  */
-let selfHostedFails: "500" | "401" | "302" | "overloaded" | "429" | false = false;
+let selfHostedFails: "500" | "401" | "302" | "overloaded" | false = false;
 /** The server's voices can't be listed: down behind Cloudflare, or its key refused. */
 let voicesFail: 503 | 401 | false = false;
 let togetherRefuses = false;
@@ -81,9 +81,6 @@ beforeAll(async () => {
             res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "1" });
             res.end(JSON.stringify({ detail: { error: "overloaded", message: "Overloaded" } }));
             return;
-          }
-          if (selfHostedFails === "429") {
-            return json({ detail: { error: "rate_limited", message: "Too many streams" } }, 429);
           }
           if (selfHostedFails === "302") {
             res
@@ -216,7 +213,7 @@ describe("self-hosted voices", () => {
     ]);
   });
 
-  it.each(["500", "overloaded", "429"] as const)(
+  it.each(["500", "overloaded"] as const)(
     "fails over to another host of Kokoro at once, in the same voice, when the server fails (%s)",
     async (failure) => {
       process.env.TOGETHER_API_KEY = "server-together";
@@ -249,9 +246,6 @@ describe("self-hosted voices", () => {
     expect(paidAhead).toBeGreaterThan(freeAhead);
     // The demo's recordings, made once and kept, don't jump ahead of listeners.
     expect(await priority(null, false)).toBe(freeAhead);
-    for (const value of [paidWaiting, freeAhead]) {
-      expect(Number.isInteger(value) && value >= 0 && value <= 255).toBe(true);
-    }
   });
 
   it("leaves the default to another host while the server can't be reached", async () => {

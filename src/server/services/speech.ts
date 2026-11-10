@@ -90,7 +90,7 @@ export interface SpeechModel {
 export interface SpeechUrgency {
   /** The listener is waiting for it, rather than it being fetched ahead. */
   waiting: boolean;
-  plan: PlanLimits["speechPriority"];
+  planPriority: PlanLimits["speechPriority"];
 }
 
 /**
@@ -615,7 +615,8 @@ export const speechRequestSchema = z.object({
   pauseSeconds: z.number().min(0).max(MAX_CLOUD_SPEECH_PAUSE_SECONDS).default(0),
   /**
    * The listener is waiting for this chunk (playback is there), so it goes
-   * ahead of chunks fetched in advance.
+   * ahead of chunks fetched in advance. Taken on trust: a client that always
+   * says so only moves its own user's chunks ahead, within our rate limit.
    */
   waiting: z.boolean().default(false),
 });
@@ -733,6 +734,7 @@ async function speakWithFirstFree(
         logger.info("Speech failed over", {
           model: candidates[0].model.id,
           failoverModel: model.id,
+          error: firstError instanceof Error ? firstError.message : String(firstError),
         });
       }
       return pcm;
@@ -808,8 +810,8 @@ export async function streamSpeech(
   if (!candidates[0].onUserKey) await chargeServerKey();
   const urgency: SpeechUrgency = {
     waiting: options.waiting ?? false,
-    // The operator's own calls (the demo's recordings, kept once made) wait for listeners'.
-    plan: keys.plan?.limits.speechPriority ?? "low",
+    // The operator's own calls (the demo's recordings) rank with free plans'.
+    planPriority: keys.plan?.limits.speechPriority ?? "low",
   };
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
