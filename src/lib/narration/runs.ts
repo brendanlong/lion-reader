@@ -364,7 +364,9 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       return;
     }
     if (tagName === "math") {
-      appendWords(` ${mathSpeech(el, MAX_DEPTH - depth)} `);
+      appendWords(
+        ` ${mathSpeech(el, MAX_DEPTH - depth, (token) => subtreeText(token, ctx, depth))} `
+      );
       return;
     }
     if (tagName === "sup" || tagName === "sub" || (voice.structuralMarkers && tagName === "code")) {

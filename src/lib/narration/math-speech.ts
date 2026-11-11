@@ -8,6 +8,8 @@
  * @module narration/math-speech
  */
 
+import { isNonProseTag } from "./block-elements";
+
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
@@ -43,22 +45,31 @@ const SYMBOL_WORDS: Record<string, string> = {
 const TOKENS = new Set(["mi", "mn", "mo", "mtext", "ms"]);
 const SILENT = new Set(["mphantom", "mspace", "mprescripts"]);
 
-/** What a `<math>` element says, as words. `depthLeft` bounds the recursion. */
-export function mathSpeech(math: Element, depthLeft: number): string {
-  return speak(math, depthLeft).replace(/\s+/g, " ").trim();
+/**
+ * What a `<math>` element says, as words. `depthLeft` bounds the recursion, and
+ * `speakHtml` reads a token that holds HTML (`<mtext>` can: an image, a link)
+ * the way the rest of the walk would.
+ */
+export function mathSpeech(
+  math: Element,
+  depthLeft: number,
+  speakHtml: (token: Element) => string
+): string {
+  return speak(math, depthLeft, speakHtml);
 }
 
-function speak(el: Element, depthLeft: number): string {
+function speak(el: Element, depthLeft: number, speakHtml: (token: Element) => string): string {
   const tagName = el.tagName.toLowerCase();
-  if (SILENT.has(tagName)) return "";
+  if (SILENT.has(tagName) || isNonProseTag(tagName)) return "";
+  if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el));
   if (TOKENS.has(tagName) || depthLeft <= 0) {
+    const text = clean(el.textContent ?? "");
     // NFKC folds the mathematical alphanumerics MathJax emits ("𝑁") into
     // letters a TTS engine knows how to say.
-    const text = (el.textContent ?? "").trim().normalize("NFKC");
-    return SYMBOL_WORDS[text] ?? text;
+    return SYMBOL_WORDS[text] ?? text.normalize("NFKC");
   }
 
-  const parts = Array.from(el.children).map((child) => speak(child, depthLeft - 1));
+  const parts = Array.from(el.children).map((child) => speak(child, depthLeft - 1, speakHtml));
   const [first, second, third] = parts;
   if (parts.length === 2) {
     if (tagName === "msup") return power(first, second);
@@ -80,7 +91,13 @@ function speak(el: Element, depthLeft: number): string {
       if (node.nodeType === ELEMENT_NODE) return parts[child++];
       return node.nodeType === TEXT_NODE ? (node.textContent ?? "") : "";
     })
-    .join(" ");
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function clean(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function power(base: string, exponent: string): string {

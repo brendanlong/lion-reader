@@ -476,7 +476,8 @@ describe("htmlToClientNarration", () => {
     it.each([
       ["<mn>3</mn><mo>×</mo><msup><mn>10</mn><mn>12</mn></msup>", "3 times 10 to the power of 12"],
       ["<msup><mi>c</mi><mn>2</mn></msup>", "c squared"],
-      ["<msup><mi>f</mi><mo>′</mo></msup>", "f prime"],
+      ["<msup><mi>f</mi><mo>″</mo></msup>", "f double prime"],
+      ["<msup>\n  <mi>x</mi>\n  <mrow>\n    <mn>2</mn>\n  </mrow>\n</msup>", "x squared"],
       ["<msub><mi>𝑡</mi><mtext>read</mtext></msub>", "t sub read"],
       ["<msubsup><mi>x</mi><mi>i</mi><mi>n</mi></msubsup>", "x sub i to the power of n"],
       ["<mfrac><mn>1</mn><mi>n</mi></mfrac>", "1 over n"],

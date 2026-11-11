@@ -145,17 +145,18 @@
   };
   var TOKENS = /* @__PURE__ */ new Set(["mi", "mn", "mo", "mtext", "ms"]);
   var SILENT = /* @__PURE__ */ new Set(["mphantom", "mspace", "mprescripts"]);
-  function mathSpeech(math, depthLeft) {
-    return speak(math, depthLeft).replace(/\s+/g, " ").trim();
+  function mathSpeech(math, depthLeft, speakHtml) {
+    return speak(math, depthLeft, speakHtml);
   }
-  function speak(el, depthLeft) {
+  function speak(el, depthLeft, speakHtml) {
     const tagName = el.tagName.toLowerCase();
-    if (SILENT.has(tagName)) return "";
+    if (SILENT.has(tagName) || isNonProseTag(tagName)) return "";
+    if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el));
     if (TOKENS.has(tagName) || depthLeft <= 0) {
-      const text = (el.textContent ?? "").trim().normalize("NFKC");
-      return SYMBOL_WORDS[text] ?? text;
+      const text = clean(el.textContent ?? "");
+      return SYMBOL_WORDS[text] ?? text.normalize("NFKC");
     }
-    const parts = Array.from(el.children).map((child2) => speak(child2, depthLeft - 1));
+    const parts = Array.from(el.children).map((child2) => speak(child2, depthLeft - 1, speakHtml));
     const [first, second, third] = parts;
     if (parts.length === 2) {
       if (tagName === "msup") return power(first, second);
@@ -173,7 +174,10 @@
     return Array.from(el.childNodes).map((node) => {
       if (node.nodeType === ELEMENT_NODE) return parts[child++];
       return node.nodeType === TEXT_NODE ? node.textContent ?? "" : "";
-    }).join(" ");
+    }).join(" ").replace(/\s+/g, " ").trim();
+  }
+  function clean(text) {
+    return text.replace(/\s+/g, " ").trim();
   }
   function power(base, exponent) {
     if (exponent === "2") return `${base} squared`;
@@ -352,7 +356,9 @@
         return;
       }
       if (tagName === "math") {
-        appendWords(` ${mathSpeech(el, MAX_DEPTH - depth2)} `);
+        appendWords(
+          ` ${mathSpeech(el, MAX_DEPTH - depth2, (token) => subtreeText(token, ctx, depth2))} `
+        );
         return;
       }
       if (tagName === "sup" || tagName === "sub" || voice.structuralMarkers && tagName === "code") {
