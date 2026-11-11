@@ -76,6 +76,7 @@ const SHAPES = [
   "<p>w0</p><hr><p>w1</p>",
   "<p>w0 <code>w1</code> w2</p>",
   "<p>w0 <math><mi>w1</mi></math> w2</p>",
+  "<p>w0 <math><mtext><img alt='w1'></mtext></math> w2</p>",
   "w0<p>w1</p>",
   "<p></p><p>w0</p><div></div>",
   "<p>w0 <!-- comment --> w1</p>",

@@ -112,6 +112,87 @@
     return paragraphMap2.find((entry) => entry.o >= elementIndex)?.n ?? null;
   }
 
+  // src/lib/narration/math-speech.ts
+  var ELEMENT_NODE = 1;
+  var TEXT_NODE = 3;
+  var SYMBOL_WORDS = new Map(
+    Object.entries({
+      "\xD7": "times",
+      "\xB7": "times",
+      "\u22C5": "times",
+      "\u2217": "times",
+      "+": "plus",
+      "-": "minus",
+      "\u2212": "minus",
+      "\xB1": "plus or minus",
+      "/": "over",
+      "\xF7": "divided by",
+      "=": "equals",
+      "\u2260": "is not equal to",
+      "\u2248": "is approximately",
+      "<": "is less than",
+      ">": "is greater than",
+      "\u2264": "is less than or equal to",
+      "\u2265": "is greater than or equal to",
+      "\u2192": "to",
+      "\u2208": "in",
+      "\u221D": "is proportional to",
+      "\u221E": "infinity",
+      "\u2211": "the sum",
+      "\u220F": "the product",
+      "\u222B": "the integral",
+      "\u2032": "prime",
+      "\u2033": "double prime"
+    })
+  );
+  var TOKENS = /* @__PURE__ */ new Set(["mi", "mn", "mo", "mtext", "ms"]);
+  var SILENT = /* @__PURE__ */ new Set(["mphantom", "mspace", "mprescripts"]);
+  function mathSpeech(math, depthLeft, speakHtml) {
+    return speak(math, depthLeft, speakHtml);
+  }
+  function speak(el, depthLeft, speakHtml) {
+    const tagName = el.tagName.toLowerCase();
+    if (SILENT.has(tagName) || isNonProseTag(tagName)) return "";
+    if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el, depthLeft));
+    if (TOKENS.has(tagName) || depthLeft <= 0) {
+      const text = clean(el.textContent ?? "");
+      return SYMBOL_WORDS.get(text) ?? text.normalize("NFKC");
+    }
+    const parts = Array.from(el.children).map((child2) => speak(child2, depthLeft - 1, speakHtml));
+    const [first, second, third] = parts;
+    if (parts.length === 2) {
+      if (tagName === "msup") return power(first, second);
+      if (tagName === "msub") return `${first} sub ${second}`;
+      if (tagName === "mfrac") return `${first} over ${second}`;
+      if (tagName === "mroot") return `the ${rootName(second)} root of ${first}`;
+    }
+    if (parts.length === 3) {
+      if (tagName === "msubsup") return power(`${first} sub ${second}`, third);
+      if (tagName === "munderover") return `${first} from ${second} to ${third}`;
+    }
+    if (tagName === "msqrt") return `the square root of ${parts.join(" ")}`;
+    if (tagName === "mtable") return parts.join(", ");
+    let child = 0;
+    return Array.from(el.childNodes).map((node) => {
+      if (node.nodeType === ELEMENT_NODE) return parts[child++];
+      return node.nodeType === TEXT_NODE ? node.textContent ?? "" : "";
+    }).join(" ").replace(/\s+/g, " ").trim();
+  }
+  function clean(text) {
+    return text.replace(/\s+/g, " ").trim();
+  }
+  function power(base, exponent) {
+    if (exponent === "2") return `${base} squared`;
+    if (exponent === "3") return `${base} cubed`;
+    if (exponent.endsWith("prime")) return `${base} ${exponent}`;
+    return `${base} to the power of ${exponent}`;
+  }
+  function rootName(index) {
+    if (index === "2") return "square";
+    if (index === "3") return "cube";
+    return `${index}th`;
+  }
+
   // src/lib/narration/runs.ts
   var DIRECT_TTS_VOICE = {
     speakCodeBlocks: false,
@@ -119,12 +200,26 @@
     speakUndescribedImages: false
   };
   var SCRIPT_MARKER = /<\/?su[bp]>/g;
-  function withoutScriptMarkers(text) {
-    return text.replace(SCRIPT_MARKER, "");
+  var SCRIPTABLE = "0123456789+-\u2212=()";
+  function scriptForms(scripts) {
+    const forms = Array.from(scripts);
+    return new Map([
+      ...Array.from(SCRIPTABLE, (char, index) => [char, forms[index]]),
+      ...forms.map((char) => [char, char])
+    ]);
+  }
+  var SUPERSCRIPTS = scriptForms("\u2070\xB9\xB2\xB3\u2074\u2075\u2076\u2077\u2078\u2079\u207A\u207B\u207B\u207C\u207D\u207E");
+  var SUBSCRIPTS = scriptForms("\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089\u208A\u208B\u208B\u208C\u208D\u208E");
+  var ORDINAL_SUFFIX = /^(st|nd|rd|th)$/i;
+  function spokenScript(tagName, inner) {
+    const forms = tagName === "sup" ? SUPERSCRIPTS : SUBSCRIPTS;
+    const chars = Array.from(inner);
+    if (chars.every((char) => forms.has(char))) return chars.map((char) => forms.get(char)).join("");
+    return tagName === "sup" && ORDINAL_SUFFIX.test(inner) ? inner : ` ${inner}`;
   }
   var BREAK = "\0";
-  var ELEMENT_NODE = 1;
-  var TEXT_NODE = 3;
+  var ELEMENT_NODE2 = 1;
+  var TEXT_NODE2 = 3;
   var MAX_DEPTH = 64;
   var TABLE_STRUCTURE = /* @__PURE__ */ new Set(["thead", "tbody", "tfoot", "tr", "td", "th"]);
   var ROW_GROUPS = /* @__PURE__ */ new Set(["thead", "tbody", "tfoot"]);
@@ -146,7 +241,7 @@
   function collectRuns(root, ctx, depth) {
     const { voice, targets, consumed } = ctx;
     const runs = [];
-    let text = "";
+    const pieces = [];
     let owner = root;
     let images = 0;
     let firstImage = null;
@@ -164,16 +259,16 @@
     };
     const flush = () => {
       const highlight = images === 1 && !spokeWords && firstImage ? firstImage : owner;
-      push(highlight, text);
+      push(highlight, pieces.join(""));
       flushes += 1;
-      text = "";
+      pieces.length = 0;
       images = 0;
       firstImage = null;
       spokeWords = false;
     };
     const appendWords = (value) => {
       const words = value.includes(BREAK) ? value.replaceAll(BREAK, "") : value;
-      text += words;
+      pieces.push(words);
       if (words.trim()) spokeWords = true;
     };
     const appendImage = (img) => {
@@ -181,7 +276,7 @@
       if (!value) return;
       images += 1;
       firstImage = images === 1 ? img : null;
-      text += ` ${value} `;
+      pieces.push(` ${value} `);
     };
     const markStructure = (el, tagName, start) => {
       if (start >= runs.length) return;
@@ -231,13 +326,13 @@
     const visitLink = (el, depth2) => {
       const href = el.getAttribute("href");
       const runsBefore = runs.length;
-      const textBefore = text.length;
+      const piecesBefore = pieces.length;
       if (depth2 >= MAX_DEPTH) appendWords(flatText(el, voice, consumed));
       else visitChildren(el, depth2);
       if (!href) return;
       if (runs.length === runsBefore) {
-        if (text.slice(textBefore).trim() === href) {
-          text = text.slice(0, textBefore);
+        if (pieces.slice(piecesBefore).join("").trim() === href) {
+          pieces.length = piecesBefore;
           appendWords(linkTarget(href));
         }
       } else if (runs.length === runsBefore + 1 && runs[runsBefore].text === href) {
@@ -250,7 +345,7 @@
         return;
       }
       if (tagName === "br") {
-        text += BREAK;
+        pieces.push(BREAK);
         return;
       }
       if (tagName === "input") return;
@@ -262,18 +357,29 @@
         appendWords(flatText(el, voice, consumed));
         return;
       }
-      if (voice.structuralMarkers && (tagName === "code" || tagName === "sup" || tagName === "sub")) {
-        const before = text.length;
+      if (tagName === "math") {
+        appendWords(
+          ` ${mathSpeech(
+            el,
+            MAX_DEPTH - depth2,
+            (token, depthLeft) => subtreeText(token, ctx, MAX_DEPTH - depthLeft)
+          )} `
+        );
+        return;
+      }
+      if (tagName === "sup" || tagName === "sub" || voice.structuralMarkers && tagName === "code") {
+        const before = pieces.length;
         const flushesBefore = flushes;
         visitChildren(el, depth2);
         if (flushes !== flushesBefore) return;
-        const content = text.slice(before).replaceAll(BREAK, " ");
+        const content = pieces.slice(before).join("").replaceAll(BREAK, " ");
         const inner = content.trim();
-        const wrapped = tagName === "code" ? !inner.includes("`") && `\`${inner}\`` : withoutScriptMarkers(inner) === inner && `<${tagName}>${inner}</${tagName}>`;
+        const wrapped = tagName === "code" ? !inner.includes("`") && `\`${inner}\`` : !voice.structuralMarkers ? spokenScript(tagName, inner) : inner.replace(SCRIPT_MARKER, "") === inner && `<${tagName}>${inner}</${tagName}>`;
         if (inner && wrapped) {
           const lead = content.slice(0, content.length - content.trimStart().length);
           const trail = content.slice(content.trimEnd().length);
-          text = `${text.slice(0, before)}${lead}${wrapped}${trail}`;
+          pieces.length = before;
+          pieces.push(`${lead}${wrapped}${trail}`);
         }
         return;
       }
@@ -281,11 +387,11 @@
     };
     const visit = (node, depth2) => {
       if (consumed.has(node)) return;
-      if (node.nodeType === TEXT_NODE) {
+      if (node.nodeType === TEXT_NODE2) {
         appendWords(node.textContent ?? "");
         return;
       }
-      if (node.nodeType !== ELEMENT_NODE) return;
+      if (node.nodeType !== ELEMENT_NODE2) return;
       const el = node;
       const tagName = el.tagName.toLowerCase();
       if (isNonProseTag(tagName)) return;
@@ -351,11 +457,11 @@
         continue;
       }
       if (consumed.has(node)) continue;
-      if (node.nodeType === TEXT_NODE) {
+      if (node.nodeType === TEXT_NODE2) {
         parts.push(node.textContent ?? "");
         continue;
       }
-      if (node.nodeType !== ELEMENT_NODE) continue;
+      if (node.nodeType !== ELEMENT_NODE2) continue;
       const child = node;
       const tagName = child.tagName.toLowerCase();
       if (isNonProseTag(tagName)) continue;
@@ -385,11 +491,11 @@
     const readRow = (tr) => {
       const cells = [];
       tr.childNodes.forEach((node) => {
-        if (node.nodeType === TEXT_NODE) {
+        if (node.nodeType === TEXT_NODE2) {
           cells.push((node.textContent ?? "").trim());
           return;
         }
-        if (node.nodeType !== ELEMENT_NODE) return;
+        if (node.nodeType !== ELEMENT_NODE2) return;
         cells.push(nodeText(node, ctx, depth));
       });
       const spoken = cells.filter((cell) => cell.trim());
@@ -402,11 +508,11 @@
     };
     const read = (parent) => {
       parent.childNodes.forEach((node) => {
-        if (node.nodeType === TEXT_NODE) {
+        if (node.nodeType === TEXT_NODE2) {
           addPart((node.textContent ?? "").trim());
           return;
         }
-        if (node.nodeType !== ELEMENT_NODE) return;
+        if (node.nodeType !== ELEMENT_NODE2) return;
         const child = node;
         const tagName = child.tagName.toLowerCase();
         if (tagName === "tr") {
@@ -486,11 +592,11 @@
   }
   function leadingElement(parent) {
     for (const node of Array.from(parent.childNodes)) {
-      if (node.nodeType === TEXT_NODE) {
+      if (node.nodeType === TEXT_NODE2) {
         if ((node.textContent ?? "").trim() === "") continue;
         return null;
       }
-      if (node.nodeType !== ELEMENT_NODE) continue;
+      if (node.nodeType !== ELEMENT_NODE2) continue;
       return node;
     }
     return null;

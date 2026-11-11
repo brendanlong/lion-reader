@@ -33,7 +33,7 @@ import {
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import { withoutScriptMarkers } from "@/lib/narration/runs";
+import { spokenScripts } from "@/lib/narration/runs";
 import { buildAlignedNarration, type ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 import type { NarrationInputParagraph } from "@/lib/narration/html-to-narration-input";
 import { trackNarrationHighlightFallback } from "@/server/metrics/metrics";
@@ -165,7 +165,7 @@ export function buildFallbackNarration(
   inputParagraphs: NarrationInputParagraph[]
 ): GenerateNarrationResult {
   const { narrationText, paragraphMap } = buildAlignedNarration(
-    inputParagraphs.map((p) => ({ o: p.o, text: withoutScriptMarkers(p.text) }))
+    inputParagraphs.map((p) => ({ o: p.o, text: spokenScripts(p.text) }))
   );
   return {
     text: narrationText,
@@ -313,7 +313,7 @@ export function narrationFromLlmOutput(
     inputParagraphs.map((inputPara) => ({
       o: inputPara.o,
       // Also the model's own text, should it keep a mark.
-      text: withoutScriptMarkers(llmTextMap.get(inputPara.id) ?? inputPara.text),
+      text: spokenScripts(llmTextMap.get(inputPara.id) ?? inputPara.text),
     }))
   );
   return { text: narrationText, source: "llm", paragraphMap };
