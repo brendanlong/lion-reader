@@ -479,6 +479,7 @@ describe("htmlToClientNarration", () => {
       ["<msup><mi>f</mi><mo>″</mo></msup>", "f double prime"],
       ["<msup>\n  <mi>x</mi>\n  <mrow>\n    <mn>2</mn>\n  </mrow>\n</msup>", "x squared"],
       ["<msub><mi>𝑡</mi><mtext>read</mtext></msub>", "t sub read"],
+      ["<mi>constructor</mi>", "constructor"],
       ["<msubsup><mi>x</mi><mi>i</mi><mi>n</mi></msubsup>", "x sub i to the power of n"],
       ["<mfrac><mn>1</mn><mi>n</mi></mfrac>", "1 over n"],
       ["<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>", "the square root of x plus 1"],

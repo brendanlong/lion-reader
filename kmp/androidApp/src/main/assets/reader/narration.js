@@ -115,34 +115,36 @@
   // src/lib/narration/math-speech.ts
   var ELEMENT_NODE = 1;
   var TEXT_NODE = 3;
-  var SYMBOL_WORDS = {
-    "\xD7": "times",
-    "\xB7": "times",
-    "\u22C5": "times",
-    "\u2217": "times",
-    "+": "plus",
-    "-": "minus",
-    "\u2212": "minus",
-    "\xB1": "plus or minus",
-    "/": "over",
-    "\xF7": "divided by",
-    "=": "equals",
-    "\u2260": "is not equal to",
-    "\u2248": "is approximately",
-    "<": "is less than",
-    ">": "is greater than",
-    "\u2264": "is less than or equal to",
-    "\u2265": "is greater than or equal to",
-    "\u2192": "to",
-    "\u2208": "in",
-    "\u221D": "is proportional to",
-    "\u221E": "infinity",
-    "\u2211": "the sum",
-    "\u220F": "the product",
-    "\u222B": "the integral",
-    "\u2032": "prime",
-    "\u2033": "double prime"
-  };
+  var SYMBOL_WORDS = new Map(
+    Object.entries({
+      "\xD7": "times",
+      "\xB7": "times",
+      "\u22C5": "times",
+      "\u2217": "times",
+      "+": "plus",
+      "-": "minus",
+      "\u2212": "minus",
+      "\xB1": "plus or minus",
+      "/": "over",
+      "\xF7": "divided by",
+      "=": "equals",
+      "\u2260": "is not equal to",
+      "\u2248": "is approximately",
+      "<": "is less than",
+      ">": "is greater than",
+      "\u2264": "is less than or equal to",
+      "\u2265": "is greater than or equal to",
+      "\u2192": "to",
+      "\u2208": "in",
+      "\u221D": "is proportional to",
+      "\u221E": "infinity",
+      "\u2211": "the sum",
+      "\u220F": "the product",
+      "\u222B": "the integral",
+      "\u2032": "prime",
+      "\u2033": "double prime"
+    })
+  );
   var TOKENS = /* @__PURE__ */ new Set(["mi", "mn", "mo", "mtext", "ms"]);
   var SILENT = /* @__PURE__ */ new Set(["mphantom", "mspace", "mprescripts"]);
   function mathSpeech(math, depthLeft, speakHtml) {
@@ -151,10 +153,10 @@
   function speak(el, depthLeft, speakHtml) {
     const tagName = el.tagName.toLowerCase();
     if (SILENT.has(tagName) || isNonProseTag(tagName)) return "";
-    if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el));
+    if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el, depthLeft));
     if (TOKENS.has(tagName) || depthLeft <= 0) {
       const text = clean(el.textContent ?? "");
-      return SYMBOL_WORDS[text] ?? text.normalize("NFKC");
+      return SYMBOL_WORDS.get(text) ?? text.normalize("NFKC");
     }
     const parts = Array.from(el.children).map((child2) => speak(child2, depthLeft - 1, speakHtml));
     const [first, second, third] = parts;
@@ -239,7 +241,7 @@
   function collectRuns(root, ctx, depth) {
     const { voice, targets, consumed } = ctx;
     const runs = [];
-    let text = "";
+    const pieces = [];
     let owner = root;
     let images = 0;
     let firstImage = null;
@@ -257,16 +259,16 @@
     };
     const flush = () => {
       const highlight = images === 1 && !spokeWords && firstImage ? firstImage : owner;
-      push(highlight, text);
+      push(highlight, pieces.join(""));
       flushes += 1;
-      text = "";
+      pieces.length = 0;
       images = 0;
       firstImage = null;
       spokeWords = false;
     };
     const appendWords = (value) => {
       const words = value.includes(BREAK) ? value.replaceAll(BREAK, "") : value;
-      text += words;
+      pieces.push(words);
       if (words.trim()) spokeWords = true;
     };
     const appendImage = (img) => {
@@ -274,7 +276,7 @@
       if (!value) return;
       images += 1;
       firstImage = images === 1 ? img : null;
-      text += ` ${value} `;
+      pieces.push(` ${value} `);
     };
     const markStructure = (el, tagName, start) => {
       if (start >= runs.length) return;
@@ -324,13 +326,13 @@
     const visitLink = (el, depth2) => {
       const href = el.getAttribute("href");
       const runsBefore = runs.length;
-      const textBefore = text.length;
+      const piecesBefore = pieces.length;
       if (depth2 >= MAX_DEPTH) appendWords(flatText(el, voice, consumed));
       else visitChildren(el, depth2);
       if (!href) return;
       if (runs.length === runsBefore) {
-        if (text.slice(textBefore).trim() === href) {
-          text = text.slice(0, textBefore);
+        if (pieces.slice(piecesBefore).join("").trim() === href) {
+          pieces.length = piecesBefore;
           appendWords(linkTarget(href));
         }
       } else if (runs.length === runsBefore + 1 && runs[runsBefore].text === href) {
@@ -343,7 +345,7 @@
         return;
       }
       if (tagName === "br") {
-        text += BREAK;
+        pieces.push(BREAK);
         return;
       }
       if (tagName === "input") return;
@@ -357,22 +359,27 @@
       }
       if (tagName === "math") {
         appendWords(
-          ` ${mathSpeech(el, MAX_DEPTH - depth2, (token) => subtreeText(token, ctx, depth2))} `
+          ` ${mathSpeech(
+            el,
+            MAX_DEPTH - depth2,
+            (token, depthLeft) => subtreeText(token, ctx, MAX_DEPTH - depthLeft)
+          )} `
         );
         return;
       }
       if (tagName === "sup" || tagName === "sub" || voice.structuralMarkers && tagName === "code") {
-        const before = text.length;
+        const before = pieces.length;
         const flushesBefore = flushes;
         visitChildren(el, depth2);
         if (flushes !== flushesBefore) return;
-        const content = text.slice(before).replaceAll(BREAK, " ");
+        const content = pieces.slice(before).join("").replaceAll(BREAK, " ");
         const inner = content.trim();
         const wrapped = tagName === "code" ? !inner.includes("`") && `\`${inner}\`` : !voice.structuralMarkers ? spokenScript(tagName, inner) : inner.replace(SCRIPT_MARKER, "") === inner && `<${tagName}>${inner}</${tagName}>`;
         if (inner && wrapped) {
           const lead = content.slice(0, content.length - content.trimStart().length);
           const trail = content.slice(content.trimEnd().length);
-          text = `${text.slice(0, before)}${lead}${wrapped}${trail}`;
+          pieces.length = before;
+          pieces.push(`${lead}${wrapped}${trail}`);
         }
         return;
       }

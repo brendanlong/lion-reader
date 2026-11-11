@@ -13,34 +13,36 @@ import { isNonProseTag } from "./block-elements";
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
-const SYMBOL_WORDS: Record<string, string> = {
-  "×": "times",
-  "·": "times",
-  "⋅": "times",
-  "∗": "times",
-  "+": "plus",
-  "-": "minus",
-  "−": "minus",
-  "±": "plus or minus",
-  "/": "over",
-  "÷": "divided by",
-  "=": "equals",
-  "≠": "is not equal to",
-  "≈": "is approximately",
-  "<": "is less than",
-  ">": "is greater than",
-  "≤": "is less than or equal to",
-  "≥": "is greater than or equal to",
-  "→": "to",
-  "∈": "in",
-  "∝": "is proportional to",
-  "∞": "infinity",
-  "∑": "the sum",
-  "∏": "the product",
-  "∫": "the integral",
-  "′": "prime",
-  "″": "double prime",
-};
+const SYMBOL_WORDS = new Map<string, string>(
+  Object.entries({
+    "×": "times",
+    "·": "times",
+    "⋅": "times",
+    "∗": "times",
+    "+": "plus",
+    "-": "minus",
+    "−": "minus",
+    "±": "plus or minus",
+    "/": "over",
+    "÷": "divided by",
+    "=": "equals",
+    "≠": "is not equal to",
+    "≈": "is approximately",
+    "<": "is less than",
+    ">": "is greater than",
+    "≤": "is less than or equal to",
+    "≥": "is greater than or equal to",
+    "→": "to",
+    "∈": "in",
+    "∝": "is proportional to",
+    "∞": "infinity",
+    "∑": "the sum",
+    "∏": "the product",
+    "∫": "the integral",
+    "′": "prime",
+    "″": "double prime",
+  })
+);
 
 const TOKENS = new Set(["mi", "mn", "mo", "mtext", "ms"]);
 const SILENT = new Set(["mphantom", "mspace", "mprescripts"]);
@@ -53,20 +55,24 @@ const SILENT = new Set(["mphantom", "mspace", "mprescripts"]);
 export function mathSpeech(
   math: Element,
   depthLeft: number,
-  speakHtml: (token: Element) => string
+  speakHtml: (token: Element, depthLeft: number) => string
 ): string {
   return speak(math, depthLeft, speakHtml);
 }
 
-function speak(el: Element, depthLeft: number, speakHtml: (token: Element) => string): string {
+function speak(
+  el: Element,
+  depthLeft: number,
+  speakHtml: (token: Element, depthLeft: number) => string
+): string {
   const tagName = el.tagName.toLowerCase();
   if (SILENT.has(tagName) || isNonProseTag(tagName)) return "";
-  if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el));
+  if (TOKENS.has(tagName) && el.children.length > 0) return clean(speakHtml(el, depthLeft));
   if (TOKENS.has(tagName) || depthLeft <= 0) {
     const text = clean(el.textContent ?? "");
     // NFKC folds the mathematical alphanumerics MathJax emits ("𝑁") into
     // letters a TTS engine knows how to say.
-    return SYMBOL_WORDS[text] ?? text.normalize("NFKC");
+    return SYMBOL_WORDS.get(text) ?? text.normalize("NFKC");
   }
 
   const parts = Array.from(el.children).map((child) => speak(child, depthLeft - 1, speakHtml));
