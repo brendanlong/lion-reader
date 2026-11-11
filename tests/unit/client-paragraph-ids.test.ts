@@ -459,6 +459,44 @@ describe("htmlToClientNarration", () => {
     });
   });
 
+  describe("superscripts, subscripts and math (issue #2310)", () => {
+    it.each([
+      ["3×10<sup>12</sup> FLOP", "3×10¹² FLOP"],
+      ["E=mc<sup>2</sup>", "E=mc²"],
+      ['It shipped in 2019.<sup><a href="#fn1">1</a></sup> Then', "It shipped in 2019.¹ Then"],
+      ["H<sub>2</sub>O", "H₂O"],
+      ["10<sup>−3</sup>", "10⁻³"],
+      ["x<sup>n</sup>", "x n"],
+      ["10<sup>1<sup>2</sup></sup>", "10¹²"],
+      ["x<sup>2<sup>n</sup></sup>", "x 2 n"],
+    ])("never runs a script into its base: %s", (inner, spoken) => {
+      expect(htmlToClientNarration(`<p>${inner}</p>`).narrationText).toBe(spoken);
+    });
+
+    it.each([
+      ["<mn>3</mn><mo>×</mo><msup><mn>10</mn><mn>12</mn></msup>", "3 times 10 to the power of 12"],
+      ["<msup><mi>c</mi><mn>2</mn></msup>", "c squared"],
+      ["<msup><mi>f</mi><mo>′</mo></msup>", "f prime"],
+      ["<msub><mi>𝑡</mi><mtext>read</mtext></msub>", "t sub read"],
+      ["<msubsup><mi>x</mi><mi>i</mi><mi>n</mi></msubsup>", "x sub i to the power of n"],
+      ["<mfrac><mn>1</mn><mi>n</mi></mfrac>", "1 over n"],
+      ["<msqrt><mi>x</mi><mo>+</mo><mn>1</mn></msqrt>", "the square root of x plus 1"],
+      ["<mroot><mi>x</mi><mn>3</mn></mroot>", "the cube root of x"],
+      [
+        "<munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>a</mi><mi>i</mi></msub>",
+        "the sum from i equals 1 to n a sub i",
+      ],
+      [
+        "<msup><mi>e</mi><mrow><mo>−</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></msup>",
+        "e to the power of minus x squared",
+      ],
+    ])("speaks MathML as words: %s", (math, spoken) => {
+      expect(htmlToClientNarration(`<p>Here <math>${math}</math> ends.</p>`).narrationText).toBe(
+        `Here ${spoken} ends.`
+      );
+    });
+  });
+
   describe("list handling", () => {
     it("handles ul/ol without narration text for container", () => {
       const html = "<ul><li>Item 1</li><li>Item 2</li></ul>";

@@ -78,7 +78,7 @@ describe("narrationFromLlmOutput", () => {
     ]);
   });
 
-  it("drops the superscript marks the model kept, or never saw when it skipped a paragraph", () => {
+  it("speaks the script marks the model kept, or never saw when it skipped a paragraph", () => {
     const result = narrationFromLlmOutput(
       [
         { id: 0, o: 0, text: "E=mc<sup>2</sup>" },
@@ -86,7 +86,7 @@ describe("narrationFromLlmOutput", () => {
       ],
       answer([{ id: 0, text: "E equals m c<sup>2</sup>" }])
     );
-    expect(result?.text).toBe("E equals m c2\n\nH2O");
+    expect(result?.text).toBe("E equals m c²\n\nH₂O");
   });
 
   it.each([
@@ -100,9 +100,9 @@ describe("narrationFromLlmOutput", () => {
 });
 
 describe("buildFallbackNarration", () => {
-  it("speaks the input without its superscript marks", () => {
+  it("speaks the input's superscript marks as script characters", () => {
     expect(buildFallbackNarration([{ id: 0, o: 0, text: "2019.<sup>1</sup>" }]).text).toBe(
-      "2019.1"
+      "2019.¹"
     );
   });
 });

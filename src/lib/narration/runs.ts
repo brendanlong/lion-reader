@@ -24,6 +24,7 @@
  */
 
 import { isBlockTag, isNonProseTag, narrationTargets } from "./block-elements";
+import { mathSpeech } from "./math-speech";
 
 /**
  * What a narration path wants said out loud beyond the words themselves.
@@ -40,7 +41,7 @@ export interface NarrationVoice {
   speakCodeBlocks: boolean;
   /**
    * Announce structure: quote and table wrappers, list bullets, inline code,
-   * and superscripts and subscripts (see {@link withoutScriptMarkers}).
+   * and superscripts and subscripts (see {@link spokenScripts}).
    */
   structuralMarkers: boolean;
   /** Announce an image that has no alt text, which describes nothing. */
@@ -62,18 +63,51 @@ export const DIRECT_TTS_VOICE: NarrationVoice = {
 };
 
 const SCRIPT_MARKER = /<\/?su[bp]>/g;
+const MARKED_SCRIPT = /<(su[bp])>([^<]*)<\/\1>/g;
+
+const SCRIPTABLE = "0123456789+-−=()";
+
+/** Each {@link SCRIPTABLE} character's script form, and each script character as itself. */
+function scriptForms(scripts: string): Map<string, string> {
+  const forms = Array.from(scripts);
+  return new Map([
+    ...Array.from(SCRIPTABLE, (char, index): [string, string] => [char, forms[index]]),
+    ...forms.map((char): [string, string] => [char, char]),
+  ]);
+}
+
+const SUPERSCRIPTS = scriptForms("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁻⁼⁽⁾");
+const SUBSCRIPTS = scriptForms("₀₁₂₃₄₅₆₇₈₉₊₋₋₌₍₎");
+const ORDINAL_SUFFIX = /^(st|nd|rd|th)$/i;
 
 /**
- * `text` without the `<sup>`/`<sub>` marks of {@link LLM_INPUT_VOICE}, for
- * speaking it without the LLM's rewrite. The marks tell the LLM a footnote
- * ("2019.<sup>1</sup>") from an exponent ("mc<sup>2</sup>"); unmarked, both
- * read as the digits they hold, as the page's text does. A page's own "<sup>"
- * text (an article about HTML) is stripped too: the parser splits text at each
- * entity, so telling the two apart would take a placeholder carried through
- * every nested walk.
+ * A `<sup>`/`<sub>`'s text as a TTS engine should get it. An HTML superscript
+ * can be a footnote ("2019.<sup>1</sup>") or an exponent ("10<sup>12</sup>"),
+ * and only context tells them apart, so digits become Unicode script
+ * characters ("2019.¹", "10¹²") and the engine judges which it is. An
+ * ordinal's suffix ("50<sup>th</sup>") stays on its number. Anything else is
+ * kept apart from its base: run together, "10" and "12" are read as one number
+ * (issue #2310).
  */
-export function withoutScriptMarkers(text: string): string {
-  return text.replace(SCRIPT_MARKER, "");
+function spokenScript(tagName: string, inner: string): string {
+  const forms = tagName === "sup" ? SUPERSCRIPTS : SUBSCRIPTS;
+  const chars = Array.from(inner);
+  if (chars.every((char) => forms.has(char))) return chars.map((char) => forms.get(char)).join("");
+  return tagName === "sup" && ORDINAL_SUFFIX.test(inner) ? inner : ` ${inner}`;
+}
+
+/**
+ * `text` with the `<sup>`/`<sub>` marks of {@link LLM_INPUT_VOICE} made
+ * speakable, for speaking it without the LLM's rewrite — what
+ * {@link DIRECT_TTS_VOICE} says in their place. A page's own "<sup>" text (an
+ * article about HTML) is converted too: the parser splits text at each entity,
+ * so telling the two apart would take a placeholder carried through every
+ * nested walk.
+ */
+export function spokenScripts(text: string): string {
+  return text
+    .replace(MARKED_SCRIPT, (_, tagName: string, inner: string) => spokenScript(tagName, inner))
+    .replace(SCRIPT_MARKER, "");
 }
 
 /** One spoken paragraph and the element it highlights. */
@@ -329,7 +363,11 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       appendWords(flatText(el, voice, consumed));
       return;
     }
-    if (voice.structuralMarkers && (tagName === "code" || tagName === "sup" || tagName === "sub")) {
+    if (tagName === "math") {
+      appendWords(` ${mathSpeech(el, MAX_DEPTH - depth)} `);
+      return;
+    }
+    if (tagName === "sup" || tagName === "sub" || (voice.structuralMarkers && tagName === "code")) {
       // Wrapped after the fact rather than read from `textContent`, so whatever
       // is inside (an image's alt text) is still spoken.
       const before = text.length;
@@ -342,7 +380,9 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       const wrapped =
         tagName === "code"
           ? !inner.includes("`") && `\`${inner}\``
-          : withoutScriptMarkers(inner) === inner && `<${tagName}>${inner}</${tagName}>`;
+          : !voice.structuralMarkers
+            ? spokenScript(tagName, inner)
+            : inner.replace(SCRIPT_MARKER, "") === inner && `<${tagName}>${inner}</${tagName}>`;
       if (inner && wrapped) {
         // Spaces at the element's edges stay outside the marks, between the words.
         const lead = content.slice(0, content.length - content.trimStart().length);
@@ -351,7 +391,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       }
       return;
     }
-    // Everything else is phrasing content (strong, em, span, math, …) and
+    // Everything else is phrasing content (strong, em, span, …) and
     // continues the run of text around it.
     visitChildren(el, depth);
   };
