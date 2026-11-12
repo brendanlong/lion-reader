@@ -161,6 +161,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         voice: String,
         text: String,
         pauseSeconds: Float,
+        waiting: Boolean,
         onAudio: suspend (ByteArray) -> Unit,
     ) = withToken { token, canRetry ->
         http
@@ -171,7 +172,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 setBody(
                     ApiJson.encodeToString(
                         SpeechRequest.serializer(),
-                        SpeechRequest(model, voice, text, pauseSeconds),
+                        SpeechRequest(model, voice, text, pauseSeconds, waiting),
                     )
                 )
                 bearerAuth(token)

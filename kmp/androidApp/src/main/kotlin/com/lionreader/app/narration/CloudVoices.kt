@@ -67,7 +67,8 @@ class CloudVoices(
     override val lookaheadChars = 450
     override val parallelism = 1
 
-    override suspend fun synthesize(text: String, dir: File, name: String): Uri {
+    /** A request already running for [text] serves it, however [waiting] it was sent. */
+    override suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri {
         val cached = File(cacheDir, "${key(text)}.$EXTENSION")
         if (cached.exists()) {
             withContext(io) { cached.setLastModified(System.currentTimeMillis()) }
@@ -76,7 +77,7 @@ class CloudVoices(
         val key = cached.path
         val started = CompletableDeferred<StreamedAudio>()
         val running = requests.inFlight.putIfAbsent(key, started)
-        if (running == null) stream(key, text, cached, started)
+        if (running == null) stream(key, text, waiting, cached, started)
         return (running ?: started).await().uri
     }
 
@@ -89,6 +90,7 @@ class CloudVoices(
     private fun stream(
         key: String,
         text: String,
+        waiting: Boolean,
         cached: File,
         started: CompletableDeferred<StreamedAudio>,
     ) {
@@ -97,7 +99,7 @@ class CloudVoices(
                 var writer: CacheWriter? = null
                 try {
                     requests.streams.withPermit {
-                        request(text) { bytes ->
+                        request(text, waiting) { bytes ->
                             val into = writer ?: CacheWriter(cached).also { writer = it }
                             into.write(bytes)
                             started.complete(into.audio)
@@ -153,8 +155,11 @@ class CloudVoices(
     }
 
     /** Streams [text] to [onAudio] (on IO: the caller's [scope] dispatcher). */
-    private suspend fun request(text: String, onAudio: suspend (ByteArray) -> Unit) =
-        streamCloudSpeech(api, model, voice, text, pauseSeconds, requests.answers, onAudio)
+    private suspend fun request(
+        text: String,
+        waiting: Boolean,
+        onAudio: suspend (ByteArray) -> Unit,
+    ) = streamCloudSpeech(api, model, voice, text, pauseSeconds, waiting, requests.answers, onAudio)
 
     private fun key(text: String): String = cloudSpeechCacheKey(model, voice, pauseSeconds, text)
 

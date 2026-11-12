@@ -41,6 +41,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -160,7 +161,7 @@ class CloudVoicesTest {
 
         val split = 2_000
         val writing = launch(Dispatchers.IO) { channel.writeFully(speech, 0, split) }
-        val uri = engine.synthesize("Two sentences.", dir, "0")
+        val uri = engine.synthesize("Two sentences.", dir, "0", waiting = false)
         writing.join()
         // Answered with only the start in, and nothing cached yet.
         assertEquals(StreamedAudio.SCHEME, uri.scheme)
@@ -181,7 +182,7 @@ class CloudVoicesTest {
         val engine = engine(cacheBytes = 1_000_000)
 
         launch(Dispatchers.IO) { channel.writeFully(speech, 0, 2_000) }
-        val broken = engine.synthesize("Two sentences.", dir, "0")
+        val broken = engine.synthesize("Two sentences.", dir, "0", waiting = false)
         channel.cancel(IOException("Connection reset"))
         val error = runCatching { played(broken) }.exceptionOrNull()
         assertEquals(SpeechStreamBroken::class, error!!::class)
@@ -190,7 +191,7 @@ class CloudVoicesTest {
         responses += Answer.Speech(speech)
         assertArrayEquals(
             speech,
-            played(engine.synthesize("Two sentences.", dir, "1")),
+            played(engine.synthesize("Two sentences.", dir, "1", waiting = false)),
         )
         assertEquals(2, requests)
         assertEquals(1, cached().size)
@@ -199,9 +200,9 @@ class CloudVoicesTest {
     @Test
     fun speechIsCachedByText() = runTest {
         val engine = engine()
-        val first = engine.synthesize("Hello.", dir, "0")
+        val first = engine.synthesize("Hello.", dir, "0", waiting = false)
         assertArrayEquals(audio, played(first))
-        val again = engine.synthesize("Hello.", dir, "1")
+        val again = engine.synthesize("Hello.", dir, "1", waiting = false)
         assertArrayEquals(audio, played(again))
         assertEquals(1, requests)
         // Outside the narrator's directory, which it clears.
@@ -210,9 +211,9 @@ class CloudVoicesTest {
 
     @Test
     fun thePauseIsAskedForAndPartOfTheCacheKey() = runTest {
-        played(engine(pauseSeconds = 0.5f).synthesize("Hello.", dir, "0"))
+        played(engine(pauseSeconds = 0.5f).synthesize("Hello.", dir, "0", waiting = false))
         assertTrue(""""pauseSeconds":0.5""" in bodies.single())
-        played(engine(pauseSeconds = 0f).synthesize("Hello.", dir, "1"))
+        played(engine(pauseSeconds = 0f).synthesize("Hello.", dir, "1", waiting = false))
         assertEquals(2, requests)
     }
 
@@ -220,7 +221,7 @@ class CloudVoicesTest {
     fun serverTroubleIsRetried() = runTest {
         responses.addLast(Answer.Error(HttpStatusCode.ServiceUnavailable))
         responses.addLast(Answer.Error(HttpStatusCode.TooManyRequests))
-        assertArrayEquals(audio, played(engine().synthesize("Hello.", dir, "0")))
+        assertArrayEquals(audio, played(engine().synthesize("Hello.", dir, "0", waiting = false)))
         assertEquals(3, requests)
     }
 
@@ -232,7 +233,10 @@ class CloudVoicesTest {
                 """{"message":"Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue"}""",
             )
         )
-        val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
+        val error = runCatching {
+            engine().synthesize("Hello.", dir, "0", waiting = false)
+        }
+            .exceptionOrNull()
         assertEquals(SpeechUnavailable::class, error!!::class)
         assertEquals(
             "Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue",
@@ -248,7 +252,10 @@ class CloudVoicesTest {
                 """{"message":"BreezeBlue refused the request: Insufficient credits"}""",
             )
         )
-        val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
+        val error = runCatching {
+            engine().synthesize("Hello.", dir, "0", waiting = false)
+        }
+            .exceptionOrNull()
         assertEquals(SpeechUnavailable::class, error!!::class)
         assertEquals("BreezeBlue refused the request: Insufficient credits", error.message)
         assertEquals(1, requests)
@@ -257,7 +264,7 @@ class CloudVoicesTest {
     @Test
     fun aTimeoutIsRetried() = runTest {
         responses.addLast(Answer.Error(HttpStatusCode.RequestTimeout))
-        assertArrayEquals(audio, played(engine().synthesize("Hello.", dir, "0")))
+        assertArrayEquals(audio, played(engine().synthesize("Hello.", dir, "0", waiting = false)))
         assertEquals(2, requests)
     }
 
@@ -270,9 +277,11 @@ class CloudVoicesTest {
         val engines = List(2) { engine(cacheBytes = 1_000_000, shared = shared) }
         // Each answers once its first audio is in; every stream stays open.
         withContext(Dispatchers.IO) { held.forEach { it.writeFully(speech, 0, 100) } }
-        repeat(MAX_CLOUD_SPEECH_STREAMS) { engines[it % 2].synthesize("Chunk $it.", dir, "$it") }
+        repeat(MAX_CLOUD_SPEECH_STREAMS) {
+            engines[it % 2].synthesize("Chunk $it.", dir, "$it", waiting = false)
+        }
 
-        val next = async { engines[1].synthesize("Next.", dir, "next") }
+        val next = async { engines[1].synthesize("Next.", dir, "next", waiting = false) }
         withContext(Dispatchers.IO) { delay(200) }
         assertEquals(MAX_CLOUD_SPEECH_STREAMS, requests)
 
@@ -285,7 +294,10 @@ class CloudVoicesTest {
     @Test
     fun persistentTroubleIsAnInterruptionNotTheEnd() = runTest {
         repeat(10) { responses.addLast(Answer.Error(HttpStatusCode.BadGateway)) }
-        val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
+        val error = runCatching {
+            engine().synthesize("Hello.", dir, "0", waiting = false)
+        }
+            .exceptionOrNull()
         assertEquals(SpeechInterrupted::class, error!!::class)
     }
 
@@ -309,8 +321,10 @@ class CloudVoicesTest {
                     },
             )
         val engine = engine()
-        val bad = async { runCatching { engine.synthesize("Bad.", dir, "0") }.exceptionOrNull() }
-        engine.synthesize("Good.", dir, "1")
+        val bad = async {
+            runCatching { engine.synthesize("Bad.", dir, "0", waiting = false) }.exceptionOrNull()
+        }
+        engine.synthesize("Good.", dir, "1", waiting = false)
         goodAnswered.complete(Unit)
 
         val error = bad.await()
@@ -338,8 +352,10 @@ class CloudVoicesTest {
                     },
             )
         val engine = engine()
-        val busy = async { runCatching { engine.synthesize("Busy.", dir, "0") }.exceptionOrNull() }
-        engine.synthesize("Good.", dir, "1")
+        val busy = async {
+            runCatching { engine.synthesize("Busy.", dir, "0", waiting = false) }.exceptionOrNull()
+        }
+        engine.synthesize("Good.", dir, "1", waiting = false)
         goodAnswered.complete(Unit)
 
         assertEquals(SpeechInterrupted::class, busy.await()!!::class)
@@ -350,8 +366,8 @@ class CloudVoicesTest {
         val engine = engine()
         val (a, b) =
             listOf(
-                    async { engine.synthesize("Again.", dir, "0") },
-                    async { engine.synthesize("Again.", dir, "1") },
+                    async { engine.synthesize("Again.", dir, "0", waiting = false) },
+                    async { engine.synthesize("Again.", dir, "1", waiting = false) },
                 )
                 .awaitAll()
         assertEquals(a, b)
@@ -359,24 +375,36 @@ class CloudVoicesTest {
     }
 
     @Test
+    fun theServerIsToldWhichTextPlaybackIsWaitingOn() = runTest {
+        val engine = engine(cacheBytes = 1_000_000)
+        engine.synthesize("Now.", dir, "0", waiting = true)
+        engine.synthesize("Ahead.", dir, "1", waiting = false)
+
+        assertEquals(listOf(true, false), bodies.map { JSONObject(it).optBoolean("waiting") })
+    }
+
+    @Test
     fun aRequestWhoseScopeEndedBeforeItRanIsNeitherWaitedOnNorShared() = runTest {
         val shared = CloudSpeechRequests()
         val ended = engine(shared = shared, scope = CoroutineScope(Job().apply { cancel() }))
 
-        val failure = runCatching { ended.synthesize("Hi.", dir, "0") }.exceptionOrNull()
+        val failure = runCatching {
+            ended.synthesize("Hi.", dir, "0", waiting = false)
+        }
+            .exceptionOrNull()
         assertTrue(failure is CancellationException)
-        played(engine(shared = shared).synthesize("Hi.", dir, "1"))
+        played(engine(shared = shared).synthesize("Hi.", dir, "1", waiting = false))
         assertEquals(1, requests)
     }
 
     @Test
     fun aRequestTheNarratorGaveUpOnStillLandsInTheCache() = runTest {
         val engine = engine()
-        val waiting = launch { engine.synthesize("Skipped.", dir, "0") }
+        val waiting = launch { engine.synthesize("Skipped.", dir, "0", waiting = false) }
         testScheduler.runCurrent()
         waiting.cancel()
         testScheduler.advanceUntilIdle()
-        played(engine.synthesize("Skipped.", dir, "1"))
+        played(engine.synthesize("Skipped.", dir, "1", waiting = false))
         assertEquals(1, requests)
     }
 
@@ -384,10 +412,10 @@ class CloudVoicesTest {
     fun theCacheIsTrimmedOldestFirst() = runTest {
         // Three bytes each, against a five-byte cache.
         val engine = engine()
-        played(engine.synthesize("One.", dir, "0"))
+        played(engine.synthesize("One.", dir, "0", waiting = false))
         val first = cached().single()
         first.setLastModified(1_000)
-        played(engine.synthesize("Two.", dir, "1"))
+        played(engine.synthesize("Two.", dir, "1", waiting = false))
         assertEquals(false, first.exists())
         assertEquals(1, cached().size)
     }

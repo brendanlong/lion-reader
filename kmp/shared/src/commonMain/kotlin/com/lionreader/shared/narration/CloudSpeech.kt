@@ -35,6 +35,8 @@ suspend fun streamCloudSpeech(
     text: String,
     /** Silence after the speech, so chunks played back to back pause like sentences do. */
     pauseSeconds: Float,
+    /** Playback is stalled on this text, so the server says it ahead of others' prefetches. */
+    waiting: Boolean,
     answers: CloudSpeechAnswers,
     onAudio: suspend (ByteArray) -> Unit,
 ) {
@@ -45,7 +47,7 @@ suspend fun streamCloudSpeech(
     for (attempt in 1..CLOUD_SPEECH_ATTEMPTS) {
         var started = false
         try {
-            api.streamSpeech(model, voice, text, pauseSeconds) { bytes ->
+            api.streamSpeech(model, voice, text, pauseSeconds, waiting) { bytes ->
                 if (!started) answers.increment()
                 started = true
                 onAudio(bytes)
