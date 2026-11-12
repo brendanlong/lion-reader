@@ -362,6 +362,8 @@ data class SpeechRequest(
     val text: String,
     /** Silence the server adds after the speech. */
     val pauseSeconds: Float,
+    /** The listener is waiting on this text, not fetching it ahead. */
+    val waiting: Boolean,
 )
 
 @Serializable data class SaveArticleRequest(val url: String)

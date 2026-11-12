@@ -35,6 +35,8 @@ import org.robolectric.annotation.Config
 @Config(application = android.app.Application::class)
 class NarratorTest {
     private val synthesized = mutableListOf<String>()
+    /** Whether playback was stalled on each text when last asked for it. */
+    private val waitedFor = mutableMapOf<String, Boolean>()
     /** Syntheses that failed as unreachable. */
     private var unreached = 0
     /** Calls to fail as unreachable before the engine answers again; -1 for all of them. */
@@ -69,7 +71,13 @@ class NarratorTest {
             override val lookaheadChars = 1200
             override val parallelism = 1
 
-            override suspend fun synthesize(text: String, dir: File, name: String): Uri {
+            override suspend fun synthesize(
+                text: String,
+                dir: File,
+                name: String,
+                waiting: Boolean,
+            ): Uri {
+                waitedFor[text] = waiting
                 synthesisDone?.await()
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
@@ -228,6 +236,16 @@ class NarratorTest {
         assertEquals(Player.STATE_READY, narrator.player.playbackState)
         assertEquals(1, state?.paragraph)
         assertTrue(state!!.playing)
+    }
+
+    @Test
+    fun theEngineIsToldWhichChunksPlaybackIsStalledOn() {
+        unsayable += "One."
+        narrator.narrate(article("a", "One.", "Two.", "Three."))
+        idleUntil { "Three." in waitedFor }
+
+        // Two is next once One is skipped; Three is asked for while Two plays.
+        assertEquals(mapOf("One." to true, "Two." to true, "Three." to false), waitedFor)
     }
 
     @Test

@@ -39,7 +39,7 @@ class EnhancedVoices(
     override val lookaheadChars = 450
     override val parallelism = 1
 
-    override suspend fun synthesize(text: String, dir: File, name: String): Uri {
+    override suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri {
         val caller = currentCoroutineContext().job
         val started = CompletableDeferred<Uri>()
         scope.launch {

@@ -74,7 +74,9 @@ class LionReaderApiTest {
                 """{"message":"No.","data":{"httpStatus":401,"appErrorCode":"SOMETHING_ELSE"}}"""
 
         val error =
-            assertFailsWith<ApiException> { api.streamSpeech("model", "voice", "Hi.", 0f) {} }
+            assertFailsWith<ApiException> {
+                api.streamSpeech("model", "voice", "Hi.", 0f, waiting = false) {}
+            }
 
         assertEquals("SOMETHING_ELSE", error.appErrorCode)
         assertEquals(listOf("/api/v1/narration/speech"), server.requests.map { it.url.encodedPath })

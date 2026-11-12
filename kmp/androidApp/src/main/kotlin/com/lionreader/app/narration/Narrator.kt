@@ -416,6 +416,9 @@ class Narrator(
             player.getMediaItemAt(it).mediaId == "$chunk"
         }
 
+    /** Whether the player is at [chunk], waiting for its audio. */
+    private fun stalledOn(chunk: Int): Boolean = itemOf(chunk) == player.currentMediaItemIndex
+
     private fun startAt(audio: Current.Article, chunk: Int, play: Boolean) {
         val prepared = audio.prepared ?: return
         audio.feed?.job?.cancel()
@@ -519,7 +522,12 @@ class Narrator(
     private suspend fun synthesizeOrSkip(prepared: Prepared, index: Int): Uri? {
         return try {
             reaching {
-                prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
+                prepared.engine.synthesize(
+                    prepared.chunks[index].text,
+                    dir,
+                    "$index",
+                    waiting = stalledOn(index),
+                )
             }
         } catch (e: CancellationException) {
             throw e

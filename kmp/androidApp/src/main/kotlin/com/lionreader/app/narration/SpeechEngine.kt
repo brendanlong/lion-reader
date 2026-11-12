@@ -23,8 +23,9 @@ interface SpeechEngine {
      * arriving. Throws [SpeechUnavailable] when narration can't go on with this engine,
      * [SpeechInterrupted] when it can't be reached for now (tried again); any other failure skips
      * just this chunk. Streamed audio that stops partway is synthesized again and replayed.
+     * [waiting]: playback is stalled on this chunk, so it's needed now rather than ahead.
      */
-    suspend fun synthesize(text: String, dir: File, name: String): Uri
+    suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri
 }
 
 /** The device's text-to-speech engine, with the voice named [voice] (null: the default). */
@@ -33,6 +34,6 @@ class DeviceVoices(private val tts: SystemTts, private val voice: String?) : Spe
     override val lookaheadChars = 450
     override val parallelism = 1
 
-    override suspend fun synthesize(text: String, dir: File, name: String): Uri =
+    override suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri =
         Uri.fromFile(File(dir, "$name.wav").also { tts.synthesize(text, voice, it) })
 }
