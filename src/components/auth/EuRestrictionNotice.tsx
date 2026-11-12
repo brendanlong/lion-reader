@@ -18,14 +18,14 @@ export function EuRestrictionReason() {
       <PageLink href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">
         privacy policy
       </PageLink>
-      , EU law would require us to{" "}
+      , EU law would require us to hire a{" "}
       <a
-        href="https://www.activemind.legal/guides/fine-eu-representative/"
+        href="https://www.privacypolicies.com/blog/eu-data-rep-gdpr/"
         target="_blank"
         rel="noopener noreferrer"
         className="underline"
       >
-        retain a lawyer
+        GDPR Data Representative
       </a>
       , which isn&apos;t viable for a free project. You&apos;re welcome to{" "}
       <a
