@@ -46,8 +46,8 @@ overrides:
   serialize-javascript: ^7.1.3
   # GHSA-5r4p-p66f-jhc7 and earlier: until @modelcontextprotocol/sdk wants hono >=4.13.11
   "@modelcontextprotocol/sdk>hono": ^4.13.11
-  # GHSA-rmxm-3fg6-px4f and earlier: until @modelcontextprotocol/sdk wants @hono/node-server >=2.1.3
-  "@modelcontextprotocol/sdk>@hono/node-server": ^2.1.3
+  # GHSA-jpvv-r467-5p4w, GHSA-qv5m-9pm6-hqp3 and earlier: until @modelcontextprotocol/sdk wants @hono/node-server >=2.1.6
+  "@modelcontextprotocol/sdk>@hono/node-server": ^2.1.6
   # GHSA-rxp7-6hxx-x8q5: until express-rate-limit wants ip-address >=10.7.4
   express-rate-limit>ip-address: ^10.7.4
   # GHSA-96hv-2xvq-fx4p: until @discordjs/ws wants ws >=8.21.0
