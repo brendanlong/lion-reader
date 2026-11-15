@@ -58,7 +58,7 @@ jobs:
           dependency-caching: ${{ matrix.language != 'java-kotlin' }}
 
       - if: matrix.build-mode == 'autobuild'
-        uses: github/codeql-action/autobuild@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/autobuild@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         env:
           # CodeQL sees only the Kotlin it watches compile, so no task may come
           # from setup-gradle's build cache. Overrides kmp/gradle.properties.
