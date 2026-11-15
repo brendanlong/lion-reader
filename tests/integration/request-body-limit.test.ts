@@ -103,6 +103,10 @@ describe("upload body limit", () => {
     // The adapter parses the short body itself and fails on it.
     expect(error.data.appErrorCode).toBeNull();
     expect(error.message).toMatch(/JSON/);
+
+    const rest = await restError(declaring(REST_URL, MAX_BODY_BYTES));
+    expect(rest.status).toBe(400);
+    expect(rest.data?.appErrorCode ?? null).toBeNull();
   });
 
   it("stops reading an upload sent without a length once it passes the limit", async () => {
