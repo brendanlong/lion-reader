@@ -86,6 +86,10 @@ const handler = (req: Request): Promise<Response> => {
         router: appRouter,
         createContext: (opts) => createContext(opts, credential),
         onError,
+        // The proxy bounds every body but an upload's, which serveTrpcHttp
+        // bounds per endpoint and answers in our error format. The adapter's
+        // own 100KB default would refuse ordinary saves and every upload.
+        maxBodySize: Number.MAX_SAFE_INTEGER,
       })
   );
 };
