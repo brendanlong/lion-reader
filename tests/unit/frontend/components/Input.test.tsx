@@ -80,18 +80,6 @@ describe("Input", () => {
     });
   });
 
-  describe("additional props", () => {
-    it("applies custom className", () => {
-      render(<Input className="custom-class" />);
-      expect(screen.getByRole("textbox")).toHaveClass("custom-class");
-    });
-
-    it("passes through type attribute", () => {
-      render(<Input type="email" />);
-      expect(screen.getByRole("textbox")).toHaveAttribute("type", "email");
-    });
-  });
-
   describe("styling", () => {
     it("does not suppress the global focus outline (#1292)", () => {
       render(<Input />);

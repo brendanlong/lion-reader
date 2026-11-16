@@ -20,6 +20,8 @@ The announcement banner and maintenance mode live in **Redis, not Postgres**, be
 
 ## Views
 
+Frontend reads query these views instead of joining by hand.
+
 - **`user_feeds`**: active subscriptions merged with feed data (NULL for a subscription without a feed), including `unread_count`. **Display-only** — ownership/scoping checks query `subscriptions` directly. When grouping over a view, list every selected column in `GROUP BY`: Postgres doesn't infer functional dependencies through views (#1516).
 - **`visible_entries`**: entries with visibility applied, for `entries.list/get`. It LEFT JOINs `entries` and takes `id`, `is_spam` and the sort keys from `user_entries`, so a page filtered on those reads entry rows only for the rows it returns: keep it that way (migration 0147).
 
@@ -78,7 +80,7 @@ Deltas key off change times, so a hard delete is invisible to them. **Hard-delet
 
 ## Stored Objects
 
-A user's entry (saved, uploaded, ebook chapter, email) keeps its images in the public bucket under its objects prefix (`services/stored-objects.ts`). Every path that writes such content passes that prefix, and images inlined as `data:` URIs move there in the write-time URL pass (`rewriteContentUrls`), so none is stored inline while storage is configured. **Never upload an image any other way**: a source whose images we fetch (Google Docs) inlines them as `data:` URIs too, or they'd outlive the entry. Feed entries pass no prefix and keep inlined images: anyone can publish a feed, so it would be free public hosting until per-feed limits exist (#2188); images we'd extract or fetch ourselves (a PDF's, a Google Doc's), which no feed author inlined, are left out instead. Storage refusing an image fails the write: no inline fallback. An SVG is the exception, always inline (SECURITY.md §12). Without storage, inlined images stay inline and ebooks can't be imported. Dev and tests use an S3-compatible server (`scripts/fake-s3.ts`, which `pnpm services` runs and tests start with `useFakeS3`, or docker-compose's S3Mock), never another backend.
+A user's entry (saved, uploaded, ebook chapter, email) keeps its images in the public bucket under its objects prefix (`services/stored-objects.ts`). Every path that writes such content passes that prefix, and images inlined as `data:` URIs move there in the write-time URL pass (`rewriteContentUrls`), so none is stored inline while storage is configured. **Never upload an image any other way**: a source whose images we fetch (Google Docs) inlines them as `data:` URIs too, or they'd outlive the entry. Feed entries pass no prefix and keep inlined images: anyone can publish a feed, so it would be free public hosting until per-feed limits exist (#2188); images we'd extract or fetch ourselves (a PDF's, a Google Doc's), which no feed author inlined, are left out instead. Storage refusing an image fails the write: no inline fallback. An SVG is the exception, always inline (SECURITY.md §12). Dev and tests use an S3-compatible server (`scripts/fake-s3.ts`, which `pnpm services` runs and tests start with `useFakeS3`, or docker-compose's S3Mock), never another backend.
 
 ## Ordering & Pagination
 

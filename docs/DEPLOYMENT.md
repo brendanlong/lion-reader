@@ -48,8 +48,8 @@ Fly Postgres (flex), single node**: `lion-reader-pg`, database `lion_reader`,
 `shared-cpu-8x` / 2GB in `sjc`, 40GB volume, PostgreSQL 18. Unmanaged is chosen for
 performance-per-dollar (shared-CPU pooling gives more burst headroom per dollar than
 Managed Postgres); the tradeoff is that Fly does **not** support or upgrade unmanaged
-clusters, so we own upgrades, backups, and monitoring (see "Operating unmanaged
-Postgres" under Ongoing Operations).
+clusters, so we own upgrades, backups, and monitoring
+([Fly Postgres operations](fly-postgres-ops.md)).
 
 ### 1. Create a Postgres Cluster
 
@@ -70,10 +70,9 @@ flyctl postgres create \
 - `--name`: Name for your Postgres app (must be unique)
 - `--region`: Should match your app's `primary_region` in `fly.toml`
 - `--vm-size`/`--vm-memory`: shared-CPU quotas are pooled per machine, so
-  `shared-cpu-8x` gives Postgres a 50%-of-a-core sustained floor (8 vCPUs × 6.25%
-  baseline each) with burst to 8 cores — better burst behavior than a dedicated
-  `performance-1x` core at similar
-  cost. Memory is deliberately modest: the hot working
+  `shared-cpu-8x` bursts to 8 cores over a sustained floor
+  ([throttling](fly-postgres-ops.md#routine-operations)) — better burst behavior than a
+  dedicated `performance-1x` core at similar cost. Memory is deliberately modest: the hot working
   set is small (ran comfortably at 1GB / ~98% cache-hit), so 2GB leaves headroom
   for cache (incl. the search GIN index) and growth. flex sizes `shared_buffers`
   etc. from VM memory **at each boot**, so resizing RAM re-tunes automatically and
@@ -152,11 +151,9 @@ flyctl secrets set REDIS_URL="rediss://default:password@your-endpoint.upstash.io
 
 ## Object Storage
 
-Images in saved articles, uploads and newsletters live in S3-compatible object
-storage (as does the demo's recorded narration, among other things), and ebook
-import requires it (without it, images stay inline in the
-HTML). Create two buckets (lionreader.com's are Tigris, in
-`terraform/tigris.tf`):
+S3-compatible object storage is optional; what it holds, and what works without
+it, is under "Infrastructure" in [DESIGN.md](DESIGN.md#infrastructure). Create two
+buckets (lionreader.com's are Tigris, in `terraform/tigris.tf`):
 
 - a publicly readable one (`STORAGE_BUCKET`, served from `STORAGE_PUBLIC_URL_BASE`);
 - a private one (`STORAGE_ARCHIVE_BUCKET`) for article HTML we keep but never
@@ -264,23 +261,7 @@ flyctl open
 curl https://lionreader.com/api/health
 ```
 
-Expected response (see `src/app/api/health/route.ts`):
-
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-15T12:00:00.000Z",
-  "version": "1.2.3",
-  "checks": {
-    "database": { "status": "healthy", "latencyMs": 3 },
-    "redis": { "status": "healthy", "latencyMs": 1 }
-  }
-}
-```
-
-`status` is `healthy` when both the `database` and `redis` checks pass, `degraded`
-when one is down (still HTTP 200), or `unhealthy` when both are down (HTTP 503). A
-failing component reports `status: "unhealthy"` with an `error` message.
+What it checks and returns: `src/app/api/health/route.ts`.
 
 ---
 
@@ -390,30 +371,8 @@ The app uses `auto_stop_machines = "stop"`, which stops idle app machines. The f
 flyctl postgres connect -a lion-reader-pg --database lion_reader
 ```
 
-### Operating unmanaged Postgres
-
-Fly does not manage this cluster, so these are ours:
-
-- **Watch throttling.** On [fly-metrics.net](https://fly-metrics.net), the
-  `lion-reader-pg` CPU dashboard shows burst balance (`fly_instance_cpu_balance`)
-  and throttle/steal time. Shared-CPU has a ~50%-of-a-core sustained floor (6.25%
-  baseline per vCPU, pooled across the 8) and bursts on a ~500 CPU-second-per-vCPU
-  balance; if the balance pins at 0 outside of backups,
-  the DB is throttled — upgrade the CPU (see below).
-- **Minor version updates:** `flyctl image update -a lion-reader-pg` (restarts the node).
-- **Major version upgrades:** dump/restore into a fresh cluster — Fly does not
-  upgrade unmanaged clusters.
-- **Disk:** keep `/data` under ~45%
-  ([Volume headroom](fly-postgres-ops.md#volume-headroom-keep-data-under-45));
-  `flyctl volumes extend` when needed, then check with `df -h /data` that the
-  filesystem grew too: extending the volume doesn't always resize it. A full
-  volume is an outage you have to notice — check the fly-metrics disk panel
-  occasionally.
-- **Backups & restore drill:** WAL archiving to Tigris gives PITR; periodically
-  restore into a scratch cluster to prove it works. Full procedure in
-  [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
-
-**Temporarily scaling for expensive migrations:** see [Fly Postgres operations](fly-postgres-ops.md#expensive-migrations-temporarily-scale-the-machine).
+Upgrades, throttling, disk, backups and recovery are in
+[Fly Postgres operations](fly-postgres-ops.md).
 
 ### Maintenance-mode deploys
 
@@ -461,17 +420,15 @@ These rules apply whatever the zone is hosted on:
 
 ---
 
-## Cost Estimate (current production shape, July 2026)
+## Data Store Cost Estimate (July 2026)
 
-| Resource        | Size                    | Estimated Cost    |
-| --------------- | ----------------------- | ----------------- |
-| App VMs         | 2× shared-cpu-2x, 512MB | ~$8/month         |
-| Worker VM       | shared-cpu-1x, 512MB    | ~$3.50/month      |
-| Discord VM      | shared-cpu-1x, 256MB    | ~$2/month         |
-| Postgres        | shared-cpu-8x, 2GB      | ~$15.55/month     |
-| Postgres volume | 40GB                    | ~$6/month         |
-| PG WAL backups  | Tigris (base + WAL)     | ~$1/month         |
-| Redis (Upstash) | Pay-as-you-go           | ~$0-5/month       |
-| **Total**       |                         | **~$36-41/month** |
+For the app, worker and Discord machines, price the sizes in `fly.toml`.
+
+| Resource        | Size                | Estimated Cost |
+| --------------- | ------------------- | -------------- |
+| Postgres        | shared-cpu-8x, 2GB  | ~$15.55/month  |
+| Postgres volume | 40GB                | ~$6/month      |
+| PG WAL backups  | Tigris (base + WAL) | ~$1/month      |
+| Redis (Upstash) | Pay-as-you-go       | ~$0-5/month    |
 
 Costs vary by usage. Check [fly.io/docs/about/pricing](https://fly.io/docs/about/pricing/) for current rates.

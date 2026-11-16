@@ -43,17 +43,7 @@ The [Deployment Guide](docs/DEPLOYMENT.md) walks through a full Fly.io setup, in
 
 By default, Lion Reader runs in invite-only mode. New users need an invite link to register.
 
-| Variable                          | Default | Description                                                                                  |
-| --------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
-| `ALLOWED_SIGNUP_PROVIDERS`        | all     | Comma-separated providers (`email,google,apple,discord`) allowed to sign up _with_ an invite |
-| `ALLOWED_PUBLIC_SIGNUP_PROVIDERS` | none    | Subset allowed to sign up _without_ an invite. Empty = fully invite-only                     |
-| `ALLOWLIST_SECRET`                | -       | Secret for admin API (required whenever any provider is invite-only)                         |
-| `MAILGUN_DOMAIN`                  | -       | Mailgun sending domain (US region) for account emails; required to verify password accounts  |
-| `MAILGUN_SENDING_KEY`             | -       | A Mailgun sending key for that domain                                                        |
-| `TURNSTILE_SITE_KEY`              | -       | Cloudflare Turnstile site key; with the secret key, adds a CAPTCHA to password signup        |
-| `TURNSTILE_SECRET_KEY`            | -       | Cloudflare Turnstile secret key                                                              |
-
-Accounts that sign up with a password must verify their email address before using the app, and "Forgot your password?" emails a reset link, so password signup needs the two Mailgun settings. Social sign-ins are verified by the provider.
+Who may sign up (with or without an invite), the admin secret, and the Mailgun and Turnstile keys for account emails and the signup CAPTCHA are set as the "Signup & Admin" and "Account Emails and Signup CAPTCHA" sections of [`.env.example`](.env.example) describe. Password accounts must verify their email address before using the app, so password signup needs Mailgun; social sign-ins are verified by the provider.
 
 Manage invites through the admin API (each invite is single-use, valid for 7 days):
 
@@ -82,12 +72,7 @@ Inbound email is delivered by [Mailgun](https://www.mailgun.com) receiving route
 
 1. Point MX records for your ingest domain at Mailgun and verify the domain
 2. Create a Mailgun route that forwards matching messages to `https://your-app/api/webhooks/email/mailgun` (enable "Store and notify")
-3. Configure Lion Reader:
-
-| Variable                      | Description                                                    |
-| ----------------------------- | -------------------------------------------------------------- |
-| `INGEST_EMAIL_DOMAIN`         | Domain for ingest email addresses; **required**                |
-| `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun webhook signing key (Sending → Webhooks); **required** |
+3. Set `INGEST_EMAIL_DOMAIN` and `MAILGUN_WEBHOOK_SIGNING_KEY` (see "Email Newsletters" in [`.env.example`](.env.example))
 
 The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid signatures are rejected.
 
