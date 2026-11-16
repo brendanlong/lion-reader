@@ -130,7 +130,7 @@ export function handleSyncEvent(
 
     case "subscription_created":
       if (event.row) {
-        handleSubscriptionCreated(utils, toSubscriptionRow(event.row), queryClient, event.counts);
+        handleSubscriptionCreated(utils, queryClient, toSubscriptionRow(event.row), event.counts);
       } else {
         fetchSubscription(utils, event.subscriptionId);
         if (event.counts) applyUnreadCounts(utils, queryClient, event.counts);
@@ -152,7 +152,7 @@ export function handleSyncEvent(
       // counts and invalidates entries.list. Calling it unconditionally fixes
       // the case where a delete for a never-cached subscription (common with
       // tags collapsed) left inflated counts and stale entries (#1081).
-      handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);
+      handleSubscriptionDeleted(utils, queryClient, event.subscriptionId, event.counts);
       break;
 
     case "collection_entries_changed":

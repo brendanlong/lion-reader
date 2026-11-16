@@ -111,16 +111,16 @@ export function useCollectionMembership(entryId: string) {
       const result = await addMutation.mutateAsync({ id: subscription.id, entryIds: [entryId] });
       handleSubscriptionCreated(
         utils,
+        queryClient,
         {
           ...subscription,
           unreadCount:
             result.counts?.subscriptions.find((s) => s.id === subscription.id)?.unread ?? 0,
         },
-        queryClient,
         result.counts ?? created.counts
       );
     } catch {
-      handleSubscriptionCreated(utils, subscription, queryClient, created.counts);
+      handleSubscriptionCreated(utils, queryClient, subscription, created.counts);
     }
     return subscription;
   };
