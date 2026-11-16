@@ -18,6 +18,8 @@ import { resolveClient, type ResolvedClient } from "./clients";
 
 const jsonBodySchema = z.record(z.string(), z.unknown());
 
+const BASIC_SCHEME = /^basic\s/i;
+
 export function invalidRequest(description: string): Response {
   return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, description), {
     status: 400,
@@ -59,7 +61,9 @@ export async function authenticateClient(
   request: Request,
   body: Record<string, string>
 ): Promise<ResolvedClient | Response> {
-  const extracted = extractClientCredentials(request.headers.get("authorization"), body);
+  const authorization = request.headers.get("authorization");
+  const usedBasic = authorization !== null && BASIC_SCHEME.test(authorization);
+  const extracted = extractClientCredentials(authorization, body);
   if (!extracted.success) {
     logger.warn("OAuth client credential extraction failed", {
       error: extracted.error.error_description,
@@ -71,16 +75,29 @@ export async function authenticateClient(
     return invalidRequest("Missing client_id parameter");
   }
 
+  // RFC 6749 §5.2: a 401 to a client that authenticated with HTTP Basic must
+  // name the scheme in WWW-Authenticate.
+  const invalidClient = (error: OAuthErrorResponse): Response => {
+    logger.warn("OAuth client authentication failed", {
+      clientId,
+      usedBasic,
+      error: error.error_description,
+    });
+    return NextResponse.json(error, {
+      status: 401,
+      headers: usedBasic ? { "WWW-Authenticate": 'Basic realm="OAuth"' } : undefined,
+    });
+  };
+
   const client = await resolveClient(clientId);
   if (!client) {
-    return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Unknown client_id"), {
-      status: 401,
-    });
+    return invalidClient(createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Unknown client_id"));
   }
   const secretError = clientSecretError(client, clientSecret);
   if (secretError) {
-    return NextResponse.json(secretError, { status: 401 });
+    return invalidClient(secretError);
   }
+  logger.info("OAuth client authenticated", { clientId, usedBasic });
   return client;
 }
 
@@ -111,7 +128,7 @@ export function extractClientCredentials(
     clientSecret: body.client_secret || undefined,
   };
 
-  if (!authorizationHeader || !/^basic\s/i.test(authorizationHeader)) {
+  if (!authorizationHeader || !BASIC_SCHEME.test(authorizationHeader)) {
     return { success: true, credentials };
   }
 

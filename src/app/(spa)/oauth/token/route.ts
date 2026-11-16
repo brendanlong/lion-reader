@@ -47,10 +47,9 @@ async function handleToken(request: NextRequest): Promise<Response> {
 
   // Log what the client sent (no secrets) so token-exchange failures are
   // debuggable — grant type + which required params are present.
+  // authenticateClient logs the client id, from the body or a Basic header.
   logger.info("OAuth token request", {
     grantType,
-    clientId: body.client_id,
-    hasBasicAuth: /^basic\s/i.test(request.headers.get("authorization") ?? ""),
     hasClientSecret: !!body.client_secret,
     hasCode: !!body.code,
     hasCodeVerifier: !!body.code_verifier,
