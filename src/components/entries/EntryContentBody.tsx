@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
@@ -70,12 +70,12 @@ export interface EntryContentBodyProps {
   footerLinkDomain?: string;
   /** Unsubscribe URL extracted from email newsletter (null for non-email entries) */
   unsubscribeUrl?: string | null;
-  /** Callback when swiping to next article */
-  onSwipeNext?: () => void;
-  /** The article `onSwipeNext` opens */
+  /** The next article in the list, opened by swiping left (and narration's continuation) */
   nextEntryId?: string;
-  /** Callback when swiping to previous article */
-  onSwipePrevious?: () => void;
+  /** The previous article in the list, opened by swiping right */
+  previousEntryId?: string;
+  /** Opens another article */
+  onOpenEntry?: (entryId: string) => void;
   // Full content fields
   /** Full content HTML (the article extracted from the page at the entry's URL) */
   fullContentCleaned?: string | null;
@@ -153,9 +153,9 @@ export function EntryContentBody({
   setShowOriginal,
   footerLinkDomain,
   unsubscribeUrl,
-  onSwipeNext,
   nextEntryId,
-  onSwipePrevious,
+  previousEntryId,
+  onOpenEntry,
   // Full content props
   fullContentCleaned,
   fullContentFetchedAt,
@@ -180,6 +180,14 @@ export function EntryContentBody({
   onFinished,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const openNext = useMemo(
+    () => (onOpenEntry && nextEntryId ? () => onOpenEntry(nextEntryId) : undefined),
+    [onOpenEntry, nextEntryId]
+  );
+  const openPrevious = useMemo(
+    () => (onOpenEntry && previousEntryId ? () => onOpenEntry(previousEntryId) : undefined),
+    [onOpenEntry, previousEntryId]
+  );
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const actionButtonsRef = useRef<HTMLDivElement>(null);
 
@@ -212,7 +220,7 @@ export function EntryContentBody({
     prerecordedVoice: prerecordedNarration,
     // Narrating the content that will show, not what it's about to replace.
     continued: Boolean(narrationContinued && !isAwaitingFullContent),
-    next: onSwipeNext && nextEntryId ? { id: nextEntryId, open: onSwipeNext } : undefined,
+    next: openNext && nextEntryId ? { id: nextEntryId, open: openNext } : undefined,
   });
 
   // Not the feed's excerpt while the full article is on its way, nor while
@@ -253,9 +261,9 @@ export function EntryContentBody({
     onTouchEnd: handleTouchEnd,
     onTouchCancel: handleTouchCancel,
   } = useSwipeGesture({
-    onSwipeLeft: onSwipeNext,
-    onSwipeRight: onSwipePrevious,
-    enabled: Boolean(onSwipeNext || onSwipePrevious),
+    onSwipeLeft: openNext,
+    onSwipeRight: openPrevious,
+    enabled: Boolean(openNext || openPrevious),
   });
 
   // The open entry's half of `m`/`s`; useKeyboardShortcuts handles them in the list.

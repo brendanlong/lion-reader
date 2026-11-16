@@ -20,7 +20,7 @@ import { trpc } from "@/lib/trpc/client";
 import { applyEntryStateChanges, handleMarkAllRead } from "@/lib/cache/operations";
 import type { EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb, insertEntryIntoLists, type LocalDb } from "@/lib/local-db/local-db";
-import type { EntryType } from "@/lib/entry-types";
+import type { EntriesListFilters } from "@/lib/queries/entries-list-input";
 
 /**
  * Sends a mutation with `applyOptimistic` layered over the entries the store
@@ -56,15 +56,10 @@ function mutateEntries(
 }
 
 /**
- * Options for the markAllRead mutation.
+ * The view markAllRead acts on: a list's filters, less `sortBy`, which only
+ * orders it.
  */
-export interface MarkAllReadOptions {
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  starredOnly?: boolean;
-  type?: EntryType;
-}
+type MarkAllReadOptions = Omit<EntriesListFilters, "sortBy">;
 
 /**
  * Result of the useEntryMutations hook.

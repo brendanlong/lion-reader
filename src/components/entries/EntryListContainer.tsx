@@ -13,8 +13,8 @@
  * warm-cache navigation, which made switching list views feel laggy. See
  * "Suspense vs. inline loading" in src/CLAUDE.md.
  *
- * Uses useEntriesListInput to get query input, ensuring cache is shared
- * with the parent's non-suspending query (used for navigation).
+ * The parent derives the list's entries (shared with the reader's swipe
+ * navigation), and keeps this mounted while an entry is open.
  */
 
 "use client";
@@ -28,9 +28,9 @@ import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
-import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
-import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { entryListKey, isServerOrdered } from "@/lib/local-db/entry-lists";
+import type { EntryRow } from "@/lib/local-db/entries";
+import type { EntriesListInput } from "@/lib/queries/entries-list-input";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
@@ -42,17 +42,28 @@ export const SELECTION_PREFETCH_DELAY_MS = 100;
 
 interface EntryListContainerProps {
   emptyMessage: string;
+  queryInput: EntriesListInput;
+  /** The list's entries from the local store (`useEntryListEntries`) */
+  entries: EntryRow[];
+  /** `findAdjacentEntries` for the open entry */
+  adjacent: AdjacentEntries;
+}
+
+interface AdjacentEntries {
+  nextEntryId?: string;
+  previousEntryId?: string;
+  distanceToEnd: number;
 }
 
 /**
  * The entries either side of the open entry in the loaded list (shared by j/k
- * navigation here and swipe navigation in UnifiedEntriesContent, so the two
- * always agree), plus how many loaded entries remain after it.
+ * navigation here and swipe navigation in the reader, so the two always
+ * agree), plus how many loaded entries remain after it.
  */
 export function findAdjacentEntries(
   entries: ReadonlyArray<{ id: string }>,
   openEntryId: string | null
-): { nextEntryId?: string; previousEntryId?: string; distanceToEnd: number } {
+): AdjacentEntries {
   const currentIndex = openEntryId ? entries.findIndex((e) => e.id === openEntryId) : -1;
   if (currentIndex === -1) return { distanceToEnd: Infinity };
   return {
@@ -80,9 +91,14 @@ function entryToReturnTo(
   return (before.slice(index + 1).find(isListed) ?? before.slice(0, index).findLast(isListed))?.id;
 }
 
-export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
+export function EntryListContainer({
+  emptyMessage,
+  queryInput,
+  entries,
+  adjacent: { nextEntryId, previousEntryId, distanceToEnd },
+}: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
-  const { showUnreadOnly, toggleShowUnreadOnly } = useUrlViewPreferences();
+  const { toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
@@ -93,14 +109,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // cache), so until hydration we render a deterministic skeleton.
   const canRenderFromCache = useCanRenderFromCache();
 
-  // Get query input from URL - shared with parent's non-suspending query
-  const queryInput = useEntriesListInput();
-
   // Non-suspending query so the loading state renders inline (see the
   // `isLoading` branch below) instead of via a Suspense fallback that React
   // would pin for 300ms on warm-cache navigations. `throwOnError` preserves the
-  // surrounding ErrorBoundary behavior. Shares cache with the parent's
-  // useInfiniteQuery via the same queryInput.
+  // surrounding ErrorBoundary behavior.
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     trpc.entries.list.useInfiniteQuery(queryInput, {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -109,18 +121,10 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
       throwOnError: true,
     });
 
-  // The query only fetches; the list renders from the local entry store,
-  // which the fetched pages are ingested into (src/lib/local-db/). Entry
-  // state lives there too, so a next-page fetch can't clobber a read/starred
-  // change made while it was in flight.
-  const entries = useEntryListEntries(queryInput, openEntryId);
-
-  // Next/previous entry IDs for keyboard navigation, and how close we are to
-  // the pagination boundary
-  const { nextEntryId, previousEntryId, distanceToEnd } = useMemo(
-    () => findAdjacentEntries(entries, openEntryId),
-    [openEntryId, entries]
-  );
+  // The query only fetches; the list renders `entries` from the local entry
+  // store, which the fetched pages are ingested into (src/lib/local-db/).
+  // Entry state lives there too, so a next-page fetch can't clobber a
+  // read/starred change made while it was in flight.
 
   // Trigger pagination when navigating close to the end of loaded entries
   const prevDistanceToEnd = useRef(distanceToEnd);
@@ -289,21 +293,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     return <EntryListSkeleton />;
   }
   if (isLoading && entries.length === 0) {
-    return (
-      <EntryListFallback
-        filters={{
-          subscriptionId: queryInput.subscriptionId,
-          tagId: queryInput.tagId,
-          uncategorized: queryInput.uncategorized,
-          starredOnly: queryInput.starredOnly,
-          type: queryInput.type,
-          unreadOnly: showUnreadOnly,
-          sortOrder: queryInput.sortOrder,
-          sortBy: queryInput.sortBy,
-        }}
-        onEntryClick={handleEntryClick}
-      />
-    );
+    return <EntryListFallback filters={queryInput} onEntryClick={handleEntryClick} />;
   }
 
   return (
