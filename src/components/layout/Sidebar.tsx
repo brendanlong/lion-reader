@@ -23,6 +23,7 @@ import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialo
 import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
 import { SidebarNav } from "./SidebarNav";
 import { TagList } from "./TagList";
+import { ScrollContainer } from "./ScrollContainerContext";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { EyeIcon, EyeSlashIcon } from "@/components/ui/icons";
 import { untitledSubscriptionLabel } from "@/lib/collections";
@@ -95,7 +96,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
 
         {/* Scrollable area with tags and feeds */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <ScrollContainer className="flex-1 overflow-y-auto p-3">
           <TagList
             onNavigate={handleNavigate}
             onEdit={setEditTarget}
@@ -103,7 +104,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             unreadOnly={sidebarUnreadOnly}
             onPrefetch={handlePrefetchRoute}
           />
-        </div>
+        </ScrollContainer>
       </nav>
 
       {/* Unsubscribe Confirmation Dialog */}

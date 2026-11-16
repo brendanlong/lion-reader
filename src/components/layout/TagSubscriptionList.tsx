@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 import {
   chooseSidebarSection,
@@ -20,6 +20,7 @@ import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import { sidebarSectionRows, type SubscriptionRow } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import { SkeletonText } from "@/components/ui/skeleton";
+import { useLoadMoreSentinel } from "@/components/ui/infinite-scroll-footer";
 import { SubscriptionItem } from "./SubscriptionItem";
 
 interface TagSubscriptionListProps {
@@ -51,8 +52,6 @@ export function TagSubscriptionList({
   unreadOnly,
   onPrefetch,
 }: TagSubscriptionListProps) {
-  const sentinelRef = useRef<HTMLLIElement>(null);
-
   const subscriptionsQuery = trpc.subscriptions.list.useInfiniteQuery(
     { tagId, uncategorized, unreadOnly: unreadOnly || undefined, limit: 50 },
     {
@@ -60,7 +59,7 @@ export function TagSubscriptionList({
     }
   );
 
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = subscriptionsQuery;
+  const sentinelRef = useLoadMoreSentinel<HTMLLIElement>(subscriptionsQuery);
   const section = tagId ?? UNCATEGORIZED_SECTION;
 
   const stored = useLocalSubscriptions();
@@ -76,26 +75,6 @@ export function TagSubscriptionList({
     chooseSidebarSection(href, section);
     onClose(href);
   };
-
-  // Infinite scroll: observe sentinel element to load more
-  useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage) return;
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (subscriptionsQuery.isLoading) {
     return (
