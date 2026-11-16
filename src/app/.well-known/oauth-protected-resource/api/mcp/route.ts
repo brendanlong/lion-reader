@@ -11,27 +11,4 @@
  * GET /.well-known/oauth-protected-resource/api/mcp
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { getProtectedResourceMetadata } from "@/server/oauth/config";
-import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
-import { logger } from "@/lib/logger";
-
-export async function GET(request: NextRequest) {
-  const host = request.headers.get("host");
-  logger.info("OAuth protected resource metadata requested (path-inserted)", { host });
-  const metadata = getProtectedResourceMetadata();
-
-  return withMcpCorsHeaders(
-    NextResponse.json(metadata, {
-      headers: {
-        "Content-Type": "application/json",
-        // no-store: see .well-known/oauth-authorization-server/route.ts
-        "Cache-Control": "no-store",
-      },
-    })
-  );
-}
-
-export function OPTIONS() {
-  return mcpCorsPreflight();
-}
+export { GET, OPTIONS } from "@/app/.well-known/oauth-protected-resource/route";
