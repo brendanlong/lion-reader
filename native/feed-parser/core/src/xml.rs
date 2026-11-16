@@ -1,9 +1,9 @@
-//! Shared SAX plumbing: a quick-xml event pump that presents the same
-//! open/text/close callback surface the old htmlparser2 parsers were written
-//! against, plus ports of the JS-side helpers the state machines relied on
-//! (entity decoding, `String.prototype.trim`, `parseInt`).
+//! Shared SAX plumbing: a quick-xml event pump with htmlparser2's
+//! open/text/close callback surface, plus Rust versions of the JS semantics
+//! the state machines rely on (entity decoding, `String.prototype.trim`,
+//! `parseInt`).
 //!
-//! Parity notes (the old parsers ran htmlparser2 in `xmlMode` with
+//! Parity notes (the target is htmlparser2 in `xmlMode` with
 //! `decodeEntities: true`):
 //! - Entity decoding is XML-strict: only the five predefined entities and
 //!   numeric character references are decoded (semicolon required); anything
@@ -13,7 +13,7 @@
 //! - CDATA content stays literal (no entity decoding).
 //! - The reader is configured to be as forgiving as quick-xml allows
 //!   (unmatched/mismatched end tags, dangling `&`), because real-world feeds
-//!   contain unclosed elements the old parsers tolerated.
+//!   contain unclosed elements.
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -33,15 +33,15 @@ impl Attrs {
     }
 
     /// JS-truthy lookup: `Some` only when the attribute exists and is
-    /// non-empty (an empty string is falsy in the old JS checks).
+    /// non-empty (an empty string is falsy in JS).
     pub fn get_nonempty(&self, name: &str) -> Option<&str> {
         self.get(name).filter(|v| !v.is_empty())
     }
 }
 
 /// Callback surface matching htmlparser2's `onopentag`/`ontext`/`onclosetag`.
-/// Tag names arrive ASCII-lowercased (the old parsers used
-/// `lowerCaseTags: true`); text arrives entity-decoded.
+/// Tag names arrive ASCII-lowercased (`lowerCaseTags: true`); text arrives
+/// entity-decoded.
 pub trait SaxHandler {
     fn on_open(&mut self, name: &str, attrs: &Attrs);
     fn on_text(&mut self, text: &str);
@@ -58,14 +58,14 @@ pub trait SaxHandler {
 /// is ignored entirely (no callback, so the handler's text buffer keeps
 /// accumulating), and end-of-input implicitly closes everything still open —
 /// which is what lets a truncated feed keep its last partially-written
-/// entry, as the old parsers did.
+/// entry.
 pub fn run_sax<H: SaxHandler>(
     content: &str,
     lowercase_attr_names: bool,
     handler: &mut H,
 ) -> Result<(), String> {
-    // htmlparser2 tolerated a leading BOM (it became an ignored text node);
-    // strip it so quick-xml doesn't reject the document.
+    // Tolerate a leading BOM: strip it so quick-xml doesn't reject the
+    // document.
     let content = content.strip_prefix('\u{feff}').unwrap_or(content);
 
     let mut reader = Reader::from_str(content);

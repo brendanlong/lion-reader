@@ -86,9 +86,90 @@ pub fn is_image_url_allowed(decoded: &str, schemes: &[&str]) -> bool {
     }
 }
 
+/// Whether a srcset part ends with a width/density descriptor (`480w`, `1x`,
+/// `1.5x`): its last whitespace-separated word is digits and dots (at least
+/// one digit) followed by `w` or `x`. Looser than the spec's number grammar on
+/// purpose: a descriptor ends an entry, so a looser match splits more often
+/// and the sanitizer checks more candidate URLs.
+fn has_descriptor(part: &str) -> bool {
+    let trimmed = part.trim_end();
+    let Some(last_ws) = trimmed.rfind(char::is_whitespace) else {
+        return false;
+    };
+    let Some(number) = trimmed[last_ws..].trim_start().strip_suffix(['w', 'x']) else {
+        return false;
+    };
+    number.chars().all(|c| c.is_ascii_digit() || c == '.')
+        && number.chars().any(|c| c.is_ascii_digit())
+}
+
+/// Whether a srcset part starts a new entry rather than continuing a URL that
+/// contained a comma: it starts with a scheme we expect or an absolute path.
+fn looks_like_new_srcset_entry(part: &str) -> bool {
+    ["http://", "https://", "data:", "/"]
+        .iter()
+        .any(|prefix| part.starts_with(prefix))
+}
+
+/// Splits a srcset (`"a.jpg 1x, b.jpg 2x"`) into its entries, each a URL
+/// optionally followed by descriptors. Commas can appear inside URLs
+/// (Cloudinary's `f_auto,q_auto`), so a comma only splits entries after a
+/// descriptor or before something that looks like a new URL; parts it doesn't
+/// split at are rejoined with a bare `,`.
+pub fn split_srcset(srcset: &str) -> Vec<String> {
+    let mut entries: Vec<String> = Vec::new();
+    // Whether the previous entry ends with a descriptor. Its last part decides
+    // that (a descriptor can't span a comma), so test each part once rather
+    // than re-testing an entry that grows with every rejoined part —
+    // quadratic.
+    let mut previous_has_descriptor = false;
+    for raw in srcset.split(',') {
+        let part = raw.trim();
+        if part.is_empty() {
+            continue;
+        }
+        match entries.last_mut() {
+            Some(last) if !previous_has_descriptor && !looks_like_new_srcset_entry(part) => {
+                last.push(',');
+                last.push_str(part);
+            }
+            _ => entries.push(part.to_string()),
+        }
+        previous_has_descriptor = has_descriptor(part);
+    }
+    entries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn srcset_splits_at_descriptors_and_new_urls_only() {
+        assert_eq!(
+            split_srcset(" a.jpg 1x,b.jpg ,, f_auto,q_auto/c.jpg 480w , /d.jpg"),
+            ["a.jpg 1x", "b.jpg,f_auto,q_auto/c.jpg 480w", "/d.jpg"]
+        );
+    }
+
+    #[test]
+    fn descriptor_detection() {
+        // Looser than the spec on purpose (see `has_descriptor`).
+        for part in [
+            "a 1x",
+            "a 480w",
+            "a 1.5x",
+            "a\t2x  ",
+            "a .5x",
+            "a 1.x",
+            "a\u{85}2x",
+        ] {
+            assert!(has_descriptor(part), "{part}");
+        }
+        for part in ["a1x", "a 2", "x", "a x", "a .x", "a 1y"] {
+            assert!(!has_descriptor(part), "{part}");
+        }
+    }
 
     #[test]
     fn detects_schemes_through_obfuscation() {

@@ -1,7 +1,6 @@
-//! Atom 1.0 parser — a direct port of the old
-//! `src/server/feed/streaming/atom-parser.ts` state machine. Keep the control
-//! flow in lockstep with that file's `onopentag`/`onclosetag` handlers; the
-//! TS behavior tests are the parity gate.
+//! Atom 1.0 parser state machine, wrapped by
+//! `src/server/feed/streaming/atom-parser.ts`. The TS behavior tests are the
+//! parity gate.
 
 use crate::types::{DateCandidate, ParsedEntry, ParsedFeed, VALID_UPDATE_PERIODS};
 use crate::xml::{js_parse_int, js_trim, run_sax, Attrs, SaxHandler};
