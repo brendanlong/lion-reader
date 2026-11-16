@@ -25,6 +25,8 @@ import { SidebarNav } from "./SidebarNav";
 import { TagList } from "./TagList";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { EyeIcon, EyeSlashIcon } from "@/components/ui/icons";
+import { untitledSubscriptionLabel } from "@/lib/collections";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -34,20 +36,8 @@ export function Sidebar({ onClose }: SidebarProps) {
   const queryClient = useQueryClient();
   const pathname = useAppPathname();
   const { sidebarUnreadOnly, toggleSidebarUnreadOnly } = useSidebarUnreadOnly();
-  const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
-    id: string;
-    title: string;
-    isCollection: boolean;
-    isEmail: boolean;
-  } | null>(null);
-  const [editTarget, setEditTarget] = useState<{
-    id: string;
-    title: string;
-    customTitle: string | null;
-    tagIds: string[];
-    isCollection: boolean;
-    isEmail: boolean;
-  } | null>(null);
+  const [unsubscribeTarget, setUnsubscribeTarget] = useState<SubscriptionRow | null>(null);
+  const [editTarget, setEditTarget] = useState<SubscriptionRow | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -70,9 +60,6 @@ export function Sidebar({ onClose }: SidebarProps) {
   };
 
   // Prefetch entries.list on mousedown (fires ~100-200ms before click).
-  // Even though handleNavigate invalidates the cache, prefetched data will
-  // still be available as stale data - useSuspenseInfiniteQuery renders stale
-  // data immediately without suspending, then refetches in the background.
   const handlePrefetchRoute = useCallback(
     (href: string) => {
       const input = entriesListInputFor(href, new URLSearchParams());
@@ -83,26 +70,6 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
     [utils]
   );
-
-  const handleEdit = (sub: {
-    id: string;
-    title: string;
-    customTitle: string | null;
-    tagIds: string[];
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => {
-    setEditTarget(sub);
-  };
-
-  const handleUnsubscribe = (sub: {
-    id: string;
-    title: string;
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => {
-    setUnsubscribeTarget(sub);
-  };
 
   return (
     <>
@@ -131,8 +98,8 @@ export function Sidebar({ onClose }: SidebarProps) {
         <div className="flex-1 overflow-y-auto p-3">
           <TagList
             onNavigate={handleNavigate}
-            onEdit={handleEdit}
-            onUnsubscribe={handleUnsubscribe}
+            onEdit={setEditTarget}
+            onUnsubscribe={setUnsubscribeTarget}
             unreadOnly={sidebarUnreadOnly}
             onPrefetch={handlePrefetchRoute}
           />
@@ -142,9 +109,13 @@ export function Sidebar({ onClose }: SidebarProps) {
       {/* Unsubscribe Confirmation Dialog */}
       <UnsubscribeDialog
         isOpen={unsubscribeTarget !== null}
-        feedTitle={unsubscribeTarget?.title ?? ""}
-        isCollection={unsubscribeTarget?.isCollection ?? false}
-        emailSubscriptionId={unsubscribeTarget?.isEmail ? unsubscribeTarget.id : undefined}
+        feedTitle={
+          unsubscribeTarget
+            ? unsubscribeTarget.title || untitledSubscriptionLabel(unsubscribeTarget.type)
+            : ""
+        }
+        isCollection={unsubscribeTarget?.type === "collection"}
+        emailSubscriptionId={unsubscribeTarget?.type === "email" ? unsubscribeTarget.id : undefined}
         isLoading={unsubscribeMutation.isPending}
         onConfirm={(options) => {
           if (unsubscribeTarget) {
@@ -155,16 +126,9 @@ export function Sidebar({ onClose }: SidebarProps) {
       />
 
       {/* Edit Subscription Dialog */}
-      <EditSubscriptionDialog
-        isOpen={editTarget !== null}
-        subscriptionId={editTarget?.id ?? ""}
-        currentTitle={editTarget?.title ?? ""}
-        currentCustomTitle={editTarget?.customTitle ?? null}
-        currentTagIds={editTarget?.tagIds ?? []}
-        isCollection={editTarget?.isCollection ?? false}
-        isEmail={editTarget?.isEmail ?? false}
-        onClose={() => setEditTarget(null)}
-      />
+      {editTarget && (
+        <EditSubscriptionDialog subscription={editTarget} onClose={() => setEditTarget(null)} />
+      )}
     </>
   );
 }

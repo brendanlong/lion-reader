@@ -21,24 +21,13 @@ import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/sidebar-section
 import { TagSubscriptionList } from "./TagSubscriptionList";
 import { useLocalTags, useUnreadCounts } from "@/lib/hooks/useLocalTags";
 import { countKey, type CountedList } from "@/lib/local-db/counts";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 interface TagListProps {
   /** Called with the link href when a tag/subscription link is clicked */
   onNavigate: (href: string) => void;
-  onEdit: (sub: {
-    id: string;
-    title: string;
-    customTitle: string | null;
-    tagIds: string[];
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => void;
-  onUnsubscribe: (sub: {
-    id: string;
-    title: string;
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => void;
+  onEdit: (sub: SubscriptionRow) => void;
+  onUnsubscribe: (sub: SubscriptionRow) => void;
   /** When true, only show tags/subscriptions with unread entries */
   unreadOnly: boolean;
   /** Called on mousedown with the link href (e.g., to prefetch data) */

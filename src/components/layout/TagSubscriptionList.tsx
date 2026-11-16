@@ -17,11 +17,10 @@ import {
   type SidebarSelection,
 } from "@/lib/hooks/useSidebarSelection";
 import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
-import { sidebarSectionRows } from "@/lib/local-db/subscriptions";
+import { sidebarSectionRows, type SubscriptionRow } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import { SkeletonText } from "@/components/ui/skeleton";
 import { SubscriptionItem } from "./SubscriptionItem";
-import { untitledSubscriptionLabel } from "@/lib/collections";
 
 interface TagSubscriptionListProps {
   /** Tag ID to filter by, or undefined for uncategorized */
@@ -33,21 +32,9 @@ interface TagSubscriptionListProps {
   /** Called with the link href when a subscription link is clicked (closes mobile sidebar) */
   onClose: (href: string) => void;
   /** Callback to edit a subscription */
-  onEdit: (sub: {
-    id: string;
-    title: string;
-    customTitle: string | null;
-    tagIds: string[];
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => void;
+  onEdit: (sub: SubscriptionRow) => void;
   /** Callback to unsubscribe */
-  onUnsubscribe: (sub: {
-    id: string;
-    title: string;
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => void;
+  onUnsubscribe: (sub: SubscriptionRow) => void;
   /** When true, only show subscriptions with unread entries */
   unreadOnly: boolean;
   /** Called on mousedown with the link href (e.g., to prefetch data) */
@@ -134,24 +121,8 @@ export function TagSubscriptionList({
           subscription={sub}
           isActive={isSidebarLinkCurrent(selection, `/subscription/${sub.id}`, section)}
           onClose={handleClose}
-          onEdit={() =>
-            onEdit({
-              id: sub.id,
-              title: sub.title || untitledSubscriptionLabel(sub.type),
-              customTitle: sub.title !== sub.originalTitle ? sub.title : null,
-              tagIds: sub.tags.map((t) => t.id),
-              isCollection: sub.type === "collection",
-              isEmail: sub.type === "email",
-            })
-          }
-          onUnsubscribe={() =>
-            onUnsubscribe({
-              id: sub.id,
-              title: sub.title || untitledSubscriptionLabel(sub.type),
-              isCollection: sub.type === "collection",
-              isEmail: sub.type === "email",
-            })
-          }
+          onEdit={() => onEdit(sub)}
+          onUnsubscribe={() => onUnsubscribe(sub)}
           onPrefetch={onPrefetch}
         />
       ))}
