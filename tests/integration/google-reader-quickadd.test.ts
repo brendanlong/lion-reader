@@ -30,6 +30,9 @@ beforeAll(async () => {
     if (req.url === "/broken") {
       res.writeHead(500);
       res.end("upstream detail");
+    } else if (req.url === "/not-a-feed.xml") {
+      res.writeHead(200, { "content-type": "application/xml" });
+      res.end('<?xml version="1.0"?><catalog><book/></catalog>');
     } else if (req.url?.startsWith("/feed")) {
       res.writeHead(200, { "content-type": "application/rss+xml" });
       res.end(RSS);
@@ -147,6 +150,14 @@ describe("Google Reader quickadd", () => {
     const { token } = await createReader();
 
     const res = await quickadd(quickaddRequest(token, `${baseUrl}/page.html`));
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects content that isn't a feed as a client error", async () => {
+    const { token } = await createReader();
+
+    const res = await quickadd(quickaddRequest(token, `${baseUrl}/not-a-feed.xml`));
 
     expect(res.status).toBe(400);
   });

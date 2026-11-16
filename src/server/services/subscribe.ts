@@ -31,9 +31,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
-import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
-import { parseFeedAsync } from "@/server/feed/parser";
-import { discoverFeeds } from "@/server/feed/discovery";
+import { resolveFeedAtUrl } from "@/server/services/feed-resolution";
 import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
 /**
@@ -301,47 +299,8 @@ export async function createSubscription(
 }
 
 /**
- * Fetch a URL, discover feeds if HTML, parse the feed content,
- * and return metadata for subscription creation.
- */
-async function fetchAndResolveFeed(inputUrl: string): Promise<CreateSubscriptionFeedInput> {
-  const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(inputUrl);
-
-  let feedContent: string;
-  let finalFeedUrl: string;
-
-  if (isHtmlContent(contentType, content)) {
-    const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
-    if (discoveredFeeds.length === 0) {
-      throw errors.validation("No feeds found at this URL");
-    }
-
-    const discoveredFetch = await fetchUrl(discoveredFeeds[0].url);
-    feedContent = discoveredFetch.text;
-    finalFeedUrl = discoveredFetch.finalUrl;
-  } else {
-    feedContent = content;
-    finalFeedUrl = initialFinalUrl;
-  }
-
-  let parsedFeed;
-  try {
-    parsedFeed = await parseFeedAsync(feedContent);
-  } catch {
-    throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
-  }
-
-  return {
-    url: finalFeedUrl,
-    title: getFeedHooks(finalFeedUrl).resolveFeedTitle(parsedFeed),
-    description: parsedFeed.description || null,
-    siteUrl: parsedFeed.siteUrl || null,
-  };
-}
-
-/**
- * Subscribes the user to the feed at a URL the user gave us, which may be an
- * HTML page that advertises its feed. Every surface that subscribes by URL
+ * Subscribes the user to the feed at a URL the user gave us, which may be a
+ * page that maps to or advertises its feed (`resolveFeedAtUrl`). Every surface that subscribes by URL
  * (tRPC, Google Reader `quickadd`) goes through here, so they all validate the
  * feed, schedule its fetch and notify open clients the same way.
  */
@@ -366,7 +325,13 @@ export async function subscribeToUrl(
   // background fetch job, so it needs no forced refresh. An unreachable or
   // unparseable URL fails the subscribe.
   if (!existing || existing.lastFetchedAt === null) {
-    return createSubscription(db, userId, await fetchAndResolveFeed(feedUrl));
+    const { url, parsedFeed } = await resolveFeedAtUrl(feedUrl);
+    return createSubscription(db, userId, {
+      url,
+      title: getFeedHooks(url).resolveFeedTitle(parsedFeed),
+      description: parsedFeed.description || null,
+      siteUrl: parsedFeed.siteUrl || null,
+    });
   }
 
   // A known feed's cached entries may be stale (past its own poll cadence), and
