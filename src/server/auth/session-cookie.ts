@@ -42,6 +42,20 @@ export function clearSessionCookie(resHeaders: Headers | undefined): void {
 }
 
 /**
+ * The value of cookie `name` in a `Cookie` header, or null. A name sent twice
+ * reads as its last value, as Next's `request.cookies` reads it, so every
+ * surface picks the same cookie.
+ */
+export function readCookie(cookieHeader: string | null | undefined, name: string): string | null {
+  let value: string | null = null;
+  for (const pair of cookieHeader?.split(/;\s*/) ?? []) {
+    const splitAt = pair.indexOf("=");
+    if (splitAt !== -1 && pair.slice(0, splitAt) === name) value = pair.slice(splitAt + 1);
+  }
+  return value || null;
+}
+
+/**
  * The session token a request's cookies carry. Takes anything with a Next.js-style
  * `get(name)`: `request.cookies` in a route handler or proxy, `await cookies()` in
  * a Server Component.
