@@ -42,18 +42,18 @@ describe("parseAtom", () => {
       expect(result.selfUrl).toBe("https://example.com/feed.xml");
       expect(result.iconUrl).toBe("https://example.com/icon.png");
 
-      expect(result.entries).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
 
-      expect(result.entries[0].guid).toBe("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a");
-      expect(result.entries[0].title).toBe("First Entry");
-      expect(result.entries[0].link).toBe("https://example.com/entry-1");
-      expect(result.entries[0].summary).toBe("This is the first entry");
-      expect(result.entries[0].content).toBe("This is the full content");
-      expect(result.entries[0].author).toBe("John Doe");
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.items[0].guid).toBe("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a");
+      expect(result.items[0].title).toBe("First Entry");
+      expect(result.items[0].link).toBe("https://example.com/entry-1");
+      expect(result.items[0].summary).toBe("This is the first entry");
+      expect(result.items[0].content).toBe("This is the full content");
+      expect(result.items[0].author).toBe("John Doe");
+      expect(result.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
 
-      expect(result.entries[1].title).toBe("Second Entry");
-      expect(result.entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
+      expect(result.items[1].title).toBe("Second Entry");
+      expect(result.items[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
     });
   });
 
@@ -99,7 +99,7 @@ describe("parseAtom", () => {
 
       const result = parseAtom(xml);
 
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
     });
 
     it("falls back to updated when published is missing", () => {
@@ -115,7 +115,7 @@ describe("parseAtom", () => {
 
       const result = parseAtom(xml);
 
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-06-15T12:00:00Z"));
+      expect(result.items[0].pubDate).toEqual(new Date("2024-06-15T12:00:00Z"));
     });
   });
 
@@ -169,8 +169,8 @@ describe("parseAtom", () => {
 
       const result = parseAtom(xml);
 
-      expect(result.entries[0].content).toBe("<p>Full content here</p>");
-      expect(result.entries[0].summary).toBe("Short summary");
+      expect(result.items[0].content).toBe("<p>Full content here</p>");
+      expect(result.items[0].summary).toBe("Short summary");
     });
 
     it("uses summary as content when content is missing", () => {
@@ -186,8 +186,8 @@ describe("parseAtom", () => {
 
       const result = parseAtom(xml);
 
-      expect(result.entries[0].content).toBe("This is both summary and content");
-      expect(result.entries[0].summary).toBe("This is both summary and content");
+      expect(result.items[0].content).toBe("This is both summary and content");
+      expect(result.items[0].summary).toBe("This is both summary and content");
     });
   });
 
@@ -207,7 +207,7 @@ describe("parseAtom", () => {
       const result = parseAtom(xml);
 
       expect(result.siteUrl).toBe("https://example.com");
-      expect(result.entries[0].link).toBe("https://example.com/entry");
+      expect(result.items[0].link).toBe("https://example.com/entry");
     });
   });
 
@@ -234,11 +234,11 @@ describe("parseAtom", () => {
 
       const result = parseAtom(xml);
 
-      expect(result.entries).toHaveLength(1);
-      expect(result.entries[0].guid).toBe("urn:entry:real-guid");
-      expect(result.entries[0].title).toBe("Real Entry Title");
-      expect(result.entries[0].link).toBe("https://example.com/real-entry");
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-03-03T12:00:00Z"));
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].guid).toBe("urn:entry:real-guid");
+      expect(result.items[0].title).toBe("Real Entry Title");
+      expect(result.items[0].link).toBe("https://example.com/real-entry");
+      expect(result.items[0].pubDate).toEqual(new Date("2024-03-03T12:00:00Z"));
     });
 
     it("uses the entry's own updated even when source appears before it", () => {
@@ -259,9 +259,9 @@ describe("parseAtom", () => {
 
       const result = parseAtom(xml);
 
-      expect(result.entries[0].guid).toBe("urn:entry:guid");
-      expect(result.entries[0].title).toBe("My Title");
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-07-07T09:00:00Z"));
+      expect(result.items[0].guid).toBe("urn:entry:guid");
+      expect(result.items[0].title).toBe("My Title");
+      expect(result.items[0].pubDate).toEqual(new Date("2024-07-07T09:00:00Z"));
     });
   });
 });

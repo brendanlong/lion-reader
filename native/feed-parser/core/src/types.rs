@@ -1,5 +1,5 @@
-//! Output types shared by the RSS and Atom parsers. These mirror the old
-//! `FeedParseResult`/`ParsedEntry` shapes, except that dates are returned as
+//! Output types shared by the RSS and Atom parsers. These mirror the
+//! TypeScript `ParsedFeed`/`ParsedEntry` shapes, except that dates are returned as
 //! ordered raw-string candidates for the TypeScript wrapper to parse (see the
 //! crate docs for why).
 
@@ -34,7 +34,7 @@ pub struct ParsedEntry {
     pub date_candidates: Vec<DateCandidate>,
 }
 
-/// Parsed feed metadata + entries, mirroring the old `FeedParseResult`.
+/// Parsed feed metadata + entries, mirroring the TypeScript `ParsedFeed`.
 #[derive(Debug, Default)]
 pub struct ParsedFeed {
     pub title: Option<String>,

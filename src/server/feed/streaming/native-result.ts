@@ -1,5 +1,5 @@
 /**
- * Conversion from the native feed parser's raw output to `FeedParseResult`.
+ * Conversion from the native feed parser's raw output to `ParsedFeed`.
  *
  * The native module (`@lion-reader/feed-parser`) returns entry dates as raw
  * strings because it can't reproduce V8's lenient `new Date()` parsing; this
@@ -10,8 +10,7 @@
 
 import type { DateCandidate, RawParsedFeed } from "@lion-reader/feed-parser";
 import { formatAuthors } from "../authors";
-import { isUpdatePeriod, type SyndicationHints } from "../types";
-import type { FeedParseResult } from "./types";
+import { isUpdatePeriod, type ParsedFeed, type SyndicationHints } from "../types";
 
 /**
  * Inputs at or below this size are parsed synchronously by the `*Async`
@@ -45,11 +44,11 @@ function resolveDate(
   return date;
 }
 
-/** Converts the native parser's raw feed into a `FeedParseResult`. */
+/** Converts the native parser's raw feed into a `ParsedFeed`. */
 export function toFeedParseResult(
   raw: RawParsedFeed,
   parseDate: (value: string) => Date | undefined
-): FeedParseResult {
+): ParsedFeed {
   const updatePeriod =
     raw.updatePeriod !== undefined && isUpdatePeriod(raw.updatePeriod)
       ? raw.updatePeriod
@@ -71,7 +70,7 @@ export function toFeedParseResult(
     selfUrl: raw.selfUrl,
     ttlMinutes: raw.ttlMinutes,
     syndication,
-    entries: raw.entries.map((entry) => ({
+    items: raw.entries.map((entry) => ({
       guid: entry.guid,
       link: entry.link,
       title: entry.title,

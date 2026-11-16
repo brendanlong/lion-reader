@@ -3,8 +3,13 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseFeed, parseFeedAsync, detectFeedType } from "../../src/server/feed/parser";
-import { UnknownFeedFormatError } from "../../src/server/feed/streaming/parser";
+import {
+  parseFeed,
+  parseFeedAsync,
+  detectFeedType,
+  UnknownFeedFormatError,
+} from "../../src/server/feed/parser";
+
 import { PARSE_INLINE_MAX_CHARS } from "../../src/server/feed/streaming/native-result";
 import { usageLimitsConfig } from "../../src/server/config/env";
 

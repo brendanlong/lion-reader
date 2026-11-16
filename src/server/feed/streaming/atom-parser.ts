@@ -14,7 +14,7 @@ import {
   parseAtomAsync as nativeParseAtomAsync,
 } from "@lion-reader/feed-parser";
 import { usageLimitsConfig } from "../../config/env";
-import type { FeedParseResult } from "./types";
+import type { ParsedFeed } from "../types";
 import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
 
 /**
@@ -23,7 +23,7 @@ import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
  * @param content - The Atom XML content as a string
  * @returns Parsed feed metadata and entries
  */
-export function parseAtom(content: string): FeedParseResult {
+export function parseAtom(content: string): ParsedFeed {
   return toFeedParseResult(
     nativeParseAtom(content, usageLimitsConfig.maxFeedEntries),
     parseAtomDate
@@ -35,7 +35,7 @@ export function parseAtom(content: string): FeedParseResult {
  * pool, so a large feed never blocks the event loop. Small inputs run
  * synchronously (the async hop costs more than the parse).
  */
-export async function parseAtomAsync(content: string): Promise<FeedParseResult> {
+export async function parseAtomAsync(content: string): Promise<ParsedFeed> {
   if (content.length <= PARSE_INLINE_MAX_CHARS) {
     return parseAtom(content);
   }
