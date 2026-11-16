@@ -18,8 +18,10 @@
 
 import { describe, it, expect } from "vitest";
 import { htmlToNarrationInput } from "../../src/lib/narration/html-to-narration-input";
-import { addParagraphIdsToHtml } from "../../src/lib/narration/client-paragraph-ids";
-import { htmlToClientNarration } from "../../src/lib/narration/client-paragraph-ids";
+import {
+  htmlToClientNarration,
+  processHtmlForHighlighting,
+} from "../../src/lib/narration/client-paragraph-ids";
 
 /**
  * Markup shapes to hold the invariants against: the ones feeds actually emit,
@@ -180,7 +182,7 @@ describe("narration walk invariants", () => {
     it.each(SHAPES)("%s", (html) => {
       // The client stamps `data-para-id` in the numbering both sides share, so
       // the tag at each index must be the same one the server counted.
-      const clientTags = [...addParagraphIdsToHtml(html).html.matchAll(/<(\w+)[^>]*data-para-id/g)];
+      const clientTags = [...processHtmlForHighlighting(html).matchAll(/<(\w+)[^>]*data-para-id/g)];
       const serverTags = [...htmlToNarrationInput(html).paragraphs.map((p) => p.o)].filter(
         (o) => o >= 0
       );
@@ -196,7 +198,7 @@ describe("narration walk invariants", () => {
     it("marks the elements the paragraphs point at", () => {
       const html =
         '<div>w0<p>w1</p></div><figure><img alt="w2"><figcaption>w3</figcaption></figure>';
-      const { html: marked } = addParagraphIdsToHtml(html);
+      const marked = processHtmlForHighlighting(html);
       const paragraphs = htmlToNarrationInput(html).paragraphs;
 
       // div holds the loose "w0", the <p> holds "w1", the figure speaks image

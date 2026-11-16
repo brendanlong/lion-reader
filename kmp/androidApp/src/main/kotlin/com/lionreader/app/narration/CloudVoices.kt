@@ -65,7 +65,6 @@ class CloudVoices(
     // provider), so 30 seconds ahead. One is started at a time, once the one before's first audio
     // is in; see [CloudSpeechRequests.streams] for how many run at once.
     override val lookaheadChars = 450
-    override val parallelism = 1
 
     /** A request already running for [text] serves it, however [waiting] it was sent. */
     override suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri {

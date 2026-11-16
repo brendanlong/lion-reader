@@ -58,8 +58,6 @@ private val Context.settingsStore by preferencesDataStore("settings")
 class AppGraph(
     private val context: Context,
     private val http: HttpClient = appHttpClient(),
-    /** How soon to ask again which account a sign-in is, at first (it backs off). */
-    confirmRetryMillis: Long = 5_000,
 ) {
     val settings = SettingsRepository(context.settingsStore, deviceDefaults())
 
@@ -111,8 +109,6 @@ class AppGraph(
                     withContext(Dispatchers.Main) { narrator.stop() }
                 }
             },
-            confirmRetryMillis = confirmRetryMillis,
-            now = System::currentTimeMillis,
         )
 
     /** Shared by every article's engine, so its limit on requests at once holds app-wide. */
@@ -271,10 +267,6 @@ private class PrefsStore(private val prefs: SharedPreferences) : KeyValueStore {
 
                     override fun putLong(key: String, value: Long) {
                         editor.putLong(key, value)
-                    }
-
-                    override fun remove(key: String) {
-                        editor.remove(key)
                     }
                 }
                 .changes()

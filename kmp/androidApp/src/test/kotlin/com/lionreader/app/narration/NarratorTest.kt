@@ -69,7 +69,6 @@ class NarratorTest {
         object : SpeechEngine {
             override val maxChunkChars = 400
             override val lookaheadChars = 1200
-            override val parallelism = 1
 
             override suspend fun synthesize(
                 text: String,

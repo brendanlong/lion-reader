@@ -9,15 +9,10 @@ import { DEMO_ENTRIES } from "@/lib/demo/data";
 import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
 import { DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
-import {
-  buildAlignedNarration,
-  NEXT_ARTICLE,
-  NO_MORE_ARTICLES,
-  withEndOfArticle,
-} from "@/lib/narration/paragraph-map";
+import { NEXT_ARTICLE, NO_MORE_ARTICLES, withEndOfArticle } from "@/lib/narration/paragraph-map";
 import { parseBodyAsBrowser } from "@/lib/narration/parse-html";
 import { prerecordedSpeechKey, type PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
-import { DIRECT_TTS_VOICE, narrationRuns } from "@/lib/narration/runs";
+import { directNarration } from "@/lib/narration/runs";
 
 export interface PrerecordedChunk {
   voice: PrerecordedVoice;
@@ -30,10 +25,7 @@ export interface PrerecordedChunk {
  * has it end.
  */
 export function demoNarrationText(html: string, following?: string): string {
-  return withEndOfArticle(
-    buildAlignedNarration(narrationRuns(parseBodyAsBrowser(html), DIRECT_TTS_VOICE)),
-    following
-  ).narrationText;
+  return withEndOfArticle(directNarration(parseBodyAsBrowser(html)), following).narrationText;
 }
 
 /**

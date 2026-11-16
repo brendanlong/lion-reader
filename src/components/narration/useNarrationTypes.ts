@@ -97,13 +97,6 @@ export interface UseNarrationReturn {
   isCheckingVoices: boolean;
 }
 
-/**
- * What the lazily loaded `NarrationEngine` reports to the article view. Its
- * controls are stable across renders (they forward to the latest engine), so
- * the view can hold the report in state without a render loop.
- */
-export type NarrationEngineView = UseNarrationReturn;
-
 // ============================================================================
 // Default State
 // ============================================================================
@@ -116,7 +109,6 @@ export const DEFAULT_NARRATION_STATE: UseNarrationState & { status: "idle" } = {
   currentParagraph: 0,
   currentNarrationParagraph: 0,
   totalParagraphs: 0,
-  selectedVoice: null,
 };
 
 // ============================================================================
@@ -152,3 +144,14 @@ export function getNarrationPhase(state: UseNarrationState) {
 }
 
 export type NarrationPhase = ReturnType<typeof getNarrationPhase>;
+
+/**
+ * The DOM element (`para-N`) to highlight: the one being narrated, for as long
+ * as narration is on — paused included, so the reader can see where it will
+ * pick up. Null when there's none.
+ */
+export function getHighlightedParagraph(state: UseNarrationState): number | null {
+  return getNarrationPhase(state).isActive && state.currentParagraph >= 0
+    ? state.currentParagraph
+    : null;
+}

@@ -1318,56 +1318,9 @@ class SyncEngineTest {
         assertEquals(listOf("tag-1"), sub2().tagIds)
     }
 
-    /** A server that predates subscription events' `row`. */
+    /** From a server that predates subscription events' `row`. */
     @Test
-    fun clearingACustomTitleShowsTheFeedsOwn() = runTest {
-        server.subscriptions +=
-            Subscription(
-                "sub-1",
-                type = "web",
-                title = "Mine",
-                originalTitle = "Theirs",
-                tags = emptyList(),
-            )
-        engine.sync()
-        server.queueChanges(
-            events =
-                listOf(
-                    SyncEvent.SubscriptionCreated(
-                        "sub-2",
-                        subscription =
-                            com.lionreader.shared.api.EventSubscription(
-                                "sub-2",
-                                customTitle = "Also mine",
-                                tags = emptyList(),
-                            ),
-                        feed =
-                            com.lionreader.shared.api.EventFeed(
-                                title = "Also theirs",
-                                type = "web",
-                            ),
-                    )
-                )
-        )
-        engine.sync(downloadContent = false)
-        suspend fun titles() = reader.navigation().first().subscriptions.map { it.title }.sorted()
-        assertEquals(listOf("Also mine", "Mine"), titles())
-
-        server.queueChanges(
-            events =
-                listOf(
-                    SyncEvent.SubscriptionUpdated("sub-1", tags = emptyList(), customTitle = null),
-                    SyncEvent.SubscriptionUpdated("sub-2", tags = emptyList(), customTitle = null),
-                )
-        )
-        engine.sync(downloadContent = false)
-
-        assertEquals(listOf("Also theirs", "Theirs"), titles())
-    }
-
-    /** Neither a row nor a feed doesn't say the subscription's type; the server's listing does. */
-    @Test
-    fun aCreatedSubscriptionWithoutItsRowOrFeedIsListed() = runTest {
+    fun aSubscriptionEventWithoutItsRowListsSubscriptions() = runTest {
         engine.sync()
         server.subscriptions +=
             Subscription(
@@ -1381,9 +1334,16 @@ class SyncEngineTest {
 
         engine.sync(downloadContent = false)
 
-        val sub2 =
+        fun sub2() =
             db.subscriptionQueries.selectSubscriptions().executeAsList().single { it.id == "sub-2" }
-        assertEquals("email", sub2.type)
+        assertEquals("email", sub2().type)
+
+        server.subscriptions[server.subscriptions.lastIndex] =
+            server.subscriptions.last().copy(title = "Renamed")
+        server.queueChanges(events = listOf(SyncEvent.SubscriptionUpdated("sub-2")))
+        engine.sync(downloadContent = false)
+
+        assertEquals("Renamed", sub2().title)
     }
 
     @Test

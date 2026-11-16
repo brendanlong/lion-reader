@@ -11,7 +11,7 @@
 
 ## Frontend: test it, don't just review it
 
-The realtime SSE/cache code is the hardest part of the app to verify by reading. **SSE events must update the local store and caches directly, never trigger `entries.*` refetches** (`src/FRONTEND_STATE.md`), and the e2e suite enforces that with `recordTrpcProcedures`.
+The realtime SSE/cache code is the hardest part of the app to verify by reading. The e2e suite enforces its no-refetch rule ("Real-Time Updates" in `src/FRONTEND_STATE.md`) with `recordTrpcProcedures`.
 
 - **Cache and local store** (`src/lib/cache/`, `src/lib/local-db/`): `tests/unit/frontend/{cache,local-db}/`, against a real `QueryClient` (`createRealTrpcUtils`) and the real store. Assert list contents through the hooks components use (`useEntryListEntries` via `renderHookWithTrpc`), not by re-deriving order.
 - **Connection management** (`src/lib/events/`): pure state machines, tested in `tests/unit/frontend/events/`. Change the machines, not the hook glue.

@@ -32,10 +32,6 @@ upsertSubscription {
   WHERE id = :id;
 }
 
--- A null custom title means there is none.
-updateSubscriptionTitle:
-UPDATE subscription SET title = COALESCE(:customTitle, original_title) WHERE id = :id;
-
 deleteSubscription:
 DELETE FROM subscription WHERE id = ?;
 

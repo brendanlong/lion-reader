@@ -3,14 +3,21 @@
  *
  * Uses a text provider from the registry (`@/lib/ai/providers`) that supports
  * JSON-object responses to convert article HTML to narration-ready text for
- * text-to-speech. Falls back to simple HTML stripping when no provider is
- * available.
+ * text-to-speech, cached per content in `narration_content`. Falls back to
+ * plain text when the LLM can't be used.
  */
 
-import { getAppErrorCode } from "@/server/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { z } from "zod";
 import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import { generateUuidv7 } from "@/lib/uuidv7";
+import type { db as dbType } from "@/server/db";
+import { narrationContent } from "@/server/db/schema";
+import { getOwnedEntryRawContent } from "@/server/services/entry-reads";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
+import { selectDisplayedContent } from "@/lib/entry-content";
 import {
   formatModelRef,
   normalizeModelRef,
@@ -36,7 +43,12 @@ import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { spokenScripts } from "@/lib/narration/runs";
 import { buildAlignedNarration, type ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 import type { NarrationInputParagraph } from "@/lib/narration/html-to-narration-input";
-import { trackNarrationHighlightFallback } from "@/server/metrics/metrics";
+import {
+  startNarrationGenerationTimer,
+  trackNarrationGenerated,
+  trackNarrationGenerationError,
+  trackNarrationHighlightFallback,
+} from "@/server/metrics/metrics";
 
 /**
  * Schema for a single paragraph from the LLM.
@@ -158,8 +170,8 @@ export async function getNarrationModelRef(
 
 /**
  * Builds a fallback narration result (plain input text, no LLM) with a paragraph
- * map aligned to how the player splits paragraphs. Shared by every fallback arm,
- * here and in the narration router (LLM off/unavailable, empty/invalid output, errors).
+ * map aligned to how the player splits paragraphs. Shared by every fallback arm
+ * (LLM off/unavailable, empty/invalid output, errors).
  */
 export function buildFallbackNarration(
   inputParagraphs: NarrationInputParagraph[]
@@ -320,105 +332,64 @@ export function narrationFromLlmOutput(
 }
 
 /**
- * Generates narration-ready text from HTML content using an LLM.
+ * Generates narration-ready text from HTML content with `modelRef`, which the
+ * caller has checked can be used ({@link isNarrationModelUsable}).
  *
- * Uses structured JSON input/output with per-paragraph fallback.
- * If no provider key is configured or JSON parsing fails, falls back to
- * simple HTML-to-text conversion.
+ * Uses structured JSON input/output with per-paragraph fallback: an answer
+ * that can't be used comes back as the plain-text fallback, with `failure` set.
  *
- * @param htmlContent - HTML content to convert to narration
- * @param options - Per-user provider keys and optional model override
- * @returns Object containing the narration text and source
- * @throws Error if the provider API call fails (caller should handle and use fallback)
- *
- * @example
- * try {
- *   const result = await generateNarration('<p>Hello, Dr. Smith!</p>');
- *   console.log(result.text); // "Hello, Doctor Smith!"
- *   console.log(result.source); // "llm"
- * } catch (error) {
- *   console.error('Narration LLM failed:', error);
- *   // Use htmlToPlainText as fallback
- * }
+ * @throws if the provider call fails (the caller logs it and serves the fallback)
  */
-export async function generateNarration(
+async function generateNarration(
   htmlContent: string,
-  options: {
-    keys: AiProviderKeys;
-    userModel?: string | null;
-    /** The model already resolved from `userModel` (see `getNarrationModelRef`). */
-    modelRef?: ModelRef;
-  }
+  options: { keys: AiProviderKeys; modelRef: ModelRef }
 ): Promise<GenerateNarrationResult> {
-  const modelRef =
-    options.modelRef ?? (await getNarrationModelRef(options.userModel, options.keys));
-
-  // Convert HTML to structured paragraphs
+  const { keys, modelRef } = options;
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);
 
-  // If the model's provider is not configured, use fallback
-  if (!isProviderAvailable(modelRef.provider, options.keys)) {
-    logger.debug("Narration LLM provider not configured, using fallback text conversion", {
-      provider: modelRef.provider,
-    });
-    trackNarrationHighlightFallback();
-    return buildFallbackNarration(inputParagraphs);
-  }
+  const rawOutput = await generateChatCompletion(modelRef, keys, "narrationTextProcessing", {
+    system: NARRATION_SYSTEM_PROMPT,
+    userPrompt: JSON.stringify({ paragraphs: inputParagraphs }),
+    // Mechanical text normalization task — minimal reasoning keeps latency and
+    // token cost low. gpt-oss emits any reasoning in a separate `reasoning`
+    // field, so the response content is still the clean JSON we parse below.
+    reasoningEffort: "low",
+    jsonObject: true,
+    temperature: 0.1, // Low temperature for consistency
+    // Output must echo back every rewritten paragraph for the whole article,
+    // and reasoning models spend some of this budget on reasoning tokens even
+    // at "low" effort. Keep the cap high so long articles don't truncate into
+    // the (uncached, retried after a backoff) fallback path. We only pay for
+    // tokens actually generated.
+    maxTokens: 16000,
+  });
 
-  try {
-    // Send paragraphs as JSON
-    const userPrompt = JSON.stringify({ paragraphs: inputParagraphs });
+  const narration = narrationFromLlmOutput(inputParagraphs, rawOutput);
+  if (narration) return narration;
 
-    const rawOutput = await generateChatCompletion(
-      modelRef,
-      options.keys,
-      "narrationTextProcessing",
-      {
-        system: NARRATION_SYSTEM_PROMPT,
-        userPrompt,
-        // Mechanical text normalization task — minimal reasoning keeps latency and
-        // token cost low. gpt-oss emits any reasoning in a separate `reasoning`
-        // field, so the response content is still the clean JSON we parse below.
-        reasoningEffort: "low",
-        jsonObject: true, // Request JSON output
-        temperature: 0.1, // Low temperature for consistency
-        // Output must echo back every rewritten paragraph for the whole article,
-        // and (unlike the old non-reasoning llama-3.1-8b) gpt-oss spends some of
-        // this budget on reasoning tokens even at "low" effort. Keep the cap high
-        // so long articles don't truncate into the (uncached, retried after a backoff)
-        // fallback path. We only pay for tokens actually generated.
-        maxTokens: 16000,
-      }
-    );
+  logger.warn("Narration LLM output was empty or unusable, using fallback", {
+    provider: modelRef.provider,
+    rawOutput: rawOutput.substring(0, 200),
+  });
+  trackNarrationHighlightFallback();
+  return {
+    ...buildFallbackNarration(inputParagraphs),
+    failure: {
+      kind: "unusable_output",
+      onCallerTerms: !isDefaultNarrationModel(modelRef) || isOnUserKey(modelRef.provider, keys),
+    },
+  };
+}
 
-    const narration = narrationFromLlmOutput(inputParagraphs, rawOutput);
-    if (narration) return narration;
-
-    logger.warn("Narration LLM output was empty or unusable, using fallback", {
-      provider: modelRef.provider,
-      rawOutput: rawOutput.substring(0, 200),
-    });
-    trackNarrationHighlightFallback();
-    return {
-      ...buildFallbackNarration(inputParagraphs),
-      failure: {
-        kind: "unusable_output",
-        onCallerTerms:
-          !isDefaultNarrationModel(modelRef) || isOnUserKey(modelRef.provider, options.keys),
-      },
-    };
-  } catch (error) {
-    // Log the error and re-throw so caller can handle (running out of the
-    // plan's quota isn't one)
-    if (getAppErrorCode(error) !== "QUOTA_EXCEEDED") {
-      logger.error("Narration LLM call failed", {
-        provider: modelRef.provider,
-        model: modelRef.model,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    throw error;
-  }
+/**
+ * Whether `ref` can preprocess narration on `keys`: the plan includes it and
+ * the model can be used (see `isModelAllowed`).
+ */
+async function isNarrationModelUsable(ref: ModelRef, keys?: AiProviderKeys): Promise<boolean> {
+  return (
+    planIncludesFeature(keys, ref.provider, "narrationTextProcessing") &&
+    (await isTextModelAllowed(formatModelRef(ref.provider, ref.model), keys))
+  );
 }
 
 /**
@@ -429,9 +400,234 @@ export async function isNarrationLlmAvailable(
   keys?: AiProviderKeys,
   userModel?: string | null
 ): Promise<boolean> {
-  const ref = await getNarrationModelRef(userModel, keys);
-  return (
-    planIncludesFeature(keys, ref.provider, "narrationTextProcessing") &&
-    (await isTextModelAllowed(formatModelRef(ref.provider, ref.model), keys))
-  );
+  return isNarrationModelUsable(await getNarrationModelRef(userModel, keys), keys);
+}
+
+/**
+ * Time to wait before retrying the LLM after a failure the content caused.
+ */
+const RETRY_AFTER_MS = 60 * 60 * 1000;
+
+/** An entry's narration, as `narration.generate` returns it. */
+export interface EntryNarration {
+  narration: string;
+  /** Served from `narration_content` rather than generated now. */
+  cached: boolean;
+  source: "llm" | "fallback";
+  /** Maps each narration paragraph index to its original HTML element index. */
+  paragraphMap: ParagraphMapEntry[];
+}
+
+/**
+ * The narration of the entry variant `user` is looking at.
+ *
+ * Looks up existing narration by content hash for deduplication. If there's
+ * none, calls the LLM and caches what it says. Falls back to plain text when
+ * the LLM is off, unavailable, recently failed on this content, or errors.
+ *
+ * @throws entryNotFound if the entry isn't visible to the user
+ */
+export async function getEntryNarration(
+  db: typeof dbType,
+  user: { id: string; narrationModel: string | null },
+  /** The user's API keys (`getUserApiKeys`). */
+  keys: AiProviderKeys,
+  input: {
+    id: string;
+    /** When false, uses simple HTML-to-text conversion. */
+    useLlmNormalization: boolean;
+    showFullContent: boolean;
+    showOriginal: boolean;
+  }
+): Promise<EntryNarration> {
+  // Fetch the entry with the same visibility rule the entry list applies.
+  // Both regular entries and saved articles are in the entries table now.
+  const entry = await getOwnedEntryRawContent(db, user.id, input.id);
+
+  // Narrate exactly what the user is looking at: the variant the renderer
+  // picks (same selector), sanitized the way the read path sanitizes it.
+  // Sanitization is read-path-only, so the raw columns hold markup the page
+  // never shows — a `<style>` block narration would otherwise read aloud,
+  // and a lazy-loading `<noscript><img>` whose element the client never
+  // numbers, which would shift every paragraph after it onto the wrong one.
+  const sourceContent =
+    (await sanitizeEntryHtmlAsync(
+      selectDisplayedContent(entry, {
+        showFullContent: input.showFullContent,
+        showOriginal: input.showOriginal,
+      })
+    )) ?? "";
+
+  // Handle empty content
+  if (!sourceContent.trim()) {
+    trackNarrationGenerated(false, "fallback");
+    return {
+      narration: "",
+      cached: false,
+      source: "fallback",
+      paragraphMap: [],
+    };
+  }
+
+  // The model this request narrates with, resolved once: the cache slot
+  // it reads (see narrationContentHash) and the call that fills it must
+  // agree on whose output it is.
+  const modelRef = await getNarrationModelRef(user.narrationModel, keys);
+  const contentHash = narrationContentHash(sourceContent, narrationCacheOwner(modelRef, user.id));
+
+  const selectByContentHash = () =>
+    db
+      .select()
+      .from(narrationContent)
+      .where(eq(narrationContent.contentHash, contentHash))
+      .limit(1);
+
+  // Look up existing narration by content hash
+  let narrationRecord = (await selectByContentHash())[0];
+
+  // Create the placeholder row if there isn't one yet. `content_hash` is
+  // *globally* unique (the cache is deduplicated across users), so two
+  // users narrating the same article at once both miss the SELECT above and
+  // race here; let the constraint arbitrate and re-read the winner's row
+  // rather than surfacing a raw unique-violation 500.
+  if (!narrationRecord) {
+    const inserted = await db
+      .insert(narrationContent)
+      .values({
+        id: generateUuidv7(),
+        contentHash,
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing({ target: narrationContent.contentHash })
+      .returning();
+    narrationRecord = inserted[0] ?? (await selectByContentHash())[0];
+  }
+
+  if (!narrationRecord) {
+    // Only reachable if the conflicting row was deleted between the insert
+    // and the re-read; nothing useful to narrate against, so surface it.
+    throw errors.internal("Failed to create narration record");
+  }
+
+  // Return cached narration if available — with the map persisted at
+  // generation time, which is the only one guaranteed to align with this
+  // exact text. A row with no stored map predates that column and its
+  // numbering is a format older than the cache key, so it regenerates.
+  if (narrationRecord.contentNarration && narrationRecord.paragraphMap) {
+    trackNarrationGenerated(true, "llm");
+    return {
+      narration: narrationRecord.contentNarration,
+      cached: true,
+      source: "llm",
+      paragraphMap: narrationRecord.paragraphMap,
+    };
+  }
+
+  // Plain-text narration with a paragraph map aligned to the player's split.
+  const fallbackResponse = (
+    result = buildFallbackNarration(htmlToNarrationInput(sourceContent).paragraphs)
+  ): EntryNarration => {
+    trackNarrationGenerated(false, "fallback");
+    return {
+      narration: result.text,
+      cached: false,
+      source: "fallback",
+      paragraphMap: result.paragraphMap,
+    };
+  };
+
+  // Check if we should retry after a previous error
+  const canRetryLLM =
+    !narrationRecord.errorAt || Date.now() - narrationRecord.errorAt.getTime() > RETRY_AFTER_MS;
+
+  // If user disabled LLM normalization, the model can't be used, or we had a recent error, fall back to plain text
+  if (
+    !input.useLlmNormalization ||
+    !(await isNarrationModelUsable(modelRef, keys)) ||
+    !canRetryLLM
+  ) {
+    return fallbackResponse();
+  }
+
+  // Start timer for LLM generation duration
+  const stopTimer = startNarrationGenerationTimer();
+
+  // Record a failure the content caused so replays within RETRY_AFTER_MS
+  // serve the plain-text fallback instead of paying for another LLM call.
+  // The row is everyone's, so nothing else is recorded on it.
+  const recordId = narrationRecord.id;
+  const recordFailure = async (failure: NarrationFailure, message: string) => {
+    if (narrationFailureScope(failure) !== "content") return;
+    await db
+      .update(narrationContent)
+      .set({ error: message, errorAt: new Date() })
+      .where(eq(narrationContent.id, recordId));
+  };
+
+  try {
+    // Generate via LLM
+    const result = await generateNarration(sourceContent, { keys, modelRef });
+
+    // Stop the timer after generation completes
+    stopTimer();
+
+    // The LLM answered but its output was empty or unusable: don't cache the
+    // fallback as narration, but back off — the tokens were billed, and
+    // the same input would likely fail again.
+    if (result.source === "fallback") {
+      trackNarrationGenerationError("empty_response");
+      if (result.failure) {
+        await recordFailure(result.failure, "LLM returned empty or unparseable output");
+      }
+      return fallbackResponse(result);
+    }
+
+    // Cache in narration_content table, clear any previous error.
+    // Persist the paragraph map so future cache hits return the exact
+    // alignment produced here instead of reconstructing it.
+    await db
+      .update(narrationContent)
+      .set({
+        contentNarration: result.text,
+        paragraphMap: result.paragraphMap,
+        generatedAt: new Date(),
+        error: null,
+        errorAt: null,
+      })
+      .where(eq(narrationContent.id, narrationRecord.id));
+
+    trackNarrationGenerated(false, "llm");
+    return {
+      narration: result.text,
+      cached: false,
+      source: "llm",
+      paragraphMap: result.paragraphMap,
+    };
+  } catch (error) {
+    // Stop the timer even on error
+    stopTimer();
+
+    // Out of the plan's narration cleanup: plain text is the narration it
+    // gets, and nothing failed.
+    if (getAppErrorCode(error) === "QUOTA_EXCEEDED") {
+      return fallbackResponse();
+    }
+
+    logger.error("Narration generation failed", {
+      contentHash,
+      provider: modelRef.provider,
+      model: modelRef.model,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    // Track the error
+    trackNarrationGenerationError("api_error");
+
+    await recordFailure(
+      { kind: "error", error },
+      error instanceof Error ? error.message : "Unknown error"
+    );
+
+    return fallbackResponse();
+  }
 }

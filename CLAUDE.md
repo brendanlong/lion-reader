@@ -81,7 +81,6 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 - **Soft deletes**: `deleted_at`/`unsubscribed_at`
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
 - **Migrations** must work with the previous release: rules in `migrations/CLAUDE.md`.
-- **Views**: use `user_feeds` / `visible_entries` for frontend queries instead of manual joins (`src/server/CLAUDE.md`)
 
 ## API Conventions
 

@@ -238,6 +238,9 @@
     narrationTargets(root).forEach((el, index) => targets.set(el, index));
     return collectRuns(root, { voice, targets, consumed: /* @__PURE__ */ new Set() }, 0);
   }
+  function directNarration(root) {
+    return buildAlignedNarration(narrationRuns(root, DIRECT_TTS_VOICE));
+  }
   function collectRuns(root, ctx, depth) {
     const { voice, targets, consumed } = ctx;
     const runs = [];
@@ -628,9 +631,7 @@
       narrationTargets(document.body).forEach(
         (el, index) => el.setAttribute("data-para-id", `para-${index}`)
       );
-      const { narrationText, paragraphMap: paragraphMap2 } = withEndOfArticle(
-        buildAlignedNarration(narrationRuns(document.body, DIRECT_TTS_VOICE))
-      );
+      const { narrationText, paragraphMap: paragraphMap2 } = withEndOfArticle(directNarration(document.body));
       window.lionReader?.postMessage(
         JSON.stringify({
           type: "narration",

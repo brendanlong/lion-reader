@@ -30,6 +30,7 @@ import {
 } from "../src/lib/upload-limits";
 import { MAX_ENTRIES_PAGE_SIZE } from "../src/server/services/entries";
 import { MAX_ENTRY_STATE_BATCH } from "../src/server/services/entry-state";
+import { MAX_SUBSCRIPTIONS_PAGE_SIZE } from "../src/server/services/subscriptions";
 import { MAX_SYNC_PAGE_ENTRIES } from "../src/server/services/sync";
 
 export const APP_SERVER_CONSTANTS_PATH =
@@ -65,6 +66,9 @@ package com.lionreader.shared.api
 object ServerLimits {
     /** Ids per \`/entries/batch\` request, and the largest \`/entries\` \`limit\`. */
     const val ENTRIES_PAGE_SIZE = ${int(MAX_ENTRIES_PAGE_SIZE)}
+
+    /** The largest \`/subscriptions\` \`limit\`. */
+    const val SUBSCRIPTIONS_PAGE_SIZE = ${int(MAX_SUBSCRIPTIONS_PAGE_SIZE)}
 
     /** Entries per \`/entries/mark-read\` or \`/entries/starred\` request. */
     const val STATE_WRITE_ENTRIES = ${int(MAX_ENTRY_STATE_BATCH)}

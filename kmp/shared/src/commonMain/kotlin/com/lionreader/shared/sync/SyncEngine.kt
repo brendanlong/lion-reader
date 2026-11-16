@@ -352,7 +352,11 @@ class SyncEngine(
                 it !in spam && it !in complete && (it in newIds || !writer.entryExists(it))
             }
         val created = events.filterIsInstance<SyncEvent.SubscriptionCreated>()
-        if (created.any { it.subscriptionRow == null }) listSubscriptions()
+        val withoutRow = events.any {
+            (it is SyncEvent.SubscriptionCreated && it.row == null) ||
+                (it is SyncEvent.SubscriptionUpdated && it.row == null)
+        }
+        if (withoutRow) listSubscriptions()
         val fetched = api.getEntries(ids)
         val resubscribed = created.flatMap {
             api.listEntries(ListFilter.ALL, null, it.subscriptionId).items

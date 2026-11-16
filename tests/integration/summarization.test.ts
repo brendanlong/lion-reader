@@ -43,7 +43,12 @@ import {
 async function createVisibleEntry(
   userId: string,
   contentHash: string,
-  options: { unsubscribed?: boolean; saved?: boolean; fullContentHash?: string } = {}
+  options: {
+    unsubscribed?: boolean;
+    saved?: boolean;
+    fullContentHash?: string;
+    contentCleaned?: string;
+  } = {}
 ): Promise<string> {
   const now = new Date();
   let owner: string; // the entry's feed, or for a saved article its user
@@ -64,7 +69,7 @@ async function createVisibleEntry(
   const entryId = await createTestEntry(owner, {
     type: options.saved ? "saved" : "web",
     title: "Test Entry",
-    contentCleaned: "<p>Some article content to summarize.</p>",
+    contentCleaned: options.contentCleaned ?? "<p>Some article content to summarize.</p>",
     // The summary cache is keyed off this, so it's the caller's value verbatim.
     contentHash,
     ...(options.fullContentHash
@@ -482,6 +487,21 @@ describe("summarization.generate provider failures", () => {
         vi.unstubAllEnvs();
       }
     });
+  });
+
+  it("refuses, without calling anyone, content that's only a script and a stylesheet", async () => {
+    providerAnswer = { status: 200, type: "", message: "Summary" };
+    const userId = await createTestUser({ emailPrefix: "summ" });
+    createdUserIds.push(userId);
+    const entryId = await createVisibleEntry(userId, `hash-${generateUuidv7()}`, {
+      contentCleaned: "<style>p { color: red; }</style><script>track();</script>",
+    });
+    const caller = createCaller(await createAuthContext(userId));
+
+    const error = await failure(caller.summarization.generate({ entryId }));
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(error.message).toBe("Entry has no content to summarize");
+    expect(providerRequests).toBe(0);
   });
 
   it("says so, without calling anyone, when the user's saved key can't be read", async () => {
