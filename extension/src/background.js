@@ -9,21 +9,14 @@
  * - Badge updates
  */
 
-import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
-import { consumeAuthState, createWebAuthUrl, getApiCredentials } from "./constants.js";
+import { saveOrSignIn } from "./api.js";
+import { consumeAuthState } from "./constants.js";
 
 /**
  * Store the API token along with the origin of the server that issued it.
  */
 async function setApiToken(token, origin) {
   await chrome.storage.sync.set({ apiCredentials: { token, origin } });
-}
-
-/**
- * Open the web auth flow to save an article and get a token.
- */
-async function openWebAuthFlow(serverUrl, url, title) {
-  await chrome.tabs.create({ url: await createWebAuthUrl(serverUrl, url, title) });
 }
 
 /**
@@ -40,35 +33,19 @@ async function setBadge(tabId, text, color, clearAfterMs) {
 }
 
 /**
- * Save `url` using the stored token, reporting progress on the tab's badge.
- * Falls back to the web auth flow if there is no token, it has expired, or
- * Google permission is needed.
+ * Save `url`, reporting progress on the tab's badge.
  */
 async function saveWithBadge(tabId, url, title, failureLog) {
-  const { serverUrl, token } = await getApiCredentials();
-  if (!(await checkServerPermission(serverUrl))) {
-    return;
-  }
-
-  if (!token) {
-    await openWebAuthFlow(serverUrl, url, title);
-    return;
-  }
-
   await setBadge(tabId, "...", "#71717a");
 
   try {
-    await saveArticle(serverUrl, url, title, token);
-    await setBadge(tabId, "\u2713", "#16a34a", 2000);
+    if (await saveOrSignIn(url, title)) {
+      await setBadge(tabId, "\u2713", "#16a34a", 2000);
+    } else {
+      await chrome.action.setBadgeText({ text: "", tabId });
+    }
   } catch (err) {
     console.error(failureLog, err);
-
-    if (needsWebAuthFlow(err)) {
-      await openWebAuthFlow(serverUrl, url, title);
-      await chrome.action.setBadgeText({ text: "", tabId });
-      return;
-    }
-
     await setBadge(tabId, "!", "#dc2626", 3000);
   }
 }

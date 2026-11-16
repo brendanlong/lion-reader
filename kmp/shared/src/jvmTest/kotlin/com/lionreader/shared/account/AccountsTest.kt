@@ -354,10 +354,6 @@ class AccountsTest {
                         override fun putLong(key: String, value: Long) {
                             values[key] = value
                         }
-
-                        override fun remove(key: String) {
-                            values.remove(key)
-                        }
                     }
                     .changes()
             }

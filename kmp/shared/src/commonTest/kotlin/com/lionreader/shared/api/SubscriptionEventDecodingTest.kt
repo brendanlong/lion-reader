@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
-/** Subscription events carry the subscription's `row`, beside the fields older servers sent. */
+/** Subscription events carry the subscription's `row`. */
 class SubscriptionEventDecodingTest {
     private fun decode(json: String): SyncEvent? =
         parseSyncEvent(Json.parseToJsonElement(json) as JsonObject)
@@ -42,22 +42,7 @@ class SubscriptionEventDecodingTest {
             )
                 as SyncEvent.SubscriptionCreated
 
-        assertEquals(expected, event.subscriptionRow)
-    }
-
-    @Test
-    fun createdFromAServerWithoutTheRow() {
-        val event =
-            decode(
-                """{"type": "subscription_created", "subscriptionId": "sub-1",
-                    "subscription": {"id": "sub-1", "customTitle": "Mine",
-                        "tags": [{"id": "tag-1", "name": "Tech", "color": null}]},
-                    "feed": {"type": "web", "url": "https://example.com/feed.xml",
-                        "title": "Theirs"}}"""
-            )
-                as SyncEvent.SubscriptionCreated
-
-        assertEquals(expected, event.subscriptionRow)
+        assertEquals(expected, event.row)
     }
 
     @Test

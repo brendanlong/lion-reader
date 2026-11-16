@@ -8,6 +8,9 @@ object ServerLimits {
     /** Ids per `/entries/batch` request, and the largest `/entries` `limit`. */
     const val ENTRIES_PAGE_SIZE = 100
 
+    /** The largest `/subscriptions` `limit`. */
+    const val SUBSCRIPTIONS_PAGE_SIZE = 100
+
     /** Entries per `/entries/mark-read` or `/entries/starred` request. */
     const val STATE_WRITE_ENTRIES = 1000
 

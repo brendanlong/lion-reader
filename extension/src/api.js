@@ -2,7 +2,7 @@
  * Lion Reader API calls shared by the popup and the background worker.
  */
 
-import { hasServerPermission } from "./constants.js";
+import { createWebAuthUrl, getApiCredentials, hasServerPermission } from "./constants.js";
 
 /**
  * Errors the server returns when saving a Google Doc needs the user to sign in
@@ -20,26 +20,22 @@ const GOOGLE_PERMISSION_ERRORS = new Set([
  * Whether a saveArticle error means the save has to go through the web auth
  * flow (which saves the article itself once auth is sorted out).
  */
-export function needsWebAuthFlow(err) {
+function needsWebAuthFlow(err) {
   return err.message === "TOKEN_EXPIRED" || GOOGLE_PERMISSION_ERRORS.has(err.message);
 }
 
 /**
- * Open the options page if `serverUrl` hasn't been granted its host
- * permission, which saving there needs. Returns whether it was granted.
+ * Open the web auth flow, which saves the article and gets a new token. The
+ * background worker picks the token up from the callback page.
  */
-export async function checkServerPermission(serverUrl) {
-  if (await hasServerPermission(serverUrl)) {
-    return true;
-  }
-  await chrome.runtime.openOptionsPage();
-  return false;
+async function openWebAuthFlow(serverUrl, url, title) {
+  await chrome.tabs.create({ url: await createWebAuthUrl(serverUrl, url, title) });
 }
 
 /**
  * Save an article to `serverUrl` using Bearer token auth.
  */
-export async function saveArticle(serverUrl, url, title, token) {
+async function saveArticle(serverUrl, url, title, token) {
   const apiUrl = `${serverUrl}/api/v1/saved`;
 
   const body = { url };
@@ -56,9 +52,7 @@ export async function saveArticle(serverUrl, url, title, token) {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-
-    // trpc-to-openapi returns { message: "...", code: "..." } at top level
-    const errorMessage = data.message || data.error?.message || `HTTP ${response.status}`;
+    const errorMessage = data.message || `HTTP ${response.status}`;
 
     if (GOOGLE_PERMISSION_ERRORS.has(errorMessage)) {
       throw new Error(errorMessage);
@@ -70,13 +64,37 @@ export async function saveArticle(serverUrl, url, title, token) {
       throw new Error("TOKEN_EXPIRED");
     }
 
-    // Check if site blocked the request (502 Bad Gateway from our server)
-    if (response.status === 502 || errorMessage.includes("blocked the request")) {
-      throw new Error("SITE_BLOCKED");
-    }
-
     throw new Error(errorMessage);
   }
 
   return await response.json();
+}
+
+/**
+ * Save `url` to the configured server with the stored token. Returns the saved
+ * article, or null if it handed off instead: to the options page when the
+ * server's host permission is missing, or to the web auth flow when there is
+ * no token, it has expired, or Google permission is needed.
+ */
+export async function saveOrSignIn(url, title) {
+  const { serverUrl, token } = await getApiCredentials();
+  if (!(await hasServerPermission(serverUrl))) {
+    await chrome.runtime.openOptionsPage();
+    return null;
+  }
+
+  if (!token) {
+    await openWebAuthFlow(serverUrl, url, title);
+    return null;
+  }
+
+  try {
+    return await saveArticle(serverUrl, url, title, token);
+  } catch (err) {
+    if (needsWebAuthFlow(err)) {
+      await openWebAuthFlow(serverUrl, url, title);
+      return null;
+    }
+    throw err;
+  }
 }
