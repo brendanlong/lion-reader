@@ -1,5 +1,4 @@
-//! OPML parser — a direct port of the old
-//! `src/server/feed/streaming/opml-parser.ts`. Structural validation errors
+//! OPML parser. Structural validation errors
 //! (missing opml/body elements) are reported via flags on [`OpmlResult`] so
 //! the error type and messages stay in TypeScript.
 

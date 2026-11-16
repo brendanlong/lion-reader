@@ -6,13 +6,20 @@
  * between feed readers. It supports nested folders/categories through nested
  * outline elements.
  *
- * Uses SAX-style parsing for memory efficiency.
+ * Parsing is the native `@lion-reader/feed-parser` module's SAX state machine
+ * (`native/feed-parser/core/src/opml.rs`); structural validation and the error
+ * type live here.
  *
  * @see http://opml.org/spec2.opml
  */
 
 import { XMLBuilder } from "fast-xml-parser";
-import { parseOpmlAsync as parseOpmlAsyncInternal, OpmlParseError } from "./streaming/opml-parser";
+import {
+  parseOpml as nativeParseOpml,
+  parseOpmlAsync as nativeParseOpmlAsync,
+} from "@lion-reader/feed-parser";
+import type { RawOpmlResult } from "@lion-reader/feed-parser";
+import { NATIVE_INLINE_MAX_CHARS } from "@/server/native-inline";
 
 /**
  * A feed parsed from OPML.
@@ -28,8 +35,15 @@ export interface OpmlFeed {
   category?: string[];
 }
 
-// Re-export error for backwards compatibility
-export { OpmlParseError };
+/**
+ * Error thrown when OPML parsing fails.
+ */
+export class OpmlParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpmlParseError";
+  }
+}
 
 /**
  * Input subscription for OPML generation.
@@ -57,6 +71,28 @@ export interface OpmlMetadata {
   ownerEmail?: string;
 }
 
+function toOpmlFeeds(raw: RawOpmlResult): OpmlFeed[] {
+  if (!raw.hasOpml) {
+    throw new OpmlParseError("Invalid OPML: missing opml element");
+  }
+  if (!raw.hasBody) {
+    throw new OpmlParseError("Invalid OPML: missing body element");
+  }
+  return raw.feeds.map((feed) => ({
+    xmlUrl: feed.xmlUrl,
+    title: feed.title,
+    htmlUrl: feed.htmlUrl,
+    category: feed.category,
+  }));
+}
+
+/** Wrap XML-level parse failures so callers always see an OpmlParseError. */
+function toOpmlError(error: unknown): OpmlParseError {
+  return error instanceof OpmlParseError
+    ? error
+    : new OpmlParseError(`Invalid OPML: ${error instanceof Error ? error.message : String(error)}`);
+}
+
 /**
  * Parses an OPML XML string into an array of feeds.
  *
@@ -69,8 +105,13 @@ export interface OpmlMetadata {
  * @throws OpmlParseError if the XML is not valid OPML
  */
 export async function parseOpmlAsync(xml: string): Promise<OpmlFeed[]> {
-  const result = await parseOpmlAsyncInternal(xml);
-  return result.feeds as OpmlFeed[];
+  try {
+    return toOpmlFeeds(
+      xml.length <= NATIVE_INLINE_MAX_CHARS ? nativeParseOpml(xml) : await nativeParseOpmlAsync(xml)
+    );
+  } catch (error) {
+    throw toOpmlError(error);
+  }
 }
 
 /**
