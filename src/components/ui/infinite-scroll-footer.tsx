@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useState } from "react";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { SpinnerIcon } from "./icons";
 
@@ -18,20 +18,20 @@ interface PaginationState {
 }
 
 /**
- * A ref for the sentinel element: once it comes within 100px of the enclosing
- * scroll container (`ScrollContainerContext`, else the viewport), the next
- * page is fetched.
+ * A callback ref for the sentinel element: once it comes within 100px of the
+ * enclosing scroll container (`ScrollContainerContext`, else the viewport),
+ * the next page is fetched. Observation starts whenever the element mounts,
+ * so a sentinel rendered only once a list has entries is observed too.
  */
 export function useLoadMoreSentinel<T extends Element>({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-}: PaginationState): RefObject<T | null> {
-  const sentinelRef = useRef<T>(null);
+}: PaginationState): (element: T | null) => void {
+  const [target, setTarget] = useState<T | null>(null);
   const scrollContainerRef = useScrollContainer();
 
   useEffect(() => {
-    const target = sentinelRef.current;
     if (!target || !hasNextPage || isFetchingNextPage) return;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -41,9 +41,9 @@ export function useLoadMoreSentinel<T extends Element>({
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, scrollContainerRef]);
+  }, [target, fetchNextPage, hasNextPage, isFetchingNextPage, scrollContainerRef]);
 
-  return sentinelRef;
+  return setTarget;
 }
 
 interface InfiniteScrollFooterProps extends PaginationState {
