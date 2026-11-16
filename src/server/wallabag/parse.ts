@@ -2,23 +2,13 @@
  * Wallabag API Request Parsing and Response Helpers
  */
 
+import { z } from "zod";
+import { jsonResponse } from "@/server/http/json-response";
 import {
   clientErrorReply,
   withClientErrors as withClientErrorsAs,
   type ClientErrorReply,
 } from "@/server/errors";
-
-/**
- * Creates a JSON response.
- */
-export function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-    },
-  });
-}
 
 /**
  * Creates an error response in Wallabag format.
@@ -85,23 +75,15 @@ export function parseEntryListParams(url: URL): {
   };
 }
 
+const jsonObjectSchema = z.record(z.string(), z.unknown());
+
 /**
  * Parses form data from a POST/PATCH request body.
- * Handles JSON, form-urlencoded, and multipart form data.
+ * Handles form-urlencoded and multipart form data, and reads anything else as
+ * JSON (an empty body when it isn't a JSON object).
  */
 export async function parseBody(request: Request): Promise<Record<string, string>> {
   const contentType = request.headers.get("content-type") ?? "";
-
-  if (contentType.includes("application/json")) {
-    const json = await request.json();
-    const result: Record<string, string> = {};
-    for (const [key, value] of Object.entries(json as Record<string, unknown>)) {
-      if (value !== null && value !== undefined) {
-        result[key] = String(value);
-      }
-    }
-    return result;
-  }
 
   if (contentType.includes("application/x-www-form-urlencoded")) {
     const text = await request.text();
@@ -124,17 +106,12 @@ export async function parseBody(request: Request): Promise<Record<string, string
     return result;
   }
 
-  // Try JSON as fallback
-  try {
-    const json = await request.json();
-    const result: Record<string, string> = {};
-    for (const [key, value] of Object.entries(json as Record<string, unknown>)) {
-      if (value !== null && value !== undefined) {
-        result[key] = String(value);
-      }
+  const json = jsonObjectSchema.safeParse(await request.json().catch(() => undefined));
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(json.data ?? {})) {
+    if (value !== null && value !== undefined) {
+      result[key] = String(value);
     }
-    return result;
-  } catch {
-    return {};
   }
+  return result;
 }

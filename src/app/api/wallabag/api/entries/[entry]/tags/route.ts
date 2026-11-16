@@ -6,14 +6,10 @@
  *   labels), creating the missing ones; returns the entry
  */
 
-import { requireAuth } from "@/server/wallabag/auth";
-import {
-  errorResponse,
-  jsonResponse,
-  parseBody,
-  parseTagLabels,
-  withClientErrors,
-} from "@/server/wallabag/parse";
+import { withWallabagAuth } from "@/server/wallabag/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse, parseBody, parseTagLabels } from "@/server/wallabag/parse";
 import { resolveWallabagEntry } from "@/server/wallabag/id";
 import { addEntryTags, listEntryTags } from "@/server/wallabag/tags";
 import { formatEntryResponse } from "@/server/wallabag/entry-response";
@@ -21,35 +17,33 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async function (
+export const GET = withWallabagAuth(async function (
   request: Request,
+  user: User,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
 
-  const resolved = await resolveWallabagEntry(db, auth.userId, entryParam);
+  const resolved = await resolveWallabagEntry(db, user.id, entryParam);
   if (!resolved) {
     return errorResponse("not_found", "Entry not found", 404);
   }
-  const tags = await listEntryTags(db, auth.userId, [resolved.id]);
+  const tags = await listEntryTags(db, user.id, [resolved.id]);
   return jsonResponse(tags.get(resolved.id) ?? []);
 });
 
-export const POST = withClientErrors(async function (
+export const POST = withWallabagAuth(async function (
   request: Request,
+  user: User,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
   const body = await parseBody(request);
 
-  const resolved = await resolveWallabagEntry(db, auth.userId, entryParam);
+  const resolved = await resolveWallabagEntry(db, user.id, entryParam);
   if (!resolved) {
     return errorResponse("not_found", "Entry not found", 404);
   }
-  await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
-  return formatEntryResponse(db, auth.userId, resolved);
+  await addEntryTags(db, user.id, resolved.id, parseTagLabels(body.tags));
+  return formatEntryResponse(db, user.id, resolved);
 });

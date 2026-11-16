@@ -19,13 +19,13 @@
  * - Unstar:      r=user/-/state/com.google/starred
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
 import {
   parseFormData,
   parseItemIds,
   textResponse,
   errorResponse,
-  withClientErrors,
 } from "@/server/google-reader/parse";
 import { greaderItemIdsToUuids } from "@/server/google-reader/id";
 import { isState } from "@/server/google-reader/streams";
@@ -34,10 +34,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   const params = await parseFormData(request);
 
   let itemIds: bigint[];
@@ -63,7 +60,7 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   const removeTags = params.getAll("r");
 
   // Resolve item IDs to UUIDs
-  const uuidMap = await greaderItemIdsToUuids(db, session.user.id, itemIds);
+  const uuidMap = await greaderItemIdsToUuids(db, user.id, itemIds);
   const entryUuids = Array.from(uuidMap.values());
 
   if (entryUuids.length === 0) {
@@ -76,9 +73,9 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
 
   const entriesToMark = entryUuids.map((id) => ({ id }));
   if (addRead) {
-    await entryStateService.markEntriesRead(db, session.user.id, entriesToMark, true);
+    await entryStateService.markEntriesRead(db, user.id, entriesToMark, true);
   } else if (removeRead) {
-    await entryStateService.markEntriesRead(db, session.user.id, entriesToMark, false);
+    await entryStateService.markEntriesRead(db, user.id, entriesToMark, false);
   }
 
   // Process starred state changes
@@ -88,7 +85,7 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   if (addStarred || removeStarred) {
     await entryStateService.updateEntriesStarred(
       db,
-      session.user.id,
+      user.id,
       entryUuids.map((id) => ({ id })),
       addStarred
     );

@@ -16,6 +16,8 @@ import { createSession, type SessionData } from "@/server/auth/session";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { authenticateCredential } from "@/server/auth/credential";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import type { User } from "@/server/db/schema";
+import { withClientErrors } from "./parse";
 
 /**
  * Authenticates a user with email/password and returns session credentials
@@ -60,7 +62,7 @@ export async function clientLogin(
  * - `GoogleLogin auth={token}` (standard Google Reader format)
  * - `Bearer {token}` (some clients use this)
  */
-export function extractAuthToken(request: Request): string | null {
+function extractAuthToken(request: Request): string | null {
   const authHeader = request.headers.get("authorization");
   if (!authHeader) return null;
 
@@ -79,12 +81,20 @@ export function extractAuthToken(request: Request): string | null {
   return null;
 }
 
+function unauthorized(): Response {
+  return new Response("Unauthorized", { status: 401 });
+}
+
+/** An authenticated Google Reader request: its session and the token it sent. */
+export interface GreaderAuth extends SessionData {
+  token: string;
+}
+
 /**
  * Validates a Google Reader request and returns the session: a `ClientLogin`
  * session scoped to `reader:full-access`, or a full-access browser session.
  *
- * Returns a `Response` that callers must forward, e.g.
- * `const session = await requireAuth(request); if (session instanceof Response) return session;`:
+ * Returns a `Response` that callers must forward (`withGreaderAuth` does):
  * - **401** if the request is unauthenticated (missing/invalid token).
  * - **403** if the session is scoped to something other than
  *   `reader:full-access`, or the user hasn't completed signup confirmation.
@@ -92,19 +102,36 @@ export function extractAuthToken(request: Request): string | null {
  * (We return rather than throw because Next.js App Router route handlers don't
  * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
  */
-export async function requireAuth(request: Request): Promise<SessionData | Response> {
-  const auth = await authenticateCredential(extractAuthToken(request), {
+export async function requireAuth(request: Request): Promise<GreaderAuth | Response> {
+  const token = extractAuthToken(request);
+  if (!token) return unauthorized();
+  const auth = await authenticateCredential(token, {
     accept: ["session", "scoped_session"],
     requiredScopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     requireConfirmed: true,
   });
-  if (auth.ok) return auth.credential.session;
+  if (auth.ok) return { ...auth.credential.session, token };
   switch (auth.reason) {
     case "unauthenticated":
-      return new Response("Unauthorized", { status: 401 });
+      return unauthorized();
     case "insufficient_scope":
       return new Response("Insufficient scope", { status: 403 });
     case "unconfirmed":
       return new Response("Signup confirmation required", { status: 403 });
   }
+}
+
+/**
+ * Wraps a Google Reader route handler: authenticates the request
+ * (`requireAuth`), passes the handler the user, and answers client errors in
+ * plain text (`withClientErrors`).
+ */
+export function withGreaderAuth<Rest extends unknown[]>(
+  handler: (request: Request, user: User, ...rest: Rest) => Promise<Response>
+): (request: Request, ...rest: Rest) => Promise<Response> {
+  return withClientErrors(async (request: Request, ...rest: Rest) => {
+    const auth = await requireAuth(request);
+    if (auth instanceof Response) return auth;
+    return handler(request, auth.user, ...rest);
+  });
 }

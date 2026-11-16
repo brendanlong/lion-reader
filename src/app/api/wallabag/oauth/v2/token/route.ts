@@ -25,8 +25,8 @@
 
 import { passwordGrant, refreshTokenGrant } from "@/server/wallabag/auth";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
-import { parseBody } from "@/server/wallabag/parse";
-import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
+import { errorResponse, parseBody } from "@/server/wallabag/parse";
+import { jsonResponse } from "@/server/http/json-response";
 import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
 

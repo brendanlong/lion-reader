@@ -7,25 +7,23 @@
  * Articles" feed (issue #730), and the All badge as the reading-list total.
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse, withClientErrors } from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
 import { formatUnreadCounts } from "@/server/google-reader/format";
 import { getGreaderUnreadCounts } from "@/server/google-reader/subscriptions";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const GET = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   // Per-feed counts and newest-item times come from a single query, so they see
   // one consistent snapshot: a feed can't be counted (unread > 0) yet be absent
   // from the newest-item map between two reads (issue #1092). Cheap now that the
   // unread count is a trigger-maintained counter column rather than a scan.
   const { subscriptions, newestItemAtByStreamId, readingListUnread } = await getGreaderUnreadCounts(
     db,
-    session.user.id
+    user.id
   );
 
   return jsonResponse(formatUnreadCounts(subscriptions, newestItemAtByStreamId, readingListUnread));

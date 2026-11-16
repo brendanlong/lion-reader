@@ -27,8 +27,10 @@
  * - it: include stream ID (e.g., user/-/state/com.google/read for only read items)
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse } from "@/server/google-reader/parse";
 import {
   isStreamError,
   resolveStreamListParams,
@@ -44,12 +46,11 @@ export const dynamic = "force-dynamic";
 // Google Reader treats `stream/contents` with no stream id as the reading list.
 const DEFAULT_STREAM_ID = "user/-/state/com.google/reading-list";
 
-const handleStreamContents = withClientErrors(async function (
+const handleStreamContents = withGreaderAuth(async function (
   request: Request,
+  user: User,
   params: Promise<{ streamId?: string[] }>
 ): Promise<Response> {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
   const { streamId: streamIdParts } = await params;
 
   // Reconstruct the stream ID from path segments. On the optional catch-all,
@@ -60,7 +61,7 @@ const handleStreamContents = withClientErrors(async function (
 
   const listParams = await resolveStreamListParams(
     db,
-    session.user,
+    user,
     streamIdStr,
     new URL(request.url).searchParams,
     STREAM_CONTENTS_PAGE
@@ -72,7 +73,7 @@ const handleStreamContents = withClientErrors(async function (
   const result = await entriesService.listGreaderItemRefs(db, listParams);
   const fullEntries = await entryReadsService.getEntries(
     db,
-    session.user.id,
+    user.id,
     result.items.map((ref) => ref.id)
   );
   const refById = new Map(result.items.map((ref) => [ref.id, ref]));

@@ -11,13 +11,10 @@
  * - perPage: number - items per page (default: 30)
  */
 
-import { requireAuth } from "@/server/wallabag/auth";
-import {
-  jsonResponse,
-  errorResponse,
-  parseEntryListParams,
-  withClientErrors,
-} from "@/server/wallabag/parse";
+import { withWallabagAuth } from "@/server/wallabag/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse, parseEntryListParams } from "@/server/wallabag/parse";
 import { formatEntryListItem, createPaginatedResponse } from "@/server/wallabag/format";
 import { entryIdsToWallabagIds } from "@/server/wallabag/id";
 import { listEntryTags } from "@/server/wallabag/tags";
@@ -26,10 +23,10 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async function (request: Request): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
-
+export const GET = withWallabagAuth(async function (
+  request: Request,
+  user: User
+): Promise<Response> {
   const url = new URL(request.url);
 
   const term = url.searchParams.get("term");
@@ -42,7 +39,7 @@ export const GET = withClientErrors(async function (request: Request): Promise<R
 
   // Serve the requested page with a single indexed query via LIMIT/OFFSET.
   const result = await entriesService.listEntries(db, {
-    userId: auth.userId,
+    userId: user.id,
     query: term,
     type: "saved",
     limit: perPage,
@@ -57,8 +54,8 @@ export const GET = withClientErrors(async function (request: Request): Promise<R
 
   const entryIds = result.items.map((e) => e.id);
   const [tagsByEntry, wallabagIds] = await Promise.all([
-    listEntryTags(db, auth.userId, entryIds),
-    entryIdsToWallabagIds(db, auth.userId, entryIds),
+    listEntryTags(db, user.id, entryIds),
+    entryIdsToWallabagIds(db, user.id, entryIds),
   ]);
   const items = result.items.flatMap((entry) => {
     const wallabagId = wallabagIds.get(entry.id);

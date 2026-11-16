@@ -29,15 +29,15 @@
  */
 
 import { TRPCError } from "@trpc/server";
-import { requireAuth } from "@/server/wallabag/auth";
+import { withWallabagAuth } from "@/server/wallabag/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
 import {
-  jsonResponse,
   errorResponse,
   clientErrorResponse,
   parseEntryListParams,
   parseBody,
   parseTagLabels,
-  withClientErrors,
 } from "@/server/wallabag/parse";
 import { getAppErrorCode } from "@/server/errors";
 import { formatSavedArticle, createPaginatedResponse } from "@/server/wallabag/format";
@@ -51,20 +51,22 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async function (request: Request): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
+export const GET = withWallabagAuth(async function (
+  request: Request,
+  user: User
+): Promise<Response> {
   const url = new URL(request.url);
   const params = parseEntryListParams(url);
   const baseUrl = `${url.origin}/api/wallabag/api/entries`;
 
-  const { items, total } = await listWallabagEntries(db, auth.userId, params);
+  const { items, total } = await listWallabagEntries(db, user.id, params);
   return jsonResponse(createPaginatedResponse(items, params.page, params.perPage, total, baseUrl));
 });
 
-export async function POST(request: Request): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
+export const POST = withWallabagAuth(async function (
+  request: Request,
+  user: User
+): Promise<Response> {
   const body = await parseBody(request);
 
   const articleUrl = body.url;
@@ -75,7 +77,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     // Save the article
-    const article = await savedService.saveArticle(db, auth.userId, {
+    const article = await savedService.saveArticle(db, user.id, {
       url: articleUrl,
       title: body.title || undefined,
       // Use the user's stored Google credentials for private Google Docs when
@@ -86,13 +88,13 @@ export async function POST(request: Request): Promise<Response> {
 
     // Handle archive/starred flags if provided
     if (body.archive === "1" && !article.read) {
-      await entryStateService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
+      await entryStateService.markEntriesRead(db, user.id, [{ id: article.id }], true);
     }
     if (body.starred === "1" && !article.starred) {
-      await entryStateService.updateEntryStarred(db, auth.userId, article.id, true);
+      await entryStateService.updateEntryStarred(db, user.id, article.id, true);
     }
 
-    return await savedArticleResponse(auth.userId, article, tagLabels);
+    return await savedArticleResponse(user.id, article, tagLabels);
   } catch (error) {
     // The Wallabag Android app's offline save queue only advances an item on a
     // 2xx response; any error keeps it queued, retried forever, AND halts every
@@ -111,15 +113,15 @@ export async function POST(request: Request): Promise<Response> {
     // a transient failure (UPSTREAM_RATE_LIMITED, SITE_BLOCKED) heals on the next
     // re-share instead of being stuck behind the placeholder.
     if (clientErrorResponse(error) !== null) {
-      const placeholder = await savedService.savePlaceholderArticle(db, auth.userId, {
+      const placeholder = await savedService.savePlaceholderArticle(db, user.id, {
         url: articleUrl,
         reason: describeSaveFailure(error),
       });
-      return await savedArticleResponse(auth.userId, placeholder, tagLabels);
+      return await savedArticleResponse(user.id, placeholder, tagLabels);
     }
     throw error;
   }
-}
+});
 
 /**
  * Tags the just-saved article and formats it. Tagging is best effort: a failure

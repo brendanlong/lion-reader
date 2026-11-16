@@ -10,13 +10,10 @@
  */
 
 import { eq } from "drizzle-orm";
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  jsonResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { parseFormData, errorResponse } from "@/server/google-reader/parse";
 import { feedStreamId } from "@/server/google-reader/id";
 import { subscribeToUrl } from "@/server/services/subscribe";
 import { feedUrlSchema } from "@/server/trpc/validation";
@@ -26,14 +23,11 @@ import { subscriptions } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   // Subscribing fetches the URL and schedules feed fetches, so it's rate
   // limited like the tRPC subscribe, per user (issue #1266).
   const rateLimited = await checkRouteRateLimit(request, "expensive", {
-    userId: session.user.id,
+    userId: user.id,
   });
   if (rateLimited) return rateLimited;
 
@@ -49,7 +43,7 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
     return errorResponse("Invalid URL", 400);
   }
 
-  const result = await subscribeToUrl(db, session.user.id, parsedUrl.data);
+  const result = await subscribeToUrl(db, user.id, parsedUrl.data);
   const [{ greaderStreamId }] = await db
     .select({ greaderStreamId: subscriptions.greaderStreamId })
     .from(subscriptions)

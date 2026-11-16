@@ -7,8 +7,9 @@
  * including system tags (reading-list, starred).
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse, withClientErrors } from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
 import { formatTagList } from "@/server/google-reader/format";
 import { db } from "@/server/db";
 import { and, eq, isNull } from "drizzle-orm";
@@ -16,10 +17,7 @@ import { tags } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const GET = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   // A tag's Google Reader sortid is its stored serial (tags.greader_sortid), an
   // opaque value that's never reversed — so read just the name + serial directly
   // rather than the full listTags result (whose `Tag` type is kept free of the
@@ -27,7 +25,7 @@ export const GET = withClientErrors(async (request: Request): Promise<Response> 
   const userTags = await db
     .select({ name: tags.name, greaderSortid: tags.greaderSortid })
     .from(tags)
-    .where(and(eq(tags.userId, session.user.id), isNull(tags.deletedAt)));
+    .where(and(eq(tags.userId, user.id), isNull(tags.deletedAt)));
 
   return jsonResponse({
     tags: formatTagList(userTags),

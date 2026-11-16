@@ -6,15 +6,13 @@
  * Returns information about the authenticated user.
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
 import { formatUserInfo } from "@/server/google-reader/format";
-import { jsonResponse, withClientErrors } from "@/server/google-reader/parse";
+import { jsonResponse } from "@/server/http/json-response";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
-  return jsonResponse(formatUserInfo(session.user.greaderUserId, session.user.email));
+export const GET = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
+  return jsonResponse(formatUserInfo(user.greaderUserId, user.email));
 });

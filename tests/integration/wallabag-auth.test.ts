@@ -80,7 +80,7 @@ describe("Wallabag requireAuth scope enforcement", () => {
 
     expect(result).not.toBeInstanceOf(Response);
     if (result instanceof Response) throw new Error("unreachable");
-    expect(result.userId).toBe(user.id);
+    expect(result.id).toBe(user.id);
     expect(result.email).toBe(user.email);
   });
 

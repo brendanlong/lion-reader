@@ -78,18 +78,6 @@ export function parseItemIds(params: URLSearchParams): bigint[] {
 }
 
 /**
- * Creates a Google Reader JSON response.
- */
-export function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-    },
-  });
-}
-
-/**
  * Creates a text/plain response (used by edit-tag, mark-all-as-read, etc.).
  */
 export function textResponse(text: string, status = 200): Response {

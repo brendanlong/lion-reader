@@ -13,13 +13,9 @@
  *   r={tagToRemove} — tag to remove (can repeat, format: user/-/label/{name})
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  textResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
@@ -34,10 +30,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-  const userId = session.user.id;
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
+  const userId = user.id;
 
   const params = await parseFormData(request);
   const action = params.get("ac");

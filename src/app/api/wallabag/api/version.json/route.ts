@@ -7,7 +7,7 @@
  * as the first step when validating a server connection.
  */
 
-import { jsonResponse } from "@/server/wallabag/parse";
+import { jsonResponse } from "@/server/http/json-response";
 
 export const dynamic = "force-dynamic";
 

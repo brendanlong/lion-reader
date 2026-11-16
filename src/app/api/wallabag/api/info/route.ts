@@ -4,7 +4,7 @@
  * GET /api/wallabag/api/info - Get application information
  */
 
-import { jsonResponse } from "@/server/wallabag/parse";
+import { jsonResponse } from "@/server/http/json-response";
 
 export const dynamic = "force-dynamic";
 

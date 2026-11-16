@@ -11,23 +11,17 @@
  *   t={tagName}      — tag name directly
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  textResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as tagsService from "@/server/services/tags";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-  const userId = session.user.id;
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
+  const userId = user.id;
 
   const params = await parseFormData(request);
 
