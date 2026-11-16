@@ -65,10 +65,9 @@ function getS3Client(): AwsClient | null {
 }
 
 /**
- * Builds the request URL for a bucket, optionally for an object key in it.
- *
- * Mirrors the previous AWS SDK addressing: path-style when a custom endpoint
- * is configured (Tigris requires it), virtual-hosted style for plain AWS S3.
+ * Builds the request URL for a bucket, optionally for an object key in it:
+ * path-style when a custom endpoint is configured (Tigris requires it),
+ * virtual-hosted style for plain AWS S3.
  */
 function getObjectRequestUrl(bucket: string, key = ""): string {
   if (storageConfig.endpoint) {
@@ -119,20 +118,27 @@ export function getPublicObjectUrl(key: string): string | null {
 // ============================================================================
 
 /**
- * Stores `data` under `key`, to be cached forever: every key we write names
- * content that never changes.
+ * Timeout for one storage request. Uploads and archiving happen inline in
+ * saves and full-content fetches, which mustn't hang on a stalled store.
+ */
+const REQUEST_TIMEOUT_MS = 30000;
+
+/**
+ * Stores `data` under `key` (idempotent). A public object is cached forever:
+ * every public key we write names content that never changes.
  */
 async function putObject(
-  client: AwsClient,
+  which: BucketName,
   key: string,
   data: Uint8Array,
   contentType: string
 ): Promise<void> {
-  const response = await client.fetch(getObjectRequestUrl(storageConfig.bucket!, key), {
+  const { client, bucket } = requireBucket(which);
+  const response = await client.fetch(getObjectRequestUrl(bucket, key), {
     method: "PUT",
     headers: {
       "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      ...(which === "public" && { "Cache-Control": "public, max-age=31536000, immutable" }),
       // Tigris requires it, and Next's fetch can send a typed array chunked.
       "Content-Length": String(data.byteLength),
     },
@@ -141,6 +147,7 @@ async function putObject(
     // narrows the generic's ArrayBufferLike to the ArrayBuffer that BodyInit
     // requires.
     body: data as Uint8Array<ArrayBuffer>,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   await ensureOk(response, "PUT");
 }
@@ -158,18 +165,12 @@ export async function uploadObject(
   data: Uint8Array,
   contentType: string
 ): Promise<void> {
-  await putObject(requireS3Client(), key, data, contentType);
+  await putObject("public", key, data, contentType);
 }
 
 // ============================================================================
 // Archive (private bucket), listing and deletion
 // ============================================================================
-
-/**
- * Timeout for one request below. Archiving happens inline in full-content
- * fetches, which mustn't hang on a stalled store.
- */
-const ARCHIVE_REQUEST_TIMEOUT_MS = 30000;
 
 /** A bucket to list or delete from: the public one, or the private archive. */
 export type BucketName = "public" | "archive";
@@ -198,17 +199,7 @@ export async function putArchiveObject(
   data: Uint8Array,
   contentType: string
 ): Promise<void> {
-  const { client, bucket } = requireBucket("archive");
-  const response = await client.fetch(getObjectRequestUrl(bucket, key), {
-    method: "PUT",
-    headers: {
-      "Content-Type": contentType,
-      "Content-Length": String(data.byteLength),
-    },
-    body: data as Uint8Array<ArrayBuffer>,
-    signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
-  });
-  await ensureOk(response, "PUT");
+  await putObject("archive", key, data, contentType);
 }
 
 /** Deletes `key`; deleting a missing key succeeds. */
@@ -216,7 +207,7 @@ async function deleteObject(which: BucketName, key: string): Promise<void> {
   const { client, bucket } = requireBucket(which);
   const response = await client.fetch(getObjectRequestUrl(bucket, key), {
     method: "DELETE",
-    signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   await ensureOk(response, "DELETE");
 }
@@ -267,7 +258,7 @@ async function* listKeys(which: BucketName, prefix: string): AsyncGenerator<stri
     if (continuationToken) url.searchParams.set("continuation-token", continuationToken);
     const response = await client.fetch(url.toString(), {
       method: "GET",
-      signal: AbortSignal.timeout(ARCHIVE_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     await ensureOk(response, "ListObjectsV2");
     const page = parseListObjectsV2(await response.text());
