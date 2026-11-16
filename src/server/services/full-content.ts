@@ -10,7 +10,7 @@ import { consumePlanQuota } from "@/server/services/plans";
 import { createHash } from "crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { entries, narrationContent, subscriptions } from "@/server/db/schema";
+import { entries, subscriptions } from "@/server/db/schema";
 import { HttpFetchError } from "@/server/http/fetch";
 import { getAppErrorCode } from "@/server/errors";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -325,8 +325,7 @@ export interface FetchAndStoreFullContentResult {
  *
  * Verifies the entry is visible to the user, fetches the full article from
  * its URL (via fetchFullContent above), sanitizes and stores the result in
- * the entry's full-content columns, and invalidates any cached narration so
- * it is regenerated from the full content.
+ * the entry's full-content columns.
  *
  * Note on shared state: full-content columns (including `fullContentError`)
  * live on the shared `entries` row, so one subscriber's fetch — success or
@@ -343,7 +342,7 @@ export async function fetchAndStoreFullContent(
   entryId: string
 ): Promise<FetchAndStoreFullContentResult> {
   // Throws unless the entry exists and is visible to the user
-  const { entry, contentHash } = await getFullEntry(db, userId, entryId);
+  const entry = await getFullEntry(db, userId, entryId);
 
   if (!entry.url) {
     return {
@@ -388,25 +387,6 @@ export async function fetchAndStoreFullContent(
         fullContentFetchedAt: now,
       },
     };
-  }
-
-  // Invalidate any existing narration content so it will be regenerated
-  // using the full content next time narration is requested
-  if (contentHash) {
-    await db
-      .update(narrationContent)
-      .set({
-        contentNarration: null,
-        generatedAt: null,
-        error: null,
-        errorAt: null,
-      })
-      .where(eq(narrationContent.contentHash, contentHash));
-
-    logger.debug("Invalidated narration content for entry", {
-      entryId: entry.id,
-      contentHash,
-    });
   }
 
   logger.info("Successfully fetched full content for entry", {
