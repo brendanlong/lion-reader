@@ -70,9 +70,8 @@ export interface HandleFetchFeedOptions {
 /**
  * Handler for fetch_feed jobs.
  * Fetches a feed, processes entries, and returns the next fetch time.
- *
- * Note: This handler no longer checks for active subscribers - that's handled
- * by the job enable/disable mechanism. If a job is running, the feed has subscribers.
+ * Whether the feed has subscribers is the job enable/disable mechanism's
+ * concern: a running job means it does.
  *
  * @param payload - The job payload containing the feedId
  * @param options - See {@link HandleFetchFeedOptions} (`forceReprocess` subscribe-time refresh)
@@ -213,23 +212,12 @@ async function processSuccessfulFetch(
   try {
     parsedFeed = parseFeed(bodyText);
   } catch (error) {
-    // Parsing failed - treat as error
-    // Also clear any redirect tracking since the destination doesn't have a valid feed
+    // The redirect destination (if any) has no valid feed, so stop tracking it.
     if (feed.redirectUrl) {
       await clearRedirectTracking(feed.id, now);
     }
     const errorMessage = error instanceof Error ? error.message : "Failed to parse feed";
-    const nextFetch = calculateNextFetch({
-      consecutiveFailures: (feed.consecutiveFailures ?? 0) + 1,
-      websubActive: feed.websubActive ?? false,
-      now,
-    });
-    await updateFeedOnError(feed.id, errorMessage, now, nextFetch.nextFetchAt);
-    return {
-      success: false,
-      nextRunAt: nextFetch.nextFetchAt,
-      error: errorMessage,
-    };
+    return handleTemporaryError(feed, errorMessage, now);
   }
 
   // Check for permanent redirects now that we know the destination has a valid feed
@@ -294,7 +282,7 @@ async function processSuccessfulFetch(
   // hub for later analysis (see websub-hub-stats.ts). Skipped for a forced
   // subscribe-time refresh: it's a user-triggered fetch, not a scheduled backup
   // poll, so crediting/faulting the hub from it would skew the tally.
-  if (!forceReprocess && (feed.websubActive ?? false) && feed.hubUrl && newEntries.length > 0) {
+  if (!forceReprocess && feed.websubActive && feed.hubUrl && newEntries.length > 0) {
     await recordBackupPollNewEntries(
       feed.hubUrl,
       newEntries.map((e) => e.newEntryData?.publishedAt),
@@ -313,7 +301,7 @@ async function processSuccessfulFetch(
     consecutiveFailures: 0, // Reset failures on success
     // Source-specific polling floor (e.g. YouTube's rate-limit-avoiding 1h)
     minIntervalSeconds: feedPlugin?.capabilities.feed.minFetchIntervalSeconds,
-    websubActive: feed.websubActive ?? false,
+    websubActive: feed.websubActive,
     now,
   });
 
@@ -368,7 +356,7 @@ async function processSuccessfulFetch(
 
   const websubAction = resolveWebsubAction({
     previousHubUrl: feed.hubUrl,
-    previousWebsubActive: feed.websubActive ?? false,
+    previousWebsubActive: feed.websubActive,
     newHubUrl,
     canUseWebSub: canUseWebSub(),
   });
@@ -503,7 +491,7 @@ async function processUnchangedFetch(
     feedHints: storedFeedHints(feed),
     consecutiveFailures: 0,
     minIntervalSeconds: getFeedPlugin(feed.url)?.capabilities.feed.minFetchIntervalSeconds,
-    websubActive: feed.websubActive ?? false,
+    websubActive: feed.websubActive,
     now,
   });
 
@@ -679,13 +667,13 @@ async function handleTemporaryError(
   now: Date,
   options: { retryAfterSeconds?: number; rateLimited?: boolean } = {}
 ): Promise<JobHandlerResult> {
-  const newFailureCount = (feed.consecutiveFailures ?? 0) + 1;
+  const newFailureCount = feed.consecutiveFailures + 1;
 
   const nextFetch = calculateNextFetch({
     consecutiveFailures: newFailureCount,
     retryAfterSeconds: options.retryAfterSeconds,
     rateLimited: options.rateLimited,
-    websubActive: feed.websubActive ?? false,
+    websubActive: feed.websubActive,
     now,
   });
 
