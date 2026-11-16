@@ -36,6 +36,12 @@ export const BLOCK_TAGS: ReadonlySet<string> = new Set([
   "main",
   "nav",
   "aside",
+  "dl",
+  "dt",
+  "dd",
+  "details",
+  "summary",
+  "address",
 ]);
 
 /**
@@ -158,11 +164,14 @@ export function stripHtml(html: string, maxLength?: number): string {
   return truncateAtWord(result.trim(), maxLength);
 }
 
+/** Table cells: separated within their row, which is the block. */
+const CELL_TAGS: ReadonlySet<string> = new Set(["td", "th"]);
+
 /**
  * Converts HTML to plain text for AI summarization: the words the reader sees,
- * a blank line between blocks, and each image as its alt text. Skips what
- * {@link stripHtml} skips (scripts, styles and the like), since summarization
- * may be given unsanitized content.
+ * a blank line between blocks, and each image as its alt text. Whitespace
+ * inside a block collapses as a browser would, except in `<pre>`. Skips what
+ * {@link stripHtml} skips (scripts, styles and the like).
  *
  * @example
  * htmlToPlainText('<p>Hello</p><img alt="a cat"><p>World</p>');
@@ -171,24 +180,30 @@ export function stripHtml(html: string, maxLength?: number): string {
 export function htmlToPlainText(html: string): string {
   const parts: string[] = [];
   let skipDepth = 0;
+  let preDepth = 0;
 
   const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         if (SKIP_TAGS.has(name)) skipDepth++;
         if (skipDepth > 0) return;
+        if (name === "pre") preDepth++;
         if (name === "img") {
           parts.push(attribs.alt ? `\n\nImage: ${attribs.alt}\n\n` : "\n\nImage\n\n");
+        } else if (CELL_TAGS.has(name)) {
+          parts.push(" ");
         } else if (BLOCK_TAGS.has(name)) {
           parts.push("\n\n");
         }
       },
       ontext(text) {
-        if (skipDepth === 0) parts.push(text);
+        if (skipDepth === 0) parts.push(preDepth > 0 ? text : text.replace(/\s+/g, " "));
       },
       onclosetag(name) {
         if (SKIP_TAGS.has(name)) skipDepth--;
-        else if (skipDepth === 0 && BLOCK_TAGS.has(name)) parts.push("\n\n");
+        if (skipDepth > 0) return;
+        if (name === "pre") preDepth--;
+        if (BLOCK_TAGS.has(name) && !CELL_TAGS.has(name)) parts.push("\n\n");
       },
     },
     { decodeEntities: true }
@@ -198,7 +213,7 @@ export function htmlToPlainText(html: string): string {
 
   return parts
     .join("")
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     .replace(/[ \t]+/g, " ")
     .split("\n")
     .map((line) => line.trim())

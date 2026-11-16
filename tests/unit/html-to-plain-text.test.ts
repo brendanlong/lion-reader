@@ -7,92 +7,32 @@ import { htmlToPlainText } from "@/server/html/strip-html";
 
 describe("htmlToPlainText", () => {
   it("leaves out script, style and noscript contents", () => {
-    // Summarization is given unsanitized content, so a stylesheet or script
-    // would otherwise reach the model's prompt.
+    // None of it is text the reader sees, so none of it belongs in the prompt.
     const html =
       "<style>.a { color: red; }</style><p>Kept.</p>" +
       "<script>var x = '<p>no</p>';</script><noscript><p>Enable JS</p></noscript><p>Also kept.</p>";
     expect(htmlToPlainText(html)).toBe("Kept.\n\nAlso kept.");
   });
 
-  it("separates blocks with a blank line and keeps inline text together", () => {
+  it("separates blocks with a blank line and collapses whitespace inside them", () => {
     const html =
       "<h1>Title</h1>\n  <p>Some <b>bold</b>&nbsp;text\n  here.</p><ul><li>a</li><li>b</li></ul>";
-    expect(htmlToPlainText(html)).toBe("Title\n\nSome bold text\nhere.\n\na\n\nb");
-  });
-});
-
-describe("htmlToPlainText image handling", () => {
-  it("should convert standalone images without alt text to generic placeholders", () => {
-    const html = '<p>Before</p><img src="test.jpg"><p>After</p>';
-    const result = htmlToPlainText(html);
-
-    expect(result).toContain("Before");
-    expect(result).toContain("Image");
-    expect(result).toContain("After");
-
-    const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
-    expect(paragraphs).toHaveLength(3);
+    expect(htmlToPlainText(html)).toBe("Title\n\nSome bold text here.\n\na\n\nb");
   });
 
-  it("should handle multiple standalone images", () => {
-    const html = `
-      <p>Paragraph 1</p>
-      <img alt="First image">
-      <p>Paragraph 2</p>
-      <img alt="Second image">
-      <p>Paragraph 3</p>
-    `;
-    const result = htmlToPlainText(html);
-
-    expect(result).toContain("Paragraph 1");
-    expect(result).toContain("Image: First image");
-    expect(result).toContain("Paragraph 2");
-    expect(result).toContain("Image: Second image");
-    expect(result).toContain("Paragraph 3");
-
-    const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
-    expect(paragraphs).toHaveLength(5); // 3 paragraphs + 2 images
+  it("keeps the line breaks of preformatted text", () => {
+    expect(htmlToPlainText("<pre>line one\nline two</pre>")).toBe("line one\nline two");
   });
 
-  it("should handle images inside paragraphs as inline content", () => {
-    const html = '<p>Text with <img alt="inline image"> more text</p>';
-    const result = htmlToPlainText(html);
-
-    // Inline images become text within the paragraph
-    expect(result).toContain("Text with");
-    expect(result).toContain("Image: inline image");
-    expect(result).toContain("more text");
+  it("breaks definition lists into blocks and keeps a table row's cells on one line", () => {
+    const html =
+      "<dl><dt>Term</dt><dd>Meaning</dd></dl>" +
+      "<table><tr><th>A</th><td>1</td></tr><tr><th>B</th><td>2</td></tr></table>";
+    expect(htmlToPlainText(html)).toBe("Term\n\nMeaning\n\nA 1\n\nB 2");
   });
 
-  it("gives each standalone image a paragraph of its own", () => {
-    const html = '<p>1</p><img alt="2"><p>3</p>';
-    const result = htmlToPlainText(html);
-
-    const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
-
-    expect(paragraphs).toHaveLength(3);
-    expect(paragraphs[0]).toBe("1");
-    expect(paragraphs[1]).toBe("Image: 2");
-    expect(paragraphs[2]).toBe("3");
-  });
-
-  it("should handle complex scenarios with mixed content", () => {
-    const html = `
-      <h1>Title</h1>
-      <p>Intro</p>
-      <img alt="diagram">
-      <p>Explanation</p>
-      <figure><img alt="figure image"></figure>
-      <p>Conclusion</p>
-    `;
-    const result = htmlToPlainText(html);
-
-    expect(result).toContain("Title");
-    expect(result).toContain("Intro");
-    expect(result).toContain("Image: diagram"); // standalone image
-    expect(result).toContain("Explanation");
-    expect(result).toContain("Image: figure image"); // image in figure
-    expect(result).toContain("Conclusion");
+  it("gives each standalone image a paragraph of its alt text", () => {
+    const html = '<p>1</p><img alt="A chart"><img src="x.jpg"><p>3</p>';
+    expect(htmlToPlainText(html)).toBe("1\n\nImage: A chart\n\nImage\n\n3");
   });
 });
