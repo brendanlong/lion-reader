@@ -12,7 +12,7 @@ import { CheckIcon, ChevronDownIcon } from "@/components/ui/icons";
 import {
   buildModelPickerSections,
   formatModelDetails,
-  formatModelName,
+  formatModelLabel,
   type PickerModel,
 } from "@/lib/ai/model-picker";
 
@@ -58,14 +58,14 @@ export function ModelPicker({
   const listboxId = `${id}-listbox`;
   const optionId = (index: number) => `${id}-option-${index}`;
   const defaultModel = models.find((model) => model.id === defaultModelId);
-  const defaultLabel = `Default (${defaultModel ? formatModelName(defaultModel) : defaultModelId})`;
+  const defaultLabel = `Default (${defaultModel ? formatModelLabel(defaultModel) : defaultModelId})`;
   const selected = models.find((model) => model.id === value);
   const selectedLabel = isLoading
     ? "Loading models..."
     : value === null
       ? defaultLabel
       : selected
-        ? formatModelName(selected)
+        ? formatModelLabel(selected)
         : value;
 
   useEffect(() => {
