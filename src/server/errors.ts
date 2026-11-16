@@ -43,7 +43,6 @@ const errorCodeToTRPCCode = {
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   SESSION_REVOKE_FAILED: "INTERNAL_SERVER_ERROR",
-  TOKEN_CREATION_FAILED: "INTERNAL_SERVER_ERROR",
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
   // A failed fetch of a user-provided URL (404, DNS failure, connection reset,
   // …) is a client/input error, not a server bug — the user gave us a URL we
@@ -122,9 +121,6 @@ export const errors = {
   blockedSenderNotFound: () => createError("BLOCKED_SENDER_NOT_FOUND", "Blocked sender not found"),
 
   tokenNotFound: () => createError("TOKEN_NOT_FOUND", "Token not found or already revoked"),
-
-  tokenCreationFailed: () =>
-    createError("TOKEN_CREATION_FAILED", "Failed to retrieve created token"),
 
   maxIngestAddressesReached: (limit: number) =>
     createError(
