@@ -448,8 +448,8 @@ export const usersRouter = createTRPCRouter({
       );
 
       // An empty model name clears it; an omitted field is left as is.
-      const [stored] = await ctx.db.transaction(async (tx) => {
-        const updated = await tx
+      const stored = await ctx.db.transaction(async (tx) => {
+        const [updated] = await tx
           .update(users)
           .set({
             showSpam: input.showSpam,
@@ -463,6 +463,7 @@ export const usersRouter = createTRPCRouter({
           })
           .where(eq(users.id, userId))
           .returning(storedPreferenceFields);
+        if (!updated) throw errors.notFound("User");
         await setUserApiKeys(tx, userId, apiKeys);
         return updated;
       });

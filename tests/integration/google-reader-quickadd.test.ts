@@ -160,6 +160,9 @@ describe("Google Reader quickadd", () => {
     const res = await quickadd(quickaddRequest(token, `${baseUrl}/not-a-feed.xml`));
 
     expect(res.status).toBe(400);
+    expect(await res.text()).toBe(
+      "Failed to parse feed: this URL isn't a valid RSS, Atom or JSON feed"
+    );
   });
 
   // #1266: the fetch error's detail (such as what a host resolved to) stays

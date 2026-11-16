@@ -69,7 +69,11 @@ export async function resolveFeedAtUrl(inputUrl: string): Promise<ResolvedFeed> 
   try {
     parsedFeed = await parseFeedAsync(fetched.text);
   } catch (error) {
-    throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
+    logger.info("URL isn't a parseable feed", {
+      url: fetched.finalUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw errors.parseError();
   }
 
   return { url: fetched.finalUrl, parsedFeed };
