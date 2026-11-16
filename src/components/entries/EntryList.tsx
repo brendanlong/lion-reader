@@ -11,10 +11,9 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import type { EntryListData } from "@/lib/hooks/types";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { useAppearance } from "@/lib/appearance/AppearanceProvider";
-import { EntryListItem } from "./EntryListItem";
+import { EntryListItem, type EntryListItemData } from "./EntryListItem";
 import { EntryListEmpty, EntryListLoadingMore, EntryListEnd } from "./EntryListStates";
 
 /**
@@ -84,7 +83,7 @@ interface EntryListProps {
   /**
    * Entries to render (the parent container owns the query).
    */
-  externalEntries: EntryListData[];
+  externalEntries: EntryListItemData[];
 
   /**
    * Query state for the entries (the parent container owns the query).

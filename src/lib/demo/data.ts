@@ -7,7 +7,7 @@
  * The demo store (./store.ts) serves this data through the app's tRPC hooks.
  */
 
-import type { EntryListData } from "@/lib/hooks/types";
+import type { EntryListItemData } from "@/components/entries/EntryListItem";
 import { DEMO_ARTICLES, type DemoArticle } from "./articles";
 
 // ============================================================================
@@ -30,7 +30,7 @@ export interface DemoSubscription {
   entryCount: number;
 }
 
-export interface DemoEntry extends EntryListData {
+export interface DemoEntry extends EntryListItemData {
   /** The article's rank in the demo's default order (`DemoArticle.score`). */
   score: number;
   /** Pre-sanitized HTML content for the detail view */
