@@ -26,12 +26,6 @@ import superjson from "superjson";
  * which alone stops the mount/focus/reconnect refetches (they all only fire on a
  * stale query), and the explicit `refetchOn* : false` flags document that intent
  * and keep it robust if `staleTime` is ever lowered.
- *
- * This is what keeps the signup/sign-in pages from re-hitting `/api/trpc` after
- * hydration — a refetch there previously let a stale shared-cache response
- * overwrite the correct SSR value (the register page's EU-banner flash). The
- * `no-store` header on tRPC responses stops shared caches from storing them in
- * the first place; this stops the client from asking at all.
  */
 export const STATIC_CONFIG_QUERY_OPTIONS = {
   staleTime: Infinity,
@@ -51,47 +45,18 @@ function isUnauthorizedError(error: unknown): boolean {
 }
 
 /**
- * Creates a new QueryClient for server-side rendering.
- * Optimized for prefetching: no retries, errors propagate immediately.
- * Configured with superjson for hydration to match tRPC's transformer.
+ * Creates a QueryClient, configured with superjson for hydration to match
+ * tRPC's transformer.
  */
-function makeServerQueryClient(): QueryClient {
+function makeQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        // Don't retry on server - let errors propagate
-        retry: false,
-        // Prevent refetching on client mount - we're prefetching for hydration
-        staleTime: 60 * 1000,
-      },
-      // Configure hydration to use superjson (matches tRPC transformer)
-      dehydrate: {
-        serializeData: superjson.serialize,
-        // Include pending queries in dehydration so they can be streamed to client
-        shouldDehydrateQuery: (query) =>
-          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
-      },
-      hydrate: {
-        deserializeData: superjson.deserialize,
-      },
-    },
-  });
-}
-
-/**
- * Creates a new QueryClient for the browser.
- * Includes retry logic for resilience, but skips retrying auth errors.
- * Configured with superjson for hydration to match tRPC's transformer.
- */
-function makeBrowserQueryClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        // Retry failed requests once, but not for auth errors
-        retry: (failureCount, error) => {
-          if (isUnauthorizedError(error)) return false;
-          return failureCount < 1;
-        },
+        // The server prefetches, so its errors propagate at once; the browser
+        // retries once, but not an auth error.
+        retry: isServer
+          ? false
+          : (failureCount, error) => !isUnauthorizedError(error) && failureCount < 1,
         // Prevent refetching on mount - we're hydrating from SSR
         staleTime: 60 * 1000,
       },
@@ -115,7 +80,7 @@ function makeBrowserQueryClient(): QueryClient {
  * within a single request (including server components and client components
  * running on the server during SSR).
  */
-const getServerQueryClient = cache(makeServerQueryClient);
+const getServerQueryClient = cache(makeQueryClient);
 
 /**
  * Browser-side: module-level singleton.
@@ -139,7 +104,7 @@ export function getQueryClient(): QueryClient {
 
   // Browser: create singleton on first call
   if (!browserQueryClient) {
-    browserQueryClient = makeBrowserQueryClient();
+    browserQueryClient = makeQueryClient();
   }
   return browserQueryClient;
 }
