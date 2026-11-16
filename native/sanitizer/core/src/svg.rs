@@ -1,11 +1,9 @@
-//! Sanitize inline `<svg>` subtrees — port of `src/server/html/sanitize-svg.ts`
-//! (issue #923).
+//! Sanitize inline `<svg>` subtrees (issue #923).
 //!
 //! Each top-level `<svg>` is located by byte range, parsed with the
 //! spec-compliant html5ever tree builder (foreign-content parsing adjusts
 //! attribute/tag case exactly as a browser does — `viewbox` → `viewBox`,
-//! `lineargradient` → `linearGradient` — which is strictly more faithful
-//! than the old XML-mode parse), sanitized against a constrained
+//! `lineargradient` → `linearGradient`), sanitized against a constrained
 //! DOMPurify-derived allow-list, and replaced by an opaque per-call-nonced
 //! placeholder token. The sanitized SVG is substituted back in after the main
 //! lol_html pass, but only for tokens that pass saw as text: extraction can
@@ -13,7 +11,7 @@
 //! the main pass), and markup reinserted into a tag it passed through would
 //! split it apart, turning what it read as attribute bytes into live markup.
 //!
-//! Security model (unchanged from the TS implementation): tags are
+//! Security model: tags are
 //! DOMPurify's `svg` + `svgFilters` minus its `svgDisallowed` set, `style`,
 //! and the animation elements — so no `<script>`, no `<foreignObject>`
 //! arbitrary-HTML escape hatch, no `<use>`, no `<animate attributeName=…>`
@@ -422,7 +420,7 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
         }
     }
     if children.is_empty() {
-        // XML-style self-close, matching the old dom-serializer xmlMode output.
+        // XML-style self-close.
         out.push_str("/>");
     } else {
         out.push('>');
@@ -504,8 +502,7 @@ pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtracti
     }
     let nonce = random_nonce();
     // Inside <svg>, foreign-content parsing keeps <style>/<script> as
-    // markup (rawtext_inside = false); an unclosed svg extends to EOF,
-    // matching the old htmlparser2 implied-close behavior.
+    // markup (rawtext_inside = false); an unclosed svg extends to EOF.
     let ranges = find_top_level_ranges(html, "svg", &[], false, Recovery::ToEof);
     if ranges.is_empty() {
         return SvgExtraction {

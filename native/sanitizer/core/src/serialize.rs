@@ -62,8 +62,8 @@ impl MNode {
     }
 }
 
-/// Serialize built MathML nodes (HTML style: no self-closing tags, matching
-/// the old dom-serializer HTML-mode output for `<mspace></mspace>` etc.).
+/// Serialize built MathML nodes (HTML style: no self-closing tags, so
+/// `<mspace></mspace>` etc.).
 pub fn serialize_mnodes(nodes: &[MNode], out: &mut String) {
     for node in nodes {
         match node {
