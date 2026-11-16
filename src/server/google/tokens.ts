@@ -1,8 +1,8 @@
 /**
  * Google OAuth Token Management
  *
- * Handles token refresh and validation for accessing Google APIs with user credentials.
- * Used for Phase 2 of Google Docs integration to access private documents.
+ * Handles token refresh and validation for accessing Google APIs with user credentials,
+ * which the Google Docs plugin uses to fetch private documents.
  */
 
 import { eq, and } from "drizzle-orm";

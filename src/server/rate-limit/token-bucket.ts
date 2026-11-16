@@ -127,18 +127,6 @@ export const RATE_LIMIT_CONFIGS = {
 export type RateLimitType = keyof typeof RATE_LIMIT_CONFIGS;
 
 /**
- * Calculates the number of tokens to add based on elapsed time.
- *
- * @param elapsedMs - Time elapsed since last refill in milliseconds
- * @param refillRate - Tokens per second to add
- * @returns Number of tokens to add (may be fractional)
- */
-export function calculateTokensToAdd(elapsedMs: number, refillRate: number): number {
-  // Convert elapsed time to seconds and multiply by rate
-  return (elapsedMs / 1000) * refillRate;
-}
-
-/**
  * Refills the bucket based on elapsed time.
  * Returns the new bucket state with updated tokens and timestamp.
  *
@@ -147,11 +135,7 @@ export function calculateTokensToAdd(elapsedMs: number, refillRate: number): num
  * @param nowMs - Current timestamp in milliseconds
  * @returns Updated bucket state
  */
-export function refillBucket(
-  bucket: BucketState,
-  config: RateLimitConfig,
-  nowMs: number
-): BucketState {
+function refillBucket(bucket: BucketState, config: RateLimitConfig, nowMs: number): BucketState {
   const elapsedMs = nowMs - bucket.lastRefillMs;
 
   // Don't refill if no time has passed
@@ -159,7 +143,7 @@ export function refillBucket(
     return bucket;
   }
 
-  const tokensToAdd = calculateTokensToAdd(elapsedMs, config.refillRate);
+  const tokensToAdd = (elapsedMs / 1000) * config.refillRate;
   const newTokens = Math.min(bucket.tokens + tokensToAdd, config.capacity);
 
   return {
@@ -273,6 +257,6 @@ export function getRateLimitHeaders(
  * @param type - Type of rate limit (default, expensive, etc.)
  * @returns Redis key for the bucket
  */
-export function getRateLimitKey(identifier: string, type: RateLimitType = "default"): string {
+export function getRateLimitKey(identifier: string, type: RateLimitType): string {
   return `rate_limit:${type}:${identifier}`;
 }

@@ -10,6 +10,7 @@ import {
   readResponseBufferWithSizeLimit,
   ContentTooLargeError,
   ACCEPT_ENCODING,
+  FEED_ACCEPT_HEADER,
 } from "../http/fetch";
 import { fetchWithSsrfProtection } from "../http/ssrf";
 import { parseRetryAfter } from "../http/retry-after";
@@ -277,7 +278,7 @@ export async function fetchFeed(
       context: feedId ? `feed:${feedId}` : undefined,
       subscriberCount,
     }),
-    Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    Accept: FEED_ACCEPT_HEADER,
     "Accept-Encoding": ACCEPT_ENCODING,
   };
 

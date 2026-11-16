@@ -4,8 +4,7 @@
  * Extracts and cleans article content from HTML, removing navigation, ads,
  * and other non-content elements. The extraction engine is the native
  * @lion-reader/readability module (dom_smoothie, a Rust port of Mozilla
- * Readability) — ~5x faster and ~10x lighter than the old
- * linkedom + @mozilla/readability pipeline.
+ * Readability).
  */
 
 import { extractArticle, extractArticleAsync } from "@lion-reader/readability";

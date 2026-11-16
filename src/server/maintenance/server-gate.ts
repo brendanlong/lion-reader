@@ -20,6 +20,7 @@ import {
   validateAdminSecret,
 } from "@/server/auth/admin-session";
 import { extractBearerToken } from "@/server/auth/bearer";
+import { escapeHtml } from "@/server/http/html";
 import { logger } from "@/lib/logger";
 
 export type GateDecision = "allow" | "block-page" | "block-api";
@@ -129,15 +130,6 @@ export function evaluateRequest(
   if (!isApi && STATIC_EXT.test(pathname)) return "allow";
 
   return isApi ? "block-api" : "block-page";
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 const DEFAULT_MAINTENANCE_MESSAGE =

@@ -115,7 +115,7 @@ export const lessWrongPlugin: UrlPlugin = {
         return html.replace(LESSWRONG_PUBLISHED_ON_PATTERN, "");
       },
 
-      transformFeedTitle(title: string, feedUrl: URL, context: FeedTitleContext = {}): string {
+      transformFeedTitle(title: string, feedUrl: URL, context: FeedTitleContext): string {
         // Only user-profile feeds (feed.xml?userId=...) get the author appended.
         // Use the first author from the already-parsed feed entries to avoid an
         // extra GraphQL round-trip during feed processing.
@@ -127,8 +127,6 @@ export const lessWrongPlugin: UrlPlugin = {
         }
         return title;
       },
-
-      siteName: "LessWrong",
     },
 
     savedArticle: {
