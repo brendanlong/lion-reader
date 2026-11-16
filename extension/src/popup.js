@@ -5,8 +5,7 @@
  * If no token exists, opens the web auth flow to get one.
  */
 
-import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
-import { createWebAuthUrl, getApiCredentials } from "./constants.js";
+import { saveOrSignIn } from "./api.js";
 
 // DOM Elements
 const loadingEl = document.getElementById("loading");
@@ -59,31 +58,12 @@ function startCountdown(seconds = 3) {
 }
 
 /**
- * Open the web auth flow to get a new token.
- * The background script will detect the callback and store the token.
- */
-async function startWebAuthFlow(serverUrl, url, title) {
-  // Open the auth page in a new tab
-  await chrome.tabs.create({ url: await createWebAuthUrl(serverUrl, url, title) });
-
-  // Close the popup - the background script will handle the callback
-  window.close();
-}
-
-/**
  * Main save flow.
  */
 async function save() {
   showState("loading");
 
   try {
-    const { serverUrl, token } = await getApiCredentials();
-    if (!(await checkServerPermission(serverUrl))) {
-      window.close();
-      return;
-    }
-
-    // Get the current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.url) {
@@ -94,44 +74,26 @@ async function save() {
     currentTitle = tab.title || null;
     loadingUrlEl.textContent = currentUrl;
 
-    if (!token) {
-      // No token - start web auth flow
-      await startWebAuthFlow(serverUrl, currentUrl, currentTitle);
+    const result = await saveOrSignIn(currentUrl, currentTitle);
+    if (!result) {
+      // Handed off to the options page or the web auth flow
+      window.close();
       return;
     }
 
-    // Try to save with the token
-    try {
-      const result = await saveArticle(serverUrl, currentUrl, currentTitle, token);
-
-      // Show success
-      showState("success");
-      if (result.article?.title) {
-        successTitleEl.textContent = result.article.title;
-        successTitleEl.classList.remove("hidden");
-      } else {
-        successTitleEl.classList.add("hidden");
-      }
-
-      startCountdown(3);
-    } catch (err) {
-      if (needsWebAuthFlow(err)) {
-        await startWebAuthFlow(serverUrl, currentUrl, currentTitle);
-        return;
-      }
-      throw err;
+    showState("success");
+    if (result.article?.title) {
+      successTitleEl.textContent = result.article.title;
+      successTitleEl.classList.remove("hidden");
+    } else {
+      successTitleEl.classList.add("hidden");
     }
+
+    startCountdown(3);
   } catch (err) {
     console.error("Save failed:", err);
     showState("error");
-
-    // Show friendly message for blocked sites
-    if (err.message === "SITE_BLOCKED") {
-      errorAlertEl.textContent =
-        "This website blocked our request. Some sites don't allow automated access.";
-    } else {
-      errorAlertEl.textContent = err.message || "Failed to save article";
-    }
+    errorAlertEl.textContent = err.message || "Failed to save article";
     errorUrlEl.textContent = currentUrl || "";
   }
 }
