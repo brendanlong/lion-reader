@@ -34,7 +34,7 @@ function resolveDate(
 }
 
 /** Converts the native parser's raw feed into a `ParsedFeed`. */
-export function toFeedParseResult(
+export function toParsedFeed(
   raw: RawParsedFeed,
   parseDate: (value: string) => Date | undefined
 ): ParsedFeed {

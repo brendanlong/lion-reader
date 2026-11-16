@@ -3,7 +3,7 @@
  *
  * The SAX state machine is the native `@lion-reader/feed-parser` module
  * (`native/feed-parser/core/src/atom.rs`). Date parsing stays in this file:
- * the native side returns raw date strings and `toFeedParseResult` does the
+ * the native side returns raw date strings and `toParsedFeed` does the
  * published/updated selection with V8's lenient `new Date()`.
  */
 
@@ -13,7 +13,7 @@ import {
 } from "@lion-reader/feed-parser";
 import { usageLimitsConfig } from "../../config/env";
 import type { ParsedFeed } from "../types";
-import { toFeedParseResult } from "./native-result";
+import { toParsedFeed } from "./native-result";
 import { NATIVE_INLINE_MAX_CHARS } from "../../native-inline";
 
 /**
@@ -23,10 +23,7 @@ import { NATIVE_INLINE_MAX_CHARS } from "../../native-inline";
  * @returns Parsed feed metadata and entries
  */
 export function parseAtom(content: string): ParsedFeed {
-  return toFeedParseResult(
-    nativeParseAtom(content, usageLimitsConfig.maxFeedEntries),
-    parseAtomDate
-  );
+  return toParsedFeed(nativeParseAtom(content, usageLimitsConfig.maxFeedEntries), parseAtomDate);
 }
 
 /**
@@ -38,7 +35,7 @@ export async function parseAtomAsync(content: string): Promise<ParsedFeed> {
   if (content.length <= NATIVE_INLINE_MAX_CHARS) {
     return parseAtom(content);
   }
-  return toFeedParseResult(
+  return toParsedFeed(
     await nativeParseAtomAsync(content, usageLimitsConfig.maxFeedEntries),
     parseAtomDate
   );
