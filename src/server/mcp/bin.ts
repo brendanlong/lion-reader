@@ -13,6 +13,9 @@
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { eq } from "drizzle-orm";
+import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
 import { createMcpServer } from "@/server/mcp/server";
 import { logger } from "@/lib/logger";
 
@@ -26,7 +29,12 @@ async function main(): Promise<void> {
     );
   }
 
-  const server = createMcpServer(userId);
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user) {
+    throw new Error(`No user with LION_READER_USER_ID ${userId}`);
+  }
+
+  const server = createMcpServer(user);
   await server.connect(new StdioServerTransport());
   logger.info("Lion Reader MCP server started");
 }

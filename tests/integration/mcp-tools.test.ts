@@ -22,6 +22,8 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  callMcpTool,
+  userRow,
 } from "./helpers";
 import { getTools, toMcpError } from "../../src/server/mcp/tools";
 import { createMcpServer } from "../../src/server/mcp/server";
@@ -88,7 +90,7 @@ describe("MCP tool argument validation", () => {
 
   it("advertises every tool's annotations to clients", async () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await createMcpServer(userId).connect(serverTransport);
+    await createMcpServer(await userRow(userId)).connect(serverTransport);
     const client = new Client({ name: "test", version: "1.0.0" });
     await client.connect(clientTransport);
     try {
@@ -102,25 +104,25 @@ describe("MCP tool argument validation", () => {
   });
 
   it("rejects malformed arguments with InvalidParams", async () => {
-    await expect(tool("get_entry").handler(db, userId, { entryId: "not-a-uuid" })).rejects.toThrow(
+    await expect(callMcpTool("get_entry", userId, { entryId: "not-a-uuid" })).rejects.toThrow(
       McpError
     );
-    await expect(
-      tool("get_entry").handler(db, userId, { entryId: "not-a-uuid" })
-    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
-    await expect(tool("get_entry").handler(db, userId, {})).rejects.toMatchObject({
+    await expect(callMcpTool("get_entry", userId, { entryId: "not-a-uuid" })).rejects.toMatchObject(
+      { code: ErrorCode.InvalidParams }
+    );
+    await expect(callMcpTool("get_entry", userId, {})).rejects.toMatchObject({
       code: ErrorCode.InvalidParams,
     });
     await expect(
-      tool("mark_entries_read").handler(db, userId, { entryIds: [], read: true })
+      callMcpTool("mark_entries_read", userId, { entryIds: [], read: true })
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
-    await expect(
-      tool("list_entries").handler(db, userId, { limit: 1000000 })
-    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+    await expect(callMcpTool("list_entries", userId, { limit: 1000000 })).rejects.toMatchObject({
+      code: ErrorCode.InvalidParams,
+    });
     // Tag colors are rendered into inline styles; the MCP surface must
     // enforce the same hex-format invariant as the tRPC tags router.
     await expect(
-      tool("create_tag").handler(db, userId, {
+      callMcpTool("create_tag", userId, {
         name: "Bad color",
         color: "red;background-image:url(https://attacker.example/x)",
       })
@@ -151,7 +153,7 @@ describe("MCP tool argument validation", () => {
       );
       expect(res.status).toBe(200);
       const [key, value] = param.split("=");
-      await expect(tool(name).handler(db, userId, { [key]: value })).rejects.toMatchObject({
+      await expect(callMcpTool(name, userId, { [key]: value })).rejects.toMatchObject({
         code: ErrorCode.InvalidParams,
       });
     }
@@ -160,7 +162,7 @@ describe("MCP tool argument validation", () => {
   it("strips unknown keys so internal service params can't be injected", async () => {
     // maxLimit is a Google-Reader-internal override of the 100-row cap; a
     // client-supplied value must be dropped rather than forwarded.
-    const result = (await tool("list_entries").handler(db, userId, {
+    const result = (await callMcpTool("list_entries", userId, {
       maxLimit: 1000000,
     })) as { items: unknown[] };
     expect(Array.isArray(result.items)).toBe(true);
@@ -170,7 +172,7 @@ describe("MCP tool argument validation", () => {
     // Both MCP transports serialize tool results with plain JSON.stringify,
     // which throws on bigint, so the Google Reader serials must stay out of
     // the service entry types.
-    const list = (await tool("list_entries").handler(db, userId, {})) as {
+    const list = (await callMcpTool("list_entries", userId, {})) as {
       items: Array<Record<string, unknown>>;
     };
     expect(list.items.length).toBeGreaterThan(0);
@@ -179,10 +181,7 @@ describe("MCP tool argument validation", () => {
     }
     expect(() => JSON.stringify(list)).not.toThrow();
 
-    const entry = (await tool("get_entry").handler(db, userId, { entryId })) as Record<
-      string,
-      unknown
-    >;
+    const entry = (await callMcpTool("get_entry", userId, { entryId })) as Record<string, unknown>;
     expect(entry).not.toHaveProperty("greaderItemId");
     expect(() => JSON.stringify(entry)).not.toThrow();
   });
@@ -190,12 +189,12 @@ describe("MCP tool argument validation", () => {
   it("uses the authenticated userId, ignoring any userId in args", async () => {
     // The entry is visible to `userId` only. Passing userId in args (the old
     // injection channel) must not switch the acting user.
-    const spoofed = (await tool("list_entries").handler(db, otherUserId, {
+    const spoofed = (await callMcpTool("list_entries", otherUserId, {
       userId,
     })) as { items: Array<{ id: string }> };
     expect(spoofed.items).toHaveLength(0);
 
-    const legit = (await tool("list_entries").handler(db, userId, {})) as {
+    const legit = (await callMcpTool("list_entries", userId, {})) as {
       items: Array<{ id: string }>;
     };
     expect(legit.items.map((e) => e.id)).toContain(entryId);
@@ -214,19 +213,19 @@ describe("MCP tool results", () => {
       userIds: [userId],
       fetchedAt: new Date("2025-01-02T00:00:00Z"),
     });
-    const { id: collectionId } = (await tool("create_collection").handler(db, userId, {
+    const { id: collectionId } = (await callMcpTool("create_collection", userId, {
       name: "MCP book",
     })) as { id: string };
-    await tool("add_to_collection").handler(db, userId, {
+    await callMcpTool("add_to_collection", userId, {
       collectionId,
       entryIds: [older, newer],
     });
     const listIds = async (args: Record<string, unknown>) =>
-      (
-        (await tool("list_entries").handler(db, userId, args)) as { items: { id: string }[] }
-      ).items.map((item) => item.id);
+      ((await callMcpTool("list_entries", userId, args)) as { items: { id: string }[] }).items.map(
+        (item) => item.id
+      );
 
-    await tool("set_collection_positions").handler(db, userId, {
+    await callMcpTool("set_collection_positions", userId, {
       collectionId,
       entryIds: [older, newer],
     });
@@ -235,7 +234,7 @@ describe("MCP tool results", () => {
       newer,
     ]);
 
-    await tool("set_entry_scores").handler(db, userId, {
+    await callMcpTool("set_entry_scores", userId, {
       scores: [
         { entryId: older, score: 2 },
         { entryId: newer, score: 1 },
@@ -253,9 +252,9 @@ describe("MCP tool results", () => {
       { collectionId },
       { collectionId, entryIds: [older], positions: [{ entryId: older, position: 1 }] },
     ]) {
-      await expect(
-        tool("set_collection_positions").handler(db, userId, args)
-      ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+      await expect(callMcpTool("set_collection_positions", userId, args)).rejects.toMatchObject({
+        code: ErrorCode.InvalidParams,
+      });
     }
   });
 
@@ -316,17 +315,17 @@ describe("MCP tool results", () => {
   });
 
   it("uploads articles into a collection and deletes them with it", async () => {
-    const { id: collectionId } = (await tool("create_collection").handler(db, userId, {
+    const { id: collectionId } = (await callMcpTool("create_collection", userId, {
       name: "Uploaded book",
     })) as { id: string };
-    const chapter = (await tool("upload_article").handler(db, userId, {
+    const chapter = (await callMcpTool("upload_article", userId, {
       content: "Chapter one",
       title: "Chapter 1",
       collectionIds: [collectionId],
     })) as { id: string };
 
     expect(
-      await tool("delete_collection").handler(db, userId, {
+      await callMcpTool("delete_collection", userId, {
         collectionId,
         deleteSavedArticles: true,
       })
@@ -336,10 +335,10 @@ describe("MCP tool results", () => {
   });
 
   it("deletes a collection and its saved articles over REST with an mcp token", async () => {
-    const { id: collectionId } = (await tool("create_collection").handler(db, userId, {
+    const { id: collectionId } = (await callMcpTool("create_collection", userId, {
       name: "REST deleted",
     })) as { id: string };
-    const chapter = (await tool("upload_article").handler(db, userId, {
+    const chapter = (await callMcpTool("upload_article", userId, {
       content: "Chapter one",
       title: "Chapter 1",
       collectionIds: [collectionId],
@@ -358,7 +357,7 @@ describe("MCP tool results", () => {
   });
 
   it("returns save results without the article body (#1835)", async () => {
-    const result = (await tool("upload_article").handler(db, userId, {
+    const result = (await callMcpTool("upload_article", userId, {
       title: "MCP upload",
       content: "# Heading\n\nThe body of the uploaded article.",
       summary: "Short summary",
@@ -370,8 +369,8 @@ describe("MCP tool results", () => {
 
   it("returns the first upload_article result for a retry with the same key (#2070)", async () => {
     const args = { title: "Retried upload", content: "Body.", idempotencyKey: "agent-retry-1" };
-    const first = (await tool("upload_article").handler(db, userId, args)) as { id: string };
-    const retry = (await tool("upload_article").handler(db, userId, args)) as { id: string };
+    const first = (await callMcpTool("upload_article", userId, args)) as { id: string };
+    const retry = (await callMcpTool("upload_article", userId, args)) as { id: string };
 
     expect(retry.id).toBe(first.id);
   });
@@ -379,27 +378,28 @@ describe("MCP tool results", () => {
   it("refetches an already-saved URL only when asked, honoring force (#1836)", async () => {
     const paragraph = "A paragraph of the report, long enough to count as real article text. ";
     const content = async (id: string) =>
-      ((await tool("get_entry").handler(db, userId, { entryId: id })) as { contentCleaned: string })
+      ((await callMcpTool("get_entry", userId, { entryId: id })) as { contentCleaned: string })
         .contentCleaned;
 
     pageBody = `# Report\n\nFirst draft. ${paragraph.repeat(20)}`;
-    const original = (await tool("save_article").handler(db, userId, { url: pageUrl })) as {
+    const original = (await callMcpTool("save_article", userId, { url: pageUrl })) as {
       id: string;
     };
 
     pageBody = "# Report\n\nRevised.";
-    await tool("save_article").handler(db, userId, { url: pageUrl });
+    await callMcpTool("save_article", userId, { url: pageUrl });
     expect(await content(original.id)).toContain("First draft.");
 
     // The guard's hint must reach MCP callers, who can't see the error's cause.
-    const rejected = await tool("save_article")
-      .handler(db, userId, { url: pageUrl, refetch: true })
-      .then(() => undefined, toMcpError);
+    const rejected = await callMcpTool("save_article", userId, {
+      url: pageUrl,
+      refetch: true,
+    }).then(() => undefined, toMcpError);
     expect(rejected).toBeInstanceOf(McpError);
     expect(rejected).toMatchObject({ data: { code: "REFETCH_CONTENT_WORSE" } });
     expect((rejected as McpError).message).toContain("force=true");
 
-    const forced = (await tool("save_article").handler(db, userId, {
+    const forced = (await callMcpTool("save_article", userId, {
       url: pageUrl,
       refetch: true,
       force: true,
@@ -421,7 +421,7 @@ describe("MCP list_entries spam", () => {
     });
     const listTitles = async () =>
       (
-        (await tool("list_entries").handler(db, spamUserId, {})) as { items: { title: string }[] }
+        (await callMcpTool("list_entries", spamUserId, {})) as { items: { title: string }[] }
       ).items.map((item) => item.title);
 
     expect(await listTitles()).not.toContain("Spam mail");
