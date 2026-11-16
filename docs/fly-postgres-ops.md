@@ -38,7 +38,8 @@ Related: [DEPLOYMENT.md](DEPLOYMENT.md). Continuous WAL archiving / PITR is **en
   if the balance pins at 0 outside of backups, the DB is throttled — give it a bigger VM.
 - **Minor version updates:** `flyctl image update -a lion-reader-pg` (restarts the node).
 - **Major version upgrades:** dump/restore into a fresh cluster, as in the
-  [region-migration runbook](#runbook-migrate-a-single-node-cluster-to-a-new-region) — Fly
+  [region-migration runbook](#runbook-migrate-a-single-node-cluster-to-a-new-region), but
+  create it with `--image-ref flyio/postgres-flex:<major>` so it runs the new version — Fly
   does not upgrade unmanaged clusters.
 - **Disk:** keep `/data` under ~45% ([Volume headroom](#volume-headroom-keep-data-under-45));
   `flyctl volumes extend` when needed, then check with `df -h /data` that the filesystem
