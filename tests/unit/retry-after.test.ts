@@ -7,6 +7,11 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter(new Date(10_000).toUTCString(), 4_000)).toBe(6);
   });
 
+  it("rounds fractional seconds up and clamps negative ones to 0", () => {
+    expect(parseRetryAfter("1.2")).toBe(2);
+    expect(parseRetryAfter("-5")).toBe(0);
+  });
+
   it("rounds a partial second up and a past date to 0", () => {
     expect(parseRetryAfter(new Date(10_000).toUTCString(), 8_500)).toBe(2);
     expect(parseRetryAfter(new Date(10_000).toUTCString(), 20_000)).toBe(0);

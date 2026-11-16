@@ -134,9 +134,13 @@ describe("canUseWebSub", () => {
     expect(canUseWebSub()).toBe(false);
   });
 
-  it("accepts a public app URL", () => {
-    vi.stubEnv("WEBSUB_ENABLED", "");
-    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://reader.example.com");
-    expect(canUseWebSub()).toBe(true);
-  });
+  // A hostname that merely starts like a private IP is a public name.
+  it.each(["https://reader.example.com", "https://10.example.com"])(
+    "accepts the public app URL %s",
+    (appUrl) => {
+      vi.stubEnv("WEBSUB_ENABLED", "");
+      vi.stubEnv("NEXT_PUBLIC_APP_URL", appUrl);
+      expect(canUseWebSub()).toBe(true);
+    }
+  );
 });

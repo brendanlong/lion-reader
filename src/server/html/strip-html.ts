@@ -156,8 +156,15 @@ export function stripHtml(html: string, maxLength?: number): string {
 }
 
 /**
- * Trims plain text and truncates it at a word boundary, dropping a partial
- * word, with "..." inside `maxLength`. (Operates on already-plain text, unlike
+ * How far before the cut {@link truncateText} looks for a word boundary. A
+ * space further back than this would throw away most of the budget (text
+ * ending in one long token, like a URL), so the cut is hard instead.
+ */
+const WORD_BOUNDARY_LOOKBACK_CHARS = 50;
+
+/**
+ * Trims plain text and truncates it at a nearby word boundary, dropping a
+ * partial word, with "..." inside `maxLength`. (Operates on already-plain text, unlike
  * `stripHtml`, which parses HTML first — so it's safe for text that may contain
  * `<`/`>` from math/LaTeX, e.g. an arXiv abstract.)
  */
@@ -170,10 +177,9 @@ export function truncateText(text: string, maxLength?: number): string {
   const truncateAt = maxLength - 3; // Reserve space for "..."
   const lastSpace = trimmed.lastIndexOf(" ", truncateAt);
 
-  if (lastSpace > 0) {
+  if (lastSpace > 0 && lastSpace > truncateAt - WORD_BOUNDARY_LOOKBACK_CHARS) {
     return trimmed.slice(0, lastSpace).trimEnd() + "...";
   }
 
-  // No space found - single long word, just hard truncate
   return trimmed.slice(0, truncateAt) + "...";
 }

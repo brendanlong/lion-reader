@@ -665,7 +665,7 @@ async function handleTemporaryError(
   feed: Feed,
   errorMessage: string,
   now: Date,
-  options: { retryAfterSeconds?: number; rateLimited?: boolean } = {}
+  options: { retryAfterSeconds?: number | null; rateLimited?: boolean } = {}
 ): Promise<JobHandlerResult> {
   const newFailureCount = feed.consecutiveFailures + 1;
 

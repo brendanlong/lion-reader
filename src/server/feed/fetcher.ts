@@ -89,7 +89,7 @@ interface FetchServerErrorResult {
   /** Error message */
   message: string;
   /** Retry-After header value in seconds, if present */
-  retryAfter?: number;
+  retryAfter: number | null;
 }
 
 /**
@@ -98,7 +98,7 @@ interface FetchServerErrorResult {
 interface FetchRateLimitedResult {
   status: "rate_limited";
   /** Retry-After header value in seconds, if present */
-  retryAfter?: number;
+  retryAfter: number | null;
 }
 
 /**
@@ -379,7 +379,7 @@ export async function fetchFeed(
       if (response.status === 429) {
         return {
           status: "rate_limited",
-          retryAfter: parseRetryAfter(response.headers.get("retry-after")) ?? undefined,
+          retryAfter: parseRetryAfter(response.headers.get("retry-after")),
         };
       }
 
@@ -400,7 +400,7 @@ export async function fetchFeed(
         return {
           status: "server_error",
           message: `HTTP ${response.status}: ${response.statusText || "Server Error"}`,
-          retryAfter: parseRetryAfter(response.headers.get("retry-after")) ?? undefined,
+          retryAfter: parseRetryAfter(response.headers.get("retry-after")),
         };
       }
 
