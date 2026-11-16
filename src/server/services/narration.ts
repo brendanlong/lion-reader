@@ -16,7 +16,6 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import type { db as dbType } from "@/server/db";
 import { narrationContent } from "@/server/db/schema";
 import { getOwnedEntryRawContent } from "@/server/services/entry-reads";
-import { getUserApiKeys } from "@/server/services/user-api-keys";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { selectDisplayedContent } from "@/lib/entry-content";
 import {
@@ -431,6 +430,8 @@ export interface EntryNarration {
 export async function getEntryNarration(
   db: typeof dbType,
   user: { id: string; narrationModel: string | null },
+  /** The user's API keys (`getUserApiKeys`). */
+  keys: AiProviderKeys,
   input: {
     id: string;
     /** When false, uses simple HTML-to-text conversion. */
@@ -439,9 +440,6 @@ export async function getEntryNarration(
     showOriginal: boolean;
   }
 ): Promise<EntryNarration> {
-  // Fetch API keys from DB on demand (not loaded with the session user)
-  const keys = await getUserApiKeys(user.id);
-
   // Fetch the entry with the same visibility rule the entry list applies.
   // Both regular entries and saved articles are in the entries table now.
   const entry = await getOwnedEntryRawContent(db, user.id, input.id);

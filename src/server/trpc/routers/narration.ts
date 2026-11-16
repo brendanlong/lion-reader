@@ -105,7 +105,15 @@ export const narrationRouter = createTRPCRouter({
     })
     .input(generateInputSchema)
     .output(generateOutputSchema)
-    .mutation(({ ctx, input }) => getEntryNarration(ctx.db, ctx.session.user, input)),
+    .mutation(async ({ ctx, input }) =>
+      getEntryNarration(
+        ctx.db,
+        ctx.session.user,
+        // Fetched on demand (not loaded with the session user)
+        await getUserApiKeys(ctx.session.user.id),
+        input
+      )
+    ),
 
   /**
    * Check if AI text processing is available.
