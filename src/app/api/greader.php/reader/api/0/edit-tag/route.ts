@@ -21,13 +21,8 @@
 
 import { withGreaderAuth } from "@/server/google-reader/auth";
 import type { User } from "@/server/db/schema";
-import {
-  parseFormData,
-  parseItemIds,
-  textResponse,
-  errorResponse,
-} from "@/server/google-reader/parse";
-import { greaderItemIdsToUuids } from "@/server/google-reader/id";
+import { parseFormData, parseItemIds, textResponse } from "@/server/google-reader/parse";
+import { resolveGreaderItems } from "@/server/google-reader/id";
 import { isState } from "@/server/google-reader/streams";
 import * as entryStateService from "@/server/services/entry-state";
 import { db } from "@/server/db";
@@ -37,32 +32,14 @@ export const dynamic = "force-dynamic";
 export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   const params = await parseFormData(request);
 
-  let itemIds: bigint[];
-  try {
-    itemIds = parseItemIds(params);
-  } catch {
-    return errorResponse("Invalid item ID format", 400);
-  }
-
   // Bounded so one call can't issue an unbounded number of per-entry updates (#1266).
-  if (itemIds.length > entryStateService.MAX_ENTRY_STATE_BATCH) {
-    return errorResponse(
-      `Too many item ids: ${itemIds.length} requested, maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} per request. Split into smaller batches.`,
-      400
-    );
-  }
-
-  if (itemIds.length === 0) {
-    return textResponse("OK");
-  }
+  const itemIds = parseItemIds(params, entryStateService.MAX_ENTRY_STATE_BATCH);
+  if (itemIds instanceof Response) return itemIds;
 
   const addTags = params.getAll("a");
   const removeTags = params.getAll("r");
 
-  // Resolve item IDs to UUIDs
-  const uuidMap = await greaderItemIdsToUuids(db, user.id, itemIds);
-  const entryUuids = Array.from(uuidMap.values());
-
+  const entryUuids = (await resolveGreaderItems(db, user.id, itemIds)).map((item) => item.id);
   if (entryUuids.length === 0) {
     return textResponse("OK");
   }

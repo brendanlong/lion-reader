@@ -703,7 +703,7 @@ export const entries = pgTable(
     // entry (#2157).
     index("idx_entries_owner_feed_fetched").on(table.ownerFeedId, table.fetchedAt),
     // Unique global Google Reader item id; backs the greader_item_id -> UUID
-    // reverse lookup (greaderItemIdsToUuids) with an index seek.
+    // reverse lookup (resolveGreaderItems) with an index seek.
     uniqueIndex("idx_entries_greader_item_id").on(table.greaderItemId),
     // Email and saved owners (#1846, migration 0137): every lookup by owner
     // (dedup, saved-by-URL, List-Unsubscribe) and the owner's delete cascade,
@@ -1131,7 +1131,7 @@ export const visibleEntries = pgView("visible_entries", {
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(), // denormalized timeline sort key (temporalTimestamp: µs-precise cursor sort key)
   // NOT NULL in reality (entries.greader_item_id is NOT NULL); typed non-null so
-  // the compat id lookups (resolveGreaderIdsForEntries, entryIdsToWallabagIds)
+  // the compat id lookups (resolveGreaderItems, entryIdsToWallabagIds)
   // read it without a cast.
   // Doubles as the Wallabag entry id (reversed by resolveWallabagEntry).
   greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),

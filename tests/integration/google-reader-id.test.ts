@@ -1,29 +1,32 @@
 /**
- * Integration tests for greaderItemIdsToUuids — the Google Reader item-id ->
- * UUIDv7 resolver used by stream/items/contents and edit-tag — and its forward
- * counterparts resolveGreaderIdsForEntries and listGreaderItemRefs.
+ * Integration tests for resolveGreaderItems — the Google Reader item-id
+ * resolver used by stream/items/contents and edit-tag — and its page
+ * counterpart listGreaderItemRefs.
  *
- * Item ids are now a stored global serial (`entries.greader_item_id`), assigned
+ * Item ids are a stored global serial (`entries.greader_item_id`), assigned
  * by a sequence default at insert time. Resolution is a single
  * `greader_item_id = ANY(ids)` seek, run through `visible_entries` so it is
  * scoped to the requesting user — no timestamp math, no candidate
  * disambiguation. These tests insert entries (with a `user_entries` row so they
  * are visible), read back the serials the DB assigned, and lock in that the
  * resolver round-trips them, skips unknown ids, dedupes repeats, refuses another
- * user's entries, and returns an empty map for no input.
+ * user's entries, and returns nothing for no input.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
 import { inArray, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { feeds, entries, users, subscriptions } from "../../src/server/db/schema";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createTestEntry, createTestFeed, createTestUser } from "./helpers";
-import {
-  greaderItemIdsToUuids,
-  resolveGreaderIdsForEntries,
-} from "../../src/server/google-reader/id";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { resolveGreaderItems } from "../../src/server/google-reader/id";
 import { listEntries, listGreaderItemRefs } from "../../src/server/services/entries";
+
+/** The resolved items as item id -> entry UUID. */
+async function resolveIds(userId: string, ids: bigint[]): Promise<Map<bigint, string>> {
+  const items = await resolveGreaderItems(db, userId, ids);
+  return new Map(items.map((item) => [item.itemId, item.id]));
+}
 
 const createdUserIds: string[] = [];
 const createdFeedIds: string[] = [];
@@ -81,7 +84,7 @@ afterAll(async () => {
   }
 });
 
-describe("greaderItemIdsToUuids", () => {
+describe("resolveGreaderItems", () => {
   it("round-trips many stored item ids in one query", async () => {
     const userId = await createUser();
     const feedId = await createFeed();
@@ -91,7 +94,7 @@ describe("greaderItemIdsToUuids", () => {
     }
 
     const ids = inserted.map((e) => e.greaderItemId);
-    const resolved = await greaderItemIdsToUuids(db, userId, ids);
+    const resolved = await resolveIds(userId, ids);
 
     expect(resolved.size).toBe(inserted.length);
     for (const entry of inserted) {
@@ -106,7 +109,7 @@ describe("greaderItemIdsToUuids", () => {
     // A serial well beyond anything the sequence has handed out.
     const missingId = real.greaderItemId + BigInt(1_000_000_000);
 
-    const resolved = await greaderItemIdsToUuids(db, userId, [real.greaderItemId, missingId]);
+    const resolved = await resolveIds(userId, [real.greaderItemId, missingId]);
 
     expect(resolved.get(real.greaderItemId)).toBe(real.id);
     expect(resolved.has(missingId)).toBe(false);
@@ -120,9 +123,9 @@ describe("greaderItemIdsToUuids", () => {
     const entry = await insertEntry(feedId, owner);
 
     // Owner can resolve it; a different user gets nothing for the same serial.
-    const ownerResolved = await greaderItemIdsToUuids(db, owner, [entry.greaderItemId]);
+    const ownerResolved = await resolveIds(owner, [entry.greaderItemId]);
     expect(ownerResolved.get(entry.greaderItemId)).toBe(entry.id);
-    const otherResolved = await greaderItemIdsToUuids(db, other, [entry.greaderItemId]);
+    const otherResolved = await resolveIds(other, [entry.greaderItemId]);
     expect(otherResolved.size).toBe(0);
   });
 
@@ -131,7 +134,7 @@ describe("greaderItemIdsToUuids", () => {
     const feedId = await createFeed();
     const entry = await insertEntry(feedId, userId);
 
-    const resolved = await greaderItemIdsToUuids(db, userId, [
+    const resolved = await resolveIds(userId, [
       entry.greaderItemId,
       entry.greaderItemId,
       entry.greaderItemId,
@@ -141,9 +144,9 @@ describe("greaderItemIdsToUuids", () => {
     expect(resolved.get(entry.greaderItemId)).toBe(entry.id);
   });
 
-  it("returns an empty map for no ids", async () => {
+  it("resolves nothing for no ids", async () => {
     const userId = await createUser();
-    const resolved = await greaderItemIdsToUuids(db, userId, []);
+    const resolved = await resolveIds(userId, []);
     expect(resolved.size).toBe(0);
   });
 
@@ -159,11 +162,7 @@ describe("greaderItemIdsToUuids", () => {
     const unsigned64Max = BigInt(2) ** BigInt(64) - BigInt(1); // "ffffffffffffffff"
     const belowInt64Min = -(BigInt(2) ** BigInt(63)) - BigInt(1);
 
-    const resolved = await greaderItemIdsToUuids(db, userId, [
-      unsigned64Max,
-      real.greaderItemId,
-      belowInt64Min,
-    ]);
+    const resolved = await resolveIds(userId, [unsigned64Max, real.greaderItemId, belowInt64Min]);
 
     expect(resolved.get(real.greaderItemId)).toBe(real.id);
     expect(resolved.has(unsigned64Max)).toBe(false);
@@ -171,14 +170,14 @@ describe("greaderItemIdsToUuids", () => {
     expect(resolved.size).toBe(1);
   });
 
-  it("returns an empty map when every id is out of range", async () => {
+  it("resolves nothing when every id is out of range", async () => {
     const userId = await createUser();
-    const resolved = await greaderItemIdsToUuids(db, userId, [BigInt(2) ** BigInt(64)]);
+    const resolved = await resolveIds(userId, [BigInt(2) ** BigInt(64)]);
     expect(resolved.size).toBe(0);
   });
 });
 
-describe("resolveGreaderIdsForEntries", () => {
+describe("resolveGreaderItems origin stream", () => {
   it("returns each entry's item id and origin subscription stream, scoped to the user", async () => {
     const owner = await createUser();
     const other = await createUser();
@@ -189,11 +188,10 @@ describe("resolveGreaderIdsForEntries", () => {
       .from(subscriptions)
       .where(eq(subscriptions.feedId, feedId));
 
-    const resolved = await resolveGreaderIdsForEntries(db, owner, [entry.id, generateUuidv7()]);
-    expect([...resolved]).toEqual([
-      [entry.id, { itemId: entry.greaderItemId, originStreamId: streamId }],
+    expect(await resolveGreaderItems(db, owner, [entry.greaderItemId])).toEqual([
+      { id: entry.id, itemId: entry.greaderItemId, originStreamId: streamId },
     ]);
-    expect((await resolveGreaderIdsForEntries(db, other, [entry.id])).size).toBe(0);
+    expect(await resolveGreaderItems(db, other, [entry.greaderItemId])).toEqual([]);
   });
 });
 

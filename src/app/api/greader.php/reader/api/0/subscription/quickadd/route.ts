@@ -9,17 +9,15 @@
  *   quickadd={feedUrl}
  */
 
-import { eq } from "drizzle-orm";
 import { withGreaderAuth } from "@/server/google-reader/auth";
 import type { User } from "@/server/db/schema";
 import { jsonResponse } from "@/server/http/json-response";
 import { parseFormData, errorResponse } from "@/server/google-reader/parse";
-import { feedStreamId } from "@/server/google-reader/id";
+import { subscriptionFeedStreamId } from "@/server/google-reader/id";
 import { subscribeToUrl } from "@/server/services/subscribe";
 import { feedUrlSchema } from "@/server/trpc/validation";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { db } from "@/server/db";
-import { subscriptions } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -44,15 +42,11 @@ export const POST = withGreaderAuth(async (request: Request, user: User): Promis
   }
 
   const result = await subscribeToUrl(db, user.id, parsedUrl.data);
-  const [{ greaderStreamId }] = await db
-    .select({ greaderStreamId: subscriptions.greaderStreamId })
-    .from(subscriptions)
-    .where(eq(subscriptions.id, result.subscription.id));
 
   return jsonResponse({
     query: rawUrl,
     numResults: 1,
-    streamId: feedStreamId(greaderStreamId),
+    streamId: await subscriptionFeedStreamId(db, user.id, result.subscription.id),
     streamName: result.subscription.title ?? result.subscription.url ?? rawUrl,
   });
 });

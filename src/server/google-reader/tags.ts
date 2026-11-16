@@ -26,3 +26,18 @@ export async function resolveTagByName(
 
   return result[0] ?? null;
 }
+
+/**
+ * The user's tags with their Google Reader sortids (`tags.greader_sortid`, an
+ * opaque serial that's never reversed). Not `listTags`, whose `Tag` type is kept
+ * free of the bigint that a JSON MCP response can't serialize.
+ */
+export async function listGreaderTags(
+  db: typeof dbType,
+  userId: string
+): Promise<{ name: string; greaderSortid: bigint }[]> {
+  return db
+    .select({ name: tags.name, greaderSortid: tags.greaderSortid })
+    .from(tags)
+    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
+}

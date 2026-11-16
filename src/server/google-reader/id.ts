@@ -8,9 +8,8 @@
  * reversible ids (item ids, feed stream ids) are unique-index seeks — no runtime
  * UUID→int64 projection and no timestamp-window candidate scan.
  *
- * - **Item ids** (`entries.greader_item_id`): reversed by `greaderItemIdsToUuids`,
- *   looked up for formatting by `resolveGreaderIdsForEntries` (or, for a
- *   stream's page, with the page: `listGreaderItemRefs`).
+ * - **Item ids** (`entries.greader_item_id`): reversed by `resolveGreaderItems`,
+ *   and read for a stream's page with the page (`listGreaderItemRefs`).
  *   The Wallabag API exposes the same serial as its entry id
  *   (src/server/wallabag/id.ts).
  * - **Feed stream ids** (`subscriptions.greader_stream_id` /
@@ -89,46 +88,7 @@ export function isInt64(id: bigint): boolean {
   return id >= INT64_MIN && id <= INT64_MAX;
 }
 
-/**
- * Resolves Google Reader item IDs (stored `entries.greader_item_id` serials) to
- * their UUIDv7 entry IDs, **scoped to the requesting user**. Item ids are a
- * plain stored bigint, so this is a single `greader_item_id = ANY(ids)` seek —
- * no timestamp math, no candidate disambiguation. The seek runs through
- * `visible_entries`, so an item id another user owns (or one the user can't see)
- * resolves to nothing, exactly like `resolveWallabagEntry` / `resolveFeedStream`
- * — the resolved UUIDs are safe to read content off of directly. Ids with no
- * visible matching row (deleted, invisible, or a bogus value a client sent) are
- * simply absent from the returned map.
- *
- * Ids outside the signed 64-bit range are skipped before querying: `parseItemId`
- * accepts unbounded hex/decimal input (e.g. 16 hex f's = 2^64-1), and a
- * parameter that exceeds Postgres's bigint range makes Postgres reject the
- * whole query — poisoning the batch. Such ids can't match a stored serial
- * anyway, so they're simply left unresolved.
- */
-export async function greaderItemIdsToUuids(
-  db: typeof dbType,
-  userId: string,
-  ids: bigint[]
-): Promise<Map<bigint, string>> {
-  const result = new Map<bigint, string>();
-
-  const validIds = ids.filter(isInt64);
-  if (validIds.length === 0) return result;
-
-  const rows = await db
-    .select({ id: visibleEntries.id, greaderItemId: visibleEntries.greaderItemId })
-    .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.greaderItemId, validIds)));
-
-  for (const row of rows) {
-    result.set(row.greaderItemId, row.id);
-  }
-
-  return result;
-}
-
-/** The Google Reader serials of one entry, as `resolveGreaderIdsForEntries` reads them. */
+/** The Google Reader serials of one entry, as the formatters read them. */
 export interface GreaderEntryIds {
   itemId: bigint;
   /**
@@ -139,22 +99,37 @@ export interface GreaderEntryIds {
   originStreamId: bigint | null;
 }
 
+/** An entry a client named by item id, as `resolveGreaderItems` resolves it. */
+export interface GreaderItem extends GreaderEntryIds {
+  /** The entry's UUID. */
+  id: string;
+}
+
 /**
- * Looks up the serials the compat formatters need for entries a client named
- * by id (stream/items/contents), keyed by entry UUID, in one query. The
- * service entry types don't carry them, so bigints never reach a surface that
- * serializes service results verbatim. Scoped to the user via
- * `visible_entries`; entries the user can't see are absent.
+ * Resolves Google Reader item IDs (stored `entries.greader_item_id` serials) to
+ * their entries, with the serials the formatters need, in one
+ * `greader_item_id = ANY(ids)` seek **scoped to the requesting user**. The seek
+ * runs through `visible_entries`, so an item id another user owns (or one the
+ * user can't see) resolves to nothing, exactly like `resolveWallabagEntry` /
+ * `resolveFeedStream` — the resolved UUIDs are safe to read content off of
+ * directly. Ids with no visible matching row (deleted, invisible, or a bogus
+ * value a client sent) are simply absent; each entry appears once.
+ *
+ * Ids outside the signed 64-bit range are skipped before querying: `parseItemId`
+ * accepts unbounded hex/decimal input (e.g. 16 hex f's = 2^64-1), and a
+ * parameter that exceeds Postgres's bigint range makes Postgres reject the
+ * whole query — poisoning the batch. Such ids can't match a stored serial
+ * anyway, so they're simply left unresolved.
  */
-export async function resolveGreaderIdsForEntries(
+export async function resolveGreaderItems(
   db: typeof dbType,
   userId: string,
-  entryIds: string[]
-): Promise<Map<string, GreaderEntryIds>> {
-  const result = new Map<string, GreaderEntryIds>();
-  if (entryIds.length === 0) return result;
+  ids: bigint[]
+): Promise<GreaderItem[]> {
+  const validIds = ids.filter(isInt64);
+  if (validIds.length === 0) return [];
 
-  const rows = await db
+  return db
     .select({
       id: visibleEntries.id,
       itemId: visibleEntries.greaderItemId,
@@ -163,12 +138,7 @@ export async function resolveGreaderIdsForEntries(
     .from(visibleEntries)
     .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
     .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, visibleEntries))
-    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
-
-  for (const row of rows) {
-    result.set(row.id, { itemId: row.itemId, originStreamId: row.originStreamId });
-  }
-  return result;
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.greaderItemId, validIds)));
 }
 
 /**
@@ -178,6 +148,19 @@ export async function resolveGreaderIdsForEntries(
  */
 export function feedStreamId(streamId: bigint): string {
   return `feed/${streamId.toString()}`;
+}
+
+/** The feed stream ID ("feed/{int64}") of one of the user's subscriptions. */
+export async function subscriptionFeedStreamId(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string
+): Promise<string> {
+  const [{ streamId }] = await db
+    .select({ streamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.id, subscriptionId)));
+  return feedStreamId(streamId);
 }
 
 /**
