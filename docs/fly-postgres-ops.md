@@ -29,6 +29,23 @@ Related: [DEPLOYMENT.md](DEPLOYMENT.md). Continuous WAL archiving / PITR is **en
 - Volumes are **region-pinned and cannot be moved between regions.** Getting data into a
   new region means either streaming replication or a snapshot/dump copy — never a "move".
 
+## Routine operations
+
+- **Watch throttling.** `lion-reader-pg` runs on `shared-cpu-8x`: a ~50%-of-a-core
+  sustained floor (6.25% baseline per vCPU, pooled across the 8) that bursts on a
+  ~500 CPU-second-per-vCPU balance. On [fly-metrics.net](https://fly-metrics.net), its CPU
+  dashboard shows the burst balance (`fly_instance_cpu_balance`) and throttle/steal time;
+  if the balance pins at 0 outside of backups, the DB is throttled — give it a bigger VM.
+- **Minor version updates:** `flyctl image update -a lion-reader-pg` (restarts the node).
+- **Major version upgrades:** dump/restore into a fresh cluster, as in the
+  [region-migration runbook](#runbook-migrate-a-single-node-cluster-to-a-new-region) — Fly
+  does not upgrade unmanaged clusters.
+- **Disk:** keep `/data` under ~45% ([Volume headroom](#volume-headroom-keep-data-under-45));
+  `flyctl volumes extend` when needed, then check with `df -h /data` that the filesystem
+  grew too: extending the volume doesn't always resize it. A full volume is an outage you
+  have to notice — check the fly-metrics disk panel occasionally.
+- **Backups:** run the [restore drill](#restore-drill) periodically.
+
 ## Quorum: 2 nodes is a trap
 
 Automatic failover (`fly pg failover`) uses a **quorum** (strict majority) to avoid
@@ -224,8 +241,8 @@ Caveats:
 
 ## Expensive migrations: temporarily scale the machine
 
-`lion-reader-pg` runs on `shared-cpu-8x`, which is throttled to a ~50%-of-a-core
-sustained floor once its burst balance drains, so a heavy migration can crawl. A
+Once `lion-reader-pg`'s burst balance drains it is [throttled](#routine-operations) to
+its sustained floor, so a heavy migration can crawl. A
 `machine update` resize is only a **few-second restart**, so scaling to a dedicated
 `performance` tier, running the migration, then scaling back is a viable pattern (the
 dashboard's scale button is disabled for PG apps — use the CLI). Pick the tier by the
