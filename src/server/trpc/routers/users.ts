@@ -33,9 +33,7 @@ import {
   getUnreadableApiKeyProviders,
   setUserApiKeys,
 } from "@/server/services/user-api-keys";
-import { revokeUserClientTokens } from "@/server/oauth/grants";
-import { deleteEmailTokens } from "@/server/auth/email-token";
-import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
+import { replaceUserPassword } from "@/server/services/account-credentials";
 
 // ============================================================================
 // Schemas
@@ -195,24 +193,11 @@ export const usersRouter = createTRPCRouter({
 
       const passwordHash = await hashPassword(newPassword);
 
-      // Attempt to set password only if user doesn't already have one
-      const updated = await ctx.db.transaction(async (tx) => {
-        const rows = await tx
-          .update(users)
-          .set({
-            passwordHash,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(users.id, userId), isNull(users.passwordHash)))
-          .returning({ id: users.id });
-        if (rows.length > 0) {
-          await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
-          await deleteEmailTokens(tx, userId, "reset_password");
-        }
-        return rows;
-      });
+      const updated = await ctx.db.transaction((tx) =>
+        replaceUserPassword(tx, userId, passwordHash, { onlyIfUnset: true })
+      );
 
-      if (updated.length === 0) {
+      if (!updated) {
         throw errors.validation("Account already has a password. Use change password instead.");
       }
 
@@ -263,19 +248,7 @@ export const usersRouter = createTRPCRouter({
 
       const newPasswordHash = await hashPassword(newPassword);
 
-      // Wallabag tokens are minted from the password (password grant), so they
-      // must not outlive it, and nor may a reset link that would undo it.
-      await ctx.db.transaction(async (tx) => {
-        await tx
-          .update(users)
-          .set({
-            passwordHash: newPasswordHash,
-            updatedAt: new Date(),
-          })
-          .where(eq(users.id, userId));
-        await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
-        await deleteEmailTokens(tx, userId, "reset_password");
-      });
+      await ctx.db.transaction((tx) => replaceUserPassword(tx, userId, newPasswordHash));
 
       // Revoke every other session so a stolen/lingering credential can't survive
       // a password change (common reason for changing it). Keep the current one.
