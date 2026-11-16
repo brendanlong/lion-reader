@@ -33,25 +33,9 @@ interface RealtimeProviderProps {
  * Provider component that manages real-time updates via SSE.
  *
  * Wraps the app content and handles:
- * - SSE connection management
- * - React Query cache invalidation on events
+ * - SSE connection management (`useRealtimeUpdates`)
+ * - Reloading on the next navigation once the server runs a later deploy
  * - Connection status indicator
- *
- * @example
- * ```tsx
- * // In your app layout:
- * export default function AppLayout({ children }) {
- *   // Initial cursors - null values for fresh sync
- *   const initialCursors: SyncCursors = {
- *     entries: null, entriesAfterId: null, subscriptions: null, tags: null
- *   };
- *   return (
- *     <RealtimeProvider initialCursors={initialCursors}>
- *       {children}
- *     </RealtimeProvider>
- *   );
- * }
- * ```
  */
 export function RealtimeProvider({ children, initialCursors }: RealtimeProviderProps) {
   const { status, reconnect, serverBuildChanged } = useRealtimeUpdates(initialCursors);
