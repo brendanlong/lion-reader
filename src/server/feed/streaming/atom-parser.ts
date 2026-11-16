@@ -2,11 +2,9 @@
  * Atom 1.0 feed parser.
  *
  * The SAX state machine is the native `@lion-reader/feed-parser` module
- * (`native/feed-parser/core/src/atom.rs`, a direct port of the old
- * htmlparser2 parser that used to live here). Date parsing stays in this
- * file: the native side returns raw date strings and `toFeedParseResult`
- * replays the original published/updated selection with V8's `new Date()`,
- * so date semantics are preserved exactly.
+ * (`native/feed-parser/core/src/atom.rs`). Date parsing stays in this file:
+ * the native side returns raw date strings and `toFeedParseResult` does the
+ * published/updated selection with V8's lenient `new Date()`.
  */
 
 import {

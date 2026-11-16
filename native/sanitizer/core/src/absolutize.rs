@@ -19,7 +19,7 @@ use lol_html::{element, rewrite_str, HandlerResult, RewriteStrSettings};
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use crate::urls::decode_attr;
+use crate::urls::{decode_attr, split_srcset};
 
 /// A base URL and, optionally, the directory URL that root-relative paths
 /// (`/a/b.png`) resolve against instead of the origin root. The root is for
@@ -326,73 +326,12 @@ fn resolve_url<'a>(url: &'a str, base: &ResolveBase) -> Option<Cow<'a, str>> {
     Some(Cow::Owned(resolved.into()))
 }
 
-/// Whether a srcset entry ends with a descriptor (`1x`, `1.5x`, `480w`) —
-/// `/\s\d+(\.\d+)?[wx]\s*$/`.
-fn has_descriptor(entry: &str) -> bool {
-    let trailing_digits =
-        |s: &str| s.len() - s.trim_end_matches(|c: char| c.is_ascii_digit()).len();
-    let ends_with_space = |s: &str| s.chars().next_back().is_some_and(is_js_whitespace);
-
-    let Some(number) = entry
-        .trim_end_matches(is_js_whitespace)
-        .strip_suffix(['w', 'x'])
-    else {
-        return false;
-    };
-    let digits = trailing_digits(number);
-    if digits == 0 {
-        return false;
-    }
-    let before = &number[..number.len() - digits];
-    if ends_with_space(before) {
-        return true;
-    }
-    match before.strip_suffix('.') {
-        Some(integer) => {
-            let digits = trailing_digits(integer);
-            digits > 0 && ends_with_space(&integer[..integer.len() - digits])
-        }
-        None => false,
-    }
-}
-
-/// Whether a srcset part starts a new entry rather than continuing a URL that
-/// contained a comma: it starts with a scheme we expect or an absolute path.
-fn looks_like_new_srcset_entry(part: &str) -> bool {
-    ["http://", "https://", "data:", "/"]
-        .iter()
-        .any(|prefix| part.starts_with(prefix))
-}
-
-/// Absolutizes each URL in a srcset (`"a.jpg 1x, b.jpg 2x"`). Commas can
-/// appear inside URLs (Cloudinary's `f_auto,q_auto`), so a comma only splits
-/// entries after a descriptor or before something that looks like a new URL.
+/// Absolutizes each URL in a srcset (`"a.jpg 1x, b.jpg 2x"`).
 fn absolutize_srcset(srcset: &str, base: &ResolveBase) -> String {
-    let mut entries: Vec<String> = Vec::new();
-    // Whether the previous entry ends with a descriptor. Its last part decides
-    // that (a descriptor can't span a comma), so test each part once rather
-    // than re-testing an entry that grows with every rejoined part —
-    // quadratic.
-    let mut previous_has_descriptor = false;
-    for raw in srcset.split(',') {
-        let part = raw.trim_matches(is_js_whitespace);
-        if part.is_empty() {
-            continue;
-        }
-        match entries.last_mut() {
-            Some(last) if !previous_has_descriptor && !looks_like_new_srcset_entry(part) => {
-                last.push(',');
-                last.push_str(part);
-            }
-            _ => entries.push(part.to_string()),
-        }
-        previous_has_descriptor = has_descriptor(part);
-    }
-
-    entries
+    split_srcset(srcset)
         .iter()
         .map(|entry| {
-            let mut words = entry.split(is_js_whitespace).filter(|w| !w.is_empty());
+            let mut words = entry.split_whitespace();
             let url = words.next().unwrap_or_default();
             let descriptor = words.collect::<Vec<_>>().join(" ");
             match resolve_url(url, base) {
@@ -508,28 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn descriptor_detection_matches_the_srcset_grammar() {
-        for entry in ["a 1x", "a 480w", "a 1.5x", "a\t2x  "] {
-            assert!(has_descriptor(entry), "{entry}");
-        }
-        for entry in [
-            "a1x",
-            "a .5x",
-            "a 1.x",
-            "a 1.2.3x",
-            "a 2",
-            "x",
-            "a x",
-            "a\u{85}2x",
-        ] {
-            assert!(!has_descriptor(entry), "{entry}");
-        }
-    }
-
-    #[test]
     fn srcset_stays_linear() {
-        // Re-testing each growing entry, and an unanchored leading `\s+` in
-        // the JS version, made these quadratic (seconds).
+        // Re-testing each growing entry, or an unanchored whitespace scan,
+        // makes these quadratic (seconds).
         for srcset in ["a,".repeat(100_000), format!("a{}a,b", " ".repeat(50_000))] {
             let started = Instant::now();
             abs(&format!(r#"<img srcset="{srcset}">"#), BASE);

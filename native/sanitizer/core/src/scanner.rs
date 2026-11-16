@@ -36,7 +36,7 @@ pub(crate) const RAW_TEXT_ELEMENTS: &[&str] = &[
 #[derive(Clone, Copy, PartialEq)]
 pub enum Recovery {
     /// The unclosed element extends to the end of input and is consumed
-    /// whole (matches the old htmlparser2 EOF-implied close for `<svg>`).
+    /// whole (an EOF-implied close, used for `<svg>`).
     ToEof,
     /// The unclosed element's parseable extent runs to the end of input, but
     /// everything past the last explicit close of one of the tracked inner

@@ -2,11 +2,10 @@
  * RSS 2.0 / RSS 1.0 (RDF) feed parser.
  *
  * The SAX state machine is the native `@lion-reader/feed-parser` module
- * (`native/feed-parser/core/src/rss.rs`, a direct port of the old
- * htmlparser2 parser that used to live here). Date parsing stays in this
- * file: the native side returns raw date strings and `toFeedParseResult`
- * replays the original pubDate/dc:date selection with `parseRssDate`, so the
- * V8-`new Date()`-based semantics are preserved exactly.
+ * (`native/feed-parser/core/src/rss.rs`). Date parsing stays in this file:
+ * the native side returns raw date strings and `toFeedParseResult` does the
+ * pubDate/dc:date selection with `parseRssDate`, so dates keep V8's lenient
+ * `new Date()` semantics.
  */
 
 import {

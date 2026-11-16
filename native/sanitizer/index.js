@@ -12,8 +12,7 @@
  * breaks static relative resolution. `__dirname` covers every unbundled
  * context (tsx, vitest, the esbuild bundles that mark this package external);
  * `process.cwd()` covers bundled contexts, where the app always runs with
- * cwd at the app root (dev, prod Docker WORKDIR, CI) — mirroring
- * `resolveWorkerPath` in src/server/worker-thread/pool.ts.
+ * cwd at the app root (dev, prod Docker WORKDIR, CI).
  *
  * Fail loud: the sanitizer is the primary XSS defense, so there is no JS
  * fallback to silently diverge from. If the module is missing, the process

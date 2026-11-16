@@ -50,7 +50,7 @@ import { readTurnstileKeys } from "@/server/config/env";
  *   directive makes browsers ignore its `'unsafe-inline'`.
  * - `img-src`/`media-src`: sanitized entry HTML allows `<img>`/`<audio>`/
  *   `<video>` with http/https/data URLs from arbitrary feeds (see
- *   `SANITIZE_OPTIONS.allowedSchemesByTag`), and TTS uses a `data:` silent
+ *   `IMAGE_SCHEMES` in `native/sanitizer/core/src/sanitize.rs`), and TTS uses a `data:` silent
  *   audio unlock. `http:` also covers plain-HTTP local dev.
  * - `connect-src`: same-origin covers tRPC, SSE, and the Sentry `/monitoring`
  *   tunnel. The external hosts are the enhanced voice downloads: the Phonon
