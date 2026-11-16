@@ -12,6 +12,7 @@ import {
   ACCEPT_ENCODING,
 } from "../http/fetch";
 import { fetchWithSsrfProtection } from "../http/ssrf";
+import { parseRetryAfter } from "../http/retry-after";
 import { usageLimitsConfig } from "../config/env";
 
 /**
@@ -223,34 +224,6 @@ export function formatNetworkErrorMessage(error: Error): string {
 }
 
 /**
- * Parses the Retry-After header value.
- *
- * @param header - The Retry-After header value
- * @returns Retry delay in seconds, or undefined if invalid
- */
-function parseRetryAfter(header: string | null): number | undefined {
-  if (!header) return undefined;
-
-  // Try parsing as integer (seconds)
-  const seconds = parseInt(header, 10);
-  if (!isNaN(seconds) && seconds >= 0) {
-    return seconds;
-  }
-
-  // Try parsing as HTTP date
-  const date = new Date(header);
-  if (!isNaN(date.getTime())) {
-    const delayMs = date.getTime() - Date.now();
-    if (delayMs > 0) {
-      return Math.ceil(delayMs / 1000);
-    }
-    return 0;
-  }
-
-  return undefined;
-}
-
-/**
  * Determines redirect type from status code.
  */
 function getRedirectType(statusCode: number): "permanent" | "temporary" {
@@ -405,7 +378,7 @@ export async function fetchFeed(
       if (response.status === 429) {
         return {
           status: "rate_limited",
-          retryAfter: parseRetryAfter(response.headers.get("retry-after")),
+          retryAfter: parseRetryAfter(response.headers.get("retry-after")) ?? undefined,
         };
       }
 
@@ -426,7 +399,7 @@ export async function fetchFeed(
         return {
           status: "server_error",
           message: `HTTP ${response.status}: ${response.statusText || "Server Error"}`,
-          retryAfter: parseRetryAfter(response.headers.get("retry-after")),
+          retryAfter: parseRetryAfter(response.headers.get("retry-after")) ?? undefined,
         };
       }
 
