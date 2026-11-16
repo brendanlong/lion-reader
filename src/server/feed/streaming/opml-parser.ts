@@ -2,9 +2,8 @@
  * OPML parser.
  *
  * The SAX state machine is the native `@lion-reader/feed-parser` module
- * (`native/feed-parser/core/src/opml.rs`, a direct port of the old
- * htmlparser2 parser that used to live here). Structural validation and the
- * error type stay in TypeScript so the messages don't change.
+ * (`native/feed-parser/core/src/opml.rs`). Structural validation and the
+ * error type stay in TypeScript.
  */
 
 import {

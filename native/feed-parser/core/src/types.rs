@@ -1,7 +1,7 @@
-//! Output types shared by the RSS and Atom parsers. These mirror the old
-//! `FeedParseResult`/`ParsedEntry` shapes, except that dates are returned as
-//! ordered raw-string candidates for the TypeScript wrapper to parse (see the
-//! crate docs for why).
+//! Output types shared by the RSS and Atom parsers. These mirror the
+//! TypeScript `FeedParseResult`/`ParsedEntry` shapes, except that dates are
+//! returned as ordered raw-string candidates for the TypeScript wrapper to
+//! parse (see the crate docs for why).
 
 /// One raw date string from an entry, in document order.
 #[derive(Debug, Clone, PartialEq)]
@@ -14,7 +14,7 @@ pub struct DateCandidate {
     pub value: String,
 }
 
-/// A parsed feed entry. All fields mirror the old `ParsedEntry`, with `None`
+/// A parsed feed entry. All fields mirror the TS `ParsedEntry`, with `None`
 /// standing in for `undefined`.
 #[derive(Debug, Default, Clone)]
 pub struct ParsedEntry {
@@ -34,7 +34,7 @@ pub struct ParsedEntry {
     pub date_candidates: Vec<DateCandidate>,
 }
 
-/// Parsed feed metadata + entries, mirroring the old `FeedParseResult`.
+/// Parsed feed metadata + entries, mirroring the TS `FeedParseResult`.
 #[derive(Debug, Default)]
 pub struct ParsedFeed {
     pub title: Option<String>,
@@ -53,7 +53,7 @@ pub struct ParsedFeed {
     pub entries: Vec<ParsedEntry>,
 }
 
-/// A feed from an OPML file, mirroring the old `OpmlFeed`.
+/// A feed from an OPML file, mirroring the TS `OpmlFeed`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpmlFeed {
     pub xml_url: String,
@@ -62,7 +62,7 @@ pub struct OpmlFeed {
     pub category: Option<Vec<String>>,
 }
 
-/// Result of OPML parsing. Structural validation (the old "missing opml
+/// Result of OPML parsing. Structural validation (the "missing opml
 /// element" / "missing body element" errors) is left to the caller via the
 /// `has_*` flags so the error type/messages stay in TypeScript.
 #[derive(Debug, Default)]
