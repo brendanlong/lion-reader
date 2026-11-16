@@ -11,10 +11,8 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import { resolveClient } from "@/server/oauth/clients";
 import { revokeClientToken } from "@/server/oauth/service";
-import { extractClientCredentials, clientSecretError } from "@/server/oauth/client-auth";
-import { OAUTH_ERRORS, createOAuthError } from "@/server/oauth/utils";
+import { authenticateClient, invalidRequest, parseOAuthBody } from "@/server/oauth/client-auth";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 
@@ -32,55 +30,18 @@ async function handleRevoke(request: NextRequest): Promise<Response> {
   const rateLimitResponse = await checkRouteRateLimit(request, "oauth", { json: true });
   if (rateLimitResponse) return rateLimitResponse;
 
-  // Parse form data or JSON body (mirrors the token endpoint)
-  let body: Record<string, string>;
-  const contentType = request.headers.get("content-type") ?? "";
-  if (contentType.includes("application/x-www-form-urlencoded")) {
-    const formData = await request.formData();
-    body = Object.fromEntries(Array.from(formData.entries()).map(([k, v]) => [k, String(v)]));
-  } else if (contentType.includes("application/json")) {
-    body = await request.json();
-  } else {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Unsupported content type"),
-      { status: 400 }
-    );
-  }
+  const body = await parseOAuthBody(request);
+  if (body instanceof Response) return body;
 
   if (!body.token) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing token parameter"),
-      { status: 400 }
-    );
+    return invalidRequest("Missing token parameter");
   }
 
-  // Client authentication, same rules as the token endpoint
-  const extracted = extractClientCredentials(request.headers.get("authorization"), body);
-  if (!extracted.success) {
-    return NextResponse.json(extracted.error, { status: extracted.status });
-  }
-  const { clientId, clientSecret } = extracted.credentials;
+  const client = await authenticateClient(request, body);
+  if (client instanceof Response) return client;
 
-  if (!clientId) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing client_id parameter"),
-      { status: 400 }
-    );
-  }
-
-  const client = await resolveClient(clientId);
-  if (!client) {
-    return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Unknown client_id"), {
-      status: 401,
-    });
-  }
-  const secretError = clientSecretError(client, clientSecret);
-  if (secretError) {
-    return NextResponse.json(secretError, { status: 401 });
-  }
-
-  await revokeClientToken(clientId, body.token);
-  logger.info("OAuth token revocation processed", { clientId });
+  await revokeClientToken(client.clientId, body.token);
+  logger.info("OAuth token revocation processed", { clientId: client.clientId });
 
   // RFC 7009 §2.2: 200 whether or not the token existed; the body is empty.
   return new NextResponse(null, {

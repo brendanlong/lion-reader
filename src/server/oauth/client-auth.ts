@@ -1,5 +1,6 @@
 /**
- * OAuth client authentication shared by the token and revocation endpoints.
+ * Request parsing and OAuth client authentication shared by the token and
+ * revocation endpoints.
  *
  * Supports the client authentication methods advertised in the RFC 8414
  * metadata (`token_endpoint_auth_methods_supported` in config.ts):
@@ -9,8 +10,79 @@
  */
 
 import crypto from "node:crypto";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { logger } from "@/lib/logger";
 import { hashToken, OAUTH_ERRORS, createOAuthError, type OAuthErrorResponse } from "./utils";
-import type { ResolvedClient } from "./clients";
+import { resolveClient, type ResolvedClient } from "./clients";
+
+const jsonBodySchema = z.record(z.string(), z.unknown());
+
+export function invalidRequest(description: string): Response {
+  return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, description), {
+    status: 400,
+  });
+}
+
+/**
+ * Reads the form-encoded or JSON request body as string parameters, or returns
+ * an `invalid_request` response for another content type or a body that isn't
+ * a JSON object. Non-string JSON values are dropped.
+ */
+export async function parseOAuthBody(request: Request): Promise<Record<string, string> | Response> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    const formData = await request.formData();
+    return Object.fromEntries(Array.from(formData.entries()).map(([k, v]) => [k, String(v)]));
+  }
+  if (!contentType.includes("application/json")) {
+    logger.warn("OAuth request: unsupported content type", { contentType });
+    return invalidRequest("Unsupported content type");
+  }
+  const parsed = jsonBodySchema.safeParse(await request.json().catch(() => undefined));
+  if (!parsed.success) {
+    return invalidRequest("Request body must be a JSON object");
+  }
+  return Object.fromEntries(
+    Object.entries(parsed.data).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string"
+    )
+  );
+}
+
+/**
+ * Authenticates the client of a token or revocation request: extracts its
+ * credentials, requires a client_id, resolves the client and checks its
+ * secret. Returns the client, or the OAuth error response to send.
+ */
+export async function authenticateClient(
+  request: Request,
+  body: Record<string, string>
+): Promise<ResolvedClient | Response> {
+  const extracted = extractClientCredentials(request.headers.get("authorization"), body);
+  if (!extracted.success) {
+    logger.warn("OAuth client credential extraction failed", {
+      error: extracted.error.error_description,
+    });
+    return NextResponse.json(extracted.error, { status: extracted.status });
+  }
+  const { clientId, clientSecret } = extracted.credentials;
+  if (!clientId) {
+    return invalidRequest("Missing client_id parameter");
+  }
+
+  const client = await resolveClient(clientId);
+  if (!client) {
+    return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Unknown client_id"), {
+      status: 401,
+    });
+  }
+  const secretError = clientSecretError(client, clientSecret);
+  if (secretError) {
+    return NextResponse.json(secretError, { status: 401 });
+  }
+  return client;
+}
 
 export interface ClientCredentials {
   clientId?: string;
