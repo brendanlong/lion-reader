@@ -14,13 +14,15 @@ import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } 
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { sessions, oauthAccounts } from "../../src/server/db/schema";
-import { redis } from "../../src/server/redis";
+import { getRedisClient } from "../../src/server/redis";
 import { NextRequest } from "next/server";
 import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
 } from "../../src/server/auth/oauth/state-cookie";
 import { createTestUser, deleteUsers } from "./helpers";
+
+const redis = getRedisClient()!;
 
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
