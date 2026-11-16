@@ -22,6 +22,7 @@ import { getOwnedEntryRawContent } from "@/server/services/entry-reads";
 import {
   generateSummary,
   isSummarizationAvailable,
+  isSummarizationModelUsable,
   prepareContentForSummarization,
   CURRENT_PROMPT_VERSION,
   getSummarizationModelId,
@@ -37,11 +38,7 @@ import {
   UnreadableApiKeyError,
 } from "@/server/services/ai-providers";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
-import {
-  getApiKeyProviders,
-  getUserAiPlanAccess,
-  getUserApiKeys,
-} from "@/server/services/user-api-keys";
+import { getUserApiKeys, getUserKeyAvailability } from "@/server/services/user-api-keys";
 import { aiProviderName } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -227,7 +224,7 @@ export const summarizationRouter = createTRPCRouter({
       });
 
       // Check if summarization is available (user key or server key, any provider)
-      if (!(await isSummarizationAvailable(keys, userSummarizationModel))) {
+      if (!(await isSummarizationModelUsable(currentModelId, keys))) {
         throw errors.aiNotConfigured();
       }
 
@@ -312,16 +309,16 @@ export const summarizationRouter = createTRPCRouter({
         const preparedContent = prepareContentForSummarization(sourceContent);
 
         // Generate via LLM
-        const result = await generateSummary(preparedContent, entry.title ?? "", {
+        const summaryText = await generateSummary(preparedContent, entry.title ?? "", {
           keys,
-          userModel: userSummarizationModel,
+          modelId: currentModelId,
           userMaxWords: userMaxWords,
           userPrompt: userPrompt,
         });
 
         const summary = {
-          summaryText: result.summary,
-          modelId: result.modelId,
+          summaryText,
+          modelId: currentModelId,
           promptVersion: CURRENT_PROMPT_VERSION,
           maxWords: currentMaxWords,
           promptHash: currentPromptHash,
@@ -339,9 +336,9 @@ export const summarizationRouter = createTRPCRouter({
           });
 
         return {
-          summary: result.summary,
+          summary: summaryText,
           cached: false,
-          modelId: result.modelId,
+          modelId: currentModelId,
           generatedAt: new Date(),
           settingsChanged: false,
         };
@@ -350,6 +347,7 @@ export const summarizationRouter = createTRPCRouter({
         if (failure.report || getAppErrorCode(error) !== "QUOTA_EXCEEDED") {
           logger.error("Summary generation failed", {
             contentHash,
+            modelId: currentModelId,
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -383,15 +381,7 @@ export const summarizationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(async ({ ctx }) => {
-      // Availability only needs to know which keys exist, not decrypt them.
-      const [providers, plan] = await Promise.all([
-        getApiKeyProviders(ctx.session.user.id),
-        getUserAiPlanAccess(ctx.session.user.id),
-      ]);
-      const keys = {
-        ...Object.fromEntries(providers.map((provider) => [provider, "configured"])),
-        plan,
-      };
+      const keys = await getUserKeyAvailability(ctx.session.user.id);
       return {
         available: await isSummarizationAvailable(keys, ctx.session.user.summarizationModel),
       };
