@@ -25,7 +25,9 @@ import superjson from "superjson";
  * refetch: `staleTime: Infinity` keeps the SSR-hydrated data permanently fresh,
  * which alone stops the mount/focus/reconnect refetches (they all only fire on a
  * stale query), and the explicit `refetchOn* : false` flags document that intent
- * and keep it robust if `staleTime` is ever lowered.
+ * and keep it robust if `staleTime` is ever lowered. Don't let these refetch
+ * after hydration: one let a stale shared-cache response overwrite the SSR
+ * value (the register page's EU-banner flash).
  */
 export const STATIC_CONFIG_QUERY_OPTIONS = {
   staleTime: Infinity,

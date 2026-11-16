@@ -180,8 +180,11 @@ export function EntryContentBody({
   onFinished,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const openNext = useMemo(
-    () => (onOpenEntry && nextEntryId ? () => onOpenEntry(nextEntryId) : undefined),
+  const next = useMemo(
+    () =>
+      onOpenEntry && nextEntryId
+        ? { id: nextEntryId, open: () => onOpenEntry(nextEntryId) }
+        : undefined,
     [onOpenEntry, nextEntryId]
   );
   const openPrevious = useMemo(
@@ -220,7 +223,7 @@ export function EntryContentBody({
     prerecordedVoice: prerecordedNarration,
     // Narrating the content that will show, not what it's about to replace.
     continued: Boolean(narrationContinued && !isAwaitingFullContent),
-    next: openNext && nextEntryId ? { id: nextEntryId, open: openNext } : undefined,
+    next,
   });
 
   // Not the feed's excerpt while the full article is on its way, nor while
@@ -261,9 +264,9 @@ export function EntryContentBody({
     onTouchEnd: handleTouchEnd,
     onTouchCancel: handleTouchCancel,
   } = useSwipeGesture({
-    onSwipeLeft: openNext,
+    onSwipeLeft: next?.open,
     onSwipeRight: openPrevious,
-    enabled: Boolean(openNext || openPrevious),
+    enabled: Boolean(next || openPrevious),
   });
 
   // The open entry's half of `m`/`s`; useKeyboardShortcuts handles them in the list.
