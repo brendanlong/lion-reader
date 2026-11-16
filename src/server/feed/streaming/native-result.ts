@@ -13,15 +13,6 @@ import { formatAuthors } from "../authors";
 import { isUpdatePeriod, type ParsedFeed, type SyndicationHints } from "../types";
 
 /**
- * Inputs at or below this size are parsed synchronously by the `*Async`
- * parser entry points instead of scheduling a libuv-thread-pool task: the
- * native parser finishes in well under a millisecond for them, so the fixed
- * cost of the async hop isn't worth paying. ~10 KB, same rationale and value
- * as the sanitizer's and content cleaner's inline thresholds.
- */
-export const PARSE_INLINE_MAX_CHARS = 10 * 1024;
-
-/**
  * Replays the old parsers' date selection over the document-ordered raw
  * candidates: a primary element (RSS `pubDate`, Atom `published`) that parses
  * successfully overwrites the current date; a fallback element (RSS

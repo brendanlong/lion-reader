@@ -10,7 +10,7 @@ import {
   UnknownFeedFormatError,
 } from "../../src/server/feed/parser";
 
-import { PARSE_INLINE_MAX_CHARS } from "../../src/server/feed/streaming/native-result";
+import { NATIVE_INLINE_MAX_CHARS } from "../../src/server/native-inline";
 import { usageLimitsConfig } from "../../src/server/config/env";
 
 describe("detectFeedType", () => {
@@ -327,7 +327,7 @@ describe("parseFeed", () => {
 
   describe("entry limit", () => {
     // Long enough that parseFeedAsync takes the native thread-pool path.
-    const padding = "x".repeat(PARSE_INLINE_MAX_CHARS);
+    const padding = "x".repeat(NATIVE_INLINE_MAX_CHARS);
     const guids = Array.from({ length: usageLimitsConfig.maxFeedEntries + 1 }, (_, i) => `p${i}`);
     const feeds = {
       rss: `<rss version="2.0"><channel>${guids

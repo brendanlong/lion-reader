@@ -15,7 +15,8 @@ import {
 } from "@lion-reader/feed-parser";
 import { usageLimitsConfig } from "../../config/env";
 import type { ParsedFeed } from "../types";
-import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
+import { toFeedParseResult } from "./native-result";
+import { NATIVE_INLINE_MAX_CHARS } from "../../native-inline";
 
 /**
  * Parses an Atom feed from a string.
@@ -36,7 +37,7 @@ export function parseAtom(content: string): ParsedFeed {
  * synchronously (the async hop costs more than the parse).
  */
 export async function parseAtomAsync(content: string): Promise<ParsedFeed> {
-  if (content.length <= PARSE_INLINE_MAX_CHARS) {
+  if (content.length <= NATIVE_INLINE_MAX_CHARS) {
     return parseAtom(content);
   }
   return toFeedParseResult(

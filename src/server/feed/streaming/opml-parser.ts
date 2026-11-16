@@ -13,7 +13,7 @@ import {
 } from "@lion-reader/feed-parser";
 import type { RawOpmlResult } from "@lion-reader/feed-parser";
 import type { OpmlParseResult } from "./types";
-import { PARSE_INLINE_MAX_CHARS } from "./native-result";
+import { NATIVE_INLINE_MAX_CHARS } from "../../native-inline";
 
 /**
  * Error thrown when OPML parsing fails.
@@ -71,7 +71,7 @@ export function parseOpml(content: string): OpmlParseResult {
  * synchronously (the async hop costs more than the parse).
  */
 export async function parseOpmlAsync(content: string): Promise<OpmlParseResult> {
-  if (content.length <= PARSE_INLINE_MAX_CHARS) {
+  if (content.length <= NATIVE_INLINE_MAX_CHARS) {
     return parseOpml(content);
   }
   try {

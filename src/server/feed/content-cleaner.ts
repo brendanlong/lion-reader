@@ -17,6 +17,7 @@ import {
 import type { AbsolutizeOptions, AbsolutizeOutput, ExtractedImage } from "@lion-reader/sanitizer";
 import { logger } from "@/lib/logger";
 import { startReadabilityTimer } from "@/server/metrics/metrics";
+import { NATIVE_INLINE_MAX_CHARS } from "@/server/native-inline";
 
 /**
  * Absolutizes relative URLs in `src`, `href`, `poster` and `srcset` (rules in
@@ -52,14 +53,14 @@ export function rewriteContentUrls(
 
 /**
  * Async form of {@link rewriteContentUrls} for request paths: inputs over
- * {@link INLINE_MAX_CHARS} run on the libuv thread pool.
+ * {@link NATIVE_INLINE_MAX_CHARS} run on the libuv thread pool.
  */
 export async function rewriteContentUrlsAsync(
   html: string,
   baseUrl: string | null,
   options: AbsolutizeOptions = {}
 ): Promise<AbsolutizeOutput> {
-  if (html.length <= INLINE_MAX_CHARS) {
+  if (html.length <= NATIVE_INLINE_MAX_CHARS) {
     return rewriteContentUrls(html, baseUrl, options);
   }
   try {
@@ -217,7 +218,7 @@ export async function cleanContentAsync(
 ): Promise<CleanedContent | null> {
   if (!passesMinContentLength(html, options)) return null;
   // Small inputs run through the sync path, which records its own timing.
-  if (html.length <= INLINE_MAX_CHARS) {
+  if (html.length <= NATIVE_INLINE_MAX_CHARS) {
     return cleanContent(html, options);
   }
 
@@ -238,13 +239,6 @@ export async function cleanContentAsync(
     return null;
   }
 }
-
-/**
- * Inputs at or below this size run synchronously in the `*Async` forms instead
- * of scheduling a libuv-thread-pool task. ~10 KB, same rationale and value as
- * the sanitizer's inline threshold.
- */
-const INLINE_MAX_CHARS = 10 * 1024;
 
 const EXTRACT_OPTIONS: ExtractOptions = {
   // Keep styling classes that might be important for code blocks etc.
