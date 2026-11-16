@@ -19,12 +19,8 @@ import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEna
 interface KeyboardShortcutsContextValue {
   /** Whether keyboard shortcuts are enabled */
   enabled: boolean;
-  /** Function to enable/disable keyboard shortcuts */
-  setEnabled: (value: boolean) => void;
   /** Open the keyboard shortcuts modal */
   openShortcutsModal: () => void;
-  /** Close the keyboard shortcuts modal */
-  closeShortcutsModal: () => void;
 }
 
 const KeyboardShortcutsContext = createContext<KeyboardShortcutsContextValue | null>(null);
@@ -45,7 +41,7 @@ interface KeyboardShortcutsProviderProps {
 }
 
 export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProviderProps) {
-  const { enabled, setEnabled } = useKeyboardShortcutsEnabled();
+  const { enabled } = useKeyboardShortcutsEnabled();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const openShortcutsModal = useCallback(() => {
@@ -68,13 +64,8 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
   );
 
   const contextValue = useMemo<KeyboardShortcutsContextValue>(
-    () => ({
-      enabled,
-      setEnabled,
-      openShortcutsModal,
-      closeShortcutsModal,
-    }),
-    [enabled, setEnabled, openShortcutsModal, closeShortcutsModal]
+    () => ({ enabled, openShortcutsModal }),
+    [enabled, openShortcutsModal]
   );
 
   return (
