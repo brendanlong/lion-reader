@@ -47,24 +47,12 @@ interface EntryContentProps {
   onBack?: () => void;
 
   /**
-   * Optional callback when swiping to next entry.
-   */
-  onSwipeNext?: () => void;
-
-  /**
-   * Optional callback when swiping to previous entry.
-   */
-  onSwipePrevious?: () => void;
-
-  /**
-   * Optional ID of the next entry to prefetch.
+   * The entries either side in the list: prefetched, and opened by swiping
+   * (and narration's continuation) through `onOpenEntry`.
    */
   nextEntryId?: string;
-
-  /**
-   * Optional ID of the previous entry to prefetch.
-   */
   previousEntryId?: string;
+  onOpenEntry?: (entryId: string) => void;
 }
 
 /**
@@ -75,10 +63,9 @@ interface EntryContentProps {
 function EntryContentInner({
   entryId,
   onBack,
-  onSwipeNext,
-  onSwipePrevious,
   nextEntryId,
   previousEntryId,
+  onOpenEntry,
 }: EntryContentProps) {
   const { prerecordedNarration, ssrDateTimeZone, offersFullContent, renderSlots } =
     useEntryContentOptions();
@@ -313,9 +300,9 @@ function EntryContentInner({
         setShowOriginal={setShowOriginal}
         footerLinkDomain={entry.feedUrl ? getDomain(entry.feedUrl) : undefined}
         unsubscribeUrl={entry.unsubscribeUrl}
-        onSwipeNext={onSwipeNext}
         nextEntryId={nextEntryId}
-        onSwipePrevious={onSwipePrevious}
+        previousEntryId={previousEntryId}
+        onOpenEntry={onOpenEntry}
         // Full content props - only available if entry has a subscription
         fullContentCleaned={entry.fullContentCleaned}
         fullContentFetchedAt={entry.fullContentFetchedAt}

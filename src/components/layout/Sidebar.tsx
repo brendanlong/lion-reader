@@ -17,14 +17,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useUnsubscribeMutation } from "@/lib/hooks/useUnsubscribeMutation";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
-import { buildEntriesListInputForRoute } from "@/lib/queries/entries-list-input";
+import { entriesListInputFor } from "@/lib/queries/entries-list-input";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
 import { SidebarNav } from "./SidebarNav";
 import { TagList } from "./TagList";
+import { ScrollContainer } from "./ScrollContainerContext";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { EyeIcon, EyeSlashIcon } from "@/components/ui/icons";
+import { untitledSubscriptionLabel } from "@/lib/collections";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -34,20 +37,8 @@ export function Sidebar({ onClose }: SidebarProps) {
   const queryClient = useQueryClient();
   const pathname = useAppPathname();
   const { sidebarUnreadOnly, toggleSidebarUnreadOnly } = useSidebarUnreadOnly();
-  const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
-    id: string;
-    title: string;
-    isCollection: boolean;
-    isEmail: boolean;
-  } | null>(null);
-  const [editTarget, setEditTarget] = useState<{
-    id: string;
-    title: string;
-    customTitle: string | null;
-    tagIds: string[];
-    isCollection: boolean;
-    isEmail: boolean;
-  } | null>(null);
+  const [unsubscribeTarget, setUnsubscribeTarget] = useState<SubscriptionRow | null>(null);
+  const [editTarget, setEditTarget] = useState<SubscriptionRow | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -70,12 +61,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   };
 
   // Prefetch entries.list on mousedown (fires ~100-200ms before click).
-  // Even though handleNavigate invalidates the cache, prefetched data will
-  // still be available as stale data - useSuspenseInfiniteQuery renders stale
-  // data immediately without suspending, then refetches in the background.
   const handlePrefetchRoute = useCallback(
     (href: string) => {
-      const input = buildEntriesListInputForRoute(href);
+      const input = entriesListInputFor(href, new URLSearchParams());
       void utils.entries.list.prefetchInfinite(input, {
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         pages: 1,
@@ -83,26 +71,6 @@ export function Sidebar({ onClose }: SidebarProps) {
     },
     [utils]
   );
-
-  const handleEdit = (sub: {
-    id: string;
-    title: string;
-    customTitle: string | null;
-    tagIds: string[];
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => {
-    setEditTarget(sub);
-  };
-
-  const handleUnsubscribe = (sub: {
-    id: string;
-    title: string;
-    isCollection: boolean;
-    isEmail: boolean;
-  }) => {
-    setUnsubscribeTarget(sub);
-  };
 
   return (
     <>
@@ -128,23 +96,27 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
 
         {/* Scrollable area with tags and feeds */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <ScrollContainer className="flex-1 overflow-y-auto p-3">
           <TagList
             onNavigate={handleNavigate}
-            onEdit={handleEdit}
-            onUnsubscribe={handleUnsubscribe}
+            onEdit={setEditTarget}
+            onUnsubscribe={setUnsubscribeTarget}
             unreadOnly={sidebarUnreadOnly}
             onPrefetch={handlePrefetchRoute}
           />
-        </div>
+        </ScrollContainer>
       </nav>
 
       {/* Unsubscribe Confirmation Dialog */}
       <UnsubscribeDialog
         isOpen={unsubscribeTarget !== null}
-        feedTitle={unsubscribeTarget?.title ?? ""}
-        isCollection={unsubscribeTarget?.isCollection ?? false}
-        emailSubscriptionId={unsubscribeTarget?.isEmail ? unsubscribeTarget.id : undefined}
+        feedTitle={
+          unsubscribeTarget
+            ? unsubscribeTarget.title || untitledSubscriptionLabel(unsubscribeTarget.type)
+            : ""
+        }
+        isCollection={unsubscribeTarget?.type === "collection"}
+        emailSubscriptionId={unsubscribeTarget?.type === "email" ? unsubscribeTarget.id : undefined}
         isLoading={unsubscribeMutation.isPending}
         onConfirm={(options) => {
           if (unsubscribeTarget) {
@@ -155,16 +127,9 @@ export function Sidebar({ onClose }: SidebarProps) {
       />
 
       {/* Edit Subscription Dialog */}
-      <EditSubscriptionDialog
-        isOpen={editTarget !== null}
-        subscriptionId={editTarget?.id ?? ""}
-        currentTitle={editTarget?.title ?? ""}
-        currentCustomTitle={editTarget?.customTitle ?? null}
-        currentTagIds={editTarget?.tagIds ?? []}
-        isCollection={editTarget?.isCollection ?? false}
-        isEmail={editTarget?.isEmail ?? false}
-        onClose={() => setEditTarget(null)}
-      />
+      {editTarget && (
+        <EditSubscriptionDialog subscription={editTarget} onClose={() => setEditTarget(null)} />
+      )}
     </>
   );
 }

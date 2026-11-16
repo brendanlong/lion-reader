@@ -90,13 +90,13 @@ describe("handleSubscriptionCreated", () => {
     const subscription = createSubscription({
       tags: [{ id: "tag-1", name: "News", color: "#ff0000" }],
     });
-    handleSubscriptionCreated(utils, subscription, queryClient);
+    handleSubscriptionCreated(utils, queryClient, subscription);
 
     expect(stored(queryClient, "sub-1")).toEqual(subscription);
   });
 
   it("keeps the store to its own QueryClient (a new client starts empty)", () => {
-    handleSubscriptionCreated(utils, createSubscription(), queryClient);
+    handleSubscriptionCreated(utils, queryClient, createSubscription());
 
     expect(stored(new QueryClient(), "sub-1")).toBeUndefined();
   });
@@ -105,8 +105,8 @@ describe("handleSubscriptionCreated", () => {
     const subscription = createSubscription({ unreadCount: 3 });
     handleSubscriptionCreated(
       utils,
-      subscription,
       queryClient,
+      subscription,
       createCounts({
         all: { unread: 21 },
         starred: { unread: 1 },
@@ -128,7 +128,7 @@ describe("handleSubscriptionCreated", () => {
 
   it("invalidates the count caches when no counts are provided (sync catch-up)", () => {
     const subscription = createSubscription();
-    handleSubscriptionCreated(utils, subscription, queryClient);
+    handleSubscriptionCreated(utils, queryClient, subscription);
 
     const paths = invalidatedProcedures(invalidateSpy);
     expect(paths).toContain("tags.list");
@@ -144,10 +144,10 @@ describe("handleSubscriptionCreated", () => {
     });
     const subscription = createSubscription({ unreadCount: 5 });
 
-    handleSubscriptionCreated(utils, subscription, queryClient);
+    handleSubscriptionCreated(utils, queryClient, subscription);
     const countAfterFirst = storedCount(queryClient)?.unread;
 
-    handleSubscriptionCreated(utils, subscription, queryClient);
+    handleSubscriptionCreated(utils, queryClient, subscription);
     const countAfterSecond = storedCount(queryClient)?.unread;
 
     expect(countAfterSecond).toBe(countAfterFirst);
@@ -166,7 +166,7 @@ describe("handleSubscriptionDeleted", () => {
   });
 
   it("invalidates entries.list cache", () => {
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
+    handleSubscriptionDeleted(utils, queryClient, "sub-1");
 
     expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "entries.list")).toHaveLength(
       1
@@ -174,7 +174,7 @@ describe("handleSubscriptionDeleted", () => {
   });
 
   it("invalidates tags.list cache when subscription not found", () => {
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
+    handleSubscriptionDeleted(utils, queryClient, "sub-1");
 
     expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "tags.list")).toHaveLength(1);
   });
@@ -183,7 +183,7 @@ describe("handleSubscriptionDeleted", () => {
     seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
     seedSubscription(queryClient, { id: "sub-2", unreadCount: 10, tags: [] });
 
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
+    handleSubscriptionDeleted(utils, queryClient, "sub-1");
 
     expect(stored(queryClient, "sub-1")).toBeUndefined();
     expect(stored(queryClient, "sub-2")).toBeDefined();
@@ -193,7 +193,7 @@ describe("handleSubscriptionDeleted", () => {
     // So its open page refetches it and finds it gone.
     setUtilsData(utils.subscriptions.get, { id: "sub-1" }, { id: "sub-1", unreadCount: 5 });
 
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
+    handleSubscriptionDeleted(utils, queryClient, "sub-1");
 
     expect(getUtilsData(utils.subscriptions.get, { id: "sub-1" })).toBeUndefined();
   });

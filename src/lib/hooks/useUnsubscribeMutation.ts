@@ -2,13 +2,11 @@
  * useUnsubscribeMutation Hook
  *
  * Shared `subscriptions.delete` choreography used by every unsubscribe surface
- * (the sidebar feed list and the broken-feeds settings page). Both used to
- * hand-roll the same optimistic-remove / onSuccess-counts / onError-rollback
- * sequence; consolidating it here means a fix to the cache handling (e.g. how
- * absolute counts are applied) can't miss one call site (#1081).
+ * (the sidebar feed list and the broken-feeds settings page), so a fix to the
+ * cache handling can't miss one call site (#1081).
  *
  * The cache side effects are owned by the hook:
- * - onMutate: optimistically remove the subscription from all caches.
+ * - onMutate: optimistically remove the subscription from the local store.
  * - onSuccess: apply the server-absolute counts and invalidate entries.list so
  *   the removed feed's entries are re-filtered out. A blocked sender refreshes the
  *   blocked-senders list.
@@ -25,7 +23,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleSubscriptionDeleted, removeSubscriptionFromCaches } from "@/lib/cache/operations";
+import { handleSubscriptionDeleted, removeStoredSubscription } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { restoreRemovedRow } from "@/lib/local-db/versioned-store";
 
@@ -47,12 +45,12 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       // Optimistically remove the subscription from the sidebar/lists. Counts
       // are applied from the server response in onSuccess.
       const removed = getLocalDb(queryClient).subscriptions.rows.getSynced(variables.id);
-      const removedAt = removeSubscriptionFromCaches(variables.id, queryClient);
+      const removedAt = removeStoredSubscription(queryClient, variables.id);
       options?.onMutate?.();
       return { removed, removedAt };
     },
     onSuccess: (data, variables) => {
-      handleSubscriptionDeleted(utils, variables.id, queryClient, data.counts);
+      handleSubscriptionDeleted(utils, queryClient, variables.id, data.counts);
       if (variables.blockSender) utils.blockedSenders.list.invalidate();
       options?.onSuccess?.();
     },

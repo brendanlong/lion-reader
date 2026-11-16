@@ -482,27 +482,6 @@ const importCompletedEventSchema = importCompletedEventBaseSchema.transform(with
 // ============================================================================
 
 /**
- * Discriminated union of all SSE/sync event types.
- *
- * Note: import events use .transform() for updatedAt fallback, so they can't
- * be members of z.discriminatedUnion(). We use z.union() with the discriminated
- * union for the core events plus the import events.
- */
-const coreEventSchema = z.discriminatedUnion("type", [
-  newEntryEventSchema,
-  entryUpdatedEventSchema,
-  entryStateChangedEventSchema,
-  markAllReadEventSchema,
-  subscriptionCreatedEventSchema,
-  subscriptionDeletedEventSchema,
-  subscriptionUpdatedEventSchema,
-  tagCreatedEventSchema,
-  tagUpdatedEventSchema,
-  tagDeletedEventSchema,
-  collectionEntriesChangedEventSchema,
-]);
-
-/**
  * The first event on every SSE stream, naming the build the server runs
  * (`BUILD_ID` in `src/lib/build-id.ts`). Not a sync event: it carries no
  * state and never advances a cursor.
@@ -514,8 +493,8 @@ export const ANNOUNCEMENT_LEVELS = ["info", "warning"] as const;
 /**
  * Global announcement-banner change, broadcast on the site-status channel (not
  * per-user). `announcement` is null when the banner was disabled/cleared. Kept
- * out of `coreEventSchema`/`serverSyncEventSchema` because it's an SSE-only
- * global signal, not part of the per-user entries/subscriptions/tags sync.
+ * out of `serverSyncEventSchema` because it's an SSE-only global signal, not
+ * part of the per-user entries/subscriptions/tags sync.
  */
 export const announcementChangedEventBaseSchema = z.object({
   type: z.literal("announcement_changed"),
@@ -535,8 +514,19 @@ export const announcementChangedEventBaseSchema = z.object({
 const announcementChangedEventSchema =
   announcementChangedEventBaseSchema.transform(withUpdatedAtFallback);
 
-export const syncEventSchema = z.union([
-  coreEventSchema,
+/** Every SSE/sync event type. */
+export const syncEventSchema = z.discriminatedUnion("type", [
+  newEntryEventSchema,
+  entryUpdatedEventSchema,
+  entryStateChangedEventSchema,
+  markAllReadEventSchema,
+  subscriptionCreatedEventSchema,
+  subscriptionDeletedEventSchema,
+  subscriptionUpdatedEventSchema,
+  tagCreatedEventSchema,
+  tagUpdatedEventSchema,
+  tagDeletedEventSchema,
+  collectionEntriesChangedEventSchema,
   importProgressEventSchema,
   importCompletedEventSchema,
   announcementChangedEventSchema,

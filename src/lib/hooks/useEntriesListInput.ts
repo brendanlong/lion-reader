@@ -1,36 +1,15 @@
 /**
- * useEntriesListInput Hook
- *
- * Returns the query input for entries.list based on current URL state.
- * Ensures consistent query keys between components that need to share cache.
+ * The entries.list input for the current URL (`entriesListInputFor`).
  */
 
 "use client";
 
 import { useMemo } from "react";
-import { useAppPathname } from "./useAppLocation";
-import { useUrlViewPreferences } from "./useUrlViewPreferences";
-import {
-  buildEntriesListInput,
-  getFiltersFromPathname,
-  type EntriesListInput,
-} from "@/lib/queries/entries-list-input";
+import { useAppPathname, useAppSearchParams } from "./useAppLocation";
+import { entriesListInputFor, type EntriesListInput } from "@/lib/queries/entries-list-input";
 
-/**
- * Hook that returns the query input for entries.list based on current URL state.
- *
- * This ensures consistent query keys between:
- * - The suspending entry list component (for fetching)
- * - The parent component (for navigation/cache reading)
- *
- * @returns The query input object for entries.list
- */
 export function useEntriesListInput(): EntriesListInput {
   const pathname = useAppPathname();
-  const { showUnreadOnly, sortOrder, searchQuery } = useUrlViewPreferences();
-
-  return useMemo(() => {
-    const filters = getFiltersFromPathname(pathname);
-    return buildEntriesListInput(filters, { unreadOnly: showUnreadOnly, sortOrder, searchQuery });
-  }, [pathname, showUnreadOnly, sortOrder, searchQuery]);
+  const searchParams = useAppSearchParams();
+  return useMemo(() => entriesListInputFor(pathname, searchParams), [pathname, searchParams]);
 }

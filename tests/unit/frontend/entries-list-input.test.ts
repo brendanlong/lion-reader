@@ -4,12 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildEntriesListInput } from "@/lib/queries/entries-list-input";
+import { buildEntriesListInput, entriesListInputFor } from "@/lib/queries/entries-list-input";
 import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
+
+const ROUTE_DEFAULTS = { unreadOnly: true };
 
 describe("parseViewPreferencesFromParams", () => {
   it("returns no searchQuery when q is absent", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams());
+    const result = parseViewPreferencesFromParams(new URLSearchParams(), ROUTE_DEFAULTS);
     expect(result.searchQuery).toBeUndefined();
     expect(result.unreadOnly).toBe(true);
     // No sort leaves it to the list (#2064).
@@ -17,31 +19,49 @@ describe("parseViewPreferencesFromParams", () => {
   });
 
   it("treats a whitespace-only q as not searching", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams("q=%20%20"));
+    const result = parseViewPreferencesFromParams(new URLSearchParams("q=%20%20"), ROUTE_DEFAULTS);
     expect(result.searchQuery).toBeUndefined();
     expect(result.unreadOnly).toBe(true);
   });
 
   it("parses and trims the q param", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams("q=%20hello%20world%20"));
+    const result = parseViewPreferencesFromParams(
+      new URLSearchParams("q=%20hello%20world%20"),
+      ROUTE_DEFAULTS
+    );
     expect(result.searchQuery).toBe("hello world");
   });
 
-  it("defaults unreadOnly to false while searching", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello"));
-    expect(result.unreadOnly).toBe(false);
-  });
-
   it("keeps an explicit unreadOnly=true while searching", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello&unreadOnly=true"));
+    const result = parseViewPreferencesFromParams(
+      new URLSearchParams("q=hello&unreadOnly=true"),
+      ROUTE_DEFAULTS
+    );
     expect(result.unreadOnly).toBe(true);
   });
 
   it("ignores the route default for unreadOnly while searching", () => {
-    const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello"), {
+    const result = parseViewPreferencesFromParams(new URLSearchParams("q=hello"), ROUTE_DEFAULTS);
+    expect(result.unreadOnly).toBe(false);
+  });
+});
+
+describe("entriesListInputFor", () => {
+  it("applies the route's filters and default unreadOnly", () => {
+    expect(entriesListInputFor("/starred", new URLSearchParams())).toMatchObject({
+      starredOnly: true,
       unreadOnly: true,
     });
-    expect(result.unreadOnly).toBe(false);
+    expect(entriesListInputFor("/recently-read", new URLSearchParams())).toMatchObject({
+      sortBy: "readChanged",
+      unreadOnly: false,
+    });
+  });
+
+  it("reads the view preferences from the search params", () => {
+    expect(
+      entriesListInputFor("/tag/t1", new URLSearchParams("unreadOnly=false&sort=oldest&entry=e1"))
+    ).toMatchObject({ tagId: "t1", unreadOnly: false, sortOrder: "oldest", direction: "backward" });
   });
 });
 
@@ -83,14 +103,14 @@ describe("buildEntriesListInput", () => {
 
 describe("sorting by score and position (#2064)", () => {
   it.each(["highest", "lowest", "first", "last", "oldest"] as const)("reads ?sort=%s", (sort) => {
-    expect(parseViewPreferencesFromParams(new URLSearchParams(`sort=${sort}`)).sortOrder).toBe(
-      sort
-    );
+    expect(
+      parseViewPreferencesFromParams(new URLSearchParams(`sort=${sort}`), ROUTE_DEFAULTS).sortOrder
+    ).toBe(sort);
   });
 
   it("ignores an unknown sort", () => {
     expect(
-      parseViewPreferencesFromParams(new URLSearchParams("sort=random")).sortOrder
+      parseViewPreferencesFromParams(new URLSearchParams("sort=random"), ROUTE_DEFAULTS).sortOrder
     ).toBeUndefined();
   });
 

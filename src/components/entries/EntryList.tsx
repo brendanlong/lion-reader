@@ -10,11 +10,9 @@
 
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
-import type { EntryListData } from "@/lib/hooks/types";
-import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
+import { useLoadMoreSentinel } from "@/components/ui/infinite-scroll-footer";
 import { useAppearance } from "@/lib/appearance/AppearanceProvider";
-import { EntryListItem } from "./EntryListItem";
+import { EntryListItem, type EntryListItemData } from "./EntryListItem";
 import { EntryListEmpty, EntryListLoadingMore, EntryListEnd } from "./EntryListStates";
 
 /**
@@ -84,7 +82,7 @@ interface EntryListProps {
   /**
    * Entries to render (the parent container owns the query).
    */
-  externalEntries: EntryListData[];
+  externalEntries: EntryListItemData[];
 
   /**
    * Query state for the entries (the parent container owns the query).
@@ -107,46 +105,12 @@ export function EntryList({
   externalEntries: allEntries,
   externalQueryState,
 }: EntryListProps) {
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useScrollContainer();
   const {
     settings: { listDensity },
   } = useAppearance();
 
-  const { isFetchingNextPage, hasNextPage, fetchNextPage } = externalQueryState;
-
-  // Intersection Observer for infinite scroll
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage]
-  );
-
-  useEffect(() => {
-    // Use the scroll container as the root if available, otherwise fall back to viewport
-    const root = scrollContainerRef?.current ?? null;
-
-    const observer = new IntersectionObserver(handleObserver, {
-      root,
-      rootMargin: "100px",
-      threshold: 0,
-    });
-
-    const currentRef = loadMoreRef.current;
-    if (currentRef) {
-      observer.observe(currentRef);
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef);
-      }
-    };
-  }, [handleObserver, scrollContainerRef]);
+  const { isFetchingNextPage, hasNextPage } = externalQueryState;
+  const loadMoreRef = useLoadMoreSentinel<HTMLDivElement>(externalQueryState);
 
   if (allEntries.length === 0) {
     return <EntryListEmpty message={emptyMessage} />;

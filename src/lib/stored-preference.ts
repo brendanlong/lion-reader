@@ -7,9 +7,15 @@ import { useSyncExternalStore } from "react";
  * useSyncExternalStore. The server snapshot (and so the hydration render) is
  * always `defaultValue`; the client switches to the stored value after
  * hydration, so SSR and hydration never disagree (#1552). `parse` returns null
- * for a stored string it doesn't recognize, which reads as the default.
+ * for a stored string it doesn't recognize, which reads as the default;
+ * `write` saves a new value.
  */
-function createStoredValue<T>(key: string, defaultValue: T, parse: (stored: string) => T | null) {
+function createStoredValue<T>(
+  key: string,
+  defaultValue: T,
+  parse: (stored: string) => T | null,
+  write: (prev: T, next: T) => void = (_prev, next) => localStorage.setItem(key, String(next))
+) {
   // In-memory cache to avoid re-reading localStorage on every subscription
   let cachedValue: { value: T } | null = null;
   let listeners: Array<() => void> = [];
@@ -30,9 +36,10 @@ function createStoredValue<T>(key: string, defaultValue: T, parse: (stored: stri
   }
 
   function set(newValue: T): void {
+    const prev = get();
     cachedValue = { value: newValue };
     try {
-      localStorage.setItem(key, String(newValue));
+      write(prev, newValue);
     } catch (error) {
       console.error(`Failed to save ${key} to localStorage:`, error);
     }
@@ -71,9 +78,35 @@ export function createStoredChoice<T extends string>(
 }
 
 /**
+ * A value kept as JSON. `fromJson` checks what was parsed (null for anything
+ * it doesn't recognize); `write` defaults to storing the whole value.
+ */
+export function createStoredJson<T>(
+  key: string,
+  defaultValue: T,
+  fromJson: (json: unknown) => T | null,
+  write: (key: string, prev: T, next: T) => void = (key, _prev, next) =>
+    localStorage.setItem(key, JSON.stringify(next))
+) {
+  return createStoredValue(
+    key,
+    defaultValue,
+    (stored) => {
+      try {
+        return fromJson(JSON.parse(stored));
+      } catch {
+        return null;
+      }
+    },
+    (prev, next) => write(key, prev, next)
+  );
+}
+
+/**
  * Saves to localStorage under `key` the fields `next` changes from `prev`, on
  * top of what's stored there, so a field the user never set isn't written and
- * keeps following its default when that changes (#2280).
+ * keeps following its default when that changes (#2280). A `createStoredJson`
+ * `write`.
  */
 export function storeChangedFields<T extends object>(key: string, prev: T, next: T): void {
   try {

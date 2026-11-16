@@ -19,13 +19,8 @@ import { getQueryKey } from "@trpc/react-query";
 import superjson from "superjson";
 import { trpc } from "@/lib/trpc/client";
 import type { AppLocation } from "@/lib/hooks/useAppLocation";
-import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
-import {
-  buildEntriesListInput,
-  getDefaultViewPreferences,
-  getFiltersFromPathname,
-} from "@/lib/queries/entries-list-input";
+import { entriesListInputFor } from "@/lib/queries/entries-list-input";
 import type { DemoStore } from "@/lib/demo/store";
 
 export function buildDemoDehydratedState(store: DemoStore, location: AppLocation): DehydratedState {
@@ -36,15 +31,8 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
     defaultOptions: { dehydrate: { serializeData: superjson.serialize } },
   });
 
-  // Same input derivation as the server prefetch, so the key matches the
-  // client's useInfiniteQuery exactly.
   const searchParams = new URLSearchParams(location.search);
-  const filters = getFiltersFromPathname(location.pathname);
-  const defaults = getDefaultViewPreferences(location.pathname);
-  const { unreadOnly, sortOrder, searchQuery } = parseViewPreferencesFromParams(searchParams, {
-    unreadOnly: defaults.unreadOnly,
-  });
-  const listInput = buildEntriesListInput(filters, { unreadOnly, sortOrder, searchQuery });
+  const listInput = entriesListInputFor(location.pathname, searchParams);
   const listPage = procedures["entries.list"](listInput);
 
   // An open entry is seeded the way the reader leaves it after mounting with
@@ -79,10 +67,10 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
     pageParams: [null],
   });
 
-  if (filters.subscriptionId) {
+  if (listInput.subscriptionId) {
     queryClient.setQueryData(
-      getQueryKey(trpc.subscriptions.get, { id: filters.subscriptionId }, "query"),
-      procedures["subscriptions.get"]({ id: filters.subscriptionId })
+      getQueryKey(trpc.subscriptions.get, { id: listInput.subscriptionId }, "query"),
+      procedures["subscriptions.get"]({ id: listInput.subscriptionId })
     );
   }
 

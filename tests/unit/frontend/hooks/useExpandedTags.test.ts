@@ -36,12 +36,12 @@ describe("useExpandedTags", () => {
   });
 
   describe("default values", () => {
-    it("returns empty set by default when no state is stored", async () => {
+    it("expands nothing by default when no state is stored", async () => {
       // Re-import after module reset
       const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
       const { result } = renderHook(() => freshHook());
 
-      expect(result.current.expandedTagIds.size).toBe(0);
+      expect(result.current.isExpanded("tag-1")).toBe(false);
     });
   });
 
@@ -53,9 +53,9 @@ describe("useExpandedTags", () => {
       const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
       const { result } = renderHook(() => freshHook());
 
-      expect(result.current.expandedTagIds.has("tag-1")).toBe(true);
-      expect(result.current.expandedTagIds.has("tag-2")).toBe(true);
-      expect(result.current.expandedTagIds.size).toBe(2);
+      expect(result.current.isExpanded("tag-1")).toBe(true);
+      expect(result.current.isExpanded("tag-2")).toBe(true);
+      expect(result.current.isExpanded("tag-3")).toBe(false);
     });
 
     it("saves expanded tags to localStorage when toggled", async () => {
@@ -83,13 +83,13 @@ describe("useExpandedTags", () => {
       const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
       const { result } = renderHook(() => freshHook());
 
-      expect(result.current.expandedTagIds.has("tag-4")).toBe(false);
+      expect(result.current.isExpanded("tag-4")).toBe(false);
 
       act(() => {
         result.current.toggleExpanded("tag-4");
       });
 
-      expect(result.current.expandedTagIds.has("tag-4")).toBe(true);
+      expect(result.current.isExpanded("tag-4")).toBe(true);
     });
 
     it("removes tag from expanded set when already expanded", async () => {
@@ -99,33 +99,13 @@ describe("useExpandedTags", () => {
       const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
       const { result } = renderHook(() => freshHook());
 
-      expect(result.current.expandedTagIds.has("tag-5")).toBe(true);
+      expect(result.current.isExpanded("tag-5")).toBe(true);
 
       act(() => {
         result.current.toggleExpanded("tag-5");
       });
 
-      expect(result.current.expandedTagIds.has("tag-5")).toBe(false);
-    });
-  });
-
-  describe("isExpanded", () => {
-    it("returns true for expanded tags", async () => {
-      localStorageMock.setItem("lion-reader-expanded-tags", JSON.stringify(["tag-6"]));
-      vi.resetModules();
-
-      const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
-      const { result } = renderHook(() => freshHook());
-
-      expect(result.current.isExpanded("tag-6")).toBe(true);
-    });
-
-    it("returns false for collapsed tags", async () => {
-      vi.resetModules();
-      const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
-      const { result } = renderHook(() => freshHook());
-
-      expect(result.current.isExpanded("tag-7")).toBe(false);
+      expect(result.current.isExpanded("tag-5")).toBe(false);
     });
   });
 
@@ -137,7 +117,7 @@ describe("useExpandedTags", () => {
       const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
       const { result } = renderHook(() => freshHook());
 
-      expect(result.current.expandedTagIds.size).toBe(0);
+      expect(result.current.isExpanded("key")).toBe(false);
     });
 
     it("handles non-array values gracefully", async () => {
@@ -147,7 +127,7 @@ describe("useExpandedTags", () => {
       const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
       const { result } = renderHook(() => freshHook());
 
-      expect(result.current.expandedTagIds.size).toBe(0);
+      expect(result.current.isExpanded("key")).toBe(false);
     });
   });
 
@@ -164,8 +144,8 @@ describe("useExpandedTags", () => {
       });
 
       // Both instances should see the update
-      expect(result1.current.expandedTagIds.has("shared-tag")).toBe(true);
-      expect(result2.current.expandedTagIds.has("shared-tag")).toBe(true);
+      expect(result1.current.isExpanded("shared-tag")).toBe(true);
+      expect(result2.current.isExpanded("shared-tag")).toBe(true);
     });
   });
 
