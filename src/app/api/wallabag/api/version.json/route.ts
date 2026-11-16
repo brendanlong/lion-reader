@@ -8,9 +8,10 @@
  */
 
 import { jsonResponse } from "@/server/http/json-response";
+import { WALLABAG_VERSION } from "@/server/wallabag/client";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
-  return jsonResponse("2.6.0");
+  return jsonResponse(WALLABAG_VERSION);
 }

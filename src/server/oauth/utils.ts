@@ -361,10 +361,6 @@ export function getAuthCodeExpiry(): Date {
 }
 
 // ============================================================================
-// Client ID Validation
-// ============================================================================
-
-// ============================================================================
 // Error Types
 // ============================================================================
 
@@ -373,20 +369,15 @@ export function getAuthCodeExpiry(): Date {
  */
 export const OAUTH_ERRORS = {
   INVALID_REQUEST: "invalid_request",
-  UNAUTHORIZED_CLIENT: "unauthorized_client",
   ACCESS_DENIED: "access_denied",
   UNSUPPORTED_RESPONSE_TYPE: "unsupported_response_type",
   INVALID_SCOPE: "invalid_scope",
-  SERVER_ERROR: "server_error",
-  TEMPORARILY_UNAVAILABLE: "temporarily_unavailable",
   INVALID_CLIENT: "invalid_client",
   INVALID_GRANT: "invalid_grant",
   UNSUPPORTED_GRANT_TYPE: "unsupported_grant_type",
   // RFC 7591 Dynamic Client Registration error codes
   INVALID_REDIRECT_URI: "invalid_redirect_uri",
   INVALID_CLIENT_METADATA: "invalid_client_metadata",
-  INVALID_SOFTWARE_STATEMENT: "invalid_software_statement",
-  UNAPPROVED_SOFTWARE_STATEMENT: "unapproved_software_statement",
   // RFC 8707 Resource Indicators
   INVALID_TARGET: "invalid_target",
 } as const;

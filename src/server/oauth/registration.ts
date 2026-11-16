@@ -6,11 +6,14 @@ import { db } from "@/server/db";
 import { oauthClients } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
+  createOAuthError,
   generateToken,
   hashToken,
   isValidRedirectUriFormat,
+  OAUTH_ERRORS,
   OAUTH_SCOPES,
   SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
+  type OAuthErrorResponse,
 } from "./utils";
 import { getRegistrationClientUri } from "./config";
 import { sanitizeDisplayName } from "./cimd";
@@ -65,14 +68,6 @@ export interface ClientRegistrationResponse {
 }
 
 /**
- * Error returned from client registration
- */
-export interface ClientRegistrationError {
-  error: string;
-  error_description?: string;
-}
-
-/**
  * Generates a unique client ID for dynamic registration.
  */
 function generateClientId(): string {
@@ -91,7 +86,7 @@ export async function registerClient(
   request: ClientRegistrationRequest
 ): Promise<
   | { success: true; data: ClientRegistrationResponse }
-  | { success: false; error: ClientRegistrationError }
+  | { success: false; error: OAuthErrorResponse }
 > {
   // Validate required fields
   if (
@@ -101,10 +96,10 @@ export async function registerClient(
   ) {
     return {
       success: false,
-      error: {
-        error: "invalid_redirect_uri",
-        error_description: "redirect_uris is required and must be a non-empty array",
-      },
+      error: createOAuthError(
+        OAUTH_ERRORS.INVALID_REDIRECT_URI,
+        "redirect_uris is required and must be a non-empty array"
+      ),
     };
   }
 
@@ -113,10 +108,10 @@ export async function registerClient(
     if (!isValidRedirectUriFormat(uri)) {
       return {
         success: false,
-        error: {
-          error: "invalid_redirect_uri",
-          error_description: `Invalid redirect URI: ${uri}. Must be HTTPS (or HTTP for localhost) and must not contain fragments.`,
-        },
+        error: createOAuthError(
+          OAUTH_ERRORS.INVALID_REDIRECT_URI,
+          `Invalid redirect URI: ${uri}. Must be HTTPS (or HTTP for localhost) and must not contain fragments.`
+        ),
       };
     }
   }
@@ -129,10 +124,10 @@ export async function registerClient(
   if (!SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.includes(authMethod)) {
     return {
       success: false,
-      error: {
-        error: "invalid_client_metadata",
-        error_description: `Unsupported token_endpoint_auth_method: ${authMethod}. Supported methods: ${SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.join(", ")}`,
-      },
+      error: createOAuthError(
+        OAUTH_ERRORS.INVALID_CLIENT_METADATA,
+        `Unsupported token_endpoint_auth_method: ${authMethod}. Supported methods: ${SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.join(", ")}`
+      ),
     };
   }
 
@@ -154,10 +149,10 @@ export async function registerClient(
   if (grantTypes.length === 0) {
     return {
       success: false,
-      error: {
-        error: "invalid_client_metadata",
-        error_description: `No supported grant types. Supported: ${supportedGrantTypes.join(", ")}`,
-      },
+      error: createOAuthError(
+        OAUTH_ERRORS.INVALID_CLIENT_METADATA,
+        `No supported grant types. Supported: ${supportedGrantTypes.join(", ")}`
+      ),
     };
   }
 
@@ -192,10 +187,10 @@ export async function registerClient(
     if (validScopes.length === 0) {
       return {
         success: false,
-        error: {
-          error: "invalid_client_metadata",
-          error_description: `None of the requested scopes are supported. Supported scopes: ${supportedScopes.join(", ")}`,
-        },
+        error: createOAuthError(
+          OAUTH_ERRORS.INVALID_CLIENT_METADATA,
+          `None of the requested scopes are supported. Supported scopes: ${supportedScopes.join(", ")}`
+        ),
       };
     }
     scopes = validScopes;
