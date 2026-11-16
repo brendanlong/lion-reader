@@ -236,7 +236,7 @@ class Accounts(
                 _account.value = null
                 pendingAuthorization = null
                 // If the app dies before the data goes, the next start deletes it.
-                store.edit { remove(ACCOUNT_DB) }
+                store.edit { putString(ACCOUNT_DB, null) }
                 session?.let { endSession(it, deleteData = true) }
                 // The tokens go under the lock; revoking them needs the network, so it follows.
                 // (Waiting for signedIn to read false instead could miss it: a sign-in right

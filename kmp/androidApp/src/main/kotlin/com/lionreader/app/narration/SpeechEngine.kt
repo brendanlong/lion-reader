@@ -5,8 +5,8 @@ import java.io.File
 
 /**
  * A source of narration audio. The narrator chunks the article to the engine's size, keeps about
- * [lookaheadChars] of it synthesized ahead of playback with up to [parallelism] syntheses at once,
- * and plays the chunks in order; playback, highlighting and seeking don't depend on the engine.
+ * [lookaheadChars] of it synthesized ahead of playback, one synthesis at a time, and plays the
+ * chunks in order; playback, highlighting and seeking don't depend on the engine.
  */
 interface SpeechEngine {
     val maxChunkChars: Int
@@ -15,7 +15,6 @@ interface SpeechEngine {
      * about 30 seconds of listening ahead.
      */
     val lookaheadChars: Int
-    val parallelism: Int
 
     /**
      * The audio for [text], for the player: a file written into [dir] (the narrator deletes it once
@@ -32,7 +31,6 @@ interface SpeechEngine {
 class DeviceVoices(private val tts: SystemTts, private val voice: String?) : SpeechEngine {
     override val maxChunkChars = 400
     override val lookaheadChars = 450
-    override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri =
         Uri.fromFile(File(dir, "$name.wav").also { tts.synthesize(text, voice, it) })

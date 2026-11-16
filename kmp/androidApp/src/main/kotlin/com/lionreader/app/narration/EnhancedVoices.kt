@@ -37,7 +37,6 @@ class EnhancedVoices(
 ) : SpeechEngine {
     override val maxChunkChars = 400
     override val lookaheadChars = 450
-    override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String, waiting: Boolean): Uri {
         val caller = currentCoroutineContext().job

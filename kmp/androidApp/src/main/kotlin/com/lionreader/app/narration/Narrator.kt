@@ -93,8 +93,6 @@ class Narrator(
                 .buildAsync()
         ({ MediaController.releaseFuture(controller) })
     },
-    /** How long the player can run dry, the engine unreachable, before narration pauses. */
-    private val pauseAfterMillis: Long = 60_000,
     /** Tests set the player's clock here. */
     private val configurePlayer: ExoPlayer.Builder.() -> Unit = {},
 ) {
@@ -137,7 +135,7 @@ class Narrator(
                 .distinctUntilChanged()
                 .collect { if (playerInstance.isInitialized()) player.setPlaybackSpeed(it) }
         }
-        // Once the player has run dry for [pauseAfterMillis] with the engine unreachable,
+        // Once the player has run dry for [PAUSE_AFTER_MILLIS] with the engine unreachable,
         // narration pauses, keeping its place, rather than spin; playing again tries again.
         scope.launch {
             _state
@@ -145,7 +143,7 @@ class Narrator(
                 .distinctUntilChanged()
                 .collectLatest { dry ->
                     if (!dry) return@collectLatest
-                    delay(pauseAfterMillis)
+                    delay(PAUSE_AFTER_MILLIS)
                     val error = unreachable.filterNotNull().first()
                     // Resumed after whatever else was queued, which may have stopped it.
                     if (_state.value?.let { it.playing && it.waiting } != true) return@collectLatest
@@ -459,20 +457,20 @@ class Narrator(
         prepared: Prepared,
         from: Int,
     ) = coroutineScope {
-        val engine = prepared.engine
         val chunks = prepared.chunks
         val inFlight = ArrayDeque<Pair<Int, Deferred<Uri?>>>()
         var next = from
         var said = false
         /**
-         * Starts synthesizing what's wanted, each queued (pending) as it starts; with [skipping],
-         * at least the next chunk, to take the place of the last queued.
+         * Starts synthesizing the next chunk, queued (pending) as it starts, if it's wanted and
+         * nothing else is being synthesized; with [skipping], even if it isn't wanted, to take the
+         * place of the last queued.
          */
         fun queue(skipping: Boolean = false) {
-            while (
+            if (
                 next < chunks.size &&
-                    inFlight.size < engine.parallelism &&
-                    (wanted(next, prepared, feed) || (skipping && inFlight.isEmpty()))
+                    inFlight.isEmpty() &&
+                    (wanted(next, prepared, feed) || skipping)
             ) {
                 val index = next++
                 // Already there if the playlist was started with it.
@@ -762,5 +760,7 @@ class Narrator(
         const val MAX_REPLAYS = 2
         const val RETRY_FIRST_MILLIS = 2_000L
         const val RETRY_MAX_MILLIS = 30_000L
+        /** How long the player can run dry, the engine unreachable, before narration pauses. */
+        const val PAUSE_AFTER_MILLIS = 60_000L
     }
 }
