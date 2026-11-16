@@ -6,37 +6,20 @@
  */
 
 import { createHydrationHelpersForRequest } from "@/lib/trpc/server";
-import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
-import {
-  buildEntriesListInput,
-  getDefaultViewPreferences,
-  getFiltersFromPathname,
-} from "@/lib/queries/entries-list-input";
+import { entriesListInputFor } from "@/lib/queries/entries-list-input";
 
 interface EntryListPageProps {
-  /**
-   * The resolved pathname for this page (e.g., "/all", "/subscription/abc123").
-   * Used to derive filters and default view preferences via the centralized
-   * getFiltersFromPathname and getDefaultViewPreferences functions, ensuring
-   * server prefetch cache keys match client queries exactly.
-   */
+  /** The resolved pathname for this page (e.g., "/all", "/subscription/abc123"). */
   pathname: string;
   /** Search params from Next.js page */
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-  /** Optional client component to render alongside prefetched data */
-  children?: React.ReactNode;
 }
 
 /**
- * Server component wrapper for entry list pages.
- *
- * Handles:
- * - Prefetching entry list with filters derived from pathname
- * - Prefetching specific entry when viewing one (?entry= param)
- * - Passing hydrated state to client
- *
- * Uses the same getFiltersFromPathname and getDefaultViewPreferences functions
- * as the client hooks, ensuring server prefetch cache keys match exactly.
+ * Server component for entry list pages: prefetches the list for the
+ * location, the open entry (?entry=) and the subscription. Renders nothing;
+ * the layout's HydrateClient hydrates the prefetched data and AppRouter renders
+ * the page.
  *
  * @example
  * ```tsx
@@ -46,45 +29,28 @@ interface EntryListPageProps {
  * }
  * ```
  */
-export async function EntryListPage({ pathname, searchParams, children }: EntryListPageProps) {
+export async function EntryListPage({ pathname, searchParams }: EntryListPageProps) {
   const params = await searchParams;
+  // As the browser's URLSearchParams sees the query: a repeated param keeps
+  // every value, and `get` reads the first.
+  const urlParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    for (const v of [value ?? []].flat()) urlParams.append(key, v);
+  }
 
-  // Check if viewing a specific entry
-  const entryId = typeof params.entry === "string" ? params.entry : undefined;
-
-  // Get tRPC caller for prefetching
-  // Uses the same QueryClient as the layout (via cache()) to share prefetched data
-  // Note: Layout already verified authentication, so we skip that check here
+  // Uses the same QueryClient as the layout (via cache()) to share prefetched
+  // data. The layout already verified authentication.
   const { trpc } = await createHydrationHelpersForRequest();
 
-  // Derive filters and defaults from pathname (same functions as client hooks)
-  const filters = getFiltersFromPathname(pathname);
-  const defaults = getDefaultViewPreferences(pathname);
-
-  // Parse view preferences from URL, using route-specific defaults
-  const urlParams = new URLSearchParams();
-  if (params.unreadOnly) urlParams.set("unreadOnly", String(params.unreadOnly));
-  if (params.sort) urlParams.set("sort", String(params.sort));
-  // A repeated ?q= arrives as an array; take the first occurrence to match
-  // the client's URLSearchParams.get("q") so the prefetch cache key agrees.
-  const qParam = Array.isArray(params.q) ? params.q[0] : params.q;
-  if (typeof qParam === "string") urlParams.set("q", qParam);
-  const { unreadOnly, sortOrder, searchQuery } = parseViewPreferencesFromParams(urlParams, {
-    unreadOnly: defaults.unreadOnly,
-  });
-
-  // Build input using shared function to ensure cache key matches client
-  const input = buildEntriesListInput(filters, { unreadOnly, sortOrder, searchQuery });
-
-  // Prefetch the entry list and related data
+  const input = entriesListInputFor(pathname, urlParams);
   void trpc.entries.list.prefetchInfinite(input);
+  const entryId = urlParams.get("entry");
   if (entryId != null) {
     void trpc.entries.get.prefetch({ id: entryId });
   }
-  if (filters.subscriptionId != null) {
-    void trpc.subscriptions.get.prefetch({ id: filters.subscriptionId });
+  if (input.subscriptionId != null) {
+    void trpc.subscriptions.get.prefetch({ id: input.subscriptionId });
   }
 
-  // Return children directly - the layout's HydrateClient handles hydration
-  return <>{children}</>;
+  return null;
 }

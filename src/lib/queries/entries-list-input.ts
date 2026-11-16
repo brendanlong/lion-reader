@@ -10,6 +10,7 @@
  */
 
 import { extractParamsFromPathname } from "@/lib/navigation";
+import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
 import type { EntryType } from "@/lib/entry-types";
 import { sortFieldOf, type EntrySortOrder } from "@/lib/entry-sort";
 
@@ -60,14 +61,9 @@ export interface EntriesListViewPreferences {
 }
 
 /**
- * Builds a standardized input object for the entries.list query.
- *
- * This function must be used by both:
- * - Server-side prefetching (EntryListPage)
- * - Client-side query hooks (useEntryListQuery)
- *
- * The input object structure must be identical for React Query to match
- * the prefetched data with the client query.
+ * Builds a standardized input object for the entries.list query. Locations
+ * go through `entriesListInputFor`, so the server prefetch, the demo seed and
+ * the client query build identical keys.
  *
  * @param filters - Base filters (subscriptionId, tagId, etc.)
  * @param preferences - View preferences (unreadOnly, sortOrder)
@@ -168,19 +164,27 @@ export function getFiltersFromPathname(pathname: string): EntriesListFilters {
  * Most views default to unreadOnly=true; /recently-read to unreadOnly=false.
  * The sort is left to the list.
  */
-export function getDefaultViewPreferences(pathname: string): EntriesListViewPreferences {
-  return { unreadOnly: pathname === "/recently-read" ? false : true };
+export function getDefaultViewPreferences(pathname: string): { unreadOnly: boolean } {
+  return { unreadOnly: pathname !== "/recently-read" };
 }
 
 /**
- * Build entries.list input from just a pathname (no search params).
- *
- * Convenience function for cases where search params aren't available,
- * such as sidebar mousedown prefetch. Uses default view preferences
- * for the route.
+ * The entries.list input for an app-relative location. The server prefetch
+ * (EntryListPage), the demo seed and the client (useEntriesListInput) all
+ * derive it here: if they disagree, the prefetched page misses the client's
+ * cache key.
  */
-export function buildEntriesListInputForRoute(pathname: string): EntriesListInput {
-  const filters = getFiltersFromPathname(pathname);
-  const preferences = getDefaultViewPreferences(pathname);
-  return buildEntriesListInput(filters, preferences);
+export function entriesListInputFor(
+  pathname: string,
+  searchParams: URLSearchParams
+): EntriesListInput {
+  const { unreadOnly, sortOrder, searchQuery } = parseViewPreferencesFromParams(
+    searchParams,
+    getDefaultViewPreferences(pathname)
+  );
+  return buildEntriesListInput(getFiltersFromPathname(pathname), {
+    unreadOnly,
+    sortOrder,
+    searchQuery,
+  });
 }

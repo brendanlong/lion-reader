@@ -17,7 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useUnsubscribeMutation } from "@/lib/hooks/useUnsubscribeMutation";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
-import { buildEntriesListInputForRoute } from "@/lib/queries/entries-list-input";
+import { entriesListInputFor } from "@/lib/queries/entries-list-input";
 import { UnsubscribeDialog } from "@/components/feeds/UnsubscribeDialog";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { useSidebarUnreadOnly } from "@/lib/hooks/useSidebarUnreadOnly";
@@ -75,7 +75,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   // data immediately without suspending, then refetches in the background.
   const handlePrefetchRoute = useCallback(
     (href: string) => {
-      const input = buildEntriesListInputForRoute(href);
+      const input = entriesListInputFor(href, new URLSearchParams());
       void utils.entries.list.prefetchInfinite(input, {
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         pages: 1,

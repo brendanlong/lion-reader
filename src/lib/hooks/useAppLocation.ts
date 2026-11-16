@@ -20,7 +20,14 @@
 
 "use client";
 
-import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 export interface AppLocation {
@@ -96,4 +103,23 @@ export function useAppSearchParams(): URLSearchParams {
 export function useAppHref(): (path: string) => string {
   const basePath = useRouteBase();
   return useMemo(() => (path: string) => `${basePath}${path}`, [basePath]);
+}
+
+/**
+ * Builds the browser href for the current location with its query params
+ * changed by `edit`.
+ */
+export function useCurrentHrefWith(): (edit: (params: URLSearchParams) => void) => string {
+  const pathname = useAppPathname();
+  const searchParams = useAppSearchParams();
+  const appHref = useAppHref();
+  return useCallback(
+    (edit) => {
+      const params = new URLSearchParams(searchParams);
+      edit(params);
+      const queryString = params.toString();
+      return appHref(queryString ? `${pathname}?${queryString}` : pathname);
+    },
+    [pathname, searchParams, appHref]
+  );
 }

@@ -8,14 +8,14 @@
  * - Browser back/forward navigation through filter changes
  * - No hydration mismatches (server and client render the same state)
  *
- * Uses DEFAULT_PREFERENCES when URL params are not present.
+ * Absent params take the route's defaults (`getDefaultViewPreferences`).
  */
 
 "use client";
 
 import { useCallback, useMemo } from "react";
 import { clientPush, clientReplace } from "@/lib/navigation";
-import { useAppHref, useAppPathname, useAppSearchParams } from "./useAppLocation";
+import { useAppPathname, useAppSearchParams, useCurrentHrefWith } from "./useAppLocation";
 import { parseViewPreferencesFromParams } from "./viewPreferences";
 import { getDefaultViewPreferences } from "@/lib/queries/entries-list-input";
 import type { EntrySortOrder } from "@/lib/entry-sort";
@@ -79,7 +79,7 @@ export interface UseUrlViewPreferencesResult {
 export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const pathname = useAppPathname();
   const searchParams = useAppSearchParams();
-  const appHref = useAppHref();
+  const currentHrefWith = useCurrentHrefWith();
   const routeDefaultUnreadOnly = getDefaultViewPreferences(pathname).unreadOnly;
 
   // Get current values from URL
@@ -96,26 +96,21 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   // Helper to update URL with new params
   const updateUrl = useCallback(
     (updates: { unreadOnly?: boolean; sort?: EntrySortOrder }) => {
-      const params = new URLSearchParams(searchParams.toString());
-
-      // Update unreadOnly param
-      if (updates.unreadOnly !== undefined) {
-        if (updates.unreadOnly === defaultUnreadOnly) {
-          // Matches the default for this view, remove from URL to keep it clean
-          params.delete("unreadOnly");
-        } else {
-          params.set("unreadOnly", String(updates.unreadOnly));
+      const url = currentHrefWith((params) => {
+        if (updates.unreadOnly !== undefined) {
+          if (updates.unreadOnly === defaultUnreadOnly) {
+            // Matches the default for this view, remove from URL to keep it clean
+            params.delete("unreadOnly");
+          } else {
+            params.set("unreadOnly", String(updates.unreadOnly));
+          }
         }
-      }
-
-      // Update sort param
-      // Any choice is explicit: newest isn't every list's default (#2064).
-      if (updates.sort !== undefined) params.set("sort", updates.sort);
-
-      const queryString = params.toString();
-      clientReplace(appHref(queryString ? `${pathname}?${queryString}` : pathname));
+        // Any choice is explicit: newest isn't every list's default (#2064).
+        if (updates.sort !== undefined) params.set("sort", updates.sort);
+      });
+      clientReplace(url);
     },
-    [pathname, searchParams, defaultUnreadOnly, appHref]
+    [currentHrefWith, defaultUnreadOnly]
   );
 
   const toggleShowUnreadOnly = useCallback(() => {
@@ -132,14 +127,13 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
   const setSearchQuery = useCallback(
     (query: string | null) => {
       const trimmed = query?.trim() ?? "";
-      const params = new URLSearchParams(searchParams.toString());
-      if (trimmed) {
-        params.set("q", trimmed);
-      } else {
-        params.delete("q");
-      }
-      const queryString = params.toString();
-      const url = appHref(queryString ? `${pathname}?${queryString}` : pathname);
+      const url = currentHrefWith((params) => {
+        if (trimmed) {
+          params.set("q", trimmed);
+        } else {
+          params.delete("q");
+        }
+      });
       // Entering a search pushes a history entry so Back exits the search;
       // refining or clearing one replaces, so each keystroke-level tweak
       // doesn't pile up in history.
@@ -149,7 +143,7 @@ export function useUrlViewPreferences(): UseUrlViewPreferencesResult {
         clientReplace(url);
       }
     },
-    [pathname, searchParams, searchQuery, appHref]
+    [currentHrefWith, searchQuery]
   );
 
   return useMemo(
