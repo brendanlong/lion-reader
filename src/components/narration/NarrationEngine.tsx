@@ -10,11 +10,15 @@
 
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useNarration } from "./useNarration";
-import type { NarrationEngineView, UseNarrationConfig } from "./useNarrationTypes";
+import type { UseNarrationConfig, UseNarrationReturn } from "./useNarrationTypes";
 
 interface NarrationEngineProps extends UseNarrationConfig {
-  /** Receives the engine's view whenever it changes, and null on unmount */
-  onChange: (view: NarrationEngineView | null) => void;
+  /**
+   * Receives the engine's view whenever it changes, and null on unmount. Its
+   * controls are stable across renders (they forward to the latest engine), so
+   * the article view can hold the view in state without a render loop.
+   */
+  onChange: (view: UseNarrationReturn | null) => void;
 }
 
 export function NarrationEngineImpl({ onChange, ...config }: NarrationEngineProps) {

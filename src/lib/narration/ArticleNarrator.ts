@@ -48,8 +48,6 @@ export interface NarrationState {
   currentParagraph: number;
   /** Total number of paragraphs in the loaded article */
   totalParagraphs: number;
-  /** Currently selected voice for narration */
-  selectedVoice: SpeechSynthesisVoice | null;
 }
 
 /**
@@ -252,14 +250,13 @@ export class ArticleNarrator {
   /**
    * Returns the current narration state.
    *
-   * @returns Current state including status, paragraph info, and voice
+   * @returns Current status and paragraph position
    */
   getState(): NarrationState {
     return {
       status: this.status,
       currentParagraph: this.currentIndex,
       totalParagraphs: this.paragraphs.length,
-      selectedVoice: this.selectedVoice,
     };
   }
 
@@ -293,7 +290,6 @@ export class ArticleNarrator {
    */
   setVoice(voice: SpeechSynthesisVoice): void {
     this.selectedVoice = voice;
-    this.notifyStateChange();
   }
 
   /**
@@ -407,13 +403,9 @@ export class ArticleNarrator {
    * Updates the status and notifies listeners.
    */
   private setStatus(newStatus: NarratorStatus): void {
-    if (this.status !== newStatus) {
-      this.status = newStatus;
-      this.notifyStateChange();
-    } else {
-      // Even if status hasn't changed, paragraph might have
-      this.notifyStateChange();
-    }
+    // Notifies even when the status is unchanged: the paragraph may have moved.
+    this.status = newStatus;
+    this.notifyStateChange();
   }
 
   /**

@@ -23,9 +23,7 @@ function themeBlock(selector: string): string {
 
 describe("NarrationHighlightStyles", () => {
   it("colors the highlight only with tokens every theme defines", () => {
-    const { container } = render(
-      <NarrationHighlightStyles highlightedParagraphIds={new Set([0, 2])} enabled />
-    );
+    const { container } = render(<NarrationHighlightStyles highlightedParagraph={2} enabled />);
     const css = container.querySelector("style")?.innerHTML ?? "";
 
     expect(css).toContain('[data-para-id="para-2"]');
