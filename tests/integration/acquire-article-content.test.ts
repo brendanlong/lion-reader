@@ -11,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { acquireArticleContent, pluginRegistry, UserFetchError } from "../../src/server/plugins";
-import { HttpFetchError } from "../../src/server/http/fetch";
+import { ContentTooLargeError, HttpFetchError } from "../../src/server/http/fetch";
 import { usageLimitsConfig } from "../../src/server/config/env";
 
 const PAGE_HTML = "<html><head><title>Page</title></head><body><p>Page body</p></body></html>";
@@ -35,6 +35,8 @@ pluginRegistry.register({
             return { html: "<p>From plugin</p>" };
           case "/plugin/rate-limited":
             throw new HttpFetchError(429, "Too Many Requests", url.href);
+          case "/plugin/too-large":
+            throw new ContentTooLargeError(url.href, 1, 2);
           case "/plugin/broken":
             throw new Error("plugin bug");
           default:
@@ -122,6 +124,15 @@ describe("acquireArticleContent: hostname plugin", () => {
     await expect(
       acquireArticleContent(`${baseUrl}/plugin/rate-limited`, { images: true })
     ).rejects.toThrow(HttpFetchError);
+    expect(pageRequests).toEqual([]);
+  });
+
+  // A plugin's own size-limited read (GitHub's raw files) must fail the save,
+  // not fall back to scraping the oversized file's HTML page.
+  it("rethrows a plugin's size-limit breach instead of fetching the page", async () => {
+    await expect(
+      acquireArticleContent(`${baseUrl}/plugin/too-large`, { images: true })
+    ).rejects.toThrow(ContentTooLargeError);
     expect(pageRequests).toEqual([]);
   });
 

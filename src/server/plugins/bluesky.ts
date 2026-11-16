@@ -455,17 +455,7 @@ export const blueskyPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
-      async fetchContent(url: URL): Promise<SavedArticleContent | null> {
-        try {
-          return await fetchBlueskyPost(url);
-        } catch (error) {
-          logger.warn("Failed to fetch Bluesky content", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
-      },
+      fetchContent: fetchBlueskyPost,
 
       // Our rendered HTML is already clean; Readability would mangle the short
       // post + embeds structure.

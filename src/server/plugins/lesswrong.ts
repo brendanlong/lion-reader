@@ -16,7 +16,6 @@ import {
   LESSWRONG_FRONTPAGE_FEED_URL,
   LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "@/server/feed/lesswrong";
-import { HttpFetchError } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
 
 /**
@@ -134,37 +133,24 @@ export const lessWrongPlugin: UrlPlugin = {
 
     savedArticle: {
       async fetchContent(url: URL): Promise<SavedArticleContent | null> {
-        try {
-          const content = await fetchLessWrongContentFromUrl(url.href);
-          if (!content) return null;
+        const content = await fetchLessWrongContentFromUrl(url.href);
+        if (!content) return null;
 
-          // Handle both posts and comments (which have different title fields)
-          const title =
-            content.type === "post"
-              ? content.title
-              : content.type === "comment"
-                ? content.postTitle
-                : null;
+        // Handle both posts and comments (which have different title fields)
+        const title =
+          content.type === "post"
+            ? content.title
+            : content.type === "comment"
+              ? content.postTitle
+              : null;
 
-          return {
-            html: content.html,
-            title: title || null,
-            author: content.author || null,
-            publishedAt: content.publishedAt || null,
-            canonicalUrl: content.url || url.href,
-          };
-        } catch (error) {
-          // Let rate limit errors propagate - falling back to a normal fetch
-          // would hit the same rate limit on the same site
-          if (error instanceof HttpFetchError && error.isRateLimited()) {
-            throw error;
-          }
-          logger.warn("Failed to fetch LessWrong saved article content", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
+        return {
+          html: content.html,
+          title: title || null,
+          author: content.author || null,
+          publishedAt: content.publishedAt || null,
+          canonicalUrl: content.url || url.href,
+        };
       },
 
       skipReadability: true, // GraphQL content is already clean

@@ -308,28 +308,16 @@ const RAW_FETCH_TIMEOUT_MS = 30000;
  * so the read is size-limited and time-limited to avoid OOM/hangs on large files.
  */
 async function fetchRawContent(rawUrl: string): Promise<string | null> {
-  try {
-    const response = await fetchWithSsrfProtection(rawUrl, {
-      signal: AbortSignal.timeout(RAW_FETCH_TIMEOUT_MS),
-    });
+  const response = await fetchWithSsrfProtection(rawUrl, {
+    signal: AbortSignal.timeout(RAW_FETCH_TIMEOUT_MS),
+  });
 
-    if (!response.ok) {
-      logger.debug("Failed to fetch raw content", { url: rawUrl, status: response.status });
-      return null;
-    }
-
-    return await readResponseWithSizeLimit(
-      response,
-      usageLimitsConfig.maxSavedArticleSizeBytes,
-      rawUrl
-    );
-  } catch (error) {
-    logger.warn("Failed to fetch raw content", {
-      url: rawUrl,
-      error: error instanceof Error ? error.message : String(error),
-    });
+  if (!response.ok) {
+    logger.debug("Failed to fetch raw content", { url: rawUrl, status: response.status });
     return null;
   }
+
+  return readResponseWithSizeLimit(response, usageLimitsConfig.maxSavedArticleSizeBytes, rawUrl);
 }
 
 /**
@@ -836,17 +824,7 @@ export const githubPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
-      async fetchContent(url: URL): Promise<SavedArticleContent | null> {
-        try {
-          return await fetchGitHubContent(url);
-        } catch (error) {
-          logger.warn("Failed to fetch GitHub content", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
-      },
+      fetchContent: fetchGitHubContent,
 
       skipReadability: true, // Our Markdown conversion produces clean HTML
       siteName: "GitHub",
