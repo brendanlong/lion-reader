@@ -39,7 +39,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
     expect(excerpt!.endsWith("...")).toBe(true);
   });
 
@@ -63,7 +63,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
     expect(excerpt!.endsWith("...")).toBe(true);
     expect(excerpt!).not.toContain("Reward hackin…"); // no mid-word cut
   });
@@ -90,7 +90,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
     expect(excerpt!.endsWith("...")).toBe(true);
     expect(excerpt!.startsWith("Frontmatter description")).toBe(true);
   });

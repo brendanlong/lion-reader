@@ -10,7 +10,7 @@
  */
 
 import { createSaxParser } from "./sax";
-import { BLOCK_TAGS, SKIP_TAGS, truncateAtWord, truncateText } from "./strip-html";
+import { BLOCK_TAGS, SKIP_TAGS, truncateText } from "./strip-html";
 
 /** Longest summary (entry preview text) we generate, in characters. */
 export const SUMMARY_MAX_LENGTH = 300;
@@ -439,7 +439,7 @@ export function generateSummary(html: string, { imageAlt = true } = {}): string 
   }
   const text = joinRuns(runs.filter((run) => !run.label)) || joinRuns(runs);
   if (text) {
-    return truncateAtWord(text, SUMMARY_MAX_LENGTH);
+    return truncateText(text, SUMMARY_MAX_LENGTH);
   }
   return imageAlt && parsed.imageAlt ? truncateText(parsed.imageAlt, SUMMARY_MAX_LENGTH) : "";
 }

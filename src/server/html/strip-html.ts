@@ -155,44 +155,28 @@ export function stripHtml(html: string, maxLength?: number): string {
   parser.write(html);
   parser.end();
 
-  return truncateAtWord(result.trim(), maxLength);
-}
-
-/** Truncates at a word boundary, dropping a partial word, with "..." inside `maxLength`. */
-export function truncateAtWord(text: string, maxLength?: number): string {
-  if (!maxLength || text.length <= maxLength) {
-    return text;
-  }
-
-  const truncateAt = maxLength - 3; // Reserve space for "..."
-  const lastSpace = text.lastIndexOf(" ", truncateAt);
-
-  if (lastSpace > 0) {
-    return text.slice(0, lastSpace) + "...";
-  }
-
-  // No space found - single long word, just hard truncate
-  return text.slice(0, truncateAt) + "...";
+  return truncateText(result, maxLength);
 }
 
 /**
- * Truncates plain text to a maximum length at a word boundary, adding an
- * ellipsis when it had to cut. (Operates on already-plain text, unlike
+ * Trims plain text and truncates it at a word boundary, dropping a partial
+ * word, with "..." inside `maxLength`. (Operates on already-plain text, unlike
  * `stripHtml`, which parses HTML first — so it's safe for text that may contain
  * `<`/`>` from math/LaTeX, e.g. an arXiv abstract.)
  */
-export function truncateText(text: string, maxLength: number): string {
+export function truncateText(text: string, maxLength?: number): string {
   const trimmed = text.trim();
-  if (trimmed.length <= maxLength) {
+  if (!maxLength || trimmed.length <= maxLength) {
     return trimmed;
   }
 
-  // Try to find a word boundary before the max length
-  let truncated = trimmed.slice(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(" ");
-  if (lastSpace > maxLength - 50) {
-    truncated = truncated.slice(0, lastSpace);
+  const truncateAt = maxLength - 3; // Reserve space for "..."
+  const lastSpace = trimmed.lastIndexOf(" ", truncateAt);
+
+  if (lastSpace > 0) {
+    return trimmed.slice(0, lastSpace).trimEnd() + "...";
   }
 
-  return truncated.trimEnd() + "...";
+  // No space found - single long word, just hard truncate
+  return trimmed.slice(0, truncateAt) + "...";
 }
