@@ -21,12 +21,7 @@ import {
 } from "@/server/rate-limit";
 import { signupConfig } from "@/server/config/env";
 import { errors, getAppErrorCode, isClientError, wasReported } from "@/server/errors";
-import {
-  ADMIN_COOKIE_NAME,
-  validateAdminSessionToken,
-  validateAdminSecret,
-} from "@/server/auth/admin-session";
-import { extractBearerToken } from "@/server/auth/bearer";
+import { hasAdminCredential } from "@/server/auth/admin-session";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { logger } from "@/lib/logger";
@@ -441,39 +436,16 @@ export function expensiveScopedProtectedProcedure(scopes: OAuthScope | OAuthScop
 // Admin Procedures (protected by ALLOWLIST_SECRET)
 // ============================================================================
 
-/**
- * Middleware that enforces admin authentication.
- * Accepts either:
- * 1. An httpOnly `admin_session` cookie (signed HMAC token from /api/admin/session)
- * 2. A Bearer token matching ALLOWLIST_SECRET (for programmatic API access)
- */
+/** Middleware that enforces admin authentication (`hasAdminCredential`). */
 const adminMiddleware = t.middleware(({ ctx, next }) => {
   if (!signupConfig.allowlistSecret) {
     throw errors.adminSecretNotConfigured();
   }
 
-  // Check for admin session cookie
-  const cookieHeader = ctx.headers.get("cookie");
-  if (cookieHeader) {
-    const cookies = Object.fromEntries(
-      cookieHeader.split(/;\s*/).map((c) => {
-        const [key, ...value] = c.split("=");
-        return [key, value.join("=")];
-      })
-    );
-    const sessionToken = cookies[ADMIN_COOKIE_NAME];
-    if (sessionToken && validateAdminSessionToken(sessionToken)) {
-      return next({ ctx });
-    }
+  if (!hasAdminCredential(ctx.headers.get("cookie"), ctx.headers.get("authorization"))) {
+    throw errors.adminUnauthorized();
   }
-
-  // Fallback: check Bearer token (for programmatic access)
-  const bearerToken = extractBearerToken(ctx.headers.get("authorization"));
-  if (bearerToken && validateAdminSecret(bearerToken)) {
-    return next({ ctx });
-  }
-
-  throw errors.adminUnauthorized();
+  return next({ ctx });
 });
 
 /**

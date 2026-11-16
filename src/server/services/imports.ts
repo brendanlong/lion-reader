@@ -12,7 +12,7 @@
  *   handler.
  */
 
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   feeds,
@@ -28,7 +28,7 @@ import { publishUserEvent } from "@/server/redis/pubsub";
 import { createSubscription } from "@/server/services/subscribe";
 import { setSubscriptionTags } from "@/server/services/subscription-updates";
 import { fitTagName } from "@/server/services/tags";
-import { getAppErrorCode } from "@/server/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 
@@ -139,6 +139,65 @@ export async function importOpml(
   });
 
   return { importId, totalFeeds: feedsData.length };
+}
+
+type OpmlImportStatus = "pending" | "processing" | "completed" | "failed";
+
+interface OpmlImportSummary {
+  id: string;
+  status: OpmlImportStatus;
+  totalFeeds: number;
+  importedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  error: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+}
+
+const opmlImportSummaryFields = {
+  id: opmlImports.id,
+  status: sql<OpmlImportStatus>`${opmlImports.status}`,
+  totalFeeds: opmlImports.totalFeeds,
+  importedCount: opmlImports.importedCount,
+  skippedCount: opmlImports.skippedCount,
+  failedCount: opmlImports.failedCount,
+  error: opmlImports.error,
+  createdAt: opmlImports.createdAt,
+  completedAt: opmlImports.completedAt,
+};
+
+/**
+ * One of the user's imports, with each feed's result.
+ *
+ * @throws notFound if the user has no such import
+ */
+export async function getOpmlImport(
+  db: typeof dbType,
+  userId: string,
+  importId: string
+): Promise<OpmlImportSummary & { results: OpmlImportFeedResult[] }> {
+  const [record] = await db
+    .select({ ...opmlImportSummaryFields, results: opmlImports.results })
+    .from(opmlImports)
+    .where(and(eq(opmlImports.id, importId), eq(opmlImports.userId, userId)))
+    .limit(1);
+  if (!record) throw errors.notFound("Import");
+  return record;
+}
+
+/** The user's most recent imports, newest first, without per-feed results. */
+export async function listOpmlImports(
+  db: typeof dbType,
+  userId: string,
+  limit: number
+): Promise<OpmlImportSummary[]> {
+  return db
+    .select(opmlImportSummaryFields)
+    .from(opmlImports)
+    .where(eq(opmlImports.userId, userId))
+    .orderBy(desc(opmlImports.createdAt))
+    .limit(limit);
 }
 
 /**

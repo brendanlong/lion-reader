@@ -14,12 +14,7 @@
  */
 
 import { getMaintenance, type MaintenanceState } from "@/server/services/site-status";
-import {
-  ADMIN_COOKIE_NAME,
-  validateAdminSessionToken,
-  validateAdminSecret,
-} from "@/server/auth/admin-session";
-import { extractBearerToken } from "@/server/auth/bearer";
+import { hasAdminCredential } from "@/server/auth/admin-session";
 import { escapeHtml } from "@/server/http/html";
 import { logger } from "@/lib/logger";
 
@@ -64,28 +59,6 @@ const STATIC_EXT =
   /\.(?:ico|png|jpg|jpeg|gif|svg|webp|avif|css|js|mjs|map|woff2?|ttf|otf|eot|json|txt|xml|wasm)$/i;
 
 /**
- * Whether the request carries a valid admin credential. Mirrors `adminMiddleware`
- * (src/server/trpc/trpc.ts): either the `admin_session` cookie or a
- * `Bearer <ALLOWLIST_SECRET>` header, so programmatic admins aren't locked out.
- */
-function hasValidAdminAuth(cookieHeader?: string, authHeader?: string): boolean {
-  if (cookieHeader) {
-    for (const part of cookieHeader.split(/;\s*/)) {
-      const eq = part.indexOf("=");
-      if (eq === -1) continue;
-      if (part.slice(0, eq) !== ADMIN_COOKIE_NAME) continue;
-      const value = part.slice(eq + 1);
-      if (value && validateAdminSessionToken(value)) return true;
-    }
-  }
-  if (authHeader) {
-    const token = extractBearerToken(authHeader);
-    if (token && validateAdminSecret(token)) return true;
-  }
-  return false;
-}
-
-/**
  * The pathname Next routes `requestUrl` to. Next parses `req.url` as a WHATWG
  * URL against a dummy origin, which resolves `..` and `%2e%2e` segments, so the
  * gate must match on the same form: the raw string would let
@@ -120,7 +93,7 @@ export function evaluateRequest(
   // The main tRPC endpoint stays open ONLY to a valid admin credential, so the
   // admin panel can read status and toggle maintenance back off.
   if (pathname === "/api/trpc" || pathname.startsWith("/api/trpc/")) {
-    return hasValidAdminAuth(cookieHeader, authHeader) ? "allow" : "block-api";
+    return hasAdminCredential(cookieHeader, authHeader) ? "allow" : "block-api";
   }
 
   // Static assets stay up — but ONLY off the API surface. Several authenticated

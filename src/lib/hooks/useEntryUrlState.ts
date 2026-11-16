@@ -10,7 +10,7 @@
 
 import { useCallback, useMemo } from "react";
 import { clientPush, clientReplace } from "@/lib/navigation";
-import { useAppHref, useAppPathname, useAppSearchParams } from "./useAppLocation";
+import { useAppSearchParams, useCurrentHrefWith } from "./useAppLocation";
 
 /**
  * Marker stamped onto the history entry that opening an entry pushed, so
@@ -67,8 +67,7 @@ export interface UseEntryUrlStateResult {
  */
 export function useEntryUrlState(): UseEntryUrlStateResult {
   const searchParams = useAppSearchParams();
-  const pathname = useAppPathname();
-  const appHref = useAppHref();
+  const currentHrefWith = useCurrentHrefWith();
 
   // Get the current entry ID from the URL
   const openEntryId = useMemo(() => {
@@ -77,17 +76,15 @@ export function useEntryUrlState(): UseEntryUrlStateResult {
 
   // The current view's URL with `entry` set (or removed)
   const buildEntryUrl = useCallback(
-    (entryId: string | null) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (entryId) {
-        params.set("entry", entryId);
-      } else {
-        params.delete("entry");
-      }
-      const queryString = params.toString();
-      return appHref(queryString ? `${pathname}?${queryString}` : pathname);
-    },
-    [searchParams, pathname, appHref]
+    (entryId: string | null) =>
+      currentHrefWith((params) => {
+        if (entryId) {
+          params.set("entry", entryId);
+        } else {
+          params.delete("entry");
+        }
+      }),
+    [currentHrefWith]
   );
 
   // Update the URL with a new entry ID (or remove it)

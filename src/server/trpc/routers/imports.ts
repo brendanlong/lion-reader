@@ -6,14 +6,12 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
-import { opmlImports } from "@/server/db/schema";
 import { parseOpmlAsync, OpmlParseError } from "@/server/feed/opml";
-import { MAX_OPML_BYTES } from "@/server/services/imports";
+import { getOpmlImport, listOpmlImports, MAX_OPML_BYTES } from "@/server/services/imports";
 
 // ============================================================================
 // Output Schemas
@@ -123,32 +121,7 @@ export const importsRouter = createTRPCRouter({
       })
     )
     .output(importOutputSchema)
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      const [importRecord] = await ctx.db
-        .select()
-        .from(opmlImports)
-        .where(and(eq(opmlImports.id, input.id), eq(opmlImports.userId, userId)))
-        .limit(1);
-
-      if (!importRecord) {
-        throw errors.notFound("Import not found");
-      }
-
-      return {
-        id: importRecord.id,
-        status: importRecord.status as "pending" | "processing" | "completed" | "failed",
-        totalFeeds: importRecord.totalFeeds,
-        importedCount: importRecord.importedCount,
-        skippedCount: importRecord.skippedCount,
-        failedCount: importRecord.failedCount,
-        results: importRecord.results,
-        error: importRecord.error,
-        createdAt: importRecord.createdAt,
-        completedAt: importRecord.completedAt,
-      };
-    }),
+    .query(({ ctx, input }) => getOpmlImport(ctx.db, ctx.session.user.id, input.id)),
 
   /**
    * List recent imports for the current user.
@@ -177,39 +150,7 @@ export const importsRouter = createTRPCRouter({
         items: z.array(importSummarySchema),
       })
     )
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const limit = input?.limit ?? 10;
-
-      const imports = await ctx.db
-        .select({
-          id: opmlImports.id,
-          status: opmlImports.status,
-          totalFeeds: opmlImports.totalFeeds,
-          importedCount: opmlImports.importedCount,
-          skippedCount: opmlImports.skippedCount,
-          failedCount: opmlImports.failedCount,
-          error: opmlImports.error,
-          createdAt: opmlImports.createdAt,
-          completedAt: opmlImports.completedAt,
-        })
-        .from(opmlImports)
-        .where(eq(opmlImports.userId, userId))
-        .orderBy(desc(opmlImports.createdAt))
-        .limit(limit);
-
-      return {
-        items: imports.map((imp) => ({
-          id: imp.id,
-          status: imp.status as "pending" | "processing" | "completed" | "failed",
-          totalFeeds: imp.totalFeeds,
-          importedCount: imp.importedCount,
-          skippedCount: imp.skippedCount,
-          failedCount: imp.failedCount,
-          error: imp.error,
-          createdAt: imp.createdAt,
-          completedAt: imp.completedAt,
-        })),
-      };
-    }),
+    .query(async ({ ctx, input }) => ({
+      items: await listOpmlImports(ctx.db, ctx.session.user.id, input?.limit ?? 10),
+    })),
 });

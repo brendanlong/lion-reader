@@ -9,8 +9,7 @@
 
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
-import { storeChangedFields } from "@/lib/stored-preference";
+import { createStoredJson, storeChangedFields } from "@/lib/stored-preference";
 import {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_APPEARANCE_SETTINGS,
@@ -29,83 +28,20 @@ export type {
   ListDensity,
 } from "./config";
 
-/**
- * Loads appearance settings from localStorage.
- *
- * Returns the saved settings merged with defaults (in case new fields
- * are added in future versions). Returns defaults if no saved settings
- * exist or if localStorage is unavailable.
- *
- * @returns The loaded appearance settings.
- */
-function loadAppearanceSettings(): AppearanceSettings {
-  if (typeof window === "undefined") {
-    return DEFAULT_APPEARANCE_SETTINGS;
-  }
+const appearanceSettings = createStoredJson<AppearanceSettings>(
+  APPEARANCE_STORAGE_KEY,
+  DEFAULT_APPEARANCE_SETTINGS,
+  (json) =>
+    typeof json === "object" && json !== null
+      ? coerceAppearanceSettings(json as Partial<AppearanceSettings>)
+      : null,
+  storeChangedFields
+);
 
-  try {
-    const stored = localStorage.getItem(APPEARANCE_STORAGE_KEY);
-    if (!stored) {
-      return DEFAULT_APPEARANCE_SETTINGS;
-    }
-    return coerceAppearanceSettings(JSON.parse(stored) as Partial<AppearanceSettings>);
-  } catch {
-    // If parsing fails, return defaults
-    return DEFAULT_APPEARANCE_SETTINGS;
-  }
-}
-
-// Subscribers for settings changes
-const subscribers = new Set<() => void>();
-
-// Cached snapshot for useSyncExternalStore (must return same reference if unchanged)
-let cachedSnapshot: AppearanceSettings | null = null;
-
-// Notify all subscribers when settings change
-function notifySubscribers() {
-  // Invalidate cache so next getSnapshot reads fresh data
-  cachedSnapshot = null;
-  subscribers.forEach((callback) => callback());
-}
-
-// Subscribe function for useSyncExternalStore
-function subscribe(callback: () => void): () => void {
-  subscribers.add(callback);
-  return () => subscribers.delete(callback);
-}
-
-// Get snapshot for client (cached to avoid infinite loop)
-function getSnapshot(): AppearanceSettings {
-  if (cachedSnapshot === null) {
-    cachedSnapshot = loadAppearanceSettings();
-  }
-  return cachedSnapshot;
-}
-
-// Get snapshot for server (always returns defaults)
-function getServerSnapshot(): AppearanceSettings {
-  return DEFAULT_APPEARANCE_SETTINGS;
-}
-
-/**
- * React hook for managing appearance settings.
- *
- * Uses useSyncExternalStore to properly handle SSR/hydration.
- * Returns defaults on server, loads from localStorage on client.
- *
- * @returns A tuple of [settings, setSettings].
- */
+/** The appearance settings and their setter; defaults until hydrated. */
 export function useAppearanceSettings(): [
   AppearanceSettings,
   (settings: AppearanceSettings) => void,
 ] {
-  const settings = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-
-  // Save and update settings, then notify subscribers
-  const setSettings = useCallback((newSettings: AppearanceSettings) => {
-    storeChangedFields(APPEARANCE_STORAGE_KEY, loadAppearanceSettings(), newSettings);
-    notifySubscribers();
-  }, []);
-
-  return [settings, setSettings];
+  return [appearanceSettings.useValue(), appearanceSettings.set];
 }

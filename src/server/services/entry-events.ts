@@ -116,10 +116,11 @@ export function publishMarkReadStateChanges(
 }
 
 /**
- * Publishes an entry_state_changed event for each entry affected by a bulk
- * star/unstar, carrying the absolute counts so other tabs set them directly.
+ * Publishes an entry_state_changed event for each entry a bulk write changed
+ * (star/unstar, score, collection positions), carrying the absolute counts so
+ * other tabs set them directly.
  */
-export function publishStarredStateChanges(
+export function publishEntryStateChanges(
   userId: string,
   entries: PublishedEntryState[],
   counts: BulkUnreadCounts

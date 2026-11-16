@@ -105,15 +105,7 @@ export function FileUploadButton({ onSuccess }: FileUploadButtonProps) {
     onSuccess: ({ subscription, created, entryIds, counts }) => {
       toast.success(`Imported ${entryIds.length} chapter${entryIds.length === 1 ? "" : "s"}`);
       if (created) {
-        handleSubscriptionCreated(
-          utils,
-          {
-            ...subscription,
-            unreadCount: counts.subscriptions.find((s) => s.id === subscription.id)?.unread ?? 0,
-          },
-          queryClient,
-          counts
-        );
+        handleSubscriptionCreated(utils, queryClient, subscription, counts);
       } else {
         applyUnreadCounts(utils, queryClient, counts);
       }

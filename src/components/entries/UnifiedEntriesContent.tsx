@@ -26,7 +26,6 @@ import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
-import { getFiltersFromPathname } from "@/lib/queries/entries-list-input";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import {
@@ -34,17 +33,14 @@ import {
   isStaticEntryListPathname,
   type StaticEntryListPathname,
 } from "@/lib/navigation";
-import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { useLocalSubscription } from "@/lib/hooks/useLocalSubscriptions";
 import { useLocalTag } from "@/lib/hooks/useLocalTags";
-import { type MarkAllReadOptions } from "@/lib/hooks/useEntryMutations";
 
 /**
  * Route info derived from the current pathname.
  */
 interface RouteInfo {
-  viewId: ViewType;
   /** Static title (null means we need to fetch it) */
   title: string | null;
   /** Whether this route needs to fetch a subscription for its title */
@@ -64,7 +60,6 @@ interface RouteInfo {
 }
 
 const ALL_ROUTE: RouteInfo = {
-  viewId: "all",
   title: "All Items",
   emptyMessageUnread: "No unread entries. Toggle to show all items.",
   emptyMessageAll: "No entries yet. Subscribe to some feeds to see entries here.",
@@ -72,7 +67,6 @@ const ALL_ROUTE: RouteInfo = {
 };
 
 const UNCATEGORIZED_ROUTE: RouteInfo = {
-  viewId: "uncategorized",
   title: "Uncategorized",
   emptyMessageUnread: "No unread entries from uncategorized feeds. Toggle to show all items.",
   emptyMessageAll: "No entries from uncategorized feeds yet.",
@@ -82,14 +76,12 @@ const UNCATEGORIZED_ROUTE: RouteInfo = {
 const STATIC_ROUTES: Record<StaticEntryListPathname, RouteInfo> = {
   "/all": ALL_ROUTE,
   "/starred": {
-    viewId: "starred",
     title: "Starred",
     emptyMessageUnread: "No unread starred entries. Toggle to show all starred items.",
     emptyMessageAll: "No starred entries yet. Star entries to save them for later.",
     markAllReadDescription: "starred entries",
   },
   "/saved": {
-    viewId: "saved",
     title: "Saved",
     emptyMessageUnread: "No unread saved articles. Toggle to show all items.",
     emptyMessageAll: "No saved articles yet. Save articles to read them later.",
@@ -97,7 +89,6 @@ const STATIC_ROUTES: Record<StaticEntryListPathname, RouteInfo> = {
   },
   "/uncategorized": UNCATEGORIZED_ROUTE,
   "/recently-read": {
-    viewId: "recently-read",
     title: "Recently Read",
     emptyMessageUnread: "No unread entries. Toggle to show all items.",
     emptyMessageAll: "No recently read entries yet. Read some entries and they will appear here.",
@@ -217,22 +208,15 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
  * inline loading state (no Suspense boundaries).
  */
 function UnifiedEntriesContentInner() {
-  const pathname = useAppPathname();
   const routeInfo = useRouteInfo();
   const { showUnreadOnly, searchQuery } = useUrlViewPreferences();
   const { openEntryId, setOpenEntryId, closeEntry } = useEntryUrlState();
 
-  // Get query input based on current URL - shared with EntryListContainer
+  // EntryListContainer owns the list's query; it stays mounted (hidden)
+  // while an entry is open, so the reader shares its entries and neighbours.
   const queryInput = useEntriesListInput();
-
-  // Keeps the list's query observed while an entry is open (EntryListContainer
-  // owns fetching); the entries themselves come from the local store.
-  trpc.entries.list.useInfiniteQuery(queryInput, {
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
   const entries = useEntryListEntries(queryInput, openEntryId);
+  const adjacent = useMemo(() => findAdjacentEntries(entries, openEntryId), [openEntryId, entries]);
 
   // Fetch subscription data for validation. A genuinely missing subscription
   // throws NOT_FOUND, which we render as a NotFoundCard below; any other error
@@ -281,32 +265,6 @@ function UnifiedEntriesContentInner() {
     };
   }, [routeInfo, tagsQuery.isSuccess, tag, isCollection]);
 
-  // Mark-all-read acts on the current view, so it reuses the route's query
-  // filters. `sortBy` only orders the list, so it isn't one of them.
-  const markAllReadOptions = useMemo<MarkAllReadOptions>(() => {
-    const { subscriptionId, tagId, uncategorized, starredOnly, type } =
-      getFiltersFromPathname(pathname);
-    return { subscriptionId, tagId, uncategorized, starredOnly, type };
-  }, [pathname]);
-
-  // Adjacent entry IDs for swipe navigation. Pagination near the end of the
-  // loaded entries is triggered by EntryListContainer, which owns the query.
-  const { nextEntryId, previousEntryId } = useMemo(
-    () => findAdjacentEntries(entries, openEntryId),
-    [openEntryId, entries]
-  );
-
-  // Navigation callbacks - just update URL, React re-renders
-  const handleSwipeNext = useMemo(() => {
-    if (!nextEntryId) return undefined;
-    return () => setOpenEntryId(nextEntryId);
-  }, [nextEntryId, setOpenEntryId]);
-
-  const handleSwipePrevious = useMemo(() => {
-    if (!previousEntryId) return undefined;
-    return () => setOpenEntryId(previousEntryId);
-  }, [previousEntryId, setOpenEntryId]);
-
   // Show "not found" only for a genuine NOT_FOUND; transient errors are
   // rethrown to the ErrorBoundary by throwOnError above.
   if (routeInfo.subscriptionId && subscriptionQuery.error?.data?.code === "NOT_FOUND") {
@@ -335,10 +293,9 @@ function UnifiedEntriesContentInner() {
       key={openEntryId}
       entryId={openEntryId}
       onBack={closeEntry}
-      onSwipeNext={handleSwipeNext}
-      onSwipePrevious={handleSwipePrevious}
-      nextEntryId={nextEntryId}
-      previousEntryId={previousEntryId}
+      nextEntryId={adjacent.nextEntryId}
+      previousEntryId={adjacent.previousEntryId}
+      onOpenEntry={setOpenEntryId}
     />
   ) : null;
 
@@ -350,7 +307,14 @@ function UnifiedEntriesContentInner() {
     : showUnreadOnly
       ? emptyMessages.emptyMessageUnread
       : emptyMessages.emptyMessageAll;
-  const entryListSlot = <EntryListContainer emptyMessage={emptyMessage} />;
+  const entryListSlot = (
+    <EntryListContainer
+      emptyMessage={emptyMessage}
+      queryInput={queryInput}
+      entries={entries}
+      adjacent={adjacent}
+    />
+  );
 
   return (
     <EntryPageLayout
@@ -358,7 +322,7 @@ function UnifiedEntriesContentInner() {
       entryContentSlot={entryContentSlot}
       entryListSlot={entryListSlot}
       markAllReadDescription={emptyMessages.markAllReadDescription}
-      markAllReadOptions={markAllReadOptions}
+      listInput={queryInput}
     />
   );
 }

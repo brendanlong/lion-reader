@@ -71,6 +71,19 @@ export interface ApiTokenData {
 // Token Creation
 // ============================================================================
 
+/** A token's details as its owner sees them (never the hash). */
+export const apiTokenInfoFields = {
+  id: apiTokens.id,
+  name: apiTokens.name,
+  scopes: apiTokens.scopes,
+  createdAt: apiTokens.createdAt,
+  expiresAt: apiTokens.expiresAt,
+  lastUsedAt: apiTokens.lastUsedAt,
+  revokedAt: apiTokens.revokedAt,
+};
+
+type ApiTokenInfo = { [K in keyof typeof apiTokenInfoFields]: ApiToken[K] };
+
 /**
  * Creates a new API token for a user.
  *
@@ -78,28 +91,30 @@ export interface ApiTokenData {
  * @param scopes - The scopes to grant to this token
  * @param name - Optional name for the token (e.g., "Browser Extension")
  * @param expiresAt - Optional expiration date
- * @returns The raw token (for client) - this is the only time it's available
+ * @returns The token's details and the raw token (for client) - this is the
+ *   only time it's available
  */
 export async function createApiToken(
   userId: string,
   scopes: ApiTokenScope[],
   name?: string,
   expiresAt?: Date
-): Promise<{ token: string; id: string }> {
+): Promise<ApiTokenInfo & { token: string }> {
   const token = generateToken();
-  const tokenHash = hashToken(token);
-  const id = generateUuidv7();
 
-  await db.insert(apiTokens).values({
-    id,
-    userId,
-    tokenHash,
-    scopes,
-    name,
-    expiresAt,
-  });
+  const [info] = await db
+    .insert(apiTokens)
+    .values({
+      id: generateUuidv7(),
+      userId,
+      tokenHash: hashToken(token),
+      scopes,
+      name,
+      expiresAt,
+    })
+    .returning(apiTokenInfoFields);
 
-  return { token, id };
+  return { ...info, token };
 }
 
 // ============================================================================

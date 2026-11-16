@@ -31,6 +31,8 @@ import {
   verifySubscriptionOwnership,
   VISIBLE_MEMBERSHIPS,
   VISIBLE_ROW,
+  type EntryConditionParams,
+  type EntryFilterParams,
 } from "./entry-filters";
 import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
 import { entryPositionsSchema, tagListsSchema } from "@/lib/events/schemas";
@@ -50,18 +52,9 @@ import {
 // Types
 // ============================================================================
 
-export interface ListEntriesParams {
+export interface ListEntriesParams extends EntryFilterParams, EntryConditionParams {
   userId: string;
   query?: string; // Optional full-text search query — delegates to searchEntries (#1249)
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  type?: EntryType;
-  excludeTypes?: EntryType[];
-  unreadOnly?: boolean;
-  readOnly?: boolean;
-  starredOnly?: boolean;
-  unstarredOnly?: boolean;
   /**
    * One of `sortBy`'s two directions (`ENTRY_SORT_DIRECTIONS`), its first by
    * default; alone, it names its sort. With neither, a subscription whose
@@ -78,34 +71,10 @@ export interface ListEntriesParams {
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
   maxLimit?: number; // Override MAX_ENTRIES_PAGE_SIZE (e.g., for Google Reader API which needs larger batches)
-  publishedAfter?: Date; // Only entries published/fetched after this timestamp
-  publishedBefore?: Date; // Only entries published/fetched before this timestamp
-  updatedAfter?: Date; // Only entries modified at/after this timestamp (user_entries.changed_at; powers Wallabag `since` delta sync)
-  collectionIdGroups?: string[][]; // See EntryConditionParams.collectionIdGroups
-  showSpam: boolean;
 }
 
-export interface SearchEntriesParams {
-  userId: string;
-  query: string;
-  subscriptionId?: string;
-  tagId?: string;
-  uncategorized?: boolean;
-  type?: EntryType;
-  excludeTypes?: EntryType[];
-  unreadOnly?: boolean;
-  readOnly?: boolean;
-  starredOnly?: boolean;
-  unstarredOnly?: boolean;
-  cursor?: string;
-  offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
-  limit?: number;
-  maxLimit?: number;
-  publishedAfter?: Date;
-  publishedBefore?: Date;
-  updatedAfter?: Date; // Only entries modified at/after this timestamp (see ListEntriesParams.updatedAfter)
-  showSpam: boolean;
-}
+/** A search ranks by relevance, so it ignores the sort. */
+type SearchEntriesParams = ListEntriesParams & { query: string };
 
 /**
  * An entry without its content: the item of every surface's lists, and the
@@ -354,11 +323,7 @@ export async function listEntries(
   // search over the stored entries.search_vector column — see searchEntries).
   if (params.query) {
     assertOnePaging(params);
-    return searchEntries(db, {
-      ...params,
-      query: params.query,
-      showSpam: params.showSpam,
-    });
+    return searchEntries(db, { ...params, query: params.query });
   }
 
   const page = await planEntryPage(db, params);
@@ -900,8 +865,8 @@ async function searchEntries(
   // body, falling back to raw content when cleaned is empty — see migration
   // 0105). Reading the precomputed column means the `@@` lookup is served by
   // idx_entries_search_vector and ts_rank doesn't re-tokenize each matching
-  // document, which is what made the old on-the-fly to_tsvector search scan and
-  // tokenize the user's entire history on every query (#1249).
+  // document: tokenizing bodies per query scans the user's entire history
+  // (#1249).
   const searchQuery = sql`plainto_tsquery('english', ${params.query})`;
   conditions.push(sql`${visibleEntries.searchVector} @@ ${searchQuery}`);
 
@@ -1078,20 +1043,7 @@ export async function countUserLists(
 export async function countTotalEntries(
   db: typeof dbType,
   userId: string,
-  params: {
-    subscriptionId?: string;
-    tagId?: string;
-    uncategorized?: boolean;
-    type?: EntryType;
-    excludeTypes?: EntryType[];
-    unreadOnly?: boolean;
-    readOnly?: boolean;
-    starredOnly?: boolean;
-    unstarredOnly?: boolean;
-    updatedAfter?: Date;
-    collectionIdGroups?: string[][];
-    showSpam: boolean;
-  }
+  params: EntryFilterParams & EntryConditionParams
 ): Promise<number> {
   const conditions = [eq(visibleEntries.userId, userId)];
 

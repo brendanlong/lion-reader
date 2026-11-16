@@ -68,16 +68,11 @@ const createSubscriptionOutputSchema = subscriptionsService.subscriptionSchema.e
 
 export const subscriptionsRouter = createTRPCRouter({
   /**
-   * Subscribe to a feed by URL.
+   * Subscribe to the feed a URL resolves to (`subscribeToUrl`, which resolves
+   * it through `resolveFeedAtUrl` as `feeds.preview` does), reactivating a
+   * previous subscription.
    *
-   * This procedure:
-   * 1. Fetches the URL content
-   * 2. If HTML, discovers feeds and uses the first one
-   * 3. Parses the feed to get metadata
-   * 4. Creates or finds the existing feed record
-   * 5. Creates the subscription (or reactivates if previously unsubscribed)
-   *
-   * @param url - The feed URL (or HTML page with feed discovery)
+   * @param url - The feed URL, or a page that maps to or advertises one
    * @returns The subscription and feed
    *
    * Note: This endpoint uses stricter rate limiting (10 burst, 1/sec)

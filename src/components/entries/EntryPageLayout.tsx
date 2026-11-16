@@ -4,15 +4,12 @@
  * Shared layout component for entry list pages (All, Starred, Saved, Subscription, Tag,
  * Uncategorized, Recently Read).
  * Handles the header with title and actions. Entry content and list are passed as slots.
- *
- * The buttons use non-suspending hooks directly, so they render immediately
- * while the entry list can suspend independently.
  */
 
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
@@ -24,11 +21,11 @@ import { SkeletonText } from "@/components/ui/skeleton";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle, shownSortOrder } from "./SortToggle";
-import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useListSortable } from "@/lib/hooks/useLocalEntries";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
+import type { EntriesListInput } from "@/lib/queries/entries-list-input";
 
 const TITLE_CLASSES = "text-body font-bold";
 
@@ -44,7 +41,7 @@ export function TitleText({ children }: { children: ReactNode }) {
 }
 
 interface EntryPageLayoutProps {
-  /** Title slot - typically a Suspense-wrapped title component */
+  /** Title slot - renders its own inline loading state */
   titleSlot: ReactNode;
 
   /** Entry content slot - full screen view when an entry is open */
@@ -59,8 +56,8 @@ interface EntryPageLayoutProps {
    */
   markAllReadDescription: string | null;
 
-  /** Options to pass to handleMarkAllRead */
-  markAllReadOptions: MarkAllReadOptions;
+  /** The list's `entries.list` input; mark-all-read acts on its filters */
+  listInput: EntriesListInput;
 }
 
 export function EntryPageLayout({
@@ -68,9 +65,8 @@ export function EntryPageLayout({
   entryContentSlot,
   entryListSlot,
   markAllReadDescription,
-  markAllReadOptions,
+  listInput,
 }: EntryPageLayoutProps) {
-  // Use non-suspending hooks directly so buttons render immediately
   const { showUnreadOnly, toggleShowUnreadOnly, setSortOrder, searchQuery, setSearchQuery } =
     useUrlViewPreferences();
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
@@ -79,7 +75,6 @@ export function EntryPageLayout({
   // return); without one, the sort the server listed it in (#2064).
   // Read from the store only once it can render from it, or the server's and
   // the hydrating client's first renders disagree.
-  const listInput = useEntriesListInput();
   const storedSortable = useListSortable(listInput);
   const sortable = useCanRenderFromCache() ? storedSortable : undefined;
   const { openEntryId } = useEntryUrlState();
@@ -163,7 +158,15 @@ export function EntryPageLayout({
               <MarkAllReadButton
                 contextDescription={markAllReadDescription}
                 isLoading={isMarkAllReadPending}
-                onConfirm={() => markAllRead(markAllReadOptions)}
+                onConfirm={() =>
+                  markAllRead({
+                    subscriptionId: listInput.subscriptionId,
+                    tagId: listInput.tagId,
+                    uncategorized: listInput.uncategorized,
+                    starredOnly: listInput.starredOnly,
+                    type: listInput.type,
+                  })
+                }
                 shortcutEnabled={keyboardShortcutsEnabled && !openEntryId}
               />
             )}

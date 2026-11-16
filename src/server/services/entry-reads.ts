@@ -108,7 +108,6 @@ const entryReadSelectFields = {
   score: visibleEntries.score,
   updatedAt: visibleEntries.updatedAt,
   entryUpdatedAt: visibleEntries.entryUpdatedAt,
-  contentHash: visibleEntries.contentHash,
   subscriptionId: subscriptions.id,
   subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
   positions: VISIBLE_MEMBERSHIPS.positions,
@@ -266,7 +265,7 @@ export async function getOwnedEntryRawContent(
  * content sanitized (the view can toggle back to feed content).
  */
 async function toFullEntry(row: EntryRow): Promise<FullEntry> {
-  const { contentHash, contentOriginal, contentCleaned, fullContentCleaned, ...rest } = row;
+  const { contentOriginal, contentCleaned, fullContentCleaned, ...rest } = row;
 
   const [content, sanitizedFullContent] = await Promise.all([
     sanitizeEntryContentPair({ original: contentOriginal, cleaned: contentCleaned }),
@@ -284,8 +283,7 @@ async function toFullEntry(row: EntryRow): Promise<FullEntry> {
 }
 
 /**
- * One entry in the app's full-entry view (`entries.get`), plus its content
- * hash, which keys caches built from the content (narration) but isn't shown.
+ * One entry in the app's full-entry view (`entries.get`).
  *
  * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
  */
@@ -293,11 +291,8 @@ export async function getFullEntry(
   db: typeof dbType,
   userId: string,
   entryId: string
-): Promise<{ entry: FullEntry; contentHash: string }> {
-  return readEntry(db, userId, entryId, "all", async (row) => ({
-    entry: await toFullEntry(row),
-    contentHash: row.contentHash,
-  }));
+): Promise<FullEntry> {
+  return readEntry(db, userId, entryId, "all", toFullEntry);
 }
 
 /**
