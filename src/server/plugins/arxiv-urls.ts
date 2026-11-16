@@ -8,7 +8,7 @@
  *
  * URL helpers here let the saved-article plugin address a paper in each form,
  * and `parseArxivAbsMetadata` reads the paper's title/abstract/authors off the
- * abstract page. Pure functions only; the plugin (`plugins/arxiv.ts`) owns the
+ * abstract page. Pure functions only; the plugin (`arxiv.ts`) owns the
  * fetching and decides which form becomes the article.
  */
 

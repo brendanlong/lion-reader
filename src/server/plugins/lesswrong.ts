@@ -15,7 +15,7 @@ import {
   extractPostId,
   LESSWRONG_FRONTPAGE_FEED_URL,
   LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
-} from "@/server/feed/lesswrong";
+} from "./lesswrong-api";
 import { logger } from "@/lib/logger";
 
 /**

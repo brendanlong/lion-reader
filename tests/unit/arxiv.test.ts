@@ -9,7 +9,7 @@ import {
   buildArxivHtmlUrl,
   buildArxivAbsUrl,
   parseArxivAbsMetadata,
-} from "../../src/server/feed/arxiv";
+} from "../../src/server/plugins/arxiv-urls";
 
 /**
  * A trimmed-down but structurally faithful arXiv abstract page <head>.
