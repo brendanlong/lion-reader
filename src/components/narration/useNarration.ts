@@ -195,25 +195,16 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const generateMutation = trpc.narration.generate.useMutation();
 
   // The players outlive renders, so they read the current voice settings here.
-  const voiceRef = useRef({
+  const voiceSettings = {
     model: settings.cloudModelId,
     voice: settings.voiceId,
     sentenceGapSeconds: settings.sentenceGapSeconds,
     cloudPauseSeconds: settings.cloudPauseSeconds,
-  });
+  };
+  const voiceRef = useRef(voiceSettings);
   useEffect(() => {
-    voiceRef.current = {
-      model: settings.cloudModelId,
-      voice: settings.voiceId,
-      sentenceGapSeconds: settings.sentenceGapSeconds,
-      cloudPauseSeconds: settings.cloudPauseSeconds,
-    };
-  }, [
-    settings.cloudModelId,
-    settings.voiceId,
-    settings.sentenceGapSeconds,
-    settings.cloudPauseSeconds,
-  ]);
+    voiceRef.current = voiceSettings;
+  });
 
   // The players outlive renders, so they call the current callbacks through here.
   const endingsRef = useRef(config);

@@ -11,86 +11,41 @@
  */
 
 import { narrationTargets } from "./block-elements";
-import { buildAlignedNarration, type ParagraphMapEntry } from "./paragraph-map";
-import { DIRECT_TTS_VOICE, narrationRuns } from "./runs";
+import type { ParagraphMapEntry } from "./paragraph-map";
+import { directNarration } from "./runs";
 
 export type { ParagraphMapEntry };
 
 /**
- * Result of adding paragraph IDs to HTML content.
+ * Parsed into a document with an explicit `<body>`, exactly as the server
+ * parses it, rather than into a wrapper element: a `</div>` with no opening tag
+ * (which the sanitizer passes through, being a streaming rewriter rather than a
+ * tree builder) closes a wrapper early, and everything after it would be
+ * dropped from the article.
  */
-export interface AddParagraphIdsResult {
-  /** HTML with data-para-id attributes added to the elements narration can highlight */
-  html: string;
-  /** Number of marked elements */
-  paragraphCount: number;
-}
-
-/**
- * Parses entry HTML and marks every element narration can highlight with
- * `data-para-id="para-{index}"`, numbered in document order.
- *
- * The numbering is `narrationTargets`, which the server uses too — that is what
- * makes a narration paragraph's `o` name the same element here. Parsed into a
- * document with an explicit `<body>`, exactly as the server parses it, rather
- * than into a wrapper element: a `</div>` with no opening tag (which the
- * sanitizer passes through, being a streaming rewriter rather than a tree
- * builder) closes a wrapper early, and everything after it would be dropped
- * from the article this returns for rendering.
- */
-function markParagraphs(html: string): { body: Element; count: number } | null {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(
+function parseBody(html: string): HTMLElement {
+  return new DOMParser().parseFromString(
     `<!DOCTYPE html><html><body>${html}</body></html>`,
     "text/html"
-  );
-  const body = doc.body;
-  if (!body) return null;
-
-  const targets = narrationTargets(body);
-  targets.forEach((el, index) => el.setAttribute("data-para-id", `para-${index}`));
-  return { body, count: targets.length };
+  ).body;
 }
 
 /**
- * Adds data-para-id attributes to the elements narration can highlight.
+ * Marks every element narration can highlight with
+ * `data-para-id="para-{index}"`, numbered in document order, and returns the
+ * HTML to render.
  *
- * @param html - The HTML content to process
- * @returns Object containing the processed HTML and marked-element count
+ * The numbering is `narrationTargets`, which the server uses too — that is what
+ * makes a narration paragraph's `o` name the same element here.
  *
  * @example
- * const result = addParagraphIdsToHtml('<p>First</p><h2>Title</h2>');
- * // result.html contains:
+ * processHtmlForHighlighting('<p>First</p><h2>Title</h2>');
  * // '<p data-para-id="para-0">First</p><h2 data-para-id="para-1">Title</h2>'
- * // result.paragraphCount: 2
- */
-export function addParagraphIdsToHtml(html: string): AddParagraphIdsResult {
-  if (!html || html.trim() === "") {
-    return { html: "", paragraphCount: 0 };
-  }
-
-  const marked = markParagraphs(html);
-  if (!marked) {
-    return { html: "", paragraphCount: 0 };
-  }
-  return { html: marked.body.innerHTML, paragraphCount: marked.count };
-}
-
-/**
- * Simple wrapper that returns just the processed HTML string.
- * Useful for direct integration with React's useMemo.
- *
- * @param html - The HTML content to process
- * @returns The processed HTML with data-para-id attributes
- *
- * @example
- * // In a React component
- * const processedContent = useMemo(() => {
- *   return processHtmlForHighlighting(content);
- * }, [content]);
  */
 export function processHtmlForHighlighting(html: string): string {
-  return addParagraphIdsToHtml(html).html;
+  const body = parseBody(html);
+  narrationTargets(body).forEach((el, index) => el.setAttribute("data-para-id", `para-${index}`));
+  return body.innerHTML;
 }
 
 /**
@@ -110,30 +65,11 @@ export interface ClientNarrationResult {
  * walk over the same elements, in the plain voice a TTS engine speaks verbatim
  * rather than the annotated one the LLM is fed.
  *
- * @param html - HTML content to convert
- * @returns Object with narration text and paragraph map
- *
  * @example
  * const result = htmlToClientNarration('<p>Hello</p><img src="x" alt="photo">');
  * // result.narrationText: "Hello\n\nImage: photo"
  * // result.paragraphMap: [{ n: 0, o: 0 }, { n: 1, o: 1 }]
  */
 export function htmlToClientNarration(html: string): ClientNarrationResult {
-  if (!html || html.trim() === "") {
-    return { narrationText: "", paragraphMap: [] };
-  }
-
-  const marked = markParagraphs(html);
-  if (!marked) {
-    return { narrationText: "", paragraphMap: [] };
-  }
-
-  // The runs are the player's paragraphs, in order, each naming the element it
-  // highlights; `buildAlignedNarration` keeps the map aligned with how the
-  // player splits the text it is given (see `./paragraph-map`).
-  const { narrationText, paragraphMap } = buildAlignedNarration(
-    narrationRuns(marked.body, DIRECT_TTS_VOICE)
-  );
-
-  return { narrationText, paragraphMap };
+  return directNarration(parseBody(html));
 }

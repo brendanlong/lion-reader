@@ -21,10 +21,10 @@ import { FloatingNarrationControls } from "./FloatingNarrationControls";
 import { NarrationHighlightStyles } from "./NarrationHighlightStyles";
 import {
   DEFAULT_NARRATION_STATE,
+  getHighlightedParagraph,
   getNarrationPhase,
-  type NarrationEngineView,
+  type UseNarrationReturn,
 } from "./useNarrationTypes";
-import { useNarrationHighlight } from "./useNarrationHighlight";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { seekTargetElement } from "@/lib/narration/seek-target";
 import { NEXT_ARTICLE, NO_MORE_ARTICLES } from "@/lib/narration/paragraph-map";
@@ -112,7 +112,7 @@ export function useEntryNarration({
 
   // The engine loads lazily and reports its state here. It's only mounted while
   // narration is enabled, so disabling narration mid-playback stops it.
-  const [narrationEngine, setNarrationEngine] = useState<NarrationEngineView | null>(null);
+  const [narrationEngine, setNarrationEngine] = useState<UseNarrationReturn | null>(null);
   const narration = showNarration ? narrationEngine : null;
   const narrationState = narration?.state ?? DEFAULT_NARRATION_STATE;
   const isNarrationActive = getNarrationPhase(narrationState).isActive;
@@ -140,10 +140,7 @@ export function useEntryNarration({
     if (continued) goOn();
   }, [continued, goOn]);
 
-  const { highlightedParagraphIds } = useNarrationHighlight({
-    currentParagraphIndex: narrationState.currentParagraph,
-    isActive: isNarrationActive,
-  });
+  const highlightedParagraph = getHighlightedParagraph(narrationState);
 
   // While narration is active, clicking a paragraph narrates from there (a
   // paused narration moves there and stays paused). Clicks
@@ -190,13 +187,10 @@ export function useEntryNarration({
     if (!contentRef.current || !isSupported) return;
     if (!narrationSettings.autoScrollEnabled) return;
     if (narrationState.status !== "playing") return;
-    if (highlightedParagraphIds.size === 0) return;
+    if (highlightedParagraph === null) return;
 
-    // Find the first highlighted element for scrolling
-    const container = contentRef.current;
-    const firstIndex = Math.min(...highlightedParagraphIds);
-    const element = container.querySelector(
-      `[data-para-id="para-${firstIndex}"]`
+    const element = contentRef.current.querySelector(
+      `[data-para-id="para-${highlightedParagraph}"]`
     ) as HTMLElement | null;
 
     if (!element) return;
@@ -215,7 +209,7 @@ export function useEntryNarration({
     }
   }, [
     contentRef,
-    highlightedParagraphIds,
+    highlightedParagraph,
     isSupported,
     narrationSettings.autoScrollEnabled,
     narrationState.status,
@@ -242,7 +236,7 @@ export function useEntryNarration({
     controls: showNarration && <NarrationControls narration={narration} />,
     highlightStyles: showNarration && isSupported && (
       <NarrationHighlightStyles
-        highlightedParagraphIds={highlightedParagraphIds}
+        highlightedParagraph={highlightedParagraph}
         enabled={narrationSettings.highlightEnabled}
         seekable={isNarrationActive}
       />

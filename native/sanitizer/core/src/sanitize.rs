@@ -1,7 +1,6 @@
-//! The main HTML allow-list pass — port of `SANITIZE_OPTIONS` from
-//! `src/server/html/sanitize.ts`, running on lol_html (streaming, no tree).
+//! The main HTML allow-list pass, running on lol_html (streaming, no tree).
 //!
-//! Semantics ported from sanitize-html:
+//! Semantics follow sanitize-html:
 //! - Tags not on the allow-list are unwrapped (children kept), except the
 //!   "non-text" tags (`script`/`style`/`textarea`/`option`) whose content is
 //!   dropped with them.
@@ -42,7 +41,7 @@ use crate::scanner::{
     find_byte, find_bytes, is_tag_ws, scan_to_tag_end, skip_raw_text, tag_name_end,
     RAW_TEXT_ELEMENTS,
 };
-use crate::urls::{decode_attr, is_image_url_allowed};
+use crate::urls::{decode_attr, is_image_url_allowed, split_srcset};
 
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
 const ALLOWED_TAGS: &[&str] = &[
@@ -262,11 +261,11 @@ const MATHML_ATTRS: &[&str] = &[
 
 const SAFE_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
 // img/source src (and srcset candidates): http/https + data URIs (feeds embed
-// base64 images). Deliberately NOT mailto/tel — matches the old
-// `allowedSchemesByTag` for img/source exactly. `data:` is MIME-gated to
-// `image/*` by `is_image_url_allowed` (a `data:text/html` image source would
-// otherwise be a stored-HTML sink), which still permits `data:image/svg+xml`
-// since an SVG rendered as an image is passive.
+// base64 images). Deliberately NOT mailto/tel: they aren't image sources.
+// `data:` is MIME-gated to `image/*` by `is_image_url_allowed` (a
+// `data:text/html` image source would otherwise be a stored-HTML sink), which
+// still permits `data:image/svg+xml` since an SVG rendered as an image is
+// passive.
 const IMAGE_SCHEMES: &[&str] = &["http", "https", "data"];
 
 fn tag_allowed(tag: &str) -> bool {
@@ -387,57 +386,6 @@ fn url_schemes_for(tag: &str, name: &str) -> Option<&'static [&'static str]> {
         }
         _ => None,
     }
-}
-
-/// Splits a srcset value into candidate URLs, tolerant of commas inside URLs
-/// (Cloudinary-style `f_auto,q_auto`): an entry boundary is a comma preceded
-/// by a width/density descriptor or followed by something that looks like a
-/// new URL. Mirrors `absolutizeSrcset` in content-cleaner.ts.
-fn srcset_urls(value: &str) -> Vec<String> {
-    fn has_descriptor(entry: &str) -> bool {
-        let trimmed = entry.trim_end();
-        let Some(last_ws) = trimmed.rfind(|c: char| c.is_whitespace()) else {
-            return false;
-        };
-        let desc = &trimmed[last_ws + 1..];
-        if desc.len() < 2 {
-            return false;
-        }
-        let (num, suffix) = desc.split_at(desc.len() - 1);
-        matches!(suffix, "w" | "x")
-            && num.chars().all(|c| c.is_ascii_digit() || c == '.')
-            && num.chars().any(|c| c.is_ascii_digit())
-    }
-    fn looks_like_new_entry(s: &str) -> bool {
-        s.starts_with("http://")
-            || s.starts_with("https://")
-            || s.starts_with("data:")
-            || s.starts_with("//")
-            || s.starts_with('/')
-    }
-    let mut entries: Vec<String> = Vec::new();
-    for raw in value.split(',') {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        match entries.last() {
-            None => entries.push(trimmed.to_string()),
-            Some(prev) => {
-                if has_descriptor(prev) || looks_like_new_entry(trimmed) {
-                    entries.push(trimmed.to_string());
-                } else {
-                    let last = entries.last_mut().unwrap();
-                    last.push(',');
-                    last.push_str(trimmed);
-                }
-            }
-        }
-    }
-    entries
-        .into_iter()
-        .filter_map(|entry| entry.split_whitespace().next().map(str::to_string))
-        .collect()
 }
 
 /// Iframes survive only as normalized allow-listed embeds: validate/rewrite
@@ -737,10 +685,10 @@ fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Se
             }
         } else if name == "srcset" && matches!(tag.as_str(), "img" | "source") {
             let decoded = decode_attr(&attr.value()).into_owned();
-            if !srcset_urls(&decoded)
-                .iter()
-                .all(|u| is_image_url_allowed(u, IMAGE_SCHEMES))
-            {
+            if !split_srcset(&decoded).iter().all(|entry| {
+                let url = entry.split_whitespace().next().unwrap_or_default();
+                is_image_url_allowed(url, IMAGE_SCHEMES)
+            }) {
                 to_remove.push(name);
                 continue;
             }
@@ -1288,6 +1236,29 @@ mod tests {
         );
         let ok = r#"<img src="a.png" srcset="https://x.com/f_auto,q_auto/a.png 1x, /b.png 2x" loading="lazy">"#;
         assert_eq!(sanitize(ok), ok);
+        // Any descriptor-like word ends an entry, so the bad candidate after
+        // it is checked rather than hidden inside the previous URL; a
+        // non-ASCII space before the descriptor is fine.
+        for srcset in ["a.png .5x, javascript:x 1x", "a.png\u{85}2x, javascript:x"] {
+            assert_eq!(
+                sanitize(&format!(r#"<img src="a.png" srcset="{srcset}">"#)),
+                r#"<img src="a.png" loading="lazy">"#,
+                "{srcset}"
+            );
+        }
+    }
+
+    #[test]
+    fn srcset_check_stays_linear() {
+        // Re-testing each growing entry for a descriptor made the first of
+        // these take tens of seconds; linear is well under a second
+        // unoptimized. Loose for a loaded CI box.
+        for srcset in ["a,".repeat(100_000), format!("a{}a,b", " ".repeat(50_000))] {
+            let started = std::time::Instant::now();
+            sanitize(&format!(r#"<img srcset="{srcset}">"#));
+            let elapsed = started.elapsed();
+            assert!(elapsed.as_secs() < 3, "took {elapsed:?}");
+        }
     }
 
     #[test]
@@ -1322,8 +1293,8 @@ mod tests {
 
     #[test]
     fn img_src_rejects_mailto_tel_but_keeps_data() {
-        // img/source src is http/https/data only (parity with the old
-        // allowedSchemesByTag) — mailto/tel are not image sources.
+        // img/source src is http/https/data only — mailto/tel are not image
+        // sources.
         assert_eq!(
             sanitize(r#"<img src="mailto:x@y.com">"#),
             r#"<img loading="lazy">"#

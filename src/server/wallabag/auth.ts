@@ -15,7 +15,6 @@ import { db } from "@/server/db";
 import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { authenticateCredential } from "@/server/auth/credential";
-import { revokeUserClientTokens } from "@/server/oauth/grants";
 import { createTokens, rotateRefreshToken, type TokenPair } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { logger } from "@/lib/logger";
@@ -81,13 +80,6 @@ export async function passwordGrant(
   });
 
   return toWallabagTokenResponse(tokens);
-}
-
-/**
- * Signs out every Wallabag app for a user (Settings → Wallabag).
- */
-export async function revokeWallabagTokens(userId: string): Promise<void> {
-  await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID);
 }
 
 /**

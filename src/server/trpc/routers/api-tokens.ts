@@ -8,7 +8,12 @@
 import { z } from "zod";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
-import { createApiToken, API_TOKEN_SCOPES, type ApiTokenScope } from "@/server/auth/api-token";
+import {
+  apiTokenInfoFields,
+  createApiToken,
+  API_TOKEN_SCOPES,
+  type ApiTokenScope,
+} from "@/server/auth/api-token";
 import { apiTokens } from "@/server/db/schema";
 import { errors } from "@/server/errors";
 
@@ -48,23 +53,6 @@ const createTokenOutputSchema = z.object({
 });
 
 // ============================================================================
-// Shared Select Fields
-// ============================================================================
-
-/**
- * Fields to select when returning API token info (excludes the raw token hash).
- */
-const apiTokenSelectFields = {
-  id: apiTokens.id,
-  name: apiTokens.name,
-  scopes: apiTokens.scopes,
-  createdAt: apiTokens.createdAt,
-  expiresAt: apiTokens.expiresAt,
-  lastUsedAt: apiTokens.lastUsedAt,
-  revokedAt: apiTokens.revokedAt,
-};
-
-// ============================================================================
 // Router
 // ============================================================================
 
@@ -74,7 +62,7 @@ export const apiTokensRouter = createTRPCRouter({
    */
   list: protectedProcedure.output(z.array(apiTokenOutputSchema)).query(async ({ ctx }) => {
     const tokens = await ctx.db
-      .select(apiTokenSelectFields)
+      .select(apiTokenInfoFields)
       .from(apiTokens)
       .where(eq(apiTokens.userId, ctx.session.user.id))
       .orderBy(desc(apiTokens.createdAt));
@@ -99,28 +87,16 @@ export const apiTokensRouter = createTRPCRouter({
         ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
         : undefined;
 
-      // Create the token
-      const { token, id: tokenId } = await createApiToken(
+      const { token, ...tokenInfo } = await createApiToken(
         ctx.session.user.id,
         scopes as ApiTokenScope[],
         name,
         expiresAt
       );
 
-      // Fetch the token info (without the raw token)
-      const tokenInfo = await ctx.db
-        .select(apiTokenSelectFields)
-        .from(apiTokens)
-        .where(eq(apiTokens.id, tokenId))
-        .limit(1);
-
-      if (!tokenInfo[0]) {
-        throw errors.tokenCreationFailed();
-      }
-
       return {
         token, // Raw token - only shown this once!
-        tokenInfo: tokenInfo[0],
+        tokenInfo,
       };
     }),
 

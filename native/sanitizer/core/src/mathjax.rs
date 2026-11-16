@@ -1,5 +1,5 @@
 //! Convert MathJax v3 CommonHTML (CHTML) output back into presentation
-//! MathML — direct port of `src/server/html/mathjax-chtml.ts`.
+//! MathML.
 //!
 //! Sources like LessWrong deliver math pre-rendered as a tree of custom
 //! `<mjx-*>` elements where each glyph is an *empty* `<mjx-c class="mjx-c1D465">`

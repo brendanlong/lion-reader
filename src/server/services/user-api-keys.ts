@@ -38,6 +38,22 @@ export async function getApiKeyProviders(userId: string): Promise<UserKeyProvide
 }
 
 /**
+ * Which providers `userId` has their own key for (as placeholders, not the
+ * keys), with their plan's AI access: enough to tell what's available
+ * without decrypting anything.
+ */
+export async function getUserKeyAvailability(userId: string): Promise<AiProviderKeys> {
+  const [providers, plan] = await Promise.all([
+    getApiKeyProviders(userId),
+    getUserAiPlanAccess(userId),
+  ]);
+  return {
+    ...Object.fromEntries(providers.map((provider) => [provider, "configured"])),
+    plan,
+  };
+}
+
+/**
  * Fetches and decrypts a user's API keys, with their plan's AI access.
  *
  * A missing or malformed `API_KEY_ENCRYPTION_KEY` throws. A key that doesn't

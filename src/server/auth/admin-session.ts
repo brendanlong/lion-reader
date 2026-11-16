@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { signupConfig } from "@/server/config/env";
+import { extractBearerToken } from "@/server/auth/bearer";
+import { readCookie } from "@/server/auth/session-cookie";
 
 export const ADMIN_COOKIE_NAME = "admin_session";
 export const ADMIN_SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours
@@ -50,6 +52,22 @@ export function validateAdminSessionToken(token: string): boolean {
   const now = Math.floor(Date.now() / 1000);
   const age = now - timestamp;
   return age >= 0 && age < ADMIN_SESSION_TTL_SECONDS;
+}
+
+/**
+ * Whether a request carries an admin credential: a valid `admin_session`
+ * cookie (from /api/admin/session), or `Bearer <ALLOWLIST_SECRET>` for
+ * programmatic access. Admin procedures and the maintenance gate both decide
+ * through this, so they can't disagree about who's an admin.
+ */
+export function hasAdminCredential(
+  cookieHeader: string | null | undefined,
+  authorizationHeader: string | null | undefined
+): boolean {
+  const sessionToken = readCookie(cookieHeader, ADMIN_COOKIE_NAME);
+  if (sessionToken && validateAdminSessionToken(sessionToken)) return true;
+  const bearerToken = extractBearerToken(authorizationHeader);
+  return bearerToken !== null && validateAdminSecret(bearerToken);
 }
 
 /**

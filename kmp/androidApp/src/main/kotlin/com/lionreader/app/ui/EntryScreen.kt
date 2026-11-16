@@ -474,13 +474,16 @@ private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String,
     graph.narrator.listenFrom(NarratedArticle.of(entry, paragraphs), paragraph)
 }
 
+/** How long the pager stays on an article before narration is given its text. */
+internal const val NARRATION_SETTLE_MILLIS = 1_000L
+
 /**
  * Narration, while on, is of the article on screen: when the pager moves to another, what's playing
  * stops at once and narration follows it, playing or paused as it was. Its text is supplied once
- * the page has it and has stayed for [settle] (so swiping past articles doesn't synthesize, and
- * with cloud voices pay for, each). It follows only while the article screen is [shown], but with
- * the screen off too, as when narration goes on through the list: the player waits on a placeholder
- * meanwhile, so its service stays in the foreground.
+ * the page has it and has stayed for [NARRATION_SETTLE_MILLIS] (so swiping past articles doesn't
+ * synthesize, and with cloud voices pay for, each). It follows only while the article screen is
+ * [shown], but with the screen off too, as when narration goes on through the list: the player
+ * waits on a placeholder meanwhile, so its service stays in the foreground.
  */
 @Composable
 internal fun NarrationFollowsPage(
@@ -491,7 +494,6 @@ internal fun NarrationFollowsPage(
     shown: Boolean,
     follow: (entryId: String, title: String) -> Unit,
     supply: (NarratedArticle) -> Unit,
-    settle: Long = 1_000,
 ) {
     val on = narration != null
     LaunchedEffect(on, entryId, entry?.title, shown) {
@@ -501,7 +503,7 @@ internal fun NarrationFollowsPage(
     val following = narration?.entryId == entryId
     LaunchedEffect(following, entryId, paragraphs, entry == null) {
         if (!following || paragraphs == null) return@LaunchedEffect
-        delay(settle)
+        delay(NARRATION_SETTLE_MILLIS)
         val shown = current ?: return@LaunchedEffect
         supply(NarratedArticle.of(shown, paragraphs))
     }

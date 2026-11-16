@@ -66,7 +66,6 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         filter: ListFilter,
         cursor: String?,
         subscriptionId: String? = null,
-        limit: Int = ServerLimits.ENTRIES_PAGE_SIZE,
     ): EntryListPage =
         get(EntryListPage.serializer(), "/entries") {
             when (filter) {
@@ -75,19 +74,16 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 ListFilter.SAVED -> parameter("type", "saved")
             }
             subscriptionId?.let { parameter("subscriptionId", it) }
-            parameter("limit", limit)
+            parameter("limit", ServerLimits.ENTRIES_PAGE_SIZE)
             cursor?.let { parameter("cursor", it) }
         }
 
     /** Every entry the user has scored, highest first, then the rest (#2064). */
-    suspend fun listByScore(
-        cursor: String?,
-        limit: Int = ServerLimits.ENTRIES_PAGE_SIZE,
-    ): EntryListPage =
+    suspend fun listByScore(cursor: String?): EntryListPage =
         get(EntryListPage.serializer(), "/entries") {
             parameter("sortBy", "score")
             parameter("sortOrder", "highest")
-            parameter("limit", limit)
+            parameter("limit", ServerLimits.ENTRIES_PAGE_SIZE)
             cursor?.let { parameter("cursor", it) }
         }
 
@@ -132,7 +128,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     suspend fun listSubscriptions(cursor: String?): SubscriptionPage =
         get(SubscriptionPage.serializer(), "/subscriptions") {
-            parameter("limit", 100)
+            parameter("limit", ServerLimits.SUBSCRIPTIONS_PAGE_SIZE)
             cursor?.let { parameter("cursor", it) }
         }
 

@@ -13,7 +13,7 @@
         "src/lib/narration/app-reader.ts!"
       ],
       "project": ["src/**/*.{ts,tsx}!"],
-      "ignore": ["kmp/**", "src/lib/stubs/**"]
+      "ignore": ["kmp/**"]
     }
   }
 }

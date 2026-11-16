@@ -204,25 +204,6 @@ data class EntryMetadata(
     val publishedAt: String? = null,
 )
 
-/**
- * What `subscription_created` carried before its `row`: a server that predates it sends only this.
- */
-@Serializable
-data class EventSubscription(
-    val id: String,
-    val customTitle: String? = null,
-    val tags: List<TagRef>,
-)
-
-/** As [EventSubscription]. */
-@Serializable
-data class EventFeed(
-    val url: String? = null,
-    val title: String? = null,
-    /** The subscription's type, as [Subscription.type]. */
-    val type: String,
-)
-
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 @JsonClassDiscriminator("type")
@@ -266,39 +247,19 @@ sealed interface SyncEvent {
     @SerialName("subscription_created")
     data class SubscriptionCreated(
         val subscriptionId: String,
-        /** The subscription as the server lists it; null from a server that predates it. */
-        val row: Subscription? = null,
-        val subscription: EventSubscription? = null,
-        val feed: EventFeed? = null,
-    ) : SyncEvent {
         /**
-         * [row], or else what an older server (only the previous release, mid-deploy) sent in its
-         * place. Null with neither, since the subscription's type is unknown: the sync lists
-         * subscriptions instead.
+         * The subscription as the server lists it. Null from a server that predates it: the sync
+         * lists subscriptions instead.
          */
-        val subscriptionRow: Subscription?
-            get() =
-                row
-                    ?: feed?.let {
-                        Subscription(
-                            subscriptionId,
-                            type = it.type,
-                            url = it.url,
-                            title = subscription?.customTitle ?: it.title,
-                            originalTitle = it.title,
-                            tags = subscription?.tags.orEmpty(),
-                        )
-                    }
-    }
+        val row: Subscription? = null,
+    ) : SyncEvent
 
     @Serializable
     @SerialName("subscription_updated")
     data class SubscriptionUpdated(
         val subscriptionId: String,
-        /** As [SubscriptionCreated.row]; without it, [tags] and [customTitle] say what changed. */
+        /** As [SubscriptionCreated.row]. */
         val row: Subscription? = null,
-        val tags: List<TagRef> = emptyList(),
-        val customTitle: String? = null,
     ) : SyncEvent
 
     @Serializable

@@ -25,13 +25,10 @@ Android's `AppGraph` does: `Accounts` with a Keychain-backed `KeyValueStore`
 `BackgroundSync` on BGTaskScheduler running `runBackgroundSync`; a WKWebView
 serving the reader assets at its own origin for `readerDocument`; and a
 narrator over the platform's player, making the decisions in
-`NarrationRules.kt` and fetching cloud voices with `streamCloudSpeech`. The
+`NarrationRules.kt` and fetching cloud voices with `streamCloudSpeech`. Its
+Share Extension writes into the shared outbox via an App Group. The
 reader assets (scripts, fonts, `appearance.json`) are bundled from
 `kmp/androidApp/src/main/assets/reader/`.
-
-### Share targets
-
-- iOS later: a Share Extension writing into the shared outbox via an App Group.
 
 ### Narration
 
@@ -41,10 +38,3 @@ what's left:
 - **AI-normalized text** (`narration.generate`): token access, fetched on
   demand; offline it falls back to the reader's own paragraphs. Its paragraph
   map indexes the same elements, so highlighting is unchanged.
-
-## Open questions
-
-- iOS UI toolkit (SwiftUI vs Compose Multiplatform), decided when iOS starts.
-- Whether appearance and narration settings should sync across devices via the
-  server (web keeps them per device today).
-- Play Store, or APK/F-Droid only at first.

@@ -52,8 +52,7 @@ fn build_config(options: Option<&ExtractOptions>) -> Config {
 /// passes are super-linear in nesting depth (measured: depth 2000 ≈ 7s,
 /// 3000 ≈ 22s, 5000 doesn't finish in a minute) and extraction runs on
 /// attacker-controlled feed HTML, so pathological nesting must fail fast to
-/// the raw-content fallback — the old JS pipeline got this for free by
-/// overflowing the call stack (caught and mapped to null). Real articles
+/// the raw-content fallback. Real articles
 /// nest a few dozen levels; Blink flattens the tree beyond 512.
 const MAX_DOM_DEPTH: usize = 512;
 
@@ -88,8 +87,8 @@ fn run_extract(html: &str, options: Option<&ExtractOptions>) -> Result<Option<Ex
 
 fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<ExtractedArticle>> {
     // No document URL: relative-URL resolution (including <base href>) is done
-    // by the caller's absolutizeUrls post-pass, exactly as with the old
-    // linkedom pipeline, so URL policy stays in one place.
+    // by the caller's absolutizeUrls post-pass, so URL policy stays in one
+    // place.
     let mut reader = Readability::new(html, None, Some(build_config(options))).map_err(|e| {
         Error::new(
             Status::GenericFailure,

@@ -3,9 +3,7 @@
  *
  * The native module (`@lion-reader/feed-parser`) returns entry dates as raw
  * strings because it can't reproduce V8's lenient `new Date()` parsing; this
- * module replays the original selection logic with a caller-supplied JS date
- * parser, keeping date semantics byte-for-byte identical to the old
- * htmlparser2-based parsers.
+ * module does the date selection with a caller-supplied JS date parser.
  */
 
 import type { DateCandidate, RawParsedFeed } from "@lion-reader/feed-parser";
@@ -23,7 +21,7 @@ import type { FeedParseResult } from "./types";
 export const PARSE_INLINE_MAX_CHARS = 10 * 1024;
 
 /**
- * Replays the old parsers' date selection over the document-ordered raw
+ * Selects an entry's date from the document-ordered raw
  * candidates: a primary element (RSS `pubDate`, Atom `published`) that parses
  * successfully overwrites the current date; a fallback element (RSS
  * `dc:date`, Atom `updated`) applies only while no date has been selected.

@@ -16,13 +16,12 @@
 
 import { narrationTargets } from "./block-elements";
 import {
-  buildAlignedNarration,
   narrationParagraphForElement,
   splitNarrationParagraphs,
   withEndOfArticle,
   type ParagraphMapEntry,
 } from "./paragraph-map";
-import { DIRECT_TTS_VOICE, narrationRuns } from "./runs";
+import { directNarration } from "./runs";
 import { narrationElementIndex, seekTargetElement } from "./seek-target";
 
 interface AppChannel {
@@ -64,9 +63,7 @@ function prepare(): ParagraphMapEntry[] {
     narrationTargets(document.body).forEach((el, index) =>
       el.setAttribute("data-para-id", `para-${index}`)
     );
-    const { narrationText, paragraphMap } = withEndOfArticle(
-      buildAlignedNarration(narrationRuns(document.body, DIRECT_TTS_VOICE))
-    );
+    const { narrationText, paragraphMap } = withEndOfArticle(directNarration(document.body));
     window.lionReader?.postMessage(
       JSON.stringify({
         type: "narration",

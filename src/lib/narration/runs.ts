@@ -25,6 +25,7 @@
 
 import { isBlockTag, isNonProseTag, narrationTargets } from "./block-elements";
 import { mathSpeech } from "./math-speech";
+import { buildAlignedNarration, type ParagraphMapEntry } from "./paragraph-map";
 
 /**
  * What a narration path wants said out loud beyond the words themselves.
@@ -56,7 +57,7 @@ export const LLM_INPUT_VOICE: NarrationVoice = {
 };
 
 /** The plain voice a TTS engine speaks verbatim, with no LLM in the loop. */
-export const DIRECT_TTS_VOICE: NarrationVoice = {
+const DIRECT_TTS_VOICE: NarrationVoice = {
   speakCodeBlocks: false,
   structuralMarkers: false,
   speakUndescribedImages: false,
@@ -182,6 +183,17 @@ export function narrationRuns(root: Element, voice: NarrationVoice): NarrationRu
   const targets = new Map<Element, number>();
   narrationTargets(root).forEach((el, index) => targets.set(el, index));
   return collectRuns(root, { voice, targets, consumed: new Set() }, 0);
+}
+
+/**
+ * What a TTS engine says for `root` with no LLM in the loop, as the player's
+ * paragraphs and the elements they highlight.
+ */
+export function directNarration(root: Element): {
+  narrationText: string;
+  paragraphMap: ParagraphMapEntry[];
+} {
+  return buildAlignedNarration(narrationRuns(root, DIRECT_TTS_VOICE));
 }
 
 function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationRun[] {

@@ -22,62 +22,39 @@ import { Alert } from "@/components/ui/alert";
 import { CheckIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ClientLink } from "@/components/ui/client-link";
+import { untitledSubscriptionLabel } from "@/lib/collections";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-interface EditSubscriptionFormProps {
-  subscriptionId: string;
-  currentTitle: string;
-  isCollection: boolean;
-  /** An email subscription's title falls back to its sender (#1846). */
-  isEmail: boolean;
-  currentCustomTitle: string | null;
-  currentTagIds: string[];
+interface EditSubscriptionDialogProps {
+  /** The row as it was when editing began; the form starts from it. */
+  subscription: SubscriptionRow;
   onClose: () => void;
 }
 
-interface EditSubscriptionDialogProps extends EditSubscriptionFormProps {
-  isOpen: boolean;
-}
-
-// ============================================================================
-// EditSubscriptionDialog Component (Wrapper)
-// ============================================================================
-
-/**
- * Wrapper component that conditionally renders the form.
- * This ensures the form is remounted when the dialog opens with new data.
- */
-export function EditSubscriptionDialog({ isOpen, ...formProps }: EditSubscriptionDialogProps) {
-  if (!isOpen) return null;
-
+/** The form is keyed by subscription, so it starts over for another one. */
+export function EditSubscriptionDialog({ subscription, onClose }: EditSubscriptionDialogProps) {
+  const isCollection = subscription.type === "collection";
   return (
     <Dialog
-      isOpen={isOpen}
-      onClose={formProps.onClose}
-      title={formProps.isCollection ? "Edit Collection" : "Edit Subscription"}
+      isOpen
+      onClose={onClose}
+      title={isCollection ? "Edit Collection" : "Edit Subscription"}
       titleId="edit-subscription-title"
     >
-      <EditSubscriptionForm key={formProps.subscriptionId} {...formProps} />
+      <EditSubscriptionForm key={subscription.id} subscription={subscription} onClose={onClose} />
     </Dialog>
   );
 }
 
-// ============================================================================
-// EditSubscriptionForm Component (Inner form)
-// ============================================================================
+function EditSubscriptionForm({ subscription, onClose }: EditSubscriptionDialogProps) {
+  const subscriptionId = subscription.id;
+  const currentTitle = subscription.title || untitledSubscriptionLabel(subscription.type);
+  const isCollection = subscription.type === "collection";
+  // An email subscription's title falls back to its sender (#1846).
+  const isEmail = subscription.type === "email";
+  const currentCustomTitle =
+    subscription.title !== subscription.originalTitle ? subscription.title : null;
+  const currentTagIds = subscription.tags.map((t) => t.id);
 
-function EditSubscriptionForm({
-  subscriptionId,
-  currentTitle,
-  isCollection,
-  isEmail,
-  currentCustomTitle,
-  currentTagIds,
-  onClose,
-}: EditSubscriptionFormProps) {
   // A collection's name is its custom title (#1846): edited directly, and
   // required. A feed's custom title is optional, falling back to the feed's.
   const [customTitle, setCustomTitle] = useState(

@@ -11,7 +11,7 @@
  * @example
  * ```tsx
  * <NarrationHighlightStyles
- *   highlightedParagraphIds={highlightedParagraphIds}
+ *   highlightedParagraph={highlightedParagraph}
  *   enabled={narrationSettings.highlightEnabled}
  * />
  * <div dangerouslySetInnerHTML={{ __html: content }} />
@@ -26,8 +26,8 @@ import { useMemo } from "react";
  * Props for NarrationHighlightStyles component.
  */
 interface NarrationHighlightStylesProps {
-  /** Set of paragraph indices that should be highlighted */
-  highlightedParagraphIds: Set<number>;
+  /** DOM element index (`para-N`) to highlight, or null for none */
+  highlightedParagraph: number | null;
   /** Whether highlighting is enabled in settings */
   enabled: boolean;
   /** Whether clicking a paragraph narrates from it, so paragraphs should look clickable */
@@ -35,27 +35,15 @@ interface NarrationHighlightStylesProps {
 }
 
 /**
- * Generates CSS rules to highlight specific paragraphs by their data-para-id.
+ * Generates CSS rules to highlight a paragraph by its data-para-id.
  *
  * Uses CSS attribute selectors to target elements without DOM queries.
  * Images get a border instead of background color since they have no text content.
  */
-function generateHighlightCSS(paragraphIds: Set<number>): string {
-  if (paragraphIds.size === 0) {
-    return "";
-  }
-
-  // Build selectors for text elements (everything except img)
-  const textSelectors = Array.from(paragraphIds).map(
-    (id) => `[data-para-id="para-${id}"]:not(img)`
-  );
-
-  // Build selectors for images specifically
-  const imageSelectors = Array.from(paragraphIds).map((id) => `img[data-para-id="para-${id}"]`);
-
+function generateHighlightCSS(paragraph: number): string {
   // The colors are per-theme tokens in globals.css.
   return `
-${textSelectors.join(",\n")} {
+[data-para-id="para-${paragraph}"]:not(img) {
   background-color: var(--narration-highlight);
   box-shadow: 0 0 0 var(--narration-highlight-edge) var(--narration-highlight-ring);
   border-radius: 0.25rem;
@@ -63,7 +51,7 @@ ${textSelectors.join(",\n")} {
   scroll-margin-top: 100px;
 }
 
-${imageSelectors.join(",\n")} {
+img[data-para-id="para-${paragraph}"] {
   box-shadow: 0 0 0 3px var(--narration-highlight-ring);
   border-radius: 0.25rem;
   transition: box-shadow 0.3s ease;
@@ -82,14 +70,15 @@ const SEEKABLE_CSS = `[data-para-id] { cursor: pointer; }`;
  * paragraphs by their data-para-id attribute.
  */
 export function NarrationHighlightStyles({
-  highlightedParagraphIds,
+  highlightedParagraph,
   enabled,
   seekable = false,
 }: NarrationHighlightStylesProps) {
   const css = useMemo(() => {
-    const highlight = enabled ? generateHighlightCSS(highlightedParagraphIds) : "";
+    const highlight =
+      enabled && highlightedParagraph !== null ? generateHighlightCSS(highlightedParagraph) : "";
     return seekable ? `${highlight}\n${SEEKABLE_CSS}` : highlight;
-  }, [highlightedParagraphIds, enabled, seekable]);
+  }, [highlightedParagraph, enabled, seekable]);
 
   // Don't render anything if there's no CSS to inject
   if (!css) {

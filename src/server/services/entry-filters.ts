@@ -48,8 +48,14 @@ export interface EntryConditionParams {
   unstarredOnly?: boolean;
   type?: EntryType;
   excludeTypes?: EntryType[];
+  /** Only entries published (else fetched) after this. */
   publishedAfter?: Date;
+  /** Only entries published (else fetched) before this. */
   publishedBefore?: Date;
+  /**
+   * Only entries changed at or after this (`user_entries.changed_at`; Wallabag's
+   * `since` delta sync).
+   */
   updatedAfter?: Date;
   /**
    * Entries in at least one collection of every group (Wallabag's multi-tag

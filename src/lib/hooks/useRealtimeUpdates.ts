@@ -8,7 +8,7 @@
  * - Fallback: Polling sync endpoint when SSE is unavailable (Redis down)
  * - Automatic catch-up sync after SSE reconnection
  * - Exponential backoff for reconnection attempts
- * - React Query cache invalidation
+ * - Every event applied through `handleSyncEvent`
  * - Granular cursor tracking for each entity type (entries, subscriptions, tags, etc.)
  *
  * All connection-management decisions (when to reconnect, when to fall back to
@@ -37,6 +37,7 @@ import {
 } from "@/lib/events/connection-state";
 import type { SyncCursors } from "@/lib/events/cursors";
 import { parseHelloEvent, parseSyncEvent } from "@/lib/events/parse";
+import type { SyncEvent } from "@/lib/events/schemas";
 import { BUILD_ID, isNewerBuild } from "@/lib/build-id";
 import {
   initialSyncSession,
@@ -70,48 +71,35 @@ export interface UseRealtimeUpdatesResult {
 }
 
 /**
- * Named SSE events forwarded to the shared sync-event handler. These are
- * exactly the members of `syncEventSchema`; the connection state itself
+ * Named SSE events forwarded to the shared sync-event handler: every member
+ * of `syncEventSchema` (an EventSource drops events with no listener, so the
+ * Record makes a missing one a type error). The connection state itself
  * (open/error) is tracked via the EventSource's own onopen/onerror, not a
  * data event.
  */
-const SSE_EVENT_NAMES = [
-  "new_entry",
-  "entry_updated",
-  "entry_state_changed",
-  "mark_all_read",
-  "subscription_created",
-  "subscription_updated",
-  "subscription_deleted",
-  "tag_created",
-  "tag_updated",
-  "tag_deleted",
-  "collection_entries_changed",
-  "import_progress",
-  "import_completed",
-  "announcement_changed",
-] as const;
+const SSE_EVENTS: Record<SyncEvent["type"], true> = {
+  new_entry: true,
+  entry_updated: true,
+  entry_state_changed: true,
+  mark_all_read: true,
+  subscription_created: true,
+  subscription_updated: true,
+  subscription_deleted: true,
+  tag_created: true,
+  tag_updated: true,
+  tag_deleted: true,
+  collection_entries_changed: true,
+  import_progress: true,
+  import_completed: true,
+  announcement_changed: true,
+};
+const SSE_EVENT_NAMES = Object.keys(SSE_EVENTS);
 
 /**
- * Hook to manage real-time updates with SSE primary and polling fallback.
+ * Hook to manage real-time updates with SSE primary and polling fallback
+ * (mounted once, by `RealtimeProvider`).
  *
  * @param initialCursors - Initial sync cursors from server (one per entity type)
- *
- * @example
- * ```tsx
- * function AppLayout({ children }) {
- *   // Get initial cursors from server or use null for initial sync
- *   const initialCursors: SyncCursors = { entries: null, entriesAfterId: null, subscriptions: null, tags: null };
- *   const { status, reconnect } = useRealtimeUpdates(initialCursors);
- *
- *   return (
- *     <div>
- *       {children}
- *       <ConnectionStatusIndicator status={status} onReconnect={reconnect} />
- *     </div>
- *   );
- * }
- * ```
  */
 export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpdatesResult {
   const utils = trpc.useUtils();

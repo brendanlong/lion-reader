@@ -24,8 +24,6 @@ interface KeyValueStore {
         fun putBoolean(key: String, value: Boolean)
 
         fun putLong(key: String, value: Long)
-
-        fun remove(key: String)
     }
 }
 

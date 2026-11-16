@@ -49,23 +49,12 @@ import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import { setCollectionChangeInLists } from "@/lib/local-db/entry-lists";
 
 /**
- * Drops a deleted subscription's `subscriptions.get` data. Run once the server
- * has deleted it: the reset refetches (now NOT_FOUND) any open page.
- */
-function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId: string): void {
-  void utils.subscriptions.get.reset({ id: subscriptionId });
-}
-
-/**
  * Removes a subscription from the local store, and so from the sidebar,
  * without touching unread counts. Used for the optimistic unsubscribe in
  * onMutate, where the server-absolute counts are applied later in onSuccess.
  * Returns the removal's version (see `restoreRemovedRow`).
  */
-export function removeSubscriptionFromCaches(
-  subscriptionId: string,
-  queryClient: QueryClient
-): number {
+export function removeStoredSubscription(queryClient: QueryClient, subscriptionId: string): number {
   return removeLiveRows(getLocalDb(queryClient).subscriptions, [subscriptionId]);
 }
 
@@ -80,8 +69,8 @@ export function removeSubscriptionFromCaches(
  */
 function applySubscriptionCounts(
   utils: TRPCClientUtils,
-  counts: UnreadCounts | undefined,
-  queryClient: QueryClient
+  queryClient: QueryClient,
+  counts: UnreadCounts | undefined
 ): void {
   if (counts) {
     applyUnreadCounts(utils, queryClient, counts);
@@ -96,16 +85,16 @@ function applySubscriptionCounts(
  * to the sidebar) and applies the counts.
  *
  * @param utils - tRPC utils for cache access
- * @param subscription - The new subscription data
  * @param queryClient - React Query client for targeted invalidations
+ * @param subscription - The new subscription data
  * @param counts - Absolute unread counts for the affected lists. Present on the
  *   live mutation/SSE path; absent on the sync.events catch-up path (the client
  *   then invalidates the count caches instead).
  */
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
-  subscription: StampedSubscriptionRow,
   queryClient: QueryClient,
+  subscription: StampedSubscriptionRow,
   counts?: UnreadCounts
 ): void {
   const store = getLocalDb(queryClient).subscriptions;
@@ -120,7 +109,7 @@ export function handleSubscriptionCreated(
     void utils.subscriptions.list.invalidate({ type: "collection" });
   }
 
-  applySubscriptionCounts(utils, counts, queryClient);
+  applySubscriptionCounts(utils, queryClient, counts);
 }
 
 /**
@@ -398,8 +387,8 @@ export function applyNewEntry(
  * applies the counts, and invalidates `entries.list` (its entries drop out).
  *
  * @param utils - tRPC utils for cache access
- * @param subscriptionId - ID of the deleted subscription
  * @param queryClient - React Query client for targeted invalidations
+ * @param subscriptionId - ID of the deleted subscription
  * @param counts - Absolute unread counts for the affected lists. Present on the
  *   live mutation/SSE path; absent on the sync.events catch-up path (the server
  *   can't recompute the former tags there), in which case the client
@@ -407,23 +396,24 @@ export function applyNewEntry(
  */
 export function handleSubscriptionDeleted(
   utils: TRPCClientUtils,
-  subscriptionId: string,
   queryClient: QueryClient,
+  subscriptionId: string,
   counts?: UnreadCounts
 ): void {
   // Run whether or not the store holds it: an optimistic unsubscribe already
   // removed it, or it was never loaded (its tag collapsed), and the counts and
   // entries below still changed (#1081).
-  removeSubscriptionFromCaches(subscriptionId, queryClient);
+  removeStoredSubscription(queryClient, subscriptionId);
 
-  applySubscriptionCounts(utils, counts, queryClient);
+  applySubscriptionCounts(utils, queryClient, counts);
 
   // A deleted collection no longer holds anything, so its articles' pickers
   // don't count it.
   removeStoredEntryMemberships(getLocalDb(queryClient).entries, subscriptionId);
   // The collection picker searches on the server, so it refetches.
   void utils.subscriptions.list.invalidate({ type: "collection" });
-  forgetDeletedSubscription(utils, subscriptionId);
+  // The server has deleted it: the reset refetches (now NOT_FOUND) any open page.
+  void utils.subscriptions.get.reset({ id: subscriptionId });
 
   // Its entries (and a collection's saved articles deleted with it) drop out
   // of the lists, which the client can't tell entry by entry.

@@ -8,6 +8,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { z } from "zod";
 import { storeChangedFields } from "@/lib/stored-preference";
 import { TTS_PROVIDER_IDS, type TTSProviderId } from "./types";
 import {
@@ -119,6 +120,33 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
  */
 const STORAGE_KEY = "lion-reader-narration-settings";
 
+const D = DEFAULT_NARRATION_SETTINGS;
+
+/**
+ * Stored settings, field by field: a field that's missing or invalid (an
+ * older version's, or a hand edit) takes its default, and the rest survive.
+ */
+const storedSettingsSchema: z.ZodType<NarrationSettings, unknown> = z
+  .object({
+    enabled: z.boolean().catch(D.enabled),
+    provider: z.enum(TTS_PROVIDER_IDS).catch(D.provider),
+    cloudModelId: z.string().nullable().catch(null),
+    voiceId: z.string().nullable().catch(null),
+    rate: z.number().min(MIN_RATE).max(MAX_RATE).catch(D.rate),
+    pitch: z.number().min(MIN_PITCH).max(MAX_PITCH).catch(D.pitch),
+    highlightEnabled: z.boolean().catch(D.highlightEnabled),
+    autoScrollEnabled: z.boolean().catch(D.autoScrollEnabled),
+    continueToNextArticle: z.boolean().catch(D.continueToNextArticle),
+    useLlmNormalization: z.boolean().catch(D.useLlmNormalization),
+    sentenceGapSeconds: z.number().min(0).max(1).catch(D.sentenceGapSeconds),
+    cloudPauseSeconds: z
+      .number()
+      .min(0)
+      .max(MAX_CLOUD_SPEECH_PAUSE_SECONDS)
+      .catch(D.cloudPauseSeconds),
+  })
+  .catch(D);
+
 /**
  * Loads narration settings from localStorage.
  *
@@ -145,61 +173,7 @@ export function loadNarrationSettings(): NarrationSettings {
       return DEFAULT_NARRATION_SETTINGS;
     }
 
-    const parsed = JSON.parse(stored) as Partial<NarrationSettings>;
-
-    const voiceId = typeof parsed.voiceId === "string" ? parsed.voiceId : null;
-
-    // Validate provider value
-    const provider =
-      typeof parsed.provider === "string" &&
-      (TTS_PROVIDER_IDS as readonly string[]).includes(parsed.provider)
-        ? (parsed.provider as TTSProviderId)
-        : DEFAULT_NARRATION_SETTINGS.provider;
-
-    // Merge with defaults to handle new fields in future versions
-    return {
-      enabled:
-        typeof parsed.enabled === "boolean" ? parsed.enabled : DEFAULT_NARRATION_SETTINGS.enabled,
-      provider,
-      cloudModelId: typeof parsed.cloudModelId === "string" ? parsed.cloudModelId : null,
-      voiceId,
-      rate:
-        typeof parsed.rate === "number" && parsed.rate >= MIN_RATE && parsed.rate <= MAX_RATE
-          ? parsed.rate
-          : DEFAULT_NARRATION_SETTINGS.rate,
-      pitch:
-        typeof parsed.pitch === "number" && parsed.pitch >= MIN_PITCH && parsed.pitch <= MAX_PITCH
-          ? parsed.pitch
-          : DEFAULT_NARRATION_SETTINGS.pitch,
-      highlightEnabled:
-        typeof parsed.highlightEnabled === "boolean"
-          ? parsed.highlightEnabled
-          : DEFAULT_NARRATION_SETTINGS.highlightEnabled,
-      autoScrollEnabled:
-        typeof parsed.autoScrollEnabled === "boolean"
-          ? parsed.autoScrollEnabled
-          : DEFAULT_NARRATION_SETTINGS.autoScrollEnabled,
-      continueToNextArticle:
-        typeof parsed.continueToNextArticle === "boolean"
-          ? parsed.continueToNextArticle
-          : DEFAULT_NARRATION_SETTINGS.continueToNextArticle,
-      useLlmNormalization:
-        typeof parsed.useLlmNormalization === "boolean"
-          ? parsed.useLlmNormalization
-          : DEFAULT_NARRATION_SETTINGS.useLlmNormalization,
-      sentenceGapSeconds:
-        typeof parsed.sentenceGapSeconds === "number" &&
-        parsed.sentenceGapSeconds >= 0 &&
-        parsed.sentenceGapSeconds <= 1.0
-          ? parsed.sentenceGapSeconds
-          : DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds,
-      cloudPauseSeconds:
-        typeof parsed.cloudPauseSeconds === "number" &&
-        parsed.cloudPauseSeconds >= 0 &&
-        parsed.cloudPauseSeconds <= MAX_CLOUD_SPEECH_PAUSE_SECONDS
-          ? parsed.cloudPauseSeconds
-          : DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds,
-    };
+    return storedSettingsSchema.parse(JSON.parse(stored));
   } catch {
     // If parsing fails, return defaults
     return DEFAULT_NARRATION_SETTINGS;

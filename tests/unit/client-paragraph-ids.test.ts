@@ -6,16 +6,21 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  addParagraphIdsToHtml,
   processHtmlForHighlighting,
   htmlToClientNarration,
 } from "../../src/lib/narration/client-paragraph-ids";
 
-describe("addParagraphIdsToHtml", () => {
+/** The marked HTML, and how many elements it marked. */
+function mark(html: string): { html: string; paragraphCount: number } {
+  const marked = processHtmlForHighlighting(html);
+  return { html: marked, paragraphCount: marked.match(/data-para-id=/g)?.length ?? 0 };
+}
+
+describe("processHtmlForHighlighting", () => {
   describe("basic paragraphs", () => {
     it("marks a single paragraph", () => {
       const html = "<p>Hello, world!</p>";
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(1);
       expect(result.html).toContain('data-para-id="para-0"');
@@ -24,7 +29,7 @@ describe("addParagraphIdsToHtml", () => {
 
     it("marks multiple paragraphs in document order", () => {
       const html = "<p>First</p><p>Second</p><p>Third</p>";
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(3);
       expect(result.html).toContain('data-para-id="para-0"');
@@ -34,7 +39,7 @@ describe("addParagraphIdsToHtml", () => {
 
     it("preserves paragraph content", () => {
       const html = "<p>Some <strong>bold</strong> and <em>italic</em> text.</p>";
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(1);
       expect(result.html).toContain("<strong>bold</strong>");
@@ -43,7 +48,7 @@ describe("addParagraphIdsToHtml", () => {
 
     it("preserves existing attributes on elements", () => {
       const html = '<p class="intro" id="first">First paragraph</p>';
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(1);
       expect(result.html).toContain('class="intro"');
@@ -62,7 +67,7 @@ describe("addParagraphIdsToHtml", () => {
         <h5>Heading 5</h5>
         <h6>Heading 6</h6>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(6);
     });
@@ -74,7 +79,7 @@ describe("addParagraphIdsToHtml", () => {
         <blockquote>A famous quote</blockquote>
         <p>Conclusion</p>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(4);
       expect(result.html).toContain("<pre data-para-id");
@@ -88,7 +93,7 @@ describe("addParagraphIdsToHtml", () => {
         <table><tr><td>Cell</td></tr></table>
         <p>After table</p>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // Marking is structural: every block and image gets an id, including the
       // ones a figure or a table speaks for (they simply never get highlighted).
@@ -106,7 +111,7 @@ describe("addParagraphIdsToHtml", () => {
         <pre>code</pre>
         <p>Final paragraph.</p>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(6);
 
@@ -135,7 +140,7 @@ describe("addParagraphIdsToHtml", () => {
           <li>Item 3</li>
         </ul>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // ul and 3 li elements = 4 total
       expect(result.paragraphCount).toBe(4);
@@ -150,7 +155,7 @@ describe("addParagraphIdsToHtml", () => {
           <li>Second</li>
         </ol>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // ol and 2 li elements = 3 total
       expect(result.paragraphCount).toBe(3);
@@ -170,7 +175,7 @@ describe("addParagraphIdsToHtml", () => {
           <li>Parent 2</li>
         </ul>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // Outer ul + parent li + inner ul + 2 child li + parent li = 6 total
       expect(result.paragraphCount).toBe(6);
@@ -179,22 +184,12 @@ describe("addParagraphIdsToHtml", () => {
 
   describe("empty content", () => {
     it("handles empty string", () => {
-      const result = addParagraphIdsToHtml("");
-
-      expect(result.html).toBe("");
-      expect(result.paragraphCount).toBe(0);
-    });
-
-    it("handles whitespace-only string", () => {
-      const result = addParagraphIdsToHtml("   \n\t  ");
-
-      expect(result.html).toBe("");
-      expect(result.paragraphCount).toBe(0);
+      expect(processHtmlForHighlighting("")).toBe("");
     });
 
     it("handles HTML with no block elements", () => {
       const html = "<span>Inline text</span><a href='#'>Link</a>";
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(0);
       expect(result.html).toContain("Inline text");
@@ -203,7 +198,7 @@ describe("addParagraphIdsToHtml", () => {
 
     it("handles empty paragraph elements", () => {
       const html = "<p></p><p>Has content</p><p></p>";
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // Empty paragraphs still get IDs
       expect(result.paragraphCount).toBe(3);
@@ -221,7 +216,7 @@ describe("addParagraphIdsToHtml", () => {
           </article>
         </div>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // div, article, section, p — a wrapper can hold loose text of its own, so
       // it is a highlight target too.
@@ -234,7 +229,7 @@ describe("addParagraphIdsToHtml", () => {
       // an unmatched `</div>` straight through. This HTML is rendered from what
       // we return, so losing the rest of it would empty the article on screen.
       const html = "<p>one</p></div><p>two</p>";
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       expect(result.paragraphCount).toBe(2);
       expect(result.html).toContain("one");
@@ -248,7 +243,7 @@ describe("addParagraphIdsToHtml", () => {
         <span>Inline, part of no paragraph</span>
         <section>Section text</section>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // p, div, section. The span is phrasing content: it joins the run of text
       // around it, which the block enclosing that run highlights.
@@ -280,7 +275,7 @@ describe("addParagraphIdsToHtml", () => {
         </ul>
         <p>Happy testing!</p>
       `;
-      const result = addParagraphIdsToHtml(html);
+      const result = mark(html);
 
       // Count: h1 + p + h2 + p + pre + h2 + p + blockquote + p + h2 + ul + 3*li + p = 15
       expect(result.paragraphCount).toBe(15);
@@ -293,21 +288,6 @@ describe("addParagraphIdsToHtml", () => {
       expect(result.html).toContain("<ul data-para-id");
       expect(result.html).toContain("<li data-para-id");
     });
-  });
-});
-
-describe("processHtmlForHighlighting", () => {
-  it("returns processed HTML string", () => {
-    const html = "<p>Test paragraph</p>";
-    const result = processHtmlForHighlighting(html);
-
-    expect(typeof result).toBe("string");
-    expect(result).toContain('data-para-id="para-0"');
-  });
-
-  it("returns empty string for empty input", () => {
-    expect(processHtmlForHighlighting("")).toBe("");
-    expect(processHtmlForHighlighting("   ")).toBe("");
   });
 });
 

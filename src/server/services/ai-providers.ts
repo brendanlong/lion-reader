@@ -278,9 +278,6 @@ export function supportsReasoningEffort(model: string): boolean {
   return model.toLowerCase().includes("gpt-oss");
 }
 
-/** How a text provider call failed (see {@link ProviderFailure}). */
-export type TextGenerationFailure = ProviderFailure;
-
 /** A failed {@link generateChatCompletion}; the provider's error is the `cause`. */
 export class TextGenerationError extends Error {
   /** What the provider said, without the SDK's decoration, for showing the user. */
@@ -288,7 +285,7 @@ export class TextGenerationError extends Error {
 
   constructor(
     readonly provider: TextAiProvider,
-    readonly failure: TextGenerationFailure,
+    readonly failure: ProviderFailure,
     /**
      * Whether the user's own key made the call. When it didn't, the message
      * may describe the operator's account and must not reach the user.
@@ -339,7 +336,7 @@ function providerStatusOf(error: unknown): number | undefined {
   return typeof status === "number" ? status : undefined;
 }
 
-export function classifyTextGenerationError(error: unknown): TextGenerationFailure {
+export function classifyTextGenerationError(error: unknown): ProviderFailure {
   if (isConnectionError(error)) return "busy";
   const status = providerStatusOf(error);
   return status === undefined ? "failed" : classifyProviderStatus(status);

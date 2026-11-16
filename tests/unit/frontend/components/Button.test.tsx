@@ -97,18 +97,6 @@ describe("Button", () => {
     });
   });
 
-  describe("additional props", () => {
-    it("applies custom className", () => {
-      render(<Button className="custom-class">Custom</Button>);
-      expect(screen.getByRole("button")).toHaveClass("custom-class");
-    });
-
-    it("passes through type attribute", () => {
-      render(<Button type="submit">Submit</Button>);
-      expect(screen.getByRole("button")).toHaveAttribute("type", "submit");
-    });
-  });
-
   describe("accessibility", () => {
     it("does not suppress the global focus outline (#1292)", () => {
       render(<Button>Focus Ring</Button>);

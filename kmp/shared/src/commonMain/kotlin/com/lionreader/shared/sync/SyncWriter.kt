@@ -275,17 +275,13 @@ internal class SyncWriter(private val driver: SqlDriver) {
                 }
             }
             is SyncEvent.SubscriptionCreated -> {
-                // Without one, SyncEngine listed subscriptions for the page.
-                event.subscriptionRow?.let(store::upsertSubscription)
+                // Without a row, SyncEngine listed subscriptions for the page.
+                event.row?.let(store::upsertSubscription)
                 db.entryQueries.refreshFeedTitlesFor(event.subscriptionId)
             }
             is SyncEvent.SubscriptionUpdated -> {
-                val row = event.row
-                if (row != null) {
-                    store.upsertSubscription(row)
-                } else {
-                    store.updateSubscription(event.subscriptionId, event.customTitle, event.tags)
-                }
+                // As for SubscriptionCreated.
+                event.row?.let(store::upsertSubscription)
                 db.entryQueries.refreshFeedTitlesFor(event.subscriptionId)
             }
             is SyncEvent.SubscriptionDeleted -> {

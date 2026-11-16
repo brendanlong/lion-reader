@@ -20,7 +20,7 @@ import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialo
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import { createSubscriptionRow } from "../../../utils/cache-test-helpers";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
+import { writeLiveSubscriptions, type SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 // sonner's toast is a side-effecting singleton (renders a portal); stub it so
 // tests assert on component behavior, not the toast implementation.
@@ -61,19 +61,19 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   };
 }
 
-function defaultProps(
-  overrides: Partial<React.ComponentProps<typeof EditSubscriptionDialog>> = {}
-) {
+/** Props editing the feed "Feed One" (no custom title, no tags), with `row` changes. */
+function defaultProps({
+  onClose = vi.fn(),
+  ...row
+}: Partial<SubscriptionRow> & { onClose?: () => void } = {}) {
   return {
-    isOpen: true,
-    subscriptionId: "sub-1",
-    currentTitle: "Feed One",
-    isCollection: false,
-    isEmail: false,
-    currentCustomTitle: null,
-    currentTagIds: [] as string[],
-    onClose: vi.fn(),
-    ...overrides,
+    subscription: createSubscriptionRow({
+      id: "sub-1",
+      title: "Feed One",
+      originalTitle: "Feed One",
+      ...row,
+    }),
+    onClose,
   };
 }
 
@@ -81,13 +81,6 @@ describe("EditSubscriptionDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     server = createSubscriptionRow({ id: "sub-1", title: "Feed One", originalTitle: "Feed One" });
-  });
-
-  it("does not render when closed", () => {
-    renderWithTrpc(<EditSubscriptionDialog {...defaultProps({ isOpen: false })} />, {
-      handlers: baseHandlers(),
-    });
-    expect(screen.queryByText("Edit Subscription")).not.toBeInTheDocument();
   });
 
   it("renders tag chips loaded from tags.list", async () => {
@@ -105,9 +98,12 @@ describe("EditSubscriptionDialog", () => {
     [false, "Leave empty to use feed's default title"],
     [true, "Leave empty to use the sender"],
   ])("says what an emptied title falls back to (email: %s)", async (isEmail, placeholder) => {
-    renderWithTrpc(<EditSubscriptionDialog {...defaultProps({ isEmail })} />, {
-      handlers: baseHandlers(),
-    });
+    renderWithTrpc(
+      <EditSubscriptionDialog {...defaultProps({ type: isEmail ? "email" : "web" })} />,
+      {
+        handlers: baseHandlers(),
+      }
+    );
 
     expect(await screen.findByPlaceholderText(placeholder)).toBeInTheDocument();
   });
@@ -147,9 +143,7 @@ describe("EditSubscriptionDialog", () => {
   it("clears the custom title when emptied (sends null)", async () => {
     const onClose = vi.fn();
     const { callsFor } = renderWithTrpc(
-      <EditSubscriptionDialog
-        {...defaultProps({ onClose, currentCustomTitle: "Existing Name" })}
-      />,
+      <EditSubscriptionDialog {...defaultProps({ onClose, title: "Existing Name" })} />,
       { handlers: baseHandlers() }
     );
 
@@ -164,7 +158,7 @@ describe("EditSubscriptionDialog", () => {
 
   describe("collections (#1846)", () => {
     const collectionProps = (onClose: () => void) =>
-      defaultProps({ onClose, isCollection: true, currentTitle: "Reading" });
+      defaultProps({ onClose, type: "collection", title: "Reading", originalTitle: null });
 
     it.each([
       ["Later ", [{ id: "sub-1", customTitle: "Later" }]],
@@ -249,7 +243,7 @@ describe("EditSubscriptionDialog", () => {
   it("fires no mutations and closes when nothing changed", async () => {
     const onClose = vi.fn();
     const { callsFor } = renderWithTrpc(
-      <EditSubscriptionDialog {...defaultProps({ onClose, currentTagIds: ["tag-1"] })} />,
+      <EditSubscriptionDialog {...defaultProps({ onClose, tags: [TAGS[0]] })} />,
       { handlers: baseHandlers() }
     );
 

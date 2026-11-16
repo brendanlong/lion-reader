@@ -5,7 +5,7 @@
  * feed content, or the original feed content — chosen by the
  * `fetchFullContent`/"show original" toggles. This selector is the single source
  * of truth for that choice, shared by the renderer (`EntryContentBody`), the
- * entries service and the narration router: narration must read aloud (and
+ * entries service and the narration service: narration must read aloud (and
  * highlight against) exactly the HTML the user is looking at, so the server
  * narrates the same variant the client displays and the paragraph map's element
  * indices line up with the rendered DOM.

@@ -88,14 +88,14 @@ class NarrationFollowsPageTest {
         after(16)
         assertEquals(listOf("b"), followed)
 
-        after(2_000)
+        after(2 * NARRATION_SETTLE_MILLIS)
         // Not loaded yet.
         assertEquals(emptyList<String>(), supplied)
         paragraphs = listOf("Hello.")
-        after(500)
+        after(NARRATION_SETTLE_MILLIS / 2)
         // Not while it might be swiped past.
         assertEquals(emptyList<String>(), supplied)
-        after(1_000)
+        after(NARRATION_SETTLE_MILLIS)
         assertEquals(listOf("b"), supplied)
     }
 
@@ -104,14 +104,14 @@ class NarrationFollowsPageTest {
         narration = on("a")
         paragraphs = listOf("Hello.")
         show()
-        after(1_500)
+        after(NARRATION_SETTLE_MILLIS * 3 / 2)
         supplied.clear()
         entryId = "b"
-        after(300)
+        after(NARRATION_SETTLE_MILLIS / 3)
         entryId = "c"
-        after(300)
+        after(NARRATION_SETTLE_MILLIS / 3)
         entryId = "d"
-        after(1_500)
+        after(NARRATION_SETTLE_MILLIS * 3 / 2)
 
         assertEquals(listOf("b", "c", "d"), followed)
         assertEquals(listOf("d"), supplied)
@@ -123,7 +123,7 @@ class NarrationFollowsPageTest {
         paragraphs = listOf("Hello.")
         show()
         entryId = "b"
-        after(2_000)
+        after(2 * NARRATION_SETTLE_MILLIS)
 
         assertEquals(listOf("b"), followed)
         assertEquals(false, narration?.playing)
@@ -135,7 +135,7 @@ class NarrationFollowsPageTest {
         paragraphs = listOf("Hello.")
         show()
         entryId = "b"
-        after(2_000)
+        after(2 * NARRATION_SETTLE_MILLIS)
 
         assertTrue(followed.isEmpty())
         assertTrue(supplied.isEmpty())
@@ -148,11 +148,11 @@ class NarrationFollowsPageTest {
         shown = false
         show()
         entryId = "b"
-        after(2_000)
+        after(2 * NARRATION_SETTLE_MILLIS)
         assertTrue(followed.isEmpty())
 
         shown = true
-        after(1_500)
+        after(NARRATION_SETTLE_MILLIS * 3 / 2)
         assertEquals(listOf("b"), followed)
         assertEquals(listOf("b"), supplied)
     }
@@ -165,9 +165,9 @@ class NarrationFollowsPageTest {
         paragraphs = listOf("Hello.")
         show()
         entryId = "b"
-        after(300)
+        after(NARRATION_SETTLE_MILLIS / 3)
         shown = false
-        after(1_500)
+        after(NARRATION_SETTLE_MILLIS * 3 / 2)
 
         assertEquals(listOf("b"), followed)
         assertEquals(listOf("b"), supplied)

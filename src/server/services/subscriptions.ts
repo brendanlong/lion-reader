@@ -125,9 +125,8 @@ export function isUserManagedSubscription(
  *
  * The unread count is the trigger-maintained `subscriptions.unread_count`
  * counter (migration 0092, exposed through the view in migration 0093) — a
- * free column read, so there is no opt-out (the old `includeUnreadCounts`
- * option existed because the count was a scan over visible_entries that
- * scaled with the unread backlog, issue #1074). Spam never counts.
+ * free column read, never a scan over visible_entries (#1074). Spam never
+ * counts.
  */
 function buildSubscriptionBaseQuery(db: DbOrTx, where: SQL | undefined) {
   return db
