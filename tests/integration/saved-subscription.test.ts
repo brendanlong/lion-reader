@@ -42,8 +42,8 @@ import {
   createTestTag,
   createTestUser,
   withPlanLimits,
-  callMcpTool,
 } from "./helpers";
+import { callMcpTool } from "../utils/mcp";
 
 async function cleanup(): Promise<void> {
   await db.delete(userEntries);

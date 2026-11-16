@@ -38,7 +38,6 @@ import {
   oauthTokenGrants,
   type User,
 } from "../../src/server/db/schema";
-import { getTools } from "../../src/server/mcp/tools";
 import { createTokens, type TokenPair } from "../../src/server/oauth/service";
 import { recordConsent } from "../../src/server/oauth/grants";
 import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
@@ -565,13 +564,6 @@ export async function userRow(userId: string): Promise<User> {
     throw new Error(`No user with id ${userId}`);
   }
   return user;
-}
-
-/** Calls an MCP tool's handler as `userId`, read fresh like the MCP route does per request. */
-export async function callMcpTool(name: string, userId: string, args: unknown): Promise<unknown> {
-  const tool = getTools().find((t) => t.name === name);
-  if (!tool) throw new Error(`Tool not registered: ${name}`);
-  return tool.handler(db, await userRow(userId), args);
 }
 
 /**

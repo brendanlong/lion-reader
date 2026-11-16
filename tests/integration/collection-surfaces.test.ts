@@ -35,8 +35,8 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
-  callMcpTool,
 } from "./helpers";
+import { callMcpTool } from "../utils/mcp";
 
 let subscriber: Redis;
 

@@ -22,9 +22,9 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
-  callMcpTool,
   userRow,
 } from "./helpers";
+import { callMcpTool } from "../utils/mcp";
 import { getTools, toMcpError } from "../../src/server/mcp/tools";
 import { createMcpServer } from "../../src/server/mcp/server";
 import { createApiToken } from "../../src/server/auth/api-token";
