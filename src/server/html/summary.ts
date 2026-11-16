@@ -149,66 +149,63 @@ function parseRuns(html: string): ParsedSummary {
     }
   };
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        const tag = name.toLowerCase();
-        const parent = stack[stack.length - 1];
-        const inherited = parent.context;
-        const context: Context = { ...inherited };
-        const frame: Frame = { tag, context, childCount: 0 };
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      const tag = name.toLowerCase();
+      const parent = stack[stack.length - 1];
+      const inherited = parent.context;
+      const context: Context = { ...inherited };
+      const frame: Frame = { tag, context, childCount: 0 };
 
-        if (BLOCK_TAGS.has(tag)) block++;
-        if (SKIP_TAGS.has(tag)) context.hidden = true;
-        // Position among the visible children, which is what MathML means
-        if (!context.hidden) parent.childCount++;
-        if (LABEL_TAGS.has(tag)) context.label = true;
-        if (tag === "p") context.paragraph = {};
+      if (BLOCK_TAGS.has(tag)) block++;
+      if (SKIP_TAGS.has(tag)) context.hidden = true;
+      // Position among the visible children, which is what MathML means
+      if (!context.hidden) parent.childCount++;
+      if (LABEL_TAGS.has(tag)) context.label = true;
+      if (tag === "p") context.paragraph = {};
 
-        if (tag === "a") {
-          const href = attribs.href ?? "";
-          context.link = href.startsWith("#")
-            ? { noteRef: attribs.role === "doc-noteref" }
-            : undefined;
-        }
-        const kind =
-          tag === "sup" || tag === "sub" ? tag : mathScriptKind(parent.tag, parent.childCount);
-        if (kind) context.script = { kind, parent: inherited.script };
+      if (tag === "a") {
+        const href = attribs.href ?? "";
+        context.link = href.startsWith("#")
+          ? { noteRef: attribs.role === "doc-noteref" }
+          : undefined;
+      }
+      const kind =
+        tag === "sup" || tag === "sub" ? tag : mathScriptKind(parent.tag, parent.childCount);
+      if (kind) context.script = { kind, parent: inherited.script };
 
-        if (parent.tag === "mfrac" && parent.childCount <= 2 && !context.hidden) {
-          frame.fractionOperand = {};
-          if (parent.childCount === 2) {
-            emit("/", inherited, { operand: frame.fractionOperand, edge: "slash" });
-          }
-          emit("(", inherited, { operand: frame.fractionOperand, edge: "open" });
+      if (parent.tag === "mfrac" && parent.childCount <= 2 && !context.hidden) {
+        frame.fractionOperand = {};
+        if (parent.childCount === 2) {
+          emit("/", inherited, { operand: frame.fractionOperand, edge: "slash" });
         }
+        emit("(", inherited, { operand: frame.fractionOperand, edge: "open" });
+      }
 
-        if (tag === "img" && !context.hidden) {
-          const alt = attribs.alt?.trim().replace(/\s+/g, " ") ?? "";
-          if (isDescriptiveAlt(alt) && alt.length > (imageAlt?.length ?? 0)) imageAlt = alt;
-        }
-        stack.push(frame);
-      },
-      ontext(text) {
-        const { context } = stack[stack.length - 1];
-        if (!context.hidden) emit(text, context);
-      },
-      onclosetag(name) {
-        const tag = name.toLowerCase();
-        // htmlparser2 closes every element it opens (void, implied and at EOF),
-        // so the stack stays balanced.
-        const frame = stack.pop();
-        if (frame?.fractionOperand) {
-          emit(")", stack[stack.length - 1].context, {
-            operand: frame.fractionOperand,
-            edge: "close",
-          });
-        }
-        if (BLOCK_TAGS.has(tag)) block++;
-      },
+      if (tag === "img" && !context.hidden) {
+        const alt = attribs.alt?.trim().replace(/\s+/g, " ") ?? "";
+        if (isDescriptiveAlt(alt) && alt.length > (imageAlt?.length ?? 0)) imageAlt = alt;
+      }
+      stack.push(frame);
     },
-    { decodeEntities: true }
-  );
+    ontext(text) {
+      const { context } = stack[stack.length - 1];
+      if (!context.hidden) emit(text, context);
+    },
+    onclosetag(name) {
+      const tag = name.toLowerCase();
+      // htmlparser2 closes every element it opens (void, implied and at EOF),
+      // so the stack stays balanced.
+      const frame = stack.pop();
+      if (frame?.fractionOperand) {
+        emit(")", stack[stack.length - 1].context, {
+          operand: frame.fractionOperand,
+          edge: "close",
+        });
+      }
+      if (BLOCK_TAGS.has(tag)) block++;
+    },
+  });
 
   parser.write(html);
   parser.end();

@@ -42,46 +42,43 @@ function parseFirstHeader(html: string): FirstHeaderInfo | null {
   let headerText = "";
   let headerEndIndex = -1;
 
-  const parser = createSaxParser(
-    {
-      onopentagname(name) {
-        const tag = name.toLowerCase();
+  const parser = createSaxParser({
+    onopentagname(name) {
+      const tag = name.toLowerCase();
 
-        if (!foundFirstElement) {
-          foundFirstElement = true;
-          if (HEADER_TAGS.has(tag)) {
-            isInHeader = true;
-            headerDepth = 1;
-          } else {
-            parser.pause();
-          }
-        } else if (isInHeader) {
-          headerDepth++;
-        }
-      },
-      ontext(text) {
-        if (!foundFirstElement && text.trim()) {
+      if (!foundFirstElement) {
+        foundFirstElement = true;
+        if (HEADER_TAGS.has(tag)) {
+          isInHeader = true;
+          headerDepth = 1;
+        } else {
           parser.pause();
-          return;
         }
-
-        if (isInHeader) {
-          headerText += text;
-        }
-      },
-      onclosetag() {
-        if (isInHeader) {
-          headerDepth--;
-          if (headerDepth === 0) {
-            headerEndIndex = parser.endIndex! + 1;
-            isInHeader = false;
-            parser.pause();
-          }
-        }
-      },
+      } else if (isInHeader) {
+        headerDepth++;
+      }
     },
-    { decodeEntities: true }
-  );
+    ontext(text) {
+      if (!foundFirstElement && text.trim()) {
+        parser.pause();
+        return;
+      }
+
+      if (isInHeader) {
+        headerText += text;
+      }
+    },
+    onclosetag() {
+      if (isInHeader) {
+        headerDepth--;
+        if (headerDepth === 0) {
+          headerEndIndex = parser.endIndex! + 1;
+          isInHeader = false;
+          parser.pause();
+        }
+      }
+    },
+  });
 
   parser.write(html);
   parser.end();

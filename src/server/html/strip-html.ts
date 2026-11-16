@@ -103,54 +103,51 @@ export function stripHtml(html: string, maxLength?: number): string {
   let lastWasSpace = true; // Start true to avoid leading spaces
   let skipDepth = 0; // Track depth inside script/style tags
 
-  const parser = createSaxParser(
-    {
-      onopentagname(name) {
-        const tag = name.toLowerCase();
-        if (SKIP_TAGS.has(tag)) {
-          skipDepth++;
-        }
-        // Add space before block elements (includes br/hr which are void)
-        if (BLOCK_TAGS.has(tag) && !lastWasSpace && result.length > 0) {
-          result += " ";
-          lastWasSpace = true;
-        }
-      },
-      ontext(text) {
-        if (skipDepth > 0) return;
-
-        // Normalize whitespace and append character by character with deduplication
-        const normalized = text.replace(/\s+/g, " ");
-        for (const char of normalized) {
-          if (char === " ") {
-            if (!lastWasSpace && result.length > 0) {
-              result += " ";
-              lastWasSpace = true;
-            }
-          } else {
-            result += char;
-            lastWasSpace = false;
-          }
-        }
-
-        // Exit early once there's more than fits, so the cut gets its "..."
-        if (maxLength && result.length > maxLength) {
-          parser.pause();
-        }
-      },
-      onclosetag(name) {
-        const tag = name.toLowerCase();
-        if (SKIP_TAGS.has(tag)) {
-          skipDepth--;
-        }
-        if (BLOCK_TAGS.has(tag) && !lastWasSpace) {
-          result += " ";
-          lastWasSpace = true;
-        }
-      },
+  const parser = createSaxParser({
+    onopentagname(name) {
+      const tag = name.toLowerCase();
+      if (SKIP_TAGS.has(tag)) {
+        skipDepth++;
+      }
+      // Add space before block elements (includes br/hr which are void)
+      if (BLOCK_TAGS.has(tag) && !lastWasSpace && result.length > 0) {
+        result += " ";
+        lastWasSpace = true;
+      }
     },
-    { decodeEntities: true }
-  );
+    ontext(text) {
+      if (skipDepth > 0) return;
+
+      // Normalize whitespace and append character by character with deduplication
+      const normalized = text.replace(/\s+/g, " ");
+      for (const char of normalized) {
+        if (char === " ") {
+          if (!lastWasSpace && result.length > 0) {
+            result += " ";
+            lastWasSpace = true;
+          }
+        } else {
+          result += char;
+          lastWasSpace = false;
+        }
+      }
+
+      // Exit early once there's more than fits, so the cut gets its "..."
+      if (maxLength && result.length > maxLength) {
+        parser.pause();
+      }
+    },
+    onclosetag(name) {
+      const tag = name.toLowerCase();
+      if (SKIP_TAGS.has(tag)) {
+        skipDepth--;
+      }
+      if (BLOCK_TAGS.has(tag) && !lastWasSpace) {
+        result += " ";
+        lastWasSpace = true;
+      }
+    },
+  });
 
   parser.write(html);
   parser.end();

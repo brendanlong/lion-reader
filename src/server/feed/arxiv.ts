@@ -158,35 +158,32 @@ export function parseArxivAbsMetadata(html: string): ArxivPaperMetadata {
   let summary: string | null = null;
   const authors: string[] = [];
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        if (name.toLowerCase() !== "meta") return;
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      if (name.toLowerCase() !== "meta") return;
 
-        const content = attribs.content;
-        if (!content) return;
+      const content = attribs.content;
+      if (!content) return;
 
-        switch (attribs.name?.toLowerCase()) {
-          case "citation_title":
-            title ??= stripTexFormatting(normalizeArxivText(content)) || null;
-            break;
-          case "citation_abstract":
-            summary ??= stripTexFormatting(normalizeArxivText(content)) || null;
-            break;
-          case "citation_author": {
-            const author = normalizeAuthorName(content);
-            if (author) authors.push(author);
-            break;
-          }
+      switch (attribs.name?.toLowerCase()) {
+        case "citation_title":
+          title ??= stripTexFormatting(normalizeArxivText(content)) || null;
+          break;
+        case "citation_abstract":
+          summary ??= stripTexFormatting(normalizeArxivText(content)) || null;
+          break;
+        case "citation_author": {
+          const author = normalizeAuthorName(content);
+          if (author) authors.push(author);
+          break;
         }
-      },
-      onclosetag(name) {
-        // Every citation_* tag lives in <head>; don't parse the whole document.
-        if (name.toLowerCase() === "head") parser.pause();
-      },
+      }
     },
-    { decodeEntities: true }
-  );
+    onclosetag(name) {
+      // Every citation_* tag lives in <head>; don't parse the whole document.
+      if (name.toLowerCase() === "head") parser.pause();
+    },
+  });
 
   parser.write(html);
   parser.end();
