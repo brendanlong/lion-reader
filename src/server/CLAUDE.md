@@ -20,6 +20,8 @@ The announcement banner and maintenance mode live in **Redis, not Postgres**, be
 
 ## Views
 
+Frontend reads query these views instead of joining by hand.
+
 - **`user_feeds`**: active subscriptions merged with feed data (NULL for a subscription without a feed), including `unread_count`. **Display-only** — ownership/scoping checks query `subscriptions` directly. When grouping over a view, list every selected column in `GROUP BY`: Postgres doesn't infer functional dependencies through views (#1516).
 - **`visible_entries`**: entries with visibility applied, for `entries.list/get`. It LEFT JOINs `entries` and takes `id`, `is_spam` and the sort keys from `user_entries`, so a page filtered on those reads entry rows only for the rows it returns: keep it that way (migration 0147).
 
