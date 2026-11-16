@@ -36,7 +36,10 @@ import {
   oauthAccounts,
   oauthClients,
   oauthTokenGrants,
+  jobs,
+  type Job,
 } from "../../src/server/db/schema";
+import type { JobPayloads, JobType } from "../../src/server/jobs/queue";
 import { createTokens, type TokenPair } from "../../src/server/oauth/service";
 import { recordConsent } from "../../src/server/oauth/grants";
 import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
@@ -667,4 +670,29 @@ export async function holdTransaction(
       await done;
     },
   };
+}
+
+// ============================================================================
+// Jobs
+// ============================================================================
+
+/** Inserts a job of `type`, due at `nextRunAt` (default now). Returns the row. */
+export async function createTestJob<T extends JobType>(options: {
+  type: T;
+  payload: JobPayloads[T];
+  nextRunAt?: Date;
+}): Promise<Job> {
+  const now = new Date();
+  const [job] = await db
+    .insert(jobs)
+    .values({
+      id: generateUuidv7(),
+      type: options.type,
+      payload: options.payload,
+      nextRunAt: options.nextRunAt ?? now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  return job;
 }

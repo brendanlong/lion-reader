@@ -448,19 +448,15 @@ describe("Worker", () => {
 
       // First start/stop cycle
       await worker.start();
-      expect(worker.isRunning()).toBe(true);
       await tick(30);
       await stop(worker);
-      expect(worker.isRunning()).toBe(false);
 
       const countAfterFirstCycle = claimCount;
 
       // Second start/stop cycle
       await worker.start();
-      expect(worker.isRunning()).toBe(true);
       await tick(30);
       await stop(worker);
-      expect(worker.isRunning()).toBe(false);
 
       // Should have claimed more jobs in second cycle
       expect(claimCount).toBeGreaterThan(countAfterFirstCycle);
@@ -743,7 +739,6 @@ describe("Worker", () => {
       // processed the next job on a subsequent poll.
       expect(claimErrors).toHaveLength(1);
       expect(processed).toContain("after-recovery");
-      expect(worker.isRunning()).toBe(true);
 
       await stop(worker);
     });
@@ -775,7 +770,6 @@ describe("Worker", () => {
 
       const claimsAfterFirstPoll = claimCount;
       expect(claimsAfterFirstPoll).toBeGreaterThanOrEqual(1);
-      expect(worker.isRunning()).toBe(true);
 
       await tick(80);
 

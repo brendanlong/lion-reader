@@ -67,8 +67,6 @@ export interface Worker {
   start: () => Promise<void>;
   /** Stop the worker gracefully */
   stop: () => Promise<void>;
-  /** Check if the worker is running */
-  isRunning: () => boolean;
   /** Get current worker stats */
   getStats: () => WorkerStats;
 }
@@ -370,13 +368,6 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
   }
 
   /**
-   * Checks if the worker is running.
-   */
-  function isRunning(): boolean {
-    return state.running;
-  }
-
-  /**
    * Gets current worker stats.
    */
   function getStats(): WorkerStats {
@@ -393,7 +384,6 @@ export function createWorkerCore(config: InternalWorkerConfig): Worker {
   return {
     start,
     stop,
-    isRunning,
     getStats,
   };
 }
