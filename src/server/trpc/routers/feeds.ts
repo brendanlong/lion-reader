@@ -7,13 +7,10 @@
 
 import { z } from "zod";
 
-import { logger } from "@/lib/logger";
 import { createTRPCRouter, expensiveConfirmedProtectedProcedure } from "../trpc";
-import { errors } from "@/server/errors";
 import { feedUrlSchema } from "../validation";
 import {
   fetchUrl,
-  HttpFetchError,
   isHtmlContent,
   readResponseWithSizeLimit,
   FEED_FETCH_TIMEOUT_MS,
@@ -24,8 +21,9 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { stripHtml } from "@/server/html/strip-html";
 import { detectFeedType, parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
-import { type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
-import { pluginRegistry, getFeedHooks, getFeedPlugin, type FeedHooks } from "@/server/plugins";
+import { type ParsedEntry } from "@/server/feed/types";
+import { pluginRegistry, getFeedHooks, type FeedHooks } from "@/server/plugins";
+import { resolveFeedAtUrl, transformPageUrlToFeed } from "@/server/services/feed-resolution";
 
 // ============================================================================
 // Constants
@@ -221,38 +219,6 @@ async function checkCommonPaths(baseUrl: string): Promise<DiscoveredFeed[]> {
 }
 
 /**
- * Transforms a page URL into the corresponding RSS feed URL using the matching
- * plugin's `feed.transformToFeedUrl` capability.
- *
- * E.g. a LessWrong front page, user profile, post, or shortform page is mapped
- * to its appropriate feed URL. Returns null when no plugin handles the URL or it
- * can't be transformed.
- *
- * @param url - The page URL to transform
- * @returns The feed URL string, or null if there's no known mapping
- */
-async function transformPageUrlToFeed(url: string): Promise<string | null> {
-  const transform = getFeedPlugin(url)?.capabilities.feed.transformToFeedUrl;
-  if (!transform) return null;
-
-  try {
-    const feedUrl = await transform(new URL(url));
-    return feedUrl?.href ?? null;
-  } catch (error) {
-    // Don't fall through to fetching the page itself: that's a second request
-    // to the site that just throttled us
-    if (error instanceof HttpFetchError && error.isRateLimited()) {
-      throw errors.upstreamRateLimited(url);
-    }
-    logger.warn("Failed to transform page URL to feed URL", {
-      url,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
-
-/**
  * Output schema for discovered feed.
  */
 const discoveredFeedSchema = z.object({
@@ -267,13 +233,8 @@ const discoveredFeedSchema = z.object({
 
 export const feedsRouter = createTRPCRouter({
   /**
-   * Preview a feed by URL.
-   *
-   * This procedure:
-   * 1. Fetches the URL content
-   * 2. If HTML, discovers feeds and uses the first one
-   * 3. Parses the feed to get metadata and sample entries
-   * 4. Returns the preview without saving anything to the database
+   * Preview the feed a URL resolves to (`resolveFeedAtUrl`, as subscribing
+   * does) without saving anything.
    *
    * Requires a confirmed session: the only UI that calls this is the subscribe
    * page, which is behind auth anyway, and it triggers outbound fetches — so
@@ -303,49 +264,8 @@ export const feedsRouter = createTRPCRouter({
       })
     )
     .query(async ({ input }) => {
-      let feedUrl = input.url;
+      const { url: finalFeedUrl, parsedFeed } = await resolveFeedAtUrl(input.url);
 
-      // Let a matching plugin transform a page URL to its feed URL
-      // (e.g. a LessWrong front page / user profile / post → its RSS feed)
-      const pluginFeedUrl = await transformPageUrlToFeed(feedUrl);
-      if (pluginFeedUrl) {
-        feedUrl = pluginFeedUrl;
-      }
-
-      // Step 1: Fetch the URL
-      const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(feedUrl);
-
-      // Step 2: If HTML, try to discover feeds
-      let feedContent: string;
-      let finalFeedUrl: string;
-      if (isHtmlContent(contentType, content)) {
-        const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
-
-        if (discoveredFeeds.length === 0) {
-          throw errors.validation("No feeds found at this URL");
-        }
-
-        // Use the first discovered feed
-        feedUrl = discoveredFeeds[0].url;
-
-        // Fetch the actual feed
-        const feedResult = await fetchUrl(feedUrl);
-        feedContent = feedResult.text;
-        finalFeedUrl = feedResult.finalUrl;
-      } else {
-        feedContent = content;
-        finalFeedUrl = initialFinalUrl;
-      }
-
-      // Step 3: Parse the feed
-      let parsedFeed: ParsedFeed;
-      try {
-        parsedFeed = await parseFeedAsync(feedContent);
-      } catch (error) {
-        throw errors.parseError(error instanceof Error ? error.message : "Invalid feed format");
-      }
-
-      // Step 4: Build and return the preview
       // Sort entries by publication date (newest first) before taking sample
       // Entries without dates are placed last
       const sortedItems = [...parsedFeed.items].sort((a, b) => {

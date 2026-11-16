@@ -43,14 +43,15 @@ const errorCodeToTRPCCode = {
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   SESSION_REVOKE_FAILED: "INTERNAL_SERVER_ERROR",
-  TOKEN_CREATION_FAILED: "INTERNAL_SERVER_ERROR",
   FEED_FETCH_ERROR: "INTERNAL_SERVER_ERROR",
-  PARSE_ERROR: "INTERNAL_SERVER_ERROR",
   // A failed fetch of a user-provided URL (404, DNS failure, connection reset,
   // …) is a client/input error, not a server bug — the user gave us a URL we
   // can't retrieve. Classify as 4xx so it isn't reported to Sentry (the timing
   // middleware only exempts client codes) and callers get a proper client error.
   SAVED_ARTICLE_FETCH_ERROR: "BAD_REQUEST",
+  // A user-provided URL that isn't a feed: the 400 subscribing by URL (tRPC,
+  // REST, Google Reader quickadd) answers, which preview shares.
+  PARSE_ERROR: "BAD_REQUEST",
   CONTENT_TOO_LARGE: "BAD_REQUEST",
   MAX_SUBSCRIPTIONS_REACHED: "BAD_REQUEST",
   SITE_BLOCKED: "BAD_GATEWAY",
@@ -121,9 +122,6 @@ export const errors = {
   blockedSenderNotFound: () => createError("BLOCKED_SENDER_NOT_FOUND", "Blocked sender not found"),
 
   tokenNotFound: () => createError("TOKEN_NOT_FOUND", "Token not found or already revoked"),
-
-  tokenCreationFailed: () =>
-    createError("TOKEN_CREATION_FAILED", "Failed to retrieve created token"),
 
   maxIngestAddressesReached: (limit: number) =>
     createError(
@@ -230,7 +228,15 @@ export const errors = {
       url,
     }),
 
-  parseError: (reason: string) => createError("PARSE_ERROR", `Failed to parse feed: ${reason}`),
+  /**
+   * A URL's content isn't a feed. The subscribe page matches the "Failed to
+   * parse feed" prefix to fall back to discovery.
+   */
+  parseError: () =>
+    createError(
+      "PARSE_ERROR",
+      "Failed to parse feed: this URL isn't a valid RSS, Atom or JSON feed"
+    ),
 
   savedArticleNotFound: () => createError("SAVED_ARTICLE_NOT_FOUND", "Saved article not found"),
 
@@ -322,12 +328,11 @@ export function getRetryAfterSeconds(error: unknown): number | undefined {
  * an upstream site, not a bug in our server — but which map to a 5xx HTTP status
  * (an honest status to return to the client). E.g. a target site blocking our
  * fetch bot is a normal outcome of saving an arbitrary URL, as is a feed URL the
- * user entered that doesn't answer or isn't a feed.
+ * user entered that doesn't answer.
  */
 const EXPECTED_CLIENT_ERROR_CODES: ReadonlySet<string> = new Set([
   "SITE_BLOCKED",
   "FEED_FETCH_ERROR",
-  "PARSE_ERROR",
 ]);
 
 /**

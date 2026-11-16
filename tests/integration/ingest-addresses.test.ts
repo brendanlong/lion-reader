@@ -1,7 +1,7 @@
 /**
- * Integration tests for the ingest addresses router's server configuration
- * gate: newsletters work only when this server has both an ingest domain and a
- * Mailgun signing key (#1797).
+ * Integration tests for the ingest addresses router: ownership scoping, and the
+ * server configuration gate (newsletters work only when this server has both
+ * an ingest domain and a Mailgun signing key, #1797).
  */
 
 import { describe, it, expect, beforeEach, afterAll, afterEach, vi } from "vitest";
@@ -36,6 +36,34 @@ describe("ingestAddresses", () => {
     const list = await caller.ingestAddresses.list();
     expect(list.enabled).toBe(true);
     expect(list.items.map((a) => a.email)).toEqual([address.email]);
+  });
+
+  it("relabels and deletes only the caller's live addresses", async () => {
+    configure("in.example.com", "key");
+    const ownerId = await createTestUser();
+    const addressId = await createTestIngestAddress(ownerId);
+    const owner = createCaller(await createAuthContext(ownerId));
+    const other = createCaller(await createAuthContext(await createTestUser()));
+    const notFound = { message: "Ingest address not found" };
+
+    await expect(other.ingestAddresses.update({ id: addressId, label: "x" })).rejects.toMatchObject(
+      notFound
+    );
+    await expect(other.ingestAddresses.delete({ id: addressId })).rejects.toMatchObject(notFound);
+
+    const { address } = await owner.ingestAddresses.update({ id: addressId, label: "Renamed" });
+    expect(address).toMatchObject({ id: addressId, label: "Renamed" });
+    expect(address.email).toBe(`${address.token}@in.example.com`);
+    // An omitted label is left as is.
+    const unchanged = await owner.ingestAddresses.update({ id: addressId });
+    expect(unchanged.address).toEqual(address);
+
+    await owner.ingestAddresses.delete({ id: addressId });
+    expect((await owner.ingestAddresses.list()).items).toEqual([]);
+    await expect(owner.ingestAddresses.update({ id: addressId, label: "y" })).rejects.toMatchObject(
+      notFound
+    );
+    await expect(owner.ingestAddresses.delete({ id: addressId })).rejects.toMatchObject(notFound);
   });
 
   it.each([

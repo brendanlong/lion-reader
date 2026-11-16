@@ -266,9 +266,10 @@ describe("OPML Import", () => {
       // User 2 tries to access it
       const caller2 = createCaller(await createAuthContext(userId2));
 
-      await expect(caller2.imports.get({ id: importResult.importId })).rejects.toThrow(
-        "Import not found"
-      );
+      await expect(caller2.imports.get({ id: importResult.importId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Import not found",
+      });
     });
   });
 

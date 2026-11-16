@@ -25,9 +25,10 @@ import {
 } from "@/server/auth/email-token";
 import { hashPassword } from "@/server/auth/password";
 import { sendEmail } from "@/server/email/send";
-import { revokeUserClientTokens } from "@/server/oauth/grants";
-import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
-import { removeUnverifiedHolderCredentials } from "@/server/services/account-credentials";
+import {
+  removeUnverifiedHolderCredentials,
+  replaceUserPassword,
+} from "@/server/services/account-credentials";
 
 function linkLifetime(purpose: EmailTokenPurpose): string {
   const hours = Math.round(EMAIL_TOKEN_LIFETIME_MS[purpose] / HOUR_MS);
@@ -173,12 +174,10 @@ export async function resetPassword(
       })
       .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
       .returning({ id: users.id });
-    await tx.update(users).set({ passwordHash, updatedAt: now }).where(eq(users.id, userId));
+    await replaceUserPassword(tx, userId, passwordHash);
 
     if (claimed.length > 0) {
       await removeUnverifiedHolderCredentials(tx, userId, now);
-    } else {
-      await revokeUserClientTokens(userId, WALLABAG_CLIENT_ID, tx);
     }
     return userId;
   });

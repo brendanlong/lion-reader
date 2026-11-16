@@ -25,6 +25,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
+import { ADMIN_COOKIE_NAME, createAdminSessionToken } from "../../src/server/auth/admin-session";
 import {
   createTestEntryBatch,
   createTestFeed,
@@ -107,6 +108,18 @@ describe("Admin API", () => {
       const caller = createCaller(createWrongTokenContext());
 
       await expect(caller.admin.listUsers()).rejects.toThrow("Invalid admin secret");
+    });
+
+    it("accepts a valid admin session cookie and refuses a forged one", async () => {
+      const cookieContext = (token: string) =>
+        createUnauthContext(new Headers({ cookie: `other=1; ${ADMIN_COOKIE_NAME}=${token}` }));
+
+      await expect(
+        createCaller(cookieContext(createAdminSessionToken())).admin.listUsers()
+      ).resolves.toBeDefined();
+      await expect(createCaller(cookieContext("nonce.1.forged")).admin.listUsers()).rejects.toThrow(
+        "Invalid admin secret"
+      );
     });
   });
 

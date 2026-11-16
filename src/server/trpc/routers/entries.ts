@@ -40,10 +40,6 @@ const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
 const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-// ============================================================================
 // Validation Schemas
 // ============================================================================
 
@@ -248,8 +244,7 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      const { entry } = await entryReadsService.getFullEntry(ctx.db, userId, input.id);
-      return { entry };
+      return { entry: await entryReadsService.getFullEntry(ctx.db, userId, input.id) };
     }),
 
   /**

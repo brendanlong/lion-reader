@@ -7,7 +7,6 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -16,9 +15,14 @@ import {
 } from "../trpc";
 import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
-import { ingestAddresses } from "@/server/db/schema";
 import { ingestConfig } from "@/server/config/env";
-import { createIngestAddress } from "@/server/services/ingest-addresses";
+import {
+  createIngestAddress,
+  deleteIngestAddress,
+  listIngestAddresses,
+  updateIngestAddress,
+  type IngestAddressInfo,
+} from "@/server/services/ingest-addresses";
 
 // ============================================================================
 // Validation Schemas
@@ -54,6 +58,13 @@ function requireIngestDomain(): string {
   return domain;
 }
 
+function toOutput(
+  address: IngestAddressInfo,
+  domain: string
+): z.infer<typeof ingestAddressOutputSchema> {
+  return { ...address, email: `${address.token}@${domain}` };
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -86,25 +97,8 @@ export const ingestAddressesRouter = createTRPCRouter({
       const domain = ingestConfig.enabledDomain;
       if (!domain) return { enabled: false, items: [] };
 
-      const userId = ctx.session.user.id;
-
-      // Get all non-deleted ingest addresses for the user
-      const addresses = await ctx.db
-        .select()
-        .from(ingestAddresses)
-        .where(and(eq(ingestAddresses.userId, userId), isNull(ingestAddresses.deletedAt)))
-        .orderBy(sql`${ingestAddresses.createdAt} DESC`);
-
-      return {
-        enabled: true,
-        items: addresses.map((address) => ({
-          id: address.id,
-          token: address.token,
-          email: `${address.token}@${domain}`,
-          label: address.label,
-          createdAt: address.createdAt,
-        })),
-      };
+      const addresses = await listIngestAddresses(ctx.db, ctx.session.user.id);
+      return { enabled: true, items: addresses.map((address) => toOutput(address, domain)) };
     }),
 
   /**
@@ -144,7 +138,7 @@ export const ingestAddressesRouter = createTRPCRouter({
 
       const address = await createIngestAddress(ctx.db, userId, input.label ?? null);
 
-      return { address: { ...address, email: `${address.token}@${domain}` } };
+      return { address: toOutput(address, domain) };
     }),
 
   /**
@@ -179,51 +173,10 @@ export const ingestAddressesRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const domain = requireIngestDomain();
-      const userId = ctx.session.user.id;
-
-      // Verify the address exists and belongs to the user
-      const existingAddress = await ctx.db
-        .select()
-        .from(ingestAddresses)
-        .where(
-          and(
-            eq(ingestAddresses.id, input.id),
-            eq(ingestAddresses.userId, userId),
-            isNull(ingestAddresses.deletedAt)
-          )
-        )
-        .limit(1);
-
-      if (existingAddress.length === 0) {
-        throw errors.ingestAddressNotFound();
-      }
-
-      const address = existingAddress[0];
-
-      // Build the update object
-      const updateData: { label?: string | null } = {};
-
-      if (input.label !== undefined) {
-        updateData.label = input.label;
-      }
-
-      // Update the address if there are changes
-      if (Object.keys(updateData).length > 0) {
-        await ctx.db
-          .update(ingestAddresses)
-          .set(updateData)
-          .where(eq(ingestAddresses.id, input.id));
-      }
-
-      return {
-        address: {
-          id: address.id,
-          token: address.token,
-          email: `${address.token}@${domain}`,
-          label: input.label !== undefined ? input.label : address.label,
-          createdAt: address.createdAt,
-        },
-      };
+      const address = await updateIngestAddress(ctx.db, ctx.session.user.id, input.id, {
+        label: input.label,
+      });
+      return { address: toOutput(address, domain) };
     }),
 
   /**
@@ -253,32 +206,7 @@ export const ingestAddressesRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Verify the address exists and belongs to the user
-      const existingAddress = await ctx.db
-        .select()
-        .from(ingestAddresses)
-        .where(
-          and(
-            eq(ingestAddresses.id, input.id),
-            eq(ingestAddresses.userId, userId),
-            isNull(ingestAddresses.deletedAt)
-          )
-        )
-        .limit(1);
-
-      if (existingAddress.length === 0) {
-        throw errors.ingestAddressNotFound();
-      }
-
-      // Soft delete by setting deletedAt
-      const now = new Date();
-      await ctx.db
-        .update(ingestAddresses)
-        .set({ deletedAt: now })
-        .where(eq(ingestAddresses.id, input.id));
-
+      await deleteIngestAddress(ctx.db, ctx.session.user.id, input.id);
       return { success: true };
     }),
 });

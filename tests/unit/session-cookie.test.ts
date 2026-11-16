@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   setSessionCookie,
   clearSessionCookie,
+  readCookie,
   SESSION_MAX_AGE_SECONDS,
 } from "@/server/auth/session-cookie";
 
@@ -69,5 +70,23 @@ describe("server session cookie", () => {
     // Must not throw; there is simply nothing to write.
     expect(() => setSessionCookie(undefined, "tok")).not.toThrow();
     expect(() => clearSessionCookie(undefined)).not.toThrow();
+  });
+});
+
+describe("readCookie", () => {
+  it.each([
+    ["a=1; session=tok; b=2", "tok"],
+    ["a=1;session=tok", "tok"],
+    ["session=x=y", "x=y"],
+    ["mysession=tok; session_x=tok", null],
+    ["session=", null],
+    // A name sent twice reads as its last value, as Next's request.cookies does.
+    ["session=old; session=new", "new"],
+  ])("reads %j as %j", (header, expected) => {
+    expect(readCookie(header, "session")).toBe(expected);
+  });
+
+  it("reads nothing from a missing header", () => {
+    expect(readCookie(null, "session")).toBeNull();
   });
 });

@@ -12,7 +12,7 @@ import { errors } from "@/server/errors";
 import { logger } from "@/lib/logger";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "./counts";
-import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry-events";
+import { publishMarkReadStateChanges, publishEntryStateChanges } from "./entry-events";
 import {
   buildEntriesInSubscriptionsCondition,
   buildTaggedSubscriptionIdsSubquery,
@@ -297,11 +297,7 @@ export function publishEntryStates(db: typeof dbType, userId: string, entryIds: 
     try {
       const states = await selectEntryStates(db, userId, entryIds);
       if (states.length === 0) return;
-      publishStarredStateChanges(
-        userId,
-        states,
-        await getBulkEntryRelatedCounts(db, userId, states)
-      );
+      publishEntryStateChanges(userId, states, await getBulkEntryRelatedCounts(db, userId, states));
     } catch (error) {
       logger.warn("Failed to publish entry state changes", { userId, error: String(error) });
     }
@@ -645,7 +641,7 @@ export async function updateEntriesStarred(
     changed.length > 0 ? await getBulkEntryRelatedCounts(db, userId, changed) : undefined;
 
   if (changed.length > 0 && counts) {
-    publishStarredStateChanges(userId, changed, counts);
+    publishEntryStateChanges(userId, changed, counts);
   }
 
   return { entries: entriesState, changed, counts };
