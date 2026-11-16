@@ -201,13 +201,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
             subscription.tags,
         )
 
-    /** A subscription's new custom title (null: none) and tags. */
-    fun updateSubscription(id: String, customTitle: String?, tags: List<TagRef>) {
-        if (localSubscriptionId(id) == SAVED_SUBSCRIPTION_ID) return
-        subs.updateSubscriptionTitle(customTitle, id)
-        setSubscriptionTags(id, tags)
-    }
-
     private fun setSubscriptionTags(subscriptionId: String, tags: List<TagRef>) {
         subs.clearSubscriptionTags(subscriptionId)
         for (tag in tags) {
