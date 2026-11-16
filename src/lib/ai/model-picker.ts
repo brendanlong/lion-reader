@@ -82,7 +82,7 @@ function formatPrice(usd: number): string {
  * The name with its provider, e.g. "hexgrad: Kokoro 82M · DeepInfra": the
  * same model can be listed by more than one provider.
  */
-export function formatModelName(model: PickerModel): string {
+export function formatModelLabel(model: PickerModel): string {
   return `${model.displayName} · ${aiProviderName(model.provider)}`;
 }
 

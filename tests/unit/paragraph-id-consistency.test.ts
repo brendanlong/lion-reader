@@ -19,7 +19,7 @@ import { narrationTargets } from "../../src/lib/narration/block-elements";
 import { htmlToNarrationInput } from "../../src/lib/narration/html-to-narration-input";
 import { parseBodyAsBrowser } from "../../src/lib/narration/parse-html";
 import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
-import { addParagraphIdsToHtml } from "../../src/lib/narration/client-paragraph-ids";
+import { processHtmlForHighlighting } from "../../src/lib/narration/client-paragraph-ids";
 
 /** The elements the server numbers, as tag names in numbering order. */
 function serverTargets(html: string): string[] {
@@ -28,7 +28,7 @@ function serverTargets(html: string): string[] {
 
 /** The elements the client marks, as tag names in the order it marked them. */
 function clientTargets(html: string): string[] {
-  const marked = addParagraphIdsToHtml(html).html;
+  const marked = processHtmlForHighlighting(html);
   return [...marked.matchAll(/<(\w+)(?=[^>]*\sdata-para-id)/g)].map((match) =>
     match[1].toLowerCase()
   );

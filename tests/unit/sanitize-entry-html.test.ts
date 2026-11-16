@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { htmlToNarrationInput, htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
+import { htmlToPlainText } from "@/server/html/strip-html";
 import { sanitizeEntryHtml, sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 
 /** What the narration would say, in order. */

@@ -3,32 +3,25 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { computeHighlightedParagraphs } from "../../src/components/narration/useNarrationHighlight";
 import {
   DEFAULT_NARRATION_STATE,
-  getNarrationPhase,
+  getHighlightedParagraph,
 } from "../../src/components/narration/useNarrationTypes";
 
-describe("computeHighlightedParagraphs", () => {
-  it("highlights the paragraph being narrated", () => {
-    expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
-    expect(computeHighlightedParagraphs(7, true)).toEqual(new Set([7]));
+describe("getHighlightedParagraph", () => {
+  const at = { ...DEFAULT_NARRATION_STATE, currentParagraph: 4, totalParagraphs: 10 };
+
+  it("highlights the paragraph being narrated while paused or buffering too", () => {
+    for (const status of ["playing", "paused", "buffering"] as const) {
+      expect(getHighlightedParagraph({ ...at, status })).toBe(4);
+    }
+    expect(getHighlightedParagraph({ ...at, status: "playing", currentParagraph: 0 })).toBe(0);
   });
 
   it("highlights nothing while narration is off, or without a position", () => {
-    expect(computeHighlightedParagraphs(3, false).size).toBe(0);
-    expect(computeHighlightedParagraphs(-1, true).size).toBe(0);
-  });
-
-  it("keeps the highlight while paused or buffering, as narration is still on", () => {
-    const at = { ...DEFAULT_NARRATION_STATE, currentParagraph: 4, totalParagraphs: 10 };
-    for (const status of ["playing", "paused", "buffering"] as const) {
-      const { isActive } = getNarrationPhase({ ...at, status });
-      expect(computeHighlightedParagraphs(at.currentParagraph, isActive)).toEqual(new Set([4]));
-    }
     for (const status of ["idle", "generating"] as const) {
-      const { isActive } = getNarrationPhase({ ...at, status });
-      expect(computeHighlightedParagraphs(at.currentParagraph, isActive).size).toBe(0);
+      expect(getHighlightedParagraph({ ...at, status })).toBeNull();
     }
+    expect(getHighlightedParagraph({ ...at, status: "playing", currentParagraph: -1 })).toBeNull();
   });
 });

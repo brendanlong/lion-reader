@@ -6,13 +6,11 @@
  * deduplication across entries.
  */
 
-import { getAppErrorCode } from "@/server/errors";
 import { createHash } from "crypto";
-import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { markdownToHtmlAsync } from "@/server/markdown";
 import { parseFragment, serialize } from "parse5";
-import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+import { htmlToPlainText } from "@/server/html/strip-html";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import { isTextAiProvider } from "@/lib/ai/providers";
 import {
@@ -155,16 +153,6 @@ function extractSummaryFromResponse(responseText: string): string {
 }
 
 /**
- * Result of summary generation.
- */
-export interface GenerateSummaryResult {
-  /** The generated summary as HTML (converted from Markdown) */
-  summary: string;
-  /** The model used for generation */
-  modelId: string;
-}
-
-/**
  * Prepares HTML content for summarization.
  * Converts to plain text and truncates if necessary.
  */
@@ -181,72 +169,58 @@ export function prepareContentForSummarization(htmlContent: string): string {
 }
 
 /**
- * Generates a summary using the model's provider.
+ * Generates a summary with `modelId`, which the caller has checked can be
+ * used ({@link isSummarizationModelUsable}).
  *
  * @param content - Plain text content to summarize
- * @returns The generated summary and model ID
- * @throws Error if the provider API call fails
- *
- * @example
- * try {
- *   const result = await generateSummary("Long article text here...", "Title", { keys });
- *   console.log(result.summary);
- * } catch (error) {
- *   console.error('Summarization failed:', error);
- * }
+ * @returns The summary as sanitized HTML (converted from Markdown)
+ * @throws if the provider call fails
  */
 export async function generateSummary(
   content: string,
   title: string,
   options: {
     keys: AiProviderKeys;
-    userModel?: string | null;
+    modelId: string;
     userMaxWords?: number | null;
     userPrompt?: string | null;
   }
-): Promise<GenerateSummaryResult> {
-  // Priority: user model > environment > default
-  const modelId = await getSummarizationModelId(options.userModel, options.keys);
-  const modelRef = parseModelRef(modelId);
+): Promise<string> {
+  const modelRef = parseModelRef(options.modelId);
+  const responseText = await generateChatCompletion(modelRef, options.keys, "summaries", {
+    userPrompt: buildSummarizationPrompt(content, title, {
+      userMaxWords: options.userMaxWords,
+      userPrompt: options.userPrompt,
+    }),
+    maxTokens:
+      modelRef.provider === "anthropic"
+        ? MAX_OUTPUT_TOKENS_ANTHROPIC
+        : MAX_OUTPUT_TOKENS_OPENAI_COMPAT,
+    // Summarizing needs no reasoning, which gpt-oss bills as output tokens
+    // and makes the summary slower; "low" is the least it accepts.
+    ...(modelRef.provider !== "anthropic" ? { reasoningEffort: "low" as const } : {}),
+  });
 
-  try {
-    const responseText = await generateChatCompletion(modelRef, options.keys, "summaries", {
-      userPrompt: buildSummarizationPrompt(content, title, {
-        userMaxWords: options.userMaxWords,
-        userPrompt: options.userPrompt,
-      }),
-      maxTokens:
-        modelRef.provider === "anthropic"
-          ? MAX_OUTPUT_TOKENS_ANTHROPIC
-          : MAX_OUTPUT_TOKENS_OPENAI_COMPAT,
-      // Summarizing needs no reasoning, which gpt-oss bills as output tokens
-      // and makes the summary slower; "low" is the least it accepts.
-      ...(modelRef.provider !== "anthropic" ? { reasoningEffort: "low" as const } : {}),
-    });
-
-    if (!responseText) {
-      throw new Error("Empty response from summarization model");
-    }
-
-    // Extract summary from <summary> tags and convert Markdown to HTML. The
-    // renderer passes raw HTML through, and the summary is rendered via
-    // dangerouslySetInnerHTML, so sanitize before storing/returning it.
-    const markdownSummary = extractSummaryFromResponse(responseText);
-    const summary = sanitizeSummaryHtml(await markdownToHtmlAsync(markdownSummary));
-
-    return {
-      summary,
-      modelId,
-    };
-  } catch (error) {
-    if (getAppErrorCode(error) === "QUOTA_EXCEEDED") throw error;
-    logger.error("Summarization API call failed", {
-      provider: modelRef.provider,
-      model: modelRef.model,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+  if (!responseText) {
+    throw new Error("Empty response from summarization model");
   }
+
+  // Extract summary from <summary> tags and convert Markdown to HTML. The
+  // renderer passes raw HTML through, and the summary is rendered via
+  // dangerouslySetInnerHTML, so sanitize before storing/returning it.
+  const markdownSummary = extractSummaryFromResponse(responseText);
+  return sanitizeSummaryHtml(await markdownToHtmlAsync(markdownSummary));
+}
+
+/** Whether `modelId` can summarize on `keys`: the plan includes it and the model can be used. */
+export async function isSummarizationModelUsable(
+  modelId: string,
+  keys?: AiProviderKeys
+): Promise<boolean> {
+  return (
+    planIncludesFeature(keys, parseModelRef(modelId).provider, "summaries") &&
+    (await isTextModelAllowed(modelId, keys))
+  );
 }
 
 /**
@@ -257,11 +231,7 @@ export async function isSummarizationAvailable(
   keys?: AiProviderKeys,
   userModel?: string | null
 ): Promise<boolean> {
-  const modelId = await getSummarizationModelId(userModel, keys);
-  return (
-    planIncludesFeature(keys, parseModelRef(modelId).provider, "summaries") &&
-    (await isTextModelAllowed(modelId, keys))
-  );
+  return isSummarizationModelUsable(await getSummarizationModelId(userModel, keys), keys);
 }
 
 /**
