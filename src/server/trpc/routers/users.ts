@@ -15,7 +15,7 @@ import {
   consumePasswordAttempt,
 } from "../trpc";
 import { errors } from "@/server/errors";
-import { sessions, users, oauthAccounts } from "@/server/db/schema";
+import { sessions, users, oauthAccounts, type User } from "@/server/db/schema";
 import { revokeUserSession, revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/password";
@@ -68,6 +68,37 @@ const preferencesOutputSchema = z.object({
   summarizationPrompt: z.string().nullable(),
   narrationModel: z.string().nullable(),
 });
+
+/** The preference columns `users` stores; the rest are derived per request. */
+const storedPreferenceFields = {
+  showSpam: users.showSpam,
+  summarizationModel: users.summarizationModel,
+  summarizationMaxWords: users.summarizationMaxWords,
+  summarizationPrompt: users.summarizationPrompt,
+  narrationModel: users.narrationModel,
+};
+
+type StoredPreferences = { [K in keyof typeof storedPreferenceFields]: User[K] };
+
+async function preferencesOutput(
+  userId: string,
+  stored: StoredPreferences
+): Promise<z.infer<typeof preferencesOutputSchema>> {
+  const [apiKeyProviders, unreadableApiKeyProviders] = await Promise.all([
+    getApiKeyProviders(userId),
+    getUnreadableApiKeyProviders(userId),
+  ]);
+  return {
+    showSpam: stored.showSpam,
+    canConfigureApiKeys: isEncryptionConfigured(),
+    apiKeyProviders,
+    unreadableApiKeyProviders,
+    summarizationModel: stored.summarizationModel,
+    summarizationMaxWords: stored.summarizationMaxWords,
+    summarizationPrompt: stored.summarizationPrompt,
+    narrationModel: stored.narrationModel,
+  };
+}
 
 // ============================================================================
 // Router
@@ -330,18 +361,7 @@ export const usersRouter = createTRPCRouter({
     })
     .input(z.object({}).optional())
     .output(preferencesOutputSchema)
-    .query(async ({ ctx }) => {
-      return {
-        showSpam: ctx.session.user.showSpam,
-        canConfigureApiKeys: isEncryptionConfigured(),
-        apiKeyProviders: await getApiKeyProviders(ctx.session.user.id),
-        unreadableApiKeyProviders: await getUnreadableApiKeyProviders(ctx.session.user.id),
-        summarizationModel: ctx.session.user.summarizationModel,
-        summarizationMaxWords: ctx.session.user.summarizationMaxWords,
-        summarizationPrompt: ctx.session.user.summarizationPrompt,
-        narrationModel: ctx.session.user.narrationModel,
-      };
-    }),
+    .query(({ ctx }) => preferencesOutput(ctx.session.user.id, ctx.session.user)),
 
   /**
    * Which AI features work on the server's keys alone, as far as the user's
@@ -427,66 +447,27 @@ export const usersRouter = createTRPCRouter({
         (entry): entry is [UserKeyProvider, string] => entry[1] !== undefined
       );
 
-      // Build update object with only provided fields
-      const updateData: {
-        showSpam?: boolean;
-        summarizationModel?: string | null;
-        summarizationMaxWords?: number | null;
-        summarizationPrompt?: string | null;
-        narrationModel?: string | null;
-        updatedAt: Date;
-      } = {
-        updatedAt: new Date(),
-      };
-
-      if (input.showSpam !== undefined) {
-        updateData.showSpam = input.showSpam;
-      }
-
-      if (input.summarizationModel !== undefined) {
-        updateData.summarizationModel = input.summarizationModel || null;
-      }
-
-      if (input.narrationModel !== undefined) {
-        updateData.narrationModel = input.narrationModel || null;
-      }
-
-      if (input.summarizationMaxWords !== undefined) {
-        updateData.summarizationMaxWords = input.summarizationMaxWords;
-      }
-
-      if (input.summarizationPrompt !== undefined) {
-        updateData.summarizationPrompt = input.summarizationPrompt;
-      }
-
-      await ctx.db.transaction(async (tx) => {
-        await tx.update(users).set(updateData).where(eq(users.id, userId));
+      // An empty model name clears it; an omitted field is left as is.
+      const [stored] = await ctx.db.transaction(async (tx) => {
+        const updated = await tx
+          .update(users)
+          .set({
+            showSpam: input.showSpam,
+            summarizationModel:
+              input.summarizationModel === undefined ? undefined : input.summarizationModel || null,
+            narrationModel:
+              input.narrationModel === undefined ? undefined : input.narrationModel || null,
+            summarizationMaxWords: input.summarizationMaxWords,
+            summarizationPrompt: input.summarizationPrompt,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId))
+          .returning(storedPreferenceFields);
         await setUserApiKeys(tx, userId, apiKeys);
+        return updated;
       });
 
-      // Fetch updated preferences to return
-      const updatedUser = await ctx.db
-        .select({
-          showSpam: users.showSpam,
-          summarizationModel: users.summarizationModel,
-          summarizationMaxWords: users.summarizationMaxWords,
-          summarizationPrompt: users.summarizationPrompt,
-          narrationModel: users.narrationModel,
-        })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      return {
-        showSpam: updatedUser[0]?.showSpam ?? false,
-        canConfigureApiKeys: isEncryptionConfigured(),
-        apiKeyProviders: await getApiKeyProviders(userId),
-        unreadableApiKeyProviders: await getUnreadableApiKeyProviders(userId),
-        summarizationModel: updatedUser[0]?.summarizationModel ?? null,
-        summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
-        summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,
-        narrationModel: updatedUser[0]?.narrationModel ?? null,
-      };
+      return preferencesOutput(userId, stored);
     }),
 
   /**
