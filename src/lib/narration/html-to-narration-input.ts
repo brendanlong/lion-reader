@@ -13,7 +13,6 @@
  * @module narration/html-to-narration-input
  */
 
-import { isBlockTag } from "./block-elements";
 import { parseBodyAsBrowser } from "./parse-html";
 import { LLM_INPUT_VOICE, narrationRuns } from "./runs";
 
@@ -72,81 +71,4 @@ export function htmlToNarrationInput(html: string): HtmlToNarrationInputResult {
       text: run.text,
     })),
   };
-}
-
-/**
- * Tags that break a line in plain text without being narration blocks: a table
- * row (the narration walk never descends into a table, but a summary should see
- * one row per line) and an explicit line break.
- */
-const PLAIN_TEXT_BREAKS = new Set(["br", "tr"]);
-
-/**
- * Converts HTML to plain text (for AI summarization, which wants the words with
- * no narration conventions layered on top).
- *
- * @param html - HTML content to convert
- * @returns Plain text with paragraph breaks
- *
- * @example
- * const text = htmlToPlainText('<p>Hello</p><p>World</p>');
- * // Returns "Hello\n\nWorld"
- */
-export function htmlToPlainText(html: string): string {
-  if (!html || html.trim() === "") {
-    return "";
-  }
-
-  // The browser's tree here too: a summary should read the article in the order
-  // the reader sees it, and that is the order a spec tree builder produces.
-  const body = parseBodyAsBrowser(html);
-
-  // Process the document to build plain text
-  const parts: string[] = [];
-
-  function processNode(node: Node): void {
-    if (node.nodeType === 3) {
-      // Text node
-      const text = node.textContent || "";
-      if (text.trim()) {
-        parts.push(text);
-      }
-    } else if (node.nodeType === 1) {
-      // Element node
-      const el = node as Element;
-      const tagName = el.tagName.toLowerCase();
-
-      // Add paragraph break before block elements
-      if (isBlockTag(tagName) || PLAIN_TEXT_BREAKS.has(tagName)) {
-        parts.push("\n\n");
-      }
-
-      // Handle images - extract alt text
-      if (tagName === "img") {
-        const alt = el.getAttribute("alt");
-        if (alt) {
-          parts.push(`\n\nImage: ${alt}\n\n`);
-        } else {
-          parts.push("\n\nImage\n\n");
-        }
-        return;
-      }
-
-      // Recursively process child nodes
-      el.childNodes.forEach((child) => processNode(child));
-    }
-  }
-
-  processNode(body);
-
-  // Join and normalize the text
-  return parts
-    .join("")
-    .replace(/ /g, " ") // Convert nbsp to regular space
-    .replace(/ +/g, " ") // Collapse multiple spaces
-    .replace(/\n{3,}/g, "\n\n") // Collapse multiple newlines
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n")
-    .trim();
 }

@@ -158,6 +158,55 @@ export function stripHtml(html: string, maxLength?: number): string {
   return truncateAtWord(result.trim(), maxLength);
 }
 
+/**
+ * Converts HTML to plain text for AI summarization: the words the reader sees,
+ * a blank line between blocks, and each image as its alt text. Skips what
+ * {@link stripHtml} skips (scripts, styles and the like), since summarization
+ * may be given unsanitized content.
+ *
+ * @example
+ * htmlToPlainText('<p>Hello</p><img alt="a cat"><p>World</p>');
+ * // "Hello\n\nImage: a cat\n\nWorld"
+ */
+export function htmlToPlainText(html: string): string {
+  const parts: string[] = [];
+  let skipDepth = 0;
+
+  const parser = createSaxParser(
+    {
+      onopentag(name, attribs) {
+        if (SKIP_TAGS.has(name)) skipDepth++;
+        if (skipDepth > 0) return;
+        if (name === "img") {
+          parts.push(attribs.alt ? `\n\nImage: ${attribs.alt}\n\n` : "\n\nImage\n\n");
+        } else if (BLOCK_TAGS.has(name)) {
+          parts.push("\n\n");
+        }
+      },
+      ontext(text) {
+        if (skipDepth === 0) parts.push(text);
+      },
+      onclosetag(name) {
+        if (SKIP_TAGS.has(name)) skipDepth--;
+        else if (skipDepth === 0 && BLOCK_TAGS.has(name)) parts.push("\n\n");
+      },
+    },
+    { decodeEntities: true }
+  );
+  parser.write(html);
+  parser.end();
+
+  return parts
+    .join("")
+    .replace(/ /g, " ")
+    .replace(/[ \t]+/g, " ")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Truncates at a word boundary, dropping a partial word, with "..." inside `maxLength`. */
 export function truncateAtWord(text: string, maxLength?: number): string {
   if (!maxLength || text.length <= maxLength) {

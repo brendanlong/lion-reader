@@ -1,12 +1,26 @@
 /**
- * Test htmlToPlainText handling of images.
- *
- * Ensures that images are properly converted to text placeholders
- * so that the paragraph count matches between client and fallback narration.
+ * Tests for htmlToPlainText, the text AI summarization is given.
  */
 
 import { describe, it, expect } from "vitest";
-import { htmlToPlainText } from "../../src/lib/narration/html-to-narration-input";
+import { htmlToPlainText } from "@/server/html/strip-html";
+
+describe("htmlToPlainText", () => {
+  it("leaves out script, style and noscript contents", () => {
+    // Summarization is given unsanitized content, so a stylesheet or script
+    // would otherwise reach the model's prompt.
+    const html =
+      "<style>.a { color: red; }</style><p>Kept.</p>" +
+      "<script>var x = '<p>no</p>';</script><noscript><p>Enable JS</p></noscript><p>Also kept.</p>";
+    expect(htmlToPlainText(html)).toBe("Kept.\n\nAlso kept.");
+  });
+
+  it("separates blocks with a blank line and keeps inline text together", () => {
+    const html =
+      "<h1>Title</h1>\n  <p>Some <b>bold</b>&nbsp;text\n  here.</p><ul><li>a</li><li>b</li></ul>";
+    expect(htmlToPlainText(html)).toBe("Title\n\nSome bold text\nhere.\n\na\n\nb");
+  });
+});
 
 describe("htmlToPlainText image handling", () => {
   it("should convert standalone images without alt text to generic placeholders", () => {
@@ -51,15 +65,12 @@ describe("htmlToPlainText image handling", () => {
     expect(result).toContain("more text");
   });
 
-  it("should match paragraph count from client-side processing", () => {
-    // This is the key test: ensure fallback narration has same paragraph count as client IDs
+  it("gives each standalone image a paragraph of its own", () => {
     const html = '<p>1</p><img alt="2"><p>3</p>';
     const result = htmlToPlainText(html);
 
     const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
 
-    // Should have 3 paragraphs: p, img, p
-    // This matches the 3 paragraph IDs that client-side will assign
     expect(paragraphs).toHaveLength(3);
     expect(paragraphs[0]).toBe("1");
     expect(paragraphs[1]).toBe("Image: 2");

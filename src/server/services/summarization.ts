@@ -12,7 +12,7 @@ import { logger } from "@/lib/logger";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { markdownToHtmlAsync } from "@/server/markdown";
 import { parseFragment, serialize } from "parse5";
-import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
+import { htmlToPlainText } from "@/server/html/strip-html";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import { isTextAiProvider } from "@/lib/ai/providers";
 import {
