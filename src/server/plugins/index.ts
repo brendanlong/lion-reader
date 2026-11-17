@@ -61,7 +61,7 @@ logger.info("Plugins registered", {
  * when none claims it. A plugin failure is logged and counts as "not claimed":
  * the caller keeps the page it already has.
  */
-export async function claimFetchedPage(
+async function claimFetchedPage(
   page: FetchedPage
 ): Promise<{ plugin: PluginWith<"savedArticle">; content: SavedArticleContent } | null> {
   for (const plugin of pluginRegistry.fetchedPageHandlers) {

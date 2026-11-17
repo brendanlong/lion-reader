@@ -443,30 +443,14 @@ export const parseFeedEvent = eventParser(feedEventSchema);
 export const parseUserEvent = eventParser(userEventSchema);
 export const parseSiteStatusEvent = eventParser(siteStatusEventSchema);
 
-/**
- * Checks if Redis is available and responding.
- * Uses a PING command with a timeout to verify connectivity.
- *
- * @param timeoutMs - Maximum time to wait for response (default: 2000ms)
- * @returns true if Redis is healthy, false otherwise (including if not configured)
- */
-export async function checkRedisHealth(timeoutMs = 2000): Promise<boolean> {
+/** Whether Redis is configured and answers a PING within the client's command timeout. */
+export async function checkRedisHealth(): Promise<boolean> {
+  const client = getRedisClient();
+  if (!client) {
+    return false;
+  }
   try {
-    const client = getRedisClient();
-
-    // If Redis is not configured, return false
-    if (!client) {
-      return false;
-    }
-
-    // Race between ping and timeout
-    const pingPromise = client.ping();
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error("Redis health check timeout")), timeoutMs);
-    });
-
-    const result = await Promise.race([pingPromise, timeoutPromise]);
-    return result === "PONG";
+    return (await client.ping()) === "PONG";
   } catch {
     return false;
   }

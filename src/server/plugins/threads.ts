@@ -97,31 +97,28 @@ function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
   let image: string | null = null;
   let card: string | null = null;
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        if (name.toLowerCase() !== "meta") {
-          return;
-        }
-        const property = attribs.property?.toLowerCase();
-        const metaName = attribs.name?.toLowerCase();
-        const content = attribs.content;
-        if (!content) {
-          return;
-        }
-        if (property === "og:title" && !title) {
-          title = content;
-        } else if (property === "og:description" && !description) {
-          description = content;
-        } else if (property === "og:image" && !image) {
-          image = content;
-        } else if (metaName === "twitter:card" && !card) {
-          card = content;
-        }
-      },
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      if (name.toLowerCase() !== "meta") {
+        return;
+      }
+      const property = attribs.property?.toLowerCase();
+      const metaName = attribs.name?.toLowerCase();
+      const content = attribs.content;
+      if (!content) {
+        return;
+      }
+      if (property === "og:title" && !title) {
+        title = content;
+      } else if (property === "og:description" && !description) {
+        description = content;
+      } else if (property === "og:image" && !image) {
+        image = content;
+      } else if (metaName === "twitter:card" && !card) {
+        card = content;
+      }
     },
-    { decodeEntities: true }
-  );
+  });
   parser.write(html);
   parser.end();
 

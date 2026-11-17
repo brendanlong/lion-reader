@@ -43,13 +43,13 @@ export function setHealthChecker(checker: HealthChecker): void {
  * The server responds to GET /metrics with Prometheus-formatted metrics.
  * All other requests return 404.
  *
- * @param port - Port to listen on (default: 9091)
+ * @param port - Port to listen on
  * @param options.includeDatabaseMetrics - Whether this process reports the
  *   database-wide gauges (see collectAllMetrics)
  * @returns The server instance, or null if metrics are disabled
  */
 export function startMetricsServer(
-  port = 9091,
+  port: number,
   { includeDatabaseMetrics = false }: { includeDatabaseMetrics?: boolean } = {}
 ): Server | null {
   if (!metricsEnabled) {

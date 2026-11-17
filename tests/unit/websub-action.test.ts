@@ -1,10 +1,11 @@
 /**
  * Unit tests for resolveWebsubAction - the pure decision that maps a feed's
- * previous WebSub state + the hub URL seen in the latest fetch to an action.
+ * previous WebSub state + the hub URL seen in the latest fetch to an action -
+ * and for canUseWebSub, which decides whether a hub could reach our callback.
  */
 
-import { describe, it, expect } from "vitest";
-import { resolveWebsubAction } from "../../src/server/feed/websub";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { canUseWebSub, resolveWebsubAction } from "../../src/server/feed/websub";
 
 const HUB_A = "https://hub-a.example.com/";
 const HUB_B = "https://hub-b.example.com/";
@@ -113,4 +114,33 @@ describe("resolveWebsubAction", () => {
       })
     ).toBe("subscribe");
   });
+});
+
+describe("canUseWebSub", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    "http://localhost:3000",
+    "http://reader.local",
+    "http://10.1.2.3",
+    "http://169.254.169.254",
+    "http://[::1]:3000",
+    "http://[fd00::1]",
+  ])("rejects the unreachable app URL %s", (appUrl) => {
+    vi.stubEnv("WEBSUB_ENABLED", "");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", appUrl);
+    expect(canUseWebSub()).toBe(false);
+  });
+
+  // A hostname that merely starts like a private IP is a public name.
+  it.each(["https://reader.example.com", "https://10.example.com"])(
+    "accepts the public app URL %s",
+    (appUrl) => {
+      vi.stubEnv("WEBSUB_ENABLED", "");
+      vi.stubEnv("NEXT_PUBLIC_APP_URL", appUrl);
+      expect(canUseWebSub()).toBe(true);
+    }
+  );
 });

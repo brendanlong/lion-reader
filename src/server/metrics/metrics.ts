@@ -511,7 +511,7 @@ export function updateFeedHealthMetrics(
 export type NarrationSource = "llm" | "fallback";
 
 /** `api_error`: the narration model's provider call failed; `empty_response`: it answered nothing. */
-export type NarrationErrorType = "api_error" | "empty_response" | "unknown";
+export type NarrationErrorType = "api_error" | "empty_response";
 
 const narrationGeneratedTotal = getOrCreate(Counter, {
   name: "narration_generated_total",

@@ -42,16 +42,16 @@ describe("parseRss", () => {
       expect(result.description).toBe("An example RSS feed");
       expect(result.iconUrl).toBe("https://example.com/icon.png");
 
-      expect(result.entries).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
 
-      expect(result.entries[0].title).toBe("First Post");
-      expect(result.entries[0].link).toBe("https://example.com/post-1");
-      expect(result.entries[0].summary).toBe("This is the first post");
-      expect(result.entries[0].guid).toBe("https://example.com/post-1");
-      expect(result.entries[0].author).toBe("author@example.com");
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.items[0].title).toBe("First Post");
+      expect(result.items[0].link).toBe("https://example.com/post-1");
+      expect(result.items[0].summary).toBe("This is the first post");
+      expect(result.items[0].guid).toBe("https://example.com/post-1");
+      expect(result.items[0].author).toBe("author@example.com");
+      expect(result.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
 
-      expect(result.entries[1].title).toBe("Second Post");
+      expect(result.items[1].title).toBe("Second Post");
     });
   });
 
@@ -71,10 +71,10 @@ describe("parseRss", () => {
 
       const result = parseRss(xml);
 
-      expect(result.entries[0].content).toBe(
+      expect(result.items[0].content).toBe(
         "<p>This is the <strong>full content</strong> with HTML.</p>"
       );
-      expect(result.entries[0].summary).toBe("Short summary of the post");
+      expect(result.items[0].summary).toBe("Short summary of the post");
     });
   });
 
@@ -93,7 +93,7 @@ describe("parseRss", () => {
 
       const result = parseRss(xml);
 
-      expect(result.entries[0].author).toBe("John Doe");
+      expect(result.items[0].author).toBe("John Doe");
     });
 
     it("credits every dc:creator", () => {
@@ -108,7 +108,7 @@ describe("parseRss", () => {
           </channel>
         </rss>`;
 
-      expect(parseRss(xml).entries[0].author).toBe("Ada Lovelace and Alan Turing");
+      expect(parseRss(xml).items[0].author).toBe("Ada Lovelace and Alan Turing");
     });
   });
 
@@ -186,9 +186,9 @@ describe("parseRss", () => {
 
       const result = parseRss(xml);
 
-      expect(result.entries).toHaveLength(1);
-      expect(result.entries[0].title).toBe("Post with dc:date");
-      expect(result.entries[0].pubDate).toEqual(new Date("2010-12-19T00:00:00Z"));
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("Post with dc:date");
+      expect(result.items[0].pubDate).toEqual(new Date("2010-12-19T00:00:00Z"));
     });
   });
 
@@ -208,7 +208,7 @@ describe("parseRss", () => {
       const result = parseRss(xml);
 
       expect(result.title).toBe("Flameeyes's Weblog");
-      expect(result.entries[0].title).toBe("Comment by Flameeyes's Friend");
+      expect(result.items[0].title).toBe("Comment by Flameeyes's Friend");
     });
   });
 
@@ -231,7 +231,7 @@ describe("parseRss", () => {
 
       const result = parseRss(xml);
 
-      expect(result.entries[0].content).toBe(
+      expect(result.items[0].content).toBe(
         "<p>The <code>&lt;system&gt;</code> and <code>&lt;user&gt;</code> tags.</p>"
       );
     });
@@ -250,7 +250,7 @@ describe("parseRss", () => {
 
       const result = parseRss(xml);
 
-      expect(result.entries[0].content).toBe("<p>The <code>&lt;system&gt;</code> tag.</p>");
+      expect(result.items[0].content).toBe("<p>The <code>&lt;system&gt;</code> tag.</p>");
     });
   });
 
@@ -274,14 +274,14 @@ describe("parseRss", () => {
 
       const result = parseRss(xml);
 
-      expect(result.entries).toHaveLength(1);
-      expect(result.entries[0].title).toBe("Stop Talking to Technology Executives");
-      expect(result.entries[0].guid).toBe(
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].title).toBe("Stop Talking to Technology Executives");
+      expect(result.items[0].guid).toBe(
         "https://www.stilldrinking.org/stop-talking-to-technology-executives"
       );
       // link should be undefined since the feed doesn't include a <link> element
       // The entry-processor will derive the URL from the GUID
-      expect(result.entries[0].link).toBeUndefined();
+      expect(result.items[0].link).toBeUndefined();
     });
   });
 
@@ -298,7 +298,7 @@ describe("parseRss", () => {
             </item>
           </channel>
         </rss>`;
-      return parseRss(xml).entries[0].pubDate;
+      return parseRss(xml).items[0].pubDate;
     }
 
     it("parses US timezone abbreviations", () => {
@@ -353,17 +353,17 @@ describe("parseRss", () => {
       expect(result.siteUrl).toBe("https://example.com");
       expect(result.description).toBe("Test description");
 
-      expect(result.entries).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
 
       // First entry: unclosed link followed directly by pubdate
-      expect(result.entries[0].title).toBe("Post with unclosed link");
-      expect(result.entries[0].link).toBe("https://example.com/post-1");
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.items[0].title).toBe("Post with unclosed link");
+      expect(result.items[0].link).toBe("https://example.com/post-1");
+      expect(result.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
 
       // Second entry: unclosed link followed by comments then pubdate
-      expect(result.entries[1].title).toBe("Post with comments after link");
-      expect(result.entries[1].link).toBe("https://example.com/post-2");
-      expect(result.entries[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
+      expect(result.items[1].title).toBe("Post with comments after link");
+      expect(result.items[1].link).toBe("https://example.com/post-2");
+      expect(result.items[1].pubDate).toEqual(new Date("2024-01-02T12:00:00Z"));
     });
 
     it("handles unclosed title tags", () => {
@@ -383,8 +383,8 @@ describe("parseRss", () => {
       const result = parseRss(xml);
 
       expect(result.title).toBe("Test Feed");
-      expect(result.entries[0].title).toBe("Unclosed title");
-      expect(result.entries[0].link).toBe("https://example.com/post");
+      expect(result.items[0].title).toBe("Unclosed title");
+      expect(result.items[0].link).toBe("https://example.com/post");
     });
   });
 });

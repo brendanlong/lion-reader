@@ -5,7 +5,7 @@ import {
   buildArxivPdfUrl,
   extractPaperId,
   parseArxivAbsMetadata,
-} from "@/server/feed/arxiv";
+} from "./arxiv-urls";
 import { formatAuthors } from "@/server/feed/authors";
 import { fetchArticle, HttpFetchError } from "@/server/http/fetch";
 import { fetchPluginPage } from "./fetch-page";

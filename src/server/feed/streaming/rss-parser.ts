@@ -3,7 +3,7 @@
  *
  * The SAX state machine is the native `@lion-reader/feed-parser` module
  * (`native/feed-parser/core/src/rss.rs`). Date parsing stays in this file:
- * the native side returns raw date strings and `toFeedParseResult` does the
+ * the native side returns raw date strings and `toParsedFeed` does the
  * pubDate/dc:date selection with `parseRssDate`, so dates keep V8's lenient
  * `new Date()` semantics.
  */
@@ -13,8 +13,9 @@ import {
   parseRssAsync as nativeParseRssAsync,
 } from "@lion-reader/feed-parser";
 import { usageLimitsConfig } from "../../config/env";
-import type { FeedParseResult } from "./types";
-import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
+import type { ParsedFeed } from "../types";
+import { toParsedFeed } from "./native-result";
+import { NATIVE_INLINE_MAX_CHARS } from "../../native-inline";
 
 /**
  * Parses an RSS feed from a string.
@@ -22,8 +23,8 @@ import { PARSE_INLINE_MAX_CHARS, toFeedParseResult } from "./native-result";
  * @param content - The RSS XML content as a string
  * @returns Parsed feed metadata and entries
  */
-export function parseRss(content: string): FeedParseResult {
-  return toFeedParseResult(nativeParseRss(content, usageLimitsConfig.maxFeedEntries), parseRssDate);
+export function parseRss(content: string): ParsedFeed {
+  return toParsedFeed(nativeParseRss(content, usageLimitsConfig.maxFeedEntries), parseRssDate);
 }
 
 /**
@@ -31,11 +32,11 @@ export function parseRss(content: string): FeedParseResult {
  * so a large feed never blocks the event loop. Small inputs run
  * synchronously (the async hop costs more than the parse).
  */
-export async function parseRssAsync(content: string): Promise<FeedParseResult> {
-  if (content.length <= PARSE_INLINE_MAX_CHARS) {
+export async function parseRssAsync(content: string): Promise<ParsedFeed> {
+  if (content.length <= NATIVE_INLINE_MAX_CHARS) {
     return parseRss(content);
   }
-  return toFeedParseResult(
+  return toParsedFeed(
     await nativeParseRssAsync(content, usageLimitsConfig.maxFeedEntries),
     parseRssDate
   );

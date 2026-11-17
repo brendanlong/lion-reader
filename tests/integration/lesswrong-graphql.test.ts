@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { z } from "zod";
-import { lessWrongGraphql } from "../../src/server/feed/lesswrong";
+import { lessWrongGraphql } from "../../src/server/plugins/lesswrong-api";
 import { HttpFetchError } from "../../src/server/http/fetch";
 import { USER_AGENT } from "../../src/server/http/user-agent";
 

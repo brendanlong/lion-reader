@@ -39,8 +39,20 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
     expect(excerpt!.endsWith("...")).toBe(true);
+  });
+
+  it("hard-cuts an excerpt ending in one long token instead of dropping it whole", () => {
+    const url = `https://example.com/${"a".repeat(SUMMARY_MAX_LENGTH)}`;
+    const excerpt = computeSavedArticleExcerpt({
+      providedExcerpt: `Source: ${url}`,
+      preCleanedContent: null,
+      cleaned: null,
+      pluginContent: null,
+      html: "<p>Raw</p>",
+    });
+    expect(excerpt).toBe(`Source: ${url}`.slice(0, SUMMARY_MAX_LENGTH - 3) + "...");
   });
 
   it("ignores an empty caller-provided excerpt and falls through to the next source", () => {
@@ -63,7 +75,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
     expect(excerpt!.endsWith("...")).toBe(true);
     expect(excerpt!).not.toContain("Reward hackin…"); // no mid-word cut
   });
@@ -90,7 +102,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
     expect(excerpt!.endsWith("...")).toBe(true);
     expect(excerpt!.startsWith("Frontmatter description")).toBe(true);
   });

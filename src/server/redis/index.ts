@@ -112,22 +112,3 @@ export async function closeRedisClient(): Promise<void> {
     redisClient.disconnect();
   }
 }
-
-/**
- * Legacy export for backwards compatibility.
- * @deprecated Use getRedisClient() instead to handle null case.
- * This getter will throw if Redis is not configured.
- */
-export const redis = new Proxy({} as Redis, {
-  get(_, prop) {
-    const client = getRedisClient();
-    if (!client) {
-      throw new Error("Redis is not configured (REDIS_URL not set)");
-    }
-    const value = client[prop as keyof Redis];
-    if (typeof value === "function") {
-      return value.bind(client);
-    }
-    return value;
-  },
-});

@@ -35,42 +35,20 @@ export const googleDocsPlugin: UrlPlugin = {
   capabilities: {
     savedArticle: {
       async fetchContent(url: URL, options): Promise<SavedArticleContent | null> {
-        try {
-          // Validates it's a Google Docs URL: extractDocId returns null when it isn't.
-          const docId = extractDocId(url.href);
-          if (!docId) {
-            return null;
-          }
-
-          // Fetch the document content
-          const content = await fetchGoogleDocsFromUrl(url.href, options);
-          if (!content) {
-            return null;
-          }
-
-          // Normalize the URL to use as canonical
-          const canonical = normalizeGoogleDocsUrl(url.href);
-          const title = content.title || null;
-
-          return {
-            // Bare fragment, not a wrapped document: with skipReadability the
-            // html is stored as the article body, and the read-path sanitizer
-            // drops <title> tags but keeps their text — a wrapped document
-            // would leak the doc title as stray text above the content.
-            html: content.html,
-            title,
-            canonicalUrl: canonical,
-          };
-        } catch (error) {
-          if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
-            throw error;
-          }
-          logger.warn("Failed to fetch Google Docs content", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        const content = await fetchGoogleDocsFromUrl(url.href, options);
+        if (!content) {
           return null;
         }
+
+        return {
+          // Bare fragment, not a wrapped document: with skipReadability the
+          // html is stored as the article body, and the read-path sanitizer
+          // drops <title> tags but keeps their text — a wrapped document
+          // would leak the doc title as stray text above the content.
+          html: content.html,
+          title: content.title || null,
+          canonicalUrl: normalizeGoogleDocsUrl(url.href),
+        };
       },
 
       async fetchContentAsUser(

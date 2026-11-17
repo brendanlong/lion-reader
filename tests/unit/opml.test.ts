@@ -278,6 +278,24 @@ describe("parseOpmlAsync", () => {
     });
   });
 
+  it("reads xmlUrl in any attribute case", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <opml version="2.0">
+        <head><title>Test</title></head>
+        <body>
+          <outline type="rss" text="Feed1" xmlUrl="https://example1.com/feed"/>
+          <outline type="rss" text="Feed2" xmlurl="https://example2.com/feed"/>
+        </body>
+      </opml>`;
+
+    const feeds = await parseOpmlAsync(xml);
+
+    expect(feeds.map((feed) => feed.xmlUrl)).toEqual([
+      "https://example1.com/feed",
+      "https://example2.com/feed",
+    ]);
+  });
+
   describe("error handling", () => {
     it("throws OpmlParseError for invalid XML", async () => {
       const xml = "not valid xml at all <>";

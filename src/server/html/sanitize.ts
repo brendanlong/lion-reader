@@ -35,6 +35,7 @@ import {
 
 import { logger } from "@/lib/logger";
 import { startSanitizeTimer } from "@/server/metrics/metrics";
+import { NATIVE_INLINE_MAX_CHARS } from "@/server/native-inline";
 
 function logWarnings(warnings: string[]): void {
   for (const warning of warnings) {
@@ -102,14 +103,6 @@ export function sanitizeEntryHtml(html: string | null | undefined): string | nul
 }
 
 /**
- * Bodies at or below this size are sanitized synchronously on the calling
- * thread: the native sanitizer runs in well under a millisecond for them, so
- * the fixed cost of scheduling a libuv-thread-pool task (and copying the
- * string across the N-API boundary twice) isn't worth paying. ~10 KB.
- */
-const SANITIZE_INLINE_MAX_CHARS = 10 * 1024;
-
-/**
  * Async form of {@link sanitizeEntryHtml}: the native pipeline runs on the
  * libuv thread pool for bodies above the inline threshold, so a large body
  * never blocks the event loop that serves UI requests; small bodies run
@@ -126,7 +119,7 @@ export async function sanitizeEntryHtmlAsync(
 ): Promise<string | null> {
   if (!html) return null;
   // Small bodies run through the sync path, which records its own timing.
-  if (html.length <= SANITIZE_INLINE_MAX_CHARS) {
+  if (html.length <= NATIVE_INLINE_MAX_CHARS) {
     return sanitizeEntryHtml(html);
   }
   const stopTimer = startSanitizeTimer();

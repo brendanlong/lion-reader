@@ -15,7 +15,6 @@ import {
   ProviderBusyError,
   providerError,
   ProviderRejectedError,
-  retryAfterSeconds,
 } from "@/server/services/provider-errors";
 
 const signal = () => new AbortController().signal;
@@ -209,15 +208,6 @@ describe("classifyProviderError", () => {
     );
     expect(classifyProviderError(new DOMException("gone", "AbortError"))).toBe("failed");
     expect(classifyProviderError(new Error("oops"))).toBe("failed");
-  });
-});
-
-describe("retryAfterSeconds", () => {
-  it("reads seconds or a date", () => {
-    expect(retryAfterSeconds("5")).toBe(5);
-    expect(retryAfterSeconds(new Date(10_000).toUTCString(), 4_000)).toBe(6);
-    expect(retryAfterSeconds("soon")).toBeNull();
-    expect(retryAfterSeconds(null)).toBeNull();
   });
 });
 

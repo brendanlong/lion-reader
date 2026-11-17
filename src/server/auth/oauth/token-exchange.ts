@@ -8,7 +8,8 @@
  */
 
 import * as client from "openid-client";
-import { redis } from "@/server/redis";
+import type Redis from "ioredis";
+import { getRedisClient } from "@/server/redis";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { OAUTH_STATE_TTL_SECONDS } from "@/server/auth/oauth/state-cookie";
 import type { OAuthLinkTarget } from "@/server/auth/oauth/config";
@@ -95,9 +96,18 @@ export class OAuthStateError extends Error {
   }
 }
 
+/** OAuth sign-in keeps its state in Redis, so it can't run without it. */
+function requireRedis(): Redis {
+  const client = getRedisClient();
+  if (!client) {
+    throw new Error("Redis is not configured (REDIS_URL not set)");
+  }
+  return client;
+}
+
 /** Stores a flow's state blob under `key` (the provider's prefix + the `state` value). */
 export async function storeOAuthState(key: string, data: object): Promise<void> {
-  await redis.setex(key, OAUTH_STATE_TTL_SECONDS, JSON.stringify(data));
+  await requireRedis().setex(key, OAUTH_STATE_TTL_SECONDS, JSON.stringify(data));
 }
 
 /**
@@ -115,7 +125,7 @@ export async function beginOAuthCallback<T>(
   key: string,
   start: (data: T) => { flow: OAuthFlow; exchange(code: string): Promise<ProviderIdentity> }
 ): Promise<PendingOAuthCallback> {
-  const value = await redis.get(key);
+  const value = await requireRedis().get(key);
   if (!value) {
     throw new OAuthStateError();
   }
@@ -130,7 +140,7 @@ export async function beginOAuthCallback<T>(
   return {
     flow,
     async complete(code) {
-      if ((await redis.del(key)) === 0) {
+      if ((await requireRedis().del(key)) === 0) {
         throw new OAuthStateError();
       }
       return exchange(code);

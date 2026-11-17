@@ -148,7 +148,7 @@ return {allowed, remaining, reset_ms, retry_after_seconds}
  */
 export async function checkRateLimit(
   identifier: string,
-  type: RateLimitType = "default",
+  type: RateLimitType,
   options: RateLimitOptions = {}
 ): Promise<ConsumeResult> {
   return consumeBucket(getRateLimitKey(identifier, type), RATE_LIMIT_CONFIGS[type], options);
@@ -324,7 +324,7 @@ function buildRateLimitResponse(
  */
 export async function checkRouteRateLimit(
   request: Request,
-  type: RateLimitType = "default",
+  type: RateLimitType,
   options: { json?: boolean; userId?: string | null } = {}
 ): Promise<Response | null> {
   const identifier = getClientIdentifier(options.userId ?? null, request.headers);

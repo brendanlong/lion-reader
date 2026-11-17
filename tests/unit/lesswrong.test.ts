@@ -18,7 +18,7 @@ import {
   isLessWrongShortformPage,
   buildLessWrongPostCommentFeedUrl,
   buildLessWrongUserShortformFeedUrl,
-} from "../../src/server/feed/lesswrong";
+} from "../../src/server/plugins/lesswrong-api";
 
 describe("LessWrong URL detection", () => {
   describe("isLessWrongUrl", () => {

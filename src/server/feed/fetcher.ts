@@ -10,8 +10,10 @@ import {
   readResponseBufferWithSizeLimit,
   ContentTooLargeError,
   ACCEPT_ENCODING,
+  FEED_ACCEPT_HEADER,
 } from "../http/fetch";
 import { fetchWithSsrfProtection } from "../http/ssrf";
+import { parseRetryAfter } from "../http/retry-after";
 import { usageLimitsConfig } from "../config/env";
 
 /**
@@ -87,7 +89,7 @@ interface FetchServerErrorResult {
   /** Error message */
   message: string;
   /** Retry-After header value in seconds, if present */
-  retryAfter?: number;
+  retryAfter: number | null;
 }
 
 /**
@@ -96,7 +98,7 @@ interface FetchServerErrorResult {
 interface FetchRateLimitedResult {
   status: "rate_limited";
   /** Retry-After header value in seconds, if present */
-  retryAfter?: number;
+  retryAfter: number | null;
 }
 
 /**
@@ -223,34 +225,6 @@ export function formatNetworkErrorMessage(error: Error): string {
 }
 
 /**
- * Parses the Retry-After header value.
- *
- * @param header - The Retry-After header value
- * @returns Retry delay in seconds, or undefined if invalid
- */
-function parseRetryAfter(header: string | null): number | undefined {
-  if (!header) return undefined;
-
-  // Try parsing as integer (seconds)
-  const seconds = parseInt(header, 10);
-  if (!isNaN(seconds) && seconds >= 0) {
-    return seconds;
-  }
-
-  // Try parsing as HTTP date
-  const date = new Date(header);
-  if (!isNaN(date.getTime())) {
-    const delayMs = date.getTime() - Date.now();
-    if (delayMs > 0) {
-      return Math.ceil(delayMs / 1000);
-    }
-    return 0;
-  }
-
-  return undefined;
-}
-
-/**
  * Determines redirect type from status code.
  */
 function getRedirectType(statusCode: number): "permanent" | "temporary" {
@@ -304,7 +278,7 @@ export async function fetchFeed(
       context: feedId ? `feed:${feedId}` : undefined,
       subscriberCount,
     }),
-    Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    Accept: FEED_ACCEPT_HEADER,
     "Accept-Encoding": ACCEPT_ENCODING,
   };
 

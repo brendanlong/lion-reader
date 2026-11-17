@@ -109,59 +109,56 @@ export function stripHtml(html: string, maxLength?: number): string {
   let lastWasSpace = true; // Start true to avoid leading spaces
   let skipDepth = 0; // Track depth inside script/style tags
 
-  const parser = createSaxParser(
-    {
-      onopentagname(name) {
-        const tag = name.toLowerCase();
-        if (SKIP_TAGS.has(tag)) {
-          skipDepth++;
-        }
-        // Add space before block elements (includes br/hr which are void)
-        if (BLOCK_TAGS.has(tag) && !lastWasSpace && result.length > 0) {
-          result += " ";
-          lastWasSpace = true;
-        }
-      },
-      ontext(text) {
-        if (skipDepth > 0) return;
-
-        // Normalize whitespace and append character by character with deduplication
-        const normalized = text.replace(/\s+/g, " ");
-        for (const char of normalized) {
-          if (char === " ") {
-            if (!lastWasSpace && result.length > 0) {
-              result += " ";
-              lastWasSpace = true;
-            }
-          } else {
-            result += char;
-            lastWasSpace = false;
-          }
-        }
-
-        // Exit early once there's more than fits, so the cut gets its "..."
-        if (maxLength && result.length > maxLength) {
-          parser.pause();
-        }
-      },
-      onclosetag(name) {
-        const tag = name.toLowerCase();
-        if (SKIP_TAGS.has(tag)) {
-          skipDepth--;
-        }
-        if (BLOCK_TAGS.has(tag) && !lastWasSpace) {
-          result += " ";
-          lastWasSpace = true;
-        }
-      },
+  const parser = createSaxParser({
+    onopentagname(name) {
+      const tag = name.toLowerCase();
+      if (SKIP_TAGS.has(tag)) {
+        skipDepth++;
+      }
+      // Add space before block elements (includes br/hr which are void)
+      if (BLOCK_TAGS.has(tag) && !lastWasSpace && result.length > 0) {
+        result += " ";
+        lastWasSpace = true;
+      }
     },
-    { decodeEntities: true }
-  );
+    ontext(text) {
+      if (skipDepth > 0) return;
+
+      // Normalize whitespace and append character by character with deduplication
+      const normalized = text.replace(/\s+/g, " ");
+      for (const char of normalized) {
+        if (char === " ") {
+          if (!lastWasSpace && result.length > 0) {
+            result += " ";
+            lastWasSpace = true;
+          }
+        } else {
+          result += char;
+          lastWasSpace = false;
+        }
+      }
+
+      // Exit early once there's more than fits, so the cut gets its "..."
+      if (maxLength && result.length > maxLength) {
+        parser.pause();
+      }
+    },
+    onclosetag(name) {
+      const tag = name.toLowerCase();
+      if (SKIP_TAGS.has(tag)) {
+        skipDepth--;
+      }
+      if (BLOCK_TAGS.has(tag) && !lastWasSpace) {
+        result += " ";
+        lastWasSpace = true;
+      }
+    },
+  });
 
   parser.write(html);
   parser.end();
 
-  return truncateAtWord(result.trim(), maxLength);
+  return truncateText(result, maxLength);
 }
 
 /** Table cells: separated within their row, which is the block. */
@@ -182,32 +179,29 @@ export function htmlToPlainText(html: string): string {
   let skipDepth = 0;
   let preDepth = 0;
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        if (SKIP_TAGS.has(name)) skipDepth++;
-        if (skipDepth > 0) return;
-        if (name === "pre") preDepth++;
-        if (name === "img") {
-          parts.push(attribs.alt ? `\n\nImage: ${attribs.alt}\n\n` : "\n\nImage\n\n");
-        } else if (CELL_TAGS.has(name)) {
-          parts.push(" ");
-        } else if (BLOCK_TAGS.has(name)) {
-          parts.push("\n\n");
-        }
-      },
-      ontext(text) {
-        if (skipDepth === 0) parts.push(preDepth > 0 ? text : text.replace(/\s+/g, " "));
-      },
-      onclosetag(name) {
-        if (SKIP_TAGS.has(name)) skipDepth--;
-        if (skipDepth > 0) return;
-        if (name === "pre") preDepth--;
-        if (BLOCK_TAGS.has(name) && !CELL_TAGS.has(name)) parts.push("\n\n");
-      },
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      if (SKIP_TAGS.has(name)) skipDepth++;
+      if (skipDepth > 0) return;
+      if (name === "pre") preDepth++;
+      if (name === "img") {
+        parts.push(attribs.alt ? `\n\nImage: ${attribs.alt}\n\n` : "\n\nImage\n\n");
+      } else if (CELL_TAGS.has(name)) {
+        parts.push(" ");
+      } else if (BLOCK_TAGS.has(name)) {
+        parts.push("\n\n");
+      }
     },
-    { decodeEntities: true }
-  );
+    ontext(text) {
+      if (skipDepth === 0) parts.push(preDepth > 0 ? text : text.replace(/\s+/g, " "));
+    },
+    onclosetag(name) {
+      if (SKIP_TAGS.has(name)) skipDepth--;
+      if (skipDepth > 0) return;
+      if (name === "pre") preDepth--;
+      if (BLOCK_TAGS.has(name) && !CELL_TAGS.has(name)) parts.push("\n\n");
+    },
+  });
   parser.write(html);
   parser.end();
 
@@ -222,41 +216,31 @@ export function htmlToPlainText(html: string): string {
     .trim();
 }
 
-/** Truncates at a word boundary, dropping a partial word, with "..." inside `maxLength`. */
-export function truncateAtWord(text: string, maxLength?: number): string {
-  if (!maxLength || text.length <= maxLength) {
-    return text;
-  }
-
-  const truncateAt = maxLength - 3; // Reserve space for "..."
-  const lastSpace = text.lastIndexOf(" ", truncateAt);
-
-  if (lastSpace > 0) {
-    return text.slice(0, lastSpace) + "...";
-  }
-
-  // No space found - single long word, just hard truncate
-  return text.slice(0, truncateAt) + "...";
-}
+/**
+ * How far before the cut {@link truncateText} looks for a word boundary. A
+ * space further back than this would throw away most of the budget (text
+ * ending in one long token, like a URL), so the cut is hard instead.
+ */
+const WORD_BOUNDARY_LOOKBACK_CHARS = 50;
 
 /**
- * Truncates plain text to a maximum length at a word boundary, adding an
- * ellipsis when it had to cut. (Operates on already-plain text, unlike
+ * Trims plain text and truncates it at a nearby word boundary, dropping a
+ * partial word, with "..." inside `maxLength`. (Operates on already-plain text, unlike
  * `stripHtml`, which parses HTML first — so it's safe for text that may contain
  * `<`/`>` from math/LaTeX, e.g. an arXiv abstract.)
  */
-export function truncateText(text: string, maxLength: number): string {
+export function truncateText(text: string, maxLength?: number): string {
   const trimmed = text.trim();
-  if (trimmed.length <= maxLength) {
+  if (!maxLength || trimmed.length <= maxLength) {
     return trimmed;
   }
 
-  // Try to find a word boundary before the max length
-  let truncated = trimmed.slice(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(" ");
-  if (lastSpace > maxLength - 50) {
-    truncated = truncated.slice(0, lastSpace);
+  const truncateAt = maxLength - 3; // Reserve space for "..."
+  const lastSpace = trimmed.lastIndexOf(" ", truncateAt);
+
+  if (lastSpace > 0 && lastSpace > truncateAt - WORD_BOUNDARY_LOOKBACK_CHARS) {
+    return trimmed.slice(0, lastSpace).trimEnd() + "...";
   }
 
-  return truncated.trimEnd() + "...";
+  return trimmed.slice(0, truncateAt) + "...";
 }

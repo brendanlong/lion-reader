@@ -1,7 +1,7 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { socialPostTitle } from "./social-post";
 import { escapeHtml } from "@/server/http/html";
-import { readResponseWithSizeLimit } from "@/server/http/fetch";
+import { ContentTooLargeError, readResponseWithSizeLimit } from "@/server/http/fetch";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
@@ -378,8 +378,17 @@ async function fetchJson<T>(url: string): Promise<T | null> {
     logger.debug("Bluesky API request failed", { url, status: response.status });
     return null;
   }
-  const body = await readResponseWithSizeLimit(response, BLUESKY_API_MAX_BYTES, url);
-  return JSON.parse(body) as T;
+  try {
+    const body = await readResponseWithSizeLimit(response, BLUESKY_API_MAX_BYTES, url);
+    return JSON.parse(body) as T;
+  } catch (error) {
+    // Our cap on the API's JSON, not the user's article limit: fall back to the page fetch.
+    if (error instanceof ContentTooLargeError) {
+      logger.debug("Bluesky API response too large", { url });
+      return null;
+    }
+    throw error;
+  }
 }
 
 /** Resolve a handle to a DID; passes DIDs through unchanged. */
@@ -455,17 +464,7 @@ export const blueskyPlugin: UrlPlugin = {
 
   capabilities: {
     savedArticle: {
-      async fetchContent(url: URL): Promise<SavedArticleContent | null> {
-        try {
-          return await fetchBlueskyPost(url);
-        } catch (error) {
-          logger.warn("Failed to fetch Bluesky content", {
-            url: url.href,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return null;
-        }
-      },
+      fetchContent: fetchBlueskyPost,
 
       // Our rendered HTML is already clean; Readability would mangle the short
       // post + embeds structure.

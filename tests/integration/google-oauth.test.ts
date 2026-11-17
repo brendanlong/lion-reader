@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } 
 import { generateKeyPair, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
-import { redis } from "../../src/server/redis";
+import { getRedisClient } from "../../src/server/redis";
 import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import {
@@ -18,6 +18,8 @@ import {
   OAUTH_STATE_TTL_SECONDS,
 } from "../../src/server/auth/oauth/state-cookie";
 import { createTestOAuthLink, createTestUser, createUnauthContext, deleteUsers } from "./helpers";
+
+const redis = getRedisClient()!;
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";

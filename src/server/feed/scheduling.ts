@@ -119,7 +119,7 @@ export interface CalculateNextFetchOptions {
    * fetch waits at least this long: `max(retryAfterSeconds, exponentialBackoff)`.
    * Ignored on success (there's no failure to back off from).
    */
-  retryAfterSeconds?: number;
+  retryAfterSeconds?: number | null;
   /**
    * Whether the current failure is a rate limit (429). Caps the failure
    * backoff at RATE_LIMIT_MAX_BACKOFF_SECONDS instead of letting it escalate
@@ -274,7 +274,7 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
     const backoff = rateLimited
       ? Math.min(calculateFailureBackoff(consecutiveFailures), RATE_LIMIT_MAX_BACKOFF_SECONDS)
       : calculateFailureBackoff(consecutiveFailures);
-    if (retryAfterSeconds !== undefined && retryAfterSeconds > backoff) {
+    if (retryAfterSeconds != null && retryAfterSeconds > backoff) {
       intervalSeconds = Math.min(retryAfterSeconds, MAX_FETCH_INTERVAL_SECONDS);
     } else {
       intervalSeconds = backoff;

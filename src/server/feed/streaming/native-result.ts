@@ -1,5 +1,5 @@
 /**
- * Conversion from the native feed parser's raw output to `FeedParseResult`.
+ * Conversion from the native feed parser's raw output to `ParsedFeed`.
  *
  * The native module (`@lion-reader/feed-parser`) returns entry dates as raw
  * strings because it can't reproduce V8's lenient `new Date()` parsing; this
@@ -8,17 +8,7 @@
 
 import type { DateCandidate, RawParsedFeed } from "@lion-reader/feed-parser";
 import { formatAuthors } from "../authors";
-import { isUpdatePeriod, type SyndicationHints } from "../types";
-import type { FeedParseResult } from "./types";
-
-/**
- * Inputs at or below this size are parsed synchronously by the `*Async`
- * parser entry points instead of scheduling a libuv-thread-pool task: the
- * native parser finishes in well under a millisecond for them, so the fixed
- * cost of the async hop isn't worth paying. ~10 KB, same rationale and value
- * as the sanitizer's and content cleaner's inline thresholds.
- */
-export const PARSE_INLINE_MAX_CHARS = 10 * 1024;
+import { isUpdatePeriod, type ParsedFeed, type SyndicationHints } from "../types";
 
 /**
  * Selects an entry's date from the document-ordered raw
@@ -43,11 +33,11 @@ function resolveDate(
   return date;
 }
 
-/** Converts the native parser's raw feed into a `FeedParseResult`. */
-export function toFeedParseResult(
+/** Converts the native parser's raw feed into a `ParsedFeed`. */
+export function toParsedFeed(
   raw: RawParsedFeed,
   parseDate: (value: string) => Date | undefined
-): FeedParseResult {
+): ParsedFeed {
   const updatePeriod =
     raw.updatePeriod !== undefined && isUpdatePeriod(raw.updatePeriod)
       ? raw.updatePeriod
@@ -69,7 +59,7 @@ export function toFeedParseResult(
     selfUrl: raw.selfUrl,
     ttlMinutes: raw.ttlMinutes,
     syndication,
-    entries: raw.entries.map((entry) => ({
+    items: raw.entries.map((entry) => ({
       guid: entry.guid,
       link: entry.link,
       title: entry.title,

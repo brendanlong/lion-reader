@@ -7,7 +7,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi, beforeAll } from "vitest";
-import { redis } from "../../src/server/redis";
+import { getRedisClient } from "../../src/server/redis";
+
+const redis = getRedisClient()!;
 
 const mockDiscordUserInfo = {
   id: "discord-user-123",
