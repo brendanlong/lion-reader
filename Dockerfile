@@ -175,9 +175,11 @@ ENV NEXT_PUBLIC_BUILD_TIME=$NEXT_PUBLIC_BUILD_TIME
 # Build Next.js application. The cache mount persists .next/cache (webpack's
 # persistent build cache) across builds, cutting warm build times — and keeps
 # it out of the image layers (it's build-time-only; the runtime recreates the
-# dir if it needs it).
+# dir if it needs it). Node's default heap is about a quarter of the
+# builder's RAM (~2 GB on Fly's builder), and webpack's full source maps
+# (`devtool` in next.config.ts) need more than that, so size it from RAM.
 RUN --mount=type=cache,id=next-cache,target=/app/.next/cache \
-    pnpm build
+    NODE_OPTIONS=--max-old-space-size-percentage=75 pnpm build
 
 # `output: "standalone"` emitted a traced, minimal node_modules into
 # .next/standalone — the runner ships that instead of the full pruned tree
