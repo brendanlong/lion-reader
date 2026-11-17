@@ -20,7 +20,6 @@ export async function GET(request: NextRequest) {
   return withMcpCorsHeaders(
     NextResponse.json(metadata, {
       headers: {
-        "Content-Type": "application/json",
         // no-store: see .well-known/oauth-authorization-server/route.ts
         "Cache-Control": "no-store",
       },

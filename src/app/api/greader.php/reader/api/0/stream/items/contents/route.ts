@@ -21,16 +21,12 @@
  * article bodies into one response — a runaway request should split, not stall.
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  parseItemIds,
-  jsonResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { parseFormData, parseItemIds } from "@/server/google-reader/parse";
 import { formatEntryAsItem } from "@/server/google-reader/format";
-import { greaderItemIdsToUuids, resolveGreaderIdsForEntries } from "@/server/google-reader/id";
+import { resolveGreaderItems } from "@/server/google-reader/id";
 import * as entryReadsService from "@/server/services/entry-reads";
 import { db } from "@/server/db";
 
@@ -43,24 +39,10 @@ export const dynamic = "force-dynamic";
  */
 const MAX_ITEM_IDS = 1000;
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   const params = await parseFormData(request);
-  let itemIds: bigint[];
-  try {
-    itemIds = parseItemIds(params);
-  } catch {
-    return errorResponse("Invalid item ID format", 400);
-  }
-
-  if (itemIds.length > MAX_ITEM_IDS) {
-    return errorResponse(
-      `Too many item ids: ${itemIds.length} requested, maximum ${MAX_ITEM_IDS} per request. Split into smaller batches.`,
-      400
-    );
-  }
+  const itemIds = parseItemIds(params, MAX_ITEM_IDS);
+  if (itemIds instanceof Response) return itemIds;
 
   if (itemIds.length === 0) {
     return jsonResponse({
@@ -70,20 +52,16 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
     });
   }
 
-  // Batch resolve item IDs to UUIDs
-  const uuidMap = await greaderItemIdsToUuids(db, session.user.id, itemIds);
-
   // Fetch full entries in a single bulk query (mirrors the Wallabag route)
   // rather than one getEntry per id. getEntries returns entries in the order of
   // the given UUIDs and silently skips ones that can't be found (deleted, not
   // visible to the user, etc.).
-  const uuids = [...uuidMap.values()];
-  const [entries, idsByEntry] = await Promise.all([
-    entryReadsService.getEntries(db, session.user.id, uuids),
-    resolveGreaderIdsForEntries(db, session.user.id, uuids),
-  ]);
+  const itemsByEntry = new Map(
+    (await resolveGreaderItems(db, user.id, itemIds)).map((item) => [item.id, item])
+  );
+  const entries = await entryReadsService.getEntries(db, user.id, [...itemsByEntry.keys()]);
   const items = entries.flatMap((entry) => {
-    const ids = idsByEntry.get(entry.id);
+    const ids = itemsByEntry.get(entry.id);
     return ids ? formatEntryAsItem(entry, ids) : [];
   });
 

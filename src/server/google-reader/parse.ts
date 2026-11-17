@@ -68,25 +68,25 @@ async function parseBody(request: Request): Promise<URLSearchParams> {
 }
 
 /**
- * Parses item IDs from request parameters.
+ * Parses item IDs from request parameters, or returns a 400 response for a
+ * malformed one or more than `max` of them.
  * Google Reader sends item IDs as repeated `i` parameters.
  * Each ID can be in long hex, short hex, or decimal format.
  */
-export function parseItemIds(params: URLSearchParams): bigint[] {
-  const rawIds = params.getAll("i");
-  return rawIds.map(parseItemId);
-}
-
-/**
- * Creates a Google Reader JSON response.
- */
-export function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-    },
-  });
+export function parseItemIds(params: URLSearchParams, max: number): bigint[] | Response {
+  let itemIds: bigint[];
+  try {
+    itemIds = params.getAll("i").map(parseItemId);
+  } catch {
+    return errorResponse("Invalid item ID format", 400);
+  }
+  if (itemIds.length > max) {
+    return errorResponse(
+      `Too many item ids: ${itemIds.length} requested, maximum ${max} per request. Split into smaller batches.`,
+      400
+    );
+  }
+  return itemIds;
 }
 
 /**

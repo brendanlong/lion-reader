@@ -27,6 +27,11 @@ export type StreamId =
   | { type: "state"; state: SystemState }
   | { type: "label"; name: string };
 
+/** The tag name in a `user/{userId}/label/{name}` stream ID, or null for any other ID. */
+export function labelName(streamId: string): string | null {
+  return streamId.match(/^user\/[^/]+\/label\/(.+)$/)?.[1] ?? null;
+}
+
 /**
  * Parses a Google Reader stream ID string.
  *
@@ -38,6 +43,11 @@ export function parseStreamId(streamId: string): StreamId {
   if (streamId.startsWith("feed/")) {
     const idStr = streamId.slice(5);
     return { type: "feed", subscriptionInt64: BigInt(idStr) };
+  }
+
+  const name = labelName(streamId);
+  if (name !== null) {
+    return { type: "label", name };
   }
 
   // Normalize user/{anything}/ to user/-/
@@ -63,12 +73,6 @@ export function parseStreamId(streamId: string): StreamId {
       throw new Error(`Unknown system state: ${state}`);
     }
     return { type: "state", state };
-  }
-
-  // label/{name}
-  const labelMatch = rest.match(/^label\/(.+)$/);
-  if (labelMatch) {
-    return { type: "label", name: labelMatch[1] };
   }
 
   throw new Error(`Invalid stream ID: ${streamId}`);

@@ -36,6 +36,7 @@ import {
   oauthAccounts,
   oauthClients,
   oauthTokenGrants,
+  type User,
   jobs,
   type Job,
 } from "../../src/server/db/schema";
@@ -559,6 +560,15 @@ export async function createTestUnprefixedAccessToken(
 // tRPC context
 // ============================================================================
 
+/** The user's current row, as authentication reads it on every request. */
+export async function userRow(userId: string): Promise<User> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) {
+    throw new Error(`No user with id ${userId}`);
+  }
+  return user;
+}
+
 /**
  * Builds a session-authenticated tRPC context for `userId`, reading the real
  * user row so the context can't drift from the schema the way a hand-written
@@ -566,10 +576,7 @@ export async function createTestUnprefixedAccessToken(
  * because nothing downstream of the context re-validates it.
  */
 export async function createAuthContext(userId: string): Promise<Context> {
-  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!user) {
-    throw new Error(`createAuthContext: no user with id ${userId}`);
-  }
+  const user = await userRow(userId);
   const now = new Date();
 
   return {

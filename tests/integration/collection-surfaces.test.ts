@@ -18,7 +18,6 @@ import {
   userEntries,
   users,
 } from "../../src/server/db/schema";
-import { getTools } from "../../src/server/mcp/tools";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { listEntries } from "../../src/server/services/entries";
 import {
@@ -37,6 +36,7 @@ import {
   createTestTag,
   createTestUser,
 } from "./helpers";
+import { callMcpTool } from "../utils/mcp";
 
 let subscriber: Redis;
 
@@ -62,12 +62,6 @@ afterAll(async () => {
   await cleanup();
 });
 
-function callTool(name: string, userId: string, args: unknown) {
-  const tool = getTools().find((t) => t.name === name);
-  if (!tool) throw new Error(`Tool not registered: ${name}`);
-  return tool.handler(db, userId, args);
-}
-
 async function userWithEntry() {
   const userId = await createTestUser();
   const feedId = await createTestFeed();
@@ -81,24 +75,24 @@ describe("MCP curation tools", () => {
     const { userId, entryId } = await userWithEntry();
     const tagId = await createTestTag(userId);
 
-    const collection = (await callTool("create_collection", userId, { name: "Top" })) as {
+    const collection = (await callMcpTool("create_collection", userId, { name: "Top" })) as {
       id: string;
       type: string;
       created: boolean;
     };
     expect(collection).toMatchObject({ type: "collection", created: true });
     expect(
-      await callTool("add_to_collection", userId, {
+      await callMcpTool("add_to_collection", userId, {
         collectionId: collection.id,
         entryIds: [entryId, entryId],
       })
     ).toEqual({ entryIds: [entryId] });
-    await callTool("set_subscription_tags", userId, {
+    await callMcpTool("set_subscription_tags", userId, {
       subscriptionId: collection.id,
       tagIds: [tagId, tagId],
     });
 
-    const listed = (await callTool("list_subscriptions", userId, { type: "collection" })) as {
+    const listed = (await callMcpTool("list_subscriptions", userId, { type: "collection" })) as {
       subscriptions: Array<{ id: string; tags: Array<{ id: string }> }>;
     };
     expect(listed.subscriptions.map((s) => [s.id, s.tags.map((t) => t.id)])).toEqual([
@@ -108,7 +102,7 @@ describe("MCP curation tools", () => {
     expect(items.map((i) => i.id)).toEqual([entryId]);
 
     expect(
-      await callTool("remove_from_collection", userId, {
+      await callMcpTool("remove_from_collection", userId, {
         collectionId: collection.id,
         entryIds: [entryId],
       })

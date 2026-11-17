@@ -14,9 +14,8 @@
 import { z } from "zod";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { users } from "@/server/db/schema";
+import type { User } from "@/server/db/schema";
 import {
   collectionEntryIdsSchema,
   collectionNameSchema,
@@ -68,7 +67,7 @@ interface Tool {
     required?: string[];
   };
   annotations: ToolHints;
-  handler: (db: typeof dbType, userId: string, args: unknown) => Promise<unknown>;
+  handler: (db: typeof dbType, user: User, args: unknown) => Promise<unknown>;
 }
 
 // ============================================================================
@@ -142,6 +141,27 @@ function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
   const json = z.toJSONSchema(schema) as Record<string, unknown>;
   delete json.$schema;
   return json as unknown as Tool["inputSchema"];
+}
+
+/**
+ * Builds a tool from its argument schema, which is both advertised as its
+ * `inputSchema` and enforced on every call before the handler runs.
+ */
+function defineTool<S extends z.ZodType>(tool: {
+  name: string;
+  description: string;
+  annotations: ToolHints;
+  args: S;
+  handler: (db: typeof dbType, user: User, args: z.infer<S>) => Promise<unknown>;
+}): Tool {
+  const { name, description, annotations, args, handler } = tool;
+  return {
+    name,
+    description,
+    annotations,
+    inputSchema: toInputSchema(args),
+    handler: (db, user, rawArgs) => handler(db, user, parseArgs(args, rawArgs)),
+  };
 }
 
 // ============================================================================
@@ -413,7 +433,7 @@ const write = (hints: { destructiveHint: boolean; idempotentHint: boolean }) =>
 /**
  * Returns every MCP tool, each wrapping a service function.
  *
- * The tool list is static (handlers take db/userId as parameters), so it is
+ * The tool list is static (handlers take db/user as parameters), so it is
  * built once per process — the stateless MCP HTTP route calls this on every
  * request, and rebuilding would re-run every z.toJSONSchema conversion.
  */
@@ -430,7 +450,7 @@ function buildTools(): Tool[] {
     // Entries Tools
     // ========================================================================
 
-    {
+    defineTool({
       name: "list_entries",
       description:
         "List the user's entries (feed items, newsletter issues and saved articles), newest first " +
@@ -441,22 +461,17 @@ function buildTools(): Tool[] {
         "more: pass it as `cursor` for the next page. Use get_entry for an entry's content, and " +
         "count_entries when you only need an unread count.",
       annotations: { title: "List entries", ...readOnly },
-      inputSchema: toInputSchema(listEntriesArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(listEntriesArgs, args);
-        const [user] = await db
-          .select({ showSpam: users.showSpam })
-          .from(users)
-          .where(eq(users.id, userId));
+      args: listEntriesArgs,
+      handler: async (db, user, params) => {
         return entriesService.listEntries(db, {
-          userId,
+          userId: user.id,
           ...params,
-          showSpam: user?.showSpam ?? false,
+          showSpam: user.showSpam,
         });
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "get_entry",
       description:
         "Get one entry with its content: the original and cleaned HTML, plus `fullContent` (the " +
@@ -465,14 +480,13 @@ function buildTools(): Tool[] {
         "Doesn't mark it read (use mark_entries_read). Fails with a not-found error if the entry " +
         "doesn't exist or isn't visible to the user.",
       annotations: { title: "Get entry", ...readOnly },
-      inputSchema: toInputSchema(getEntryArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(getEntryArgs, args);
-        return entryReadsService.getEntry(db, userId, params.entryId);
+      args: getEntryArgs,
+      handler: async (db, user, params) => {
+        return entryReadsService.getEntry(db, user.id, params.entryId);
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "mark_entries_read",
       description:
         `Mark up to ${entryStateService.MAX_ENTRY_STATE_BATCH} entries as read or unread in one ` +
@@ -483,23 +497,22 @@ function buildTools(): Tool[] {
         title: "Mark entries read or unread",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(markEntriesReadArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(markEntriesReadArgs, args);
+      args: markEntriesReadArgs,
+      handler: async (db, user, params) => {
         // markEntriesRead computes the counts and publishes entry_state_changed
         // for multi-tab/device sync itself, mirroring the tRPC mutation.
         const { entries, counts } = await entryStateService.markEntriesRead(
           db,
-          userId,
+          user.id,
           params.entryIds.map((id) => ({ id })),
           params.read
         );
 
         return { entries, counts };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "star_entries",
       // Single-entry despite the plural: the tool name is part of the
       // published MCP surface, so it stays as-is.
@@ -513,24 +526,23 @@ function buildTools(): Tool[] {
         title: "Star or unstar entry",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(starEntriesArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(starEntriesArgs, args);
+      args: starEntriesArgs,
+      handler: async (db, user, params) => {
         // updateEntryStarred computes the counts and publishes
         // entry_state_changed for multi-tab/device sync itself, mirroring the
         // tRPC entries.setStarred mutation.
         const { entry } = await entryStateService.updateEntryStarred(
           db,
-          userId,
+          user.id,
           params.entryId,
           params.starred
         );
 
         return entry;
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "set_entry_scores",
       description:
         `Set or clear (null) numeric scores on up to ${entryScoresService.MAX_ENTRY_SCORE_BATCH} ` +
@@ -543,14 +555,13 @@ function buildTools(): Tool[] {
         title: "Set entry scores",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(setEntryScoresArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(setEntryScoresArgs, args);
-        return entryScoresService.setEntryScores(db, userId, params.scores);
+      args: setEntryScoresArgs,
+      handler: async (db, user, params) => {
+        return entryScoresService.setEntryScores(db, user.id, params.scores);
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "count_entries",
       description:
         "Get the unread count of one list as { unread, asOf }: all entries by default, or pass at " +
@@ -559,18 +570,17 @@ function buildTools(): Tool[] {
         "counts 0. Cheaper than paging through list_entries when you only need the number; " +
         "list_tags and list_subscriptions include unread counts per tag and subscription.",
       annotations: { title: "Count unread entries", ...readOnly },
-      inputSchema: toInputSchema(countEntriesArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(countEntriesArgs, args);
-        return entriesService.countEntries(db, userId, params);
+      args: countEntriesArgs,
+      handler: async (db, user, params) => {
+        return entriesService.countEntries(db, user.id, params);
       },
-    },
+    }),
 
     // ========================================================================
     // Saved Articles Tools
     // ========================================================================
 
-    {
+    defineTool({
       name: "save_article",
       description:
         "Save a web page by URL to the user's Saved list: fetches it, extracts the article with " +
@@ -588,10 +598,9 @@ function buildTools(): Tool[] {
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: toInputSchema(saveArticleArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(saveArticleArgs, args);
-        const article = await savedService.saveArticle(db, userId, {
+      args: saveArticleArgs,
+      handler: async (db, user, params) => {
+        const article = await savedService.saveArticle(db, user.id, {
           url: params.url,
           title: params.title,
           author: params.author,
@@ -607,9 +616,9 @@ function buildTools(): Tool[] {
         });
         return withoutContent(article);
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "delete_saved_article",
       description:
         "Permanently delete an article from the user's Saved list (saved by URL or uploaded), and " +
@@ -620,15 +629,14 @@ function buildTools(): Tool[] {
         title: "Delete saved article",
         ...write({ destructiveHint: true, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(deleteSavedArticleArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(deleteSavedArticleArgs, args);
-        const counts = await savedService.deleteSavedArticle(db, userId, params.articleId);
+      args: deleteSavedArticleArgs,
+      handler: async (db, user, params) => {
+        const counts = await savedService.deleteSavedArticle(db, user.id, params.articleId);
         return { deleted: counts !== null };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "upload_article",
       description:
         "Save an article from Markdown you provide (e.g. something you wrote, summarized or " +
@@ -639,10 +647,9 @@ function buildTools(): Tool[] {
         title: "Upload Markdown article",
         ...write({ destructiveHint: false, idempotentHint: false }),
       },
-      inputSchema: toInputSchema(uploadArticleArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(uploadArticleArgs, args);
-        const article = await savedService.uploadArticle(db, userId, {
+      args: uploadArticleArgs,
+      handler: async (db, user, params) => {
+        const article = await savedService.uploadArticle(db, user.id, {
           content: params.content,
           title: params.title,
           author: params.author,
@@ -652,13 +659,13 @@ function buildTools(): Tool[] {
         });
         return withoutContent(article);
       },
-    },
+    }),
 
     // ========================================================================
     // Subscriptions Tools
     // ========================================================================
 
-    {
+    defineTool({
       name: "list_subscriptions",
       description:
         "List the user's active subscriptions: web feeds, newsletters, collections and (once " +
@@ -667,31 +674,29 @@ function buildTools(): Tool[] {
         "or collectionId other tools take. Returns `items` and `nextCursor` when there are more: " +
         "pass it as `cursor` for the next page. With an ID already in hand, use get_subscription.",
       annotations: { title: "List subscriptions", ...readOnly },
-      inputSchema: toInputSchema(listSubscriptionsArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(listSubscriptionsArgs, args);
+      args: listSubscriptionsArgs,
+      handler: async (db, user, params) => {
         return subscriptionsService.listSubscriptions(db, {
-          userId,
+          userId: user.id,
           ...params,
         });
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "get_subscription",
       description:
         "Get one subscription by ID (from list_subscriptions or an entry's subscription IDs), " +
         "including its type, unread count and tags. Fails with a not-found error if the user has " +
         "no active subscription with that ID.",
       annotations: { title: "Get subscription", ...readOnly },
-      inputSchema: toInputSchema(getSubscriptionArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(getSubscriptionArgs, args);
-        return subscriptionsService.getSubscription(db, userId, params.subscriptionId);
+      args: getSubscriptionArgs,
+      handler: async (db, user, params) => {
+        return subscriptionsService.getSubscription(db, user.id, params.subscriptionId);
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "set_subscription_tags",
       description:
         "Replace the complete set of tags on a subscription (a feed, newsletter or collection; " +
@@ -704,24 +709,23 @@ function buildTools(): Tool[] {
         title: "Set subscription tags",
         ...write({ destructiveHint: true, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(setSubscriptionTagsArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(setSubscriptionTagsArgs, args);
+      args: setSubscriptionTagsArgs,
+      handler: async (db, user, params) => {
         await subscriptionUpdatesService.setSubscriptionTags(
           db,
-          userId,
+          user.id,
           params.subscriptionId,
           params.tagIds
         );
         return { success: true };
       },
-    },
+    }),
 
     // ========================================================================
     // Collections Tools
     // ========================================================================
 
-    {
+    defineTool({
       name: "create_collection",
       description:
         "Create a collection: a named list of articles the user fills by hand (with " +
@@ -734,19 +738,18 @@ function buildTools(): Tool[] {
         title: "Create collection",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(createCollectionArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(createCollectionArgs, args);
+      args: createCollectionArgs,
+      handler: async (db, user, params) => {
         const { subscription, created } = await collectionsService.createCollection(
           db,
-          userId,
+          user.id,
           params.name
         );
         return { ...subscription, created };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "delete_collection",
       description:
         "Delete a collection. Can't be undone. Its articles stay in their feeds and in Saved " +
@@ -757,17 +760,16 @@ function buildTools(): Tool[] {
         title: "Delete collection",
         ...write({ destructiveHint: true, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(deleteCollectionArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(deleteCollectionArgs, args);
-        await collectionsService.deleteCollection(db, userId, params.collectionId, {
+      args: deleteCollectionArgs,
+      handler: async (db, user, params) => {
+        await collectionsService.deleteCollection(db, user.id, params.collectionId, {
           deleteSavedArticles: params.deleteSavedArticles,
         });
         return { success: true };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "add_to_collection",
       description:
         "Add articles to a collection (find its ID with list_subscriptions, or make one with " +
@@ -780,20 +782,19 @@ function buildTools(): Tool[] {
         title: "Add to collection",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(collectionEntriesArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(collectionEntriesArgs, args);
+      args: collectionEntriesArgs,
+      handler: async (db, user, params) => {
         const { entryIds } = await collectionsService.addEntriesToCollection(
           db,
-          userId,
+          user.id,
           params.collectionId,
           params.entryIds
         );
         return { entryIds };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "remove_from_collection",
       description:
         "Remove articles from a collection without deleting them: they stay in their feeds and in " +
@@ -805,20 +806,19 @@ function buildTools(): Tool[] {
         title: "Remove from collection",
         ...write({ destructiveHint: true, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(collectionEntriesArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(collectionEntriesArgs, args);
+      args: collectionEntriesArgs,
+      handler: async (db, user, params) => {
         const { entryIds } = await collectionsService.removeEntriesFromCollection(
           db,
-          userId,
+          user.id,
           params.collectionId,
           params.entryIds
         );
         return { entryIds };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "set_collection_positions",
       description:
         "Set the order of articles in a collection (e.g. a book's chapters): a list sorted by " +
@@ -832,24 +832,23 @@ function buildTools(): Tool[] {
         title: "Order collection",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(collectionPositionsArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(collectionPositionsArgs, args);
+      args: collectionPositionsArgs,
+      handler: async (db, user, params) => {
         return collectionsService.setCollectionPositions(
           db,
-          userId,
+          user.id,
           params.collectionId,
           params.positions ??
             (params.entryIds ?? []).map((entryId, i) => ({ entryId, position: i + 1 }))
         );
       },
-    },
+    }),
 
     // ========================================================================
     // Tags Tools
     // ========================================================================
 
-    {
+    defineTool({
       name: "list_tags",
       description:
         "List all the user's tags as `items` (id, name, color, feedCount: subscriptions tagged, " +
@@ -857,14 +856,13 @@ function buildTools(): Tool[] {
         "tag). Use this to find tag IDs for set_subscription_tags, list_entries, count_entries " +
         "and list_subscriptions, or before create_tag to see what exists.",
       annotations: { title: "List tags", ...readOnly },
-      inputSchema: toInputSchema(listTagsArgs),
-      handler: async (db, userId, args) => {
-        parseArgs(listTagsArgs, args);
-        return tagsService.listTags(db, userId);
+      args: listTagsArgs,
+      handler: async (db, user) => {
+        return tagsService.listTags(db, user.id);
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "create_tag",
       description:
         "Create a tag for grouping subscriptions (apply it with set_subscription_tags). If a tag " +
@@ -874,18 +872,17 @@ function buildTools(): Tool[] {
         title: "Create tag",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(createTagArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(createTagArgs, args);
-        const { tag, created } = await tagsService.createTag(db, userId, {
+      args: createTagArgs,
+      handler: async (db, user, params) => {
+        const { tag, created } = await tagsService.createTag(db, user.id, {
           name: params.name,
           color: params.color,
         });
         return { ...tag, created };
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "update_tag",
       description:
         "Rename or recolor one of the user's tags (find its ID with list_tags); only the fields " +
@@ -896,17 +893,16 @@ function buildTools(): Tool[] {
         title: "Update tag",
         ...write({ destructiveHint: false, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(updateTagArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(updateTagArgs, args);
-        return tagsService.updateTag(db, userId, params.tagId, {
+      args: updateTagArgs,
+      handler: async (db, user, params) => {
+        return tagsService.updateTag(db, user.id, params.tagId, {
           name: params.name,
           color: params.color,
         });
       },
-    },
+    }),
 
-    {
+    defineTool({
       name: "delete_tag",
       description:
         "Delete a tag and remove it from every subscription; the subscriptions and their entries " +
@@ -917,12 +913,11 @@ function buildTools(): Tool[] {
         title: "Delete tag",
         ...write({ destructiveHint: true, idempotentHint: true }),
       },
-      inputSchema: toInputSchema(deleteTagArgs),
-      handler: async (db, userId, args) => {
-        const params = parseArgs(deleteTagArgs, args);
-        await tagsService.deleteTag(db, userId, params.tagId);
+      args: deleteTagArgs,
+      handler: async (db, user, params) => {
+        await tagsService.deleteTag(db, user.id, params.tagId);
         return { success: true };
       },
-    },
+    }),
   ];
 }

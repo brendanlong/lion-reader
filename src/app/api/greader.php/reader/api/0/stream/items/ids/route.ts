@@ -17,8 +17,10 @@
  * - it: include tag (e.g., user/-/state/com.google/read to include only read items)
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse } from "@/server/google-reader/parse";
 import {
   isStreamError,
   resolveStreamListParams,
@@ -30,10 +32,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const GET = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   const url = new URL(request.url);
   const searchParams = url.searchParams;
 
@@ -44,7 +43,7 @@ export const GET = withClientErrors(async (request: Request): Promise<Response> 
 
   const listParams = await resolveStreamListParams(
     db,
-    session.user,
+    user,
     streamIdStr,
     searchParams,
     STREAM_ITEM_IDS_PAGE

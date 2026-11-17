@@ -13,15 +13,11 @@
  *   r={tagToRemove} — tag to remove (can repeat, format: user/-/label/{name})
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  textResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
-import { parseStreamId } from "@/server/google-reader/streams";
+import { labelName, parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
 import * as tagsService from "@/server/services/tags";
@@ -34,10 +30,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-  const userId = session.user.id;
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
+  const userId = user.id;
 
   const params = await parseFormData(request);
   const action = params.get("ac");
@@ -62,22 +56,22 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
     return errorResponse(`Invalid stream ID: ${streamIdStr}`, 400);
   }
 
+  const subscriptionId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
+
   switch (action) {
     case "subscribe": {
       // For subscribe via edit, the URL might be in the stream ID
       // Some clients pass the URL as the stream ID with a feed/ prefix
       // This is handled by quickadd, so return success if already subscribed
-      const existingSubId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
-      if (existingSubId) {
+      if (subscriptionId) {
         // Already subscribed — apply any tag/title changes.
-        return editSubscription(userId, existingSubId, title, addTags, removeTags);
+        return editSubscription(userId, subscriptionId, title, addTags, removeTags);
       }
       // If subscription doesn't exist, we can't subscribe by int64 ID alone
       return errorResponse("Use quickadd to subscribe to new feeds", 400);
     }
 
     case "edit": {
-      const subscriptionId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (!subscriptionId) {
         return errorResponse("Subscription not found", 404);
       }
@@ -86,7 +80,6 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
     }
 
     case "unsubscribe": {
-      const subscriptionId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (!subscriptionId) {
         return textResponse("OK"); // Already unsubscribed
       }
@@ -143,5 +136,5 @@ async function editSubscription(
 
 /** The label names in `user/{id}/label/{name}` tag stream ids; other ids are skipped. */
 function labelNames(tagStreamIds: string[]): string[] {
-  return tagStreamIds.flatMap((id) => id.match(/^user\/[^/]+\/label\/(.+)$/)?.[1].trim() || []);
+  return tagStreamIds.flatMap((id) => labelName(id)?.trim() || []);
 }

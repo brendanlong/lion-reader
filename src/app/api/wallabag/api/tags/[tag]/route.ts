@@ -5,25 +5,26 @@
  * deleteWallabagTag for what happens to the collection behind it.
  */
 
-import { requireAuth } from "@/server/wallabag/auth";
-import { errorResponse, jsonResponse, withClientErrors } from "@/server/wallabag/parse";
+import { withWallabagAuth } from "@/server/wallabag/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse } from "@/server/wallabag/parse";
 import { deleteWallabagTag, resolveWallabagTag, toWallabagTag } from "@/server/wallabag/tags";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const DELETE = withClientErrors(async function (
+export const DELETE = withWallabagAuth(async function (
   request: Request,
+  user: User,
   { params }: { params: Promise<{ tag: string }> }
 ): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
   const { tag: tagParam } = await params;
 
-  const tag = await resolveWallabagTag(db, auth.userId, tagParam);
+  const tag = await resolveWallabagTag(db, user.id, tagParam);
   if (!tag) {
     return errorResponse("not_found", "Tag not found", 404);
   }
-  await deleteWallabagTag(db, auth.userId, tag);
+  await deleteWallabagTag(db, user.id, tag);
   return jsonResponse(toWallabagTag(tag));
 });

@@ -15,10 +15,11 @@ import { db } from "@/server/db";
 import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { authenticateCredential } from "@/server/auth/credential";
-import { createTokens, rotateRefreshToken } from "@/server/oauth/service";
+import { createTokens, rotateRefreshToken, type TokenPair } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { logger } from "@/lib/logger";
-import { errorResponse } from "./parse";
+import type { User } from "@/server/db/schema";
+import { errorResponse, withClientErrors } from "./parse";
 import { WALLABAG_CLIENT_ID } from "./client";
 
 /**
@@ -30,6 +31,16 @@ export interface WallabagTokenResponse {
   token_type: "bearer";
   scope: null;
   refresh_token: string;
+}
+
+function toWallabagTokenResponse(tokens: TokenPair): WallabagTokenResponse {
+  return {
+    access_token: tokens.accessToken,
+    expires_in: tokens.expiresIn,
+    token_type: "bearer",
+    scope: null,
+    refresh_token: tokens.refreshToken,
+  };
 }
 
 /**
@@ -68,13 +79,7 @@ export async function passwordGrant(
     userId: login.user.id,
   });
 
-  return {
-    access_token: tokens.accessToken,
-    expires_in: tokens.expiresIn,
-    token_type: "bearer",
-    scope: null,
-    refresh_token: tokens.refreshToken,
-  };
+  return toWallabagTokenResponse(tokens);
 }
 
 /**
@@ -102,13 +107,7 @@ export async function refreshTokenGrant(
     grantType: "refresh_token",
   });
 
-  return {
-    access_token: tokens.accessToken,
-    expires_in: tokens.expiresIn,
-    token_type: "bearer",
-    scope: null,
-    refresh_token: tokens.refreshToken,
-  };
+  return toWallabagTokenResponse(tokens);
 }
 
 /**
@@ -120,21 +119,18 @@ export async function refreshTokenGrant(
  * also require the `reader:full-access` scope.
  *
  * Returns a `Response` (401 unauthenticated / 403 insufficient scope or
- * unconfirmed signup) that callers must forward, e.g.
- * `const auth = await requireAuth(request); if (auth instanceof Response) return auth;`.
+ * unconfirmed signup) that callers must forward (`withWallabagAuth` does).
  * (We return rather than throw because Next.js App Router route handlers don't
  * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
  */
-export async function requireAuth(
-  request: Request
-): Promise<{ userId: string; email: string } | Response> {
+export async function requireAuth(request: Request): Promise<User | Response> {
   const token = extractBearerToken(request.headers.get("authorization"));
   const auth = await authenticateCredential(token, {
     accept: ["wallabag_token"],
     requiredScopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     requireConfirmed: true,
   });
-  if (auth.ok) return { userId: auth.credential.user.id, email: auth.credential.user.email };
+  if (auth.ok) return auth.credential.user;
 
   switch (auth.reason) {
     case "unauthenticated":
@@ -165,4 +161,19 @@ export async function requireAuth(
       });
       return errorResponse("access_denied", "Signup confirmation required", 403);
   }
+}
+
+/**
+ * Wraps a Wallabag route handler: authenticates the request (`requireAuth`),
+ * passes the handler the user, and answers client errors in the Wallabag
+ * envelope (`withClientErrors`).
+ */
+export function withWallabagAuth<Rest extends unknown[]>(
+  handler: (request: Request, user: User, ...rest: Rest) => Promise<Response>
+): (request: Request, ...rest: Rest) => Promise<Response> {
+  return withClientErrors(async (request: Request, ...rest: Rest) => {
+    const user = await requireAuth(request);
+    if (user instanceof Response) return user;
+    return handler(request, user, ...rest);
+  });
 }

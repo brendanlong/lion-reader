@@ -32,7 +32,6 @@ import {
   buildUncategorizedSubscriptionIdsSubquery,
   verifySubscriptionOwnership,
 } from "../../src/server/services/entry-filters";
-import { getTools } from "../../src/server/mcp/tools";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -44,6 +43,7 @@ import {
   createTestUser,
   withPlanLimits,
 } from "./helpers";
+import { callMcpTool } from "../utils/mcp";
 
 async function cleanup(): Promise<void> {
   await db.delete(userEntries);
@@ -77,12 +77,6 @@ async function setup() {
   return { userId, webId, subscriptionId, savedStreamId: row.greaderStreamId };
 }
 
-function callTool(name: string, userId: string, args: unknown) {
-  const tool = getTools().find((t) => t.name === name);
-  if (!tool) throw new Error(`Tool not registered: ${name}`);
-  return tool.handler(db, userId, args);
-}
-
 describe("the saved subscription (#1846)", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
@@ -105,11 +99,11 @@ describe("the saved subscription (#1846)", () => {
       (await caller.subscriptions.list({ uncategorized: true })).items.map((s) => s.id)
     ).toEqual([webId]);
     expect(await caller.subscriptions.get({ id: subscriptionId })).toMatchObject(saved);
-    const listed = (await callTool("list_subscriptions", userId, {})) as {
+    const listed = (await callMcpTool("list_subscriptions", userId, {})) as {
       subscriptions: Array<{ id: string }>;
     };
     expect(listed.subscriptions.map((s) => s.id)).toEqual([subscriptionId, webId]);
-    const savedOnly = (await callTool("list_subscriptions", userId, { type: "saved" })) as {
+    const savedOnly = (await callMcpTool("list_subscriptions", userId, { type: "saved" })) as {
       subscriptions: Array<{ id: string }>;
     };
     expect(savedOnly.subscriptions.map((s) => s.id)).toEqual([subscriptionId]);

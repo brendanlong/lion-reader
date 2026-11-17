@@ -22,7 +22,7 @@ import {
   saveArticle,
   savedArticleExistsByUrl,
 } from "../../src/server/services/saved";
-import { resolveGreaderIdsForEntries } from "../../src/server/google-reader/id";
+import { resolveGreaderItems } from "../../src/server/google-reader/id";
 import { listEntries } from "../../src/server/services/entries";
 import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { createCaller } from "../../src/server/trpc/root";
@@ -228,8 +228,9 @@ describe("email and saved lookups by owner (#1846)", () => {
       { id: saved.id, subscriptionId: savedSubscriptionId, feedTitle: "Saved Articles" },
     ]);
     // Google Reader's "Saved Articles" stream (#730).
-    const greaderIds = await resolveGreaderIdsForEntries(db, userId, [saved.id]);
-    expect(greaderIds.get(saved.id)?.originStreamId).toBe(streamId);
+    expect(await resolveGreaderItems(db, userId, [entry.greaderItemId])).toMatchObject([
+      { id: saved.id, originStreamId: streamId },
+    ]);
 
     expect(await deleteSavedArticle(db, otherId, saved.id)).toBeNull();
     expect(await deleteSavedArticle(db, userId, saved.id)).not.toBeNull();

@@ -11,40 +11,23 @@
  *   t={tagName}      — tag name directly
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  textResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
+import { labelName } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as tagsService from "@/server/services/tags";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-  const userId = session.user.id;
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
+  const userId = user.id;
 
   const params = await parseFormData(request);
 
-  // Get tag name from either s or t parameter
-  let tagName: string | null = null;
-
   const streamId = params.get("s");
-  if (streamId) {
-    const labelMatch = streamId.match(/^user\/[^/]+\/label\/(.+)$/);
-    if (labelMatch) {
-      tagName = labelMatch[1];
-    }
-  }
-
-  if (!tagName) {
-    tagName = params.get("t");
-  }
+  const tagName = (streamId && labelName(streamId)) || params.get("t");
 
   if (!tagName) {
     return errorResponse("Missing required parameter: s or t (tag identifier)", 400);

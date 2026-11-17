@@ -10,24 +10,18 @@
  *   ts={timestamp}   — mark items older than this (microseconds since epoch)
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import {
-  parseFormData,
-  textResponse,
-  errorResponse,
-  withClientErrors,
-} from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { isStreamError, resolveStreamFilter } from "@/server/google-reader/stream-filters";
 import { db } from "@/server/db";
 import { markAllEntriesRead } from "@/server/services/entry-state";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-  const userId = session.user.id;
-  const showSpam = session.user.showSpam;
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
+  const userId = user.id;
+  const showSpam = user.showSpam;
 
   const params = await parseFormData(request);
   const streamIdStr = params.get("s");

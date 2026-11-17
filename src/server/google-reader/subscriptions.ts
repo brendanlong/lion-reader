@@ -72,9 +72,9 @@ export async function resolveFeedStreamFilter(
  * Centralizing the saved append here means subscription/list and
  * unread-count inherit it for free instead of each re-deriving it (issue #1069).
  *
- * Unread counts are trigger-maintained counters (issue #1117, step 5b) — a
- * free column read per subscription — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
- * caller gets real counts. Spam never counts (the counters exclude it).
+ * Unread counts are trigger-maintained counters, a free column read per
+ * subscription, so every caller gets real counts. Spam never counts (the
+ * counters exclude it).
  *
  * Collections are left out: Google Reader clients file each item under its
  * `origin` stream, which is the article's source feed, so a collection would

@@ -16,8 +16,9 @@
  * form is what the greader_api client parses (it checks for the `OK: ` prefix).
  */
 
-import { requireAuth } from "@/server/google-reader/auth";
-import { textResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
+import { withGreaderAuth } from "@/server/google-reader/auth";
+import type { User } from "@/server/db/schema";
+import { textResponse, errorResponse } from "@/server/google-reader/parse";
 import { importOpml, MAX_OPML_BYTES } from "@/server/services/imports";
 import { OpmlParseError } from "@/server/feed/opml";
 import { checkRouteRateLimit } from "@/server/rate-limit";
@@ -25,16 +26,13 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withClientErrors(async (request: Request): Promise<Response> => {
-  const session = await requireAuth(request);
-  if (session instanceof Response) return session;
-
+export const POST = withGreaderAuth(async (request: Request, user: User): Promise<Response> => {
   // OPML import queues a subscribe job per feed — the tRPC equivalent is an
   // "expensive" procedure, so rate-limit this compat path the same way. Key the
   // bucket per user (the caller is authenticated), matching the tRPC middleware
   // rather than falling back to a per-IP key.
   const rateLimited = await checkRouteRateLimit(request, "expensive", {
-    userId: session.user.id,
+    userId: user.id,
   });
   if (rateLimited) return rateLimited;
 
@@ -50,7 +48,7 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   }
 
   try {
-    const { totalFeeds } = await importOpml(db, session.user.id, opml);
+    const { totalFeeds } = await importOpml(db, user.id, opml);
     return textResponse(`OK: ${totalFeeds}`);
   } catch (err) {
     if (err instanceof OpmlParseError) {

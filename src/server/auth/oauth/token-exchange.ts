@@ -10,6 +10,7 @@
 import * as client from "openid-client";
 import type Redis from "ioredis";
 import { getRedisClient } from "@/server/redis";
+import { USER_AGENT } from "@/server/http/user-agent";
 import { OAUTH_STATE_TTL_SECONDS } from "@/server/auth/oauth/state-cookie";
 import type { OAuthLinkTarget } from "@/server/auth/oauth/config";
 
@@ -153,7 +154,9 @@ export async function fetchUserInfo<T>(
   accessToken: string,
   provider: string
 ): Promise<T> {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": USER_AGENT },
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${provider} user info: ${await response.text()}`);
   }

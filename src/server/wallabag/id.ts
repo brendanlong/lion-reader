@@ -3,13 +3,10 @@
  *
  * A Wallabag entry id is the entry's stored compat serial —
  * `entries.greader_item_id`, the same global bigint serial the Google Reader
- * API uses for item ids (issue #1117). Wallabag ids used to be a 31-bit
- * SHA-256 hash of the entry UUID, which produced real user-visible collisions
- * (two entries sharing an id, with the reverse lookup's `limit(1)` returning
- * the wrong one); a stored serial is collision-free and reverses with a
- * unique-index seek. Wallabag clients re-synced from scratch when ids
- * switched from hashes to serials — accepted, matching the Google Reader
- * id migration.
+ * API uses for item ids (issue #1117). Don't derive ids by hashing the entry
+ * UUID: a 31-bit hash produced real collisions (two entries sharing an id, the
+ * reverse lookup returning the wrong one). A stored serial is collision-free
+ * and reverses with a unique-index seek.
  *
  * Serials are exposed as JSON numbers (Wallabag ids are plain integers), which
  * is exact while they stay under 2^53 — they increment by 1 from a shared

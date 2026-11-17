@@ -1,9 +1,9 @@
 /**
  * Unit tests for the Google Reader ID formatting/parsing helpers.
  *
- * Every id a client sees is now a stored serial (issue #1117), so these cover
+ * Every id a client sees is a stored serial (issue #1117), so these cover
  * only the pure format ↔ parse conversions; the reverse lookups
- * (greaderItemIdsToUuids, feedStreamIdToSubscriptionUuid, resolveFeedStream) hit
+ * (resolveGreaderItems, feedStreamIdToSubscriptionUuid, resolveFeedStream) hit
  * the DB and are covered by integration tests.
  */
 

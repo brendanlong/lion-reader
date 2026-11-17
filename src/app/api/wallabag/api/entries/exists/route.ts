@@ -12,17 +12,20 @@
  * - return_id: 0|1 - whether to return the entry ID (default: 0)
  */
 
-import { requireAuth } from "@/server/wallabag/auth";
-import { jsonResponse, errorResponse, withClientErrors } from "@/server/wallabag/parse";
+import { withWallabagAuth } from "@/server/wallabag/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse } from "@/server/wallabag/parse";
 import { entryIdsToWallabagIds } from "@/server/wallabag/id";
 import * as savedService from "@/server/services/saved";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async function (request: Request): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
+export const GET = withWallabagAuth(async function (
+  request: Request,
+  user: User
+): Promise<Response> {
   const url = new URL(request.url);
 
   const singleUrl = url.searchParams.get("url");
@@ -32,14 +35,14 @@ export const GET = withClientErrors(async function (request: Request): Promise<R
     return errorResponse("invalid_request", "url parameter is required", 400);
   }
 
-  const entryId = await savedService.savedArticleExistsByUrl(db, auth.userId, singleUrl);
+  const entryId = await savedService.savedArticleExistsByUrl(db, user.id, singleUrl);
 
   if (entryId) {
     const result: Record<string, unknown> = { exists: true };
     if (returnId) {
       // The Wallabag id is the entry's stored serial; skip it in the (racy,
       // effectively impossible) case the entry vanished since the URL lookup.
-      const wallabagId = (await entryIdsToWallabagIds(db, auth.userId, [entryId])).get(entryId);
+      const wallabagId = (await entryIdsToWallabagIds(db, user.id, [entryId])).get(entryId);
       if (wallabagId !== undefined) {
         result.id = wallabagId;
       }

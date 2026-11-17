@@ -86,7 +86,7 @@ describe("parseFormData", () => {
       FORM
     );
     const params = await parseFormData(req);
-    expect(parseItemIds(params)).toEqual([BigInt(1), BigInt(2), BigInt(3)]);
+    expect(parseItemIds(params, 10)).toEqual([BigInt(1), BigInt(2), BigInt(3)]);
   });
 
   it("honors a query-only item ID when the body carries none", async () => {
@@ -94,6 +94,21 @@ describe("parseFormData", () => {
     // `i` is used. Harmless — parseItemIds → getEntry is fully user-scoped.
     const req = postRequest("https://x.test/reader/api/0/stream/items/contents?i=42", "", FORM);
     const params = await parseFormData(req);
-    expect(parseItemIds(params)).toEqual([BigInt(42)]);
+    expect(parseItemIds(params, 10)).toEqual([BigInt(42)]);
+  });
+});
+
+describe("parseItemIds", () => {
+  it("accepts up to the cap", () => {
+    expect(parseItemIds(new URLSearchParams("i=1&i=2"), 2)).toEqual([BigInt(1), BigInt(2)]);
+  });
+
+  it.each([
+    ["more ids than the cap", "i=1&i=2&i=3"],
+    ["a malformed id", "i=1&i=not-an-id"],
+  ])("answers 400 for %s", (_name, query) => {
+    const result = parseItemIds(new URLSearchParams(query), 2);
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(400);
   });
 });

@@ -11,7 +11,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { extractClientCredentials, clientSecretError } from "../../src/server/oauth/client-auth";
+import {
+  extractClientCredentials,
+  clientSecretError,
+  parseOAuthBody,
+} from "../../src/server/oauth/client-auth";
 import { hashToken } from "../../src/server/oauth/utils";
 import type { ResolvedClient } from "../../src/server/oauth/clients";
 
@@ -141,5 +145,38 @@ describe("clientSecretError", () => {
 
   it("rejects a confidential client with a wrong secret", () => {
     expect(clientSecretError(baseClient, "wrong-secret")?.error).toBe("invalid_client");
+  });
+});
+
+describe("parseOAuthBody", () => {
+  function post(contentType: string, body: string): Request {
+    return new Request("https://example.com/oauth/token", {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body,
+    });
+  }
+
+  it("reads parameters from a form-encoded body", async () => {
+    expect(
+      await parseOAuthBody(post("application/x-www-form-urlencoded", "grant_type=x&token=t"))
+    ).toEqual({ grant_type: "x", token: "t" });
+  });
+
+  it("reads string parameters from a JSON object, dropping other values", async () => {
+    expect(
+      await parseOAuthBody(post("application/json", '{"grant_type":"x","expires":3,"a":null}'))
+    ).toEqual({ grant_type: "x" });
+  });
+
+  it.each([
+    ["malformed JSON", "application/json", "{not json"],
+    ["a JSON non-object", "application/json", "null"],
+    ["an unsupported content type", "text/plain", "grant_type=x"],
+  ])("answers invalid_request for %s", async (_name, contentType, body) => {
+    const result = await parseOAuthBody(post(contentType, body));
+    if (!(result instanceof Response)) throw new Error("expected an error response");
+    expect(result.status).toBe(400);
+    expect((await result.json()).error).toBe("invalid_request");
   });
 });

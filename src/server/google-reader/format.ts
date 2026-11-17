@@ -35,7 +35,7 @@ interface GoogleReaderItem {
 
 /**
  * Formats a full entry (with content) as a Google Reader item, given its
- * serials from `resolveGreaderIdsForEntries`.
+ * serials (`resolveGreaderItems`, `listGreaderItemRefs`).
  */
 export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): GoogleReaderItem {
   const publishedTs = entry.publishedAt

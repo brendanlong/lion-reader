@@ -9,14 +9,10 @@
  * see resolveWallabagEntry.
  */
 
-import { requireAuth } from "@/server/wallabag/auth";
-import {
-  jsonResponse,
-  errorResponse,
-  parseBody,
-  parseTagLabels,
-  withClientErrors,
-} from "@/server/wallabag/parse";
+import { withWallabagAuth } from "@/server/wallabag/auth";
+import type { User } from "@/server/db/schema";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse, parseBody, parseTagLabels } from "@/server/wallabag/parse";
 import { formatEntryResponse } from "@/server/wallabag/entry-response";
 import { addEntryTags } from "@/server/wallabag/tags";
 import { resolveWallabagEntry } from "@/server/wallabag/id";
@@ -26,70 +22,67 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withClientErrors(async function (
+export const GET = withWallabagAuth(async function (
   request: Request,
+  user: User,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
 
-  const resolved = await resolveWallabagEntry(db, auth.userId, entryParam);
+  const resolved = await resolveWallabagEntry(db, user.id, entryParam);
   if (!resolved) {
     return errorResponse("not_found", "Entry not found", 404);
   }
 
-  return formatEntryResponse(db, auth.userId, resolved);
+  return formatEntryResponse(db, user.id, resolved);
 });
 
-export const PATCH = withClientErrors(async function (
+export const PATCH = withWallabagAuth(async function (
   request: Request,
+  user: User,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
   const body = await parseBody(request);
 
-  const resolved = await resolveWallabagEntry(db, auth.userId, entryParam);
+  const resolved = await resolveWallabagEntry(db, user.id, entryParam);
   if (!resolved) {
     return errorResponse("not_found", "Entry not found", 404);
   }
 
   // Like Wallabag, `tags` adds to the entry's tags rather than replacing them.
-  await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
+  await addEntryTags(db, user.id, resolved.id, parseTagLabels(body.tags));
 
   // Handle archive (read) state
   if (body.archive !== undefined) {
     const read = body.archive === "1";
-    await entryStateService.markEntriesRead(db, auth.userId, [{ id: resolved.id }], read);
+    await entryStateService.markEntriesRead(db, user.id, [{ id: resolved.id }], read);
   }
 
   // Handle starred state
   if (body.starred !== undefined) {
     const starred = body.starred === "1";
-    await entryStateService.updateEntryStarred(db, auth.userId, resolved.id, starred);
+    await entryStateService.updateEntryStarred(db, user.id, resolved.id, starred);
   }
 
   // Return the updated entry
-  return formatEntryResponse(db, auth.userId, resolved);
+  return formatEntryResponse(db, user.id, resolved);
 });
 
-export const DELETE = withClientErrors(async function (
+export const DELETE = withWallabagAuth(async function (
   request: Request,
+  user: User,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
-  const auth = await requireAuth(request);
-  if (auth instanceof Response) return auth;
   const { entry: entryParam } = await params;
 
-  const resolved = await resolveWallabagEntry(db, auth.userId, entryParam);
+  const resolved = await resolveWallabagEntry(db, user.id, entryParam);
   if (!resolved) {
     return errorResponse("not_found", "Entry not found", 404);
   }
 
   // Try deleting as a saved article first
-  const counts = await savedService.deleteSavedArticle(db, auth.userId, resolved.id);
+  const counts = await savedService.deleteSavedArticle(db, user.id, resolved.id);
   if (counts === null) {
     return errorResponse("not_found", "Entry not found", 404);
   }

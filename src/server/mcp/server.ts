@@ -15,12 +15,13 @@ import {
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
+import type { User } from "@/server/db/schema";
 import { getTools, toMcpError } from "@/server/mcp/tools";
 import { logger } from "@/lib/logger";
 
 /**
  * Creates an MCP Server with the Lion Reader tools registered, acting as
- * `userId`.
+ * `user`.
  *
  * The acting user is a property of the server (the authenticated request, or
  * the stdio process's configured user), never of a call: the advertised tool
@@ -28,7 +29,7 @@ import { logger } from "@/lib/logger";
  * clients can't pass one), and each handler validates its args against its Zod
  * schema.
  */
-export function createMcpServer(userId: string): Server {
+export function createMcpServer(user: User): Server {
   const server = new Server(
     {
       name: "lion-reader",
@@ -57,11 +58,11 @@ export function createMcpServer(userId: string): Server {
 
     let result: unknown;
     try {
-      result = await tool.handler(db, userId, args ?? {});
+      result = await tool.handler(db, user, args ?? {});
     } catch (error) {
       // Log the original error server-side; toMcpError replaces internal error
       // messages with a generic string so detail isn't echoed to clients (#1266).
-      logger.error("MCP tool execution error", { tool: name, userId, error });
+      logger.error("MCP tool execution error", { tool: name, userId: user.id, error });
       throw toMcpError(error);
     }
 

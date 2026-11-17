@@ -2,7 +2,8 @@
  * MCP (Model Context Protocol) HTTP Endpoint
  *
  * Serves the MCP server over Streamable HTTP transport with authentication.
- * Supports both OAuth 2.1 tokens and legacy API tokens.
+ * Accepts OAuth 2.1 tokens and `mcp`-scoped API tokens (for clients that can't
+ * do OAuth).
  *
  * Uses WebStandardStreamableHTTPServerTransport from the MCP SDK,
  * which handles protocol negotiation, SSE streaming, and session management.
@@ -14,6 +15,7 @@
 import { NextRequest } from "next/server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "@/server/mcp/server";
+import type { User } from "@/server/db/schema";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { authenticateCredential } from "@/server/auth/credential";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -25,13 +27,13 @@ import { logger } from "@/lib/logger";
 // Authentication
 // ============================================================================
 
-type AuthSuccess = { success: true; userId: string };
+type AuthSuccess = { success: true; user: User };
 type AuthFailure = { success: false; reason: string; status?: 401 | 403 };
 type AuthResult = AuthSuccess | AuthFailure;
 
 /**
  * Accepts an `mcp`-scoped API token or an MCP client's OAuth token.
- * Returns userId if valid, or a reason string for failure.
+ * Returns the user if valid, or a reason string for failure.
  */
 async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
   const authHeader = request.headers.get("authorization");
@@ -49,7 +51,7 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
     requireConfirmed: true,
   });
   if (auth.ok) {
-    return { success: true, userId: auth.credential.user.id };
+    return { success: true, user: auth.credential.user };
   }
   if (auth.reason === "unauthenticated") {
     // Includes another resource's OAuth token (the app's, Wallabag's).
@@ -122,10 +124,11 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
   if (!auth.success) {
     return unauthorizedResponse(auth, request.headers.get("host"));
   }
-  const { userId } = auth;
+  const { user } = auth;
+  const userId = user.id;
 
   // Create a stateless MCP server and transport for this request
-  const server = createMcpServer(userId);
+  const server = createMcpServer(user);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // Stateless mode
     enableJsonResponse: true, // Use JSON responses (our tools are fast DB queries)
@@ -185,14 +188,15 @@ export function OPTIONS() {
 }
 
 /**
- * GET /api/mcp - SSE endpoint for server-initiated messages
+ * GET /api/mcp (SSE stream for server-initiated messages) and DELETE /api/mcp
+ * (session termination).
  *
  * Auth is checked first so unauthenticated clients receive 401 with
  * WWW-Authenticate header for OAuth discovery (MCP spec requirement).
  * In stateless mode, authenticated requests return 405 since there are
- * no persistent sessions for SSE streaming.
+ * no persistent sessions to stream on or terminate.
  */
-export async function GET(request: NextRequest) {
+async function handleSessionRequest(request: NextRequest): Promise<Response> {
   const auth = await authenticateRequest(request);
   if (!auth.success) {
     return withMcpCorsHeaders(unauthorizedResponse(auth, request.headers.get("host")));
@@ -200,18 +204,5 @@ export async function GET(request: NextRequest) {
   return withMcpCorsHeaders(new Response(null, { status: 405 }));
 }
 
-/**
- * DELETE /api/mcp - Session termination
- *
- * Auth is checked first so unauthenticated clients receive 401 with
- * WWW-Authenticate header for OAuth discovery (MCP spec requirement).
- * In stateless mode, authenticated requests return 405 since there are
- * no sessions to terminate.
- */
-export async function DELETE(request: NextRequest) {
-  const auth = await authenticateRequest(request);
-  if (!auth.success) {
-    return withMcpCorsHeaders(unauthorizedResponse(auth, request.headers.get("host")));
-  }
-  return withMcpCorsHeaders(new Response(null, { status: 405 }));
-}
+export const GET = handleSessionRequest;
+export const DELETE = handleSessionRequest;

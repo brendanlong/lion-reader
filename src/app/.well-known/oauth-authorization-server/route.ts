@@ -20,7 +20,6 @@ export async function GET(request: NextRequest) {
   return withMcpCorsHeaders(
     NextResponse.json(metadata, {
       headers: {
-        "Content-Type": "application/json",
         // no-store: MCP clients (claude.ai) re-run discovery on every connect
         // and can act on a stale cached document mid-flow. None of the working
         // remote MCP servers (Linear, Sentry, Notion) allow caching here.

@@ -11,13 +11,12 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import { resolveClient, type ResolvedClient } from "@/server/oauth/clients";
-import { exchangeAuthorizationCode, rotateRefreshToken } from "@/server/oauth/service";
 import {
-  extractClientCredentials,
-  clientSecretError,
-  type ClientCredentials,
-} from "@/server/oauth/client-auth";
+  exchangeAuthorizationCode,
+  rotateRefreshToken,
+  type TokenPair,
+} from "@/server/oauth/service";
+import { authenticateClient, invalidRequest, parseOAuthBody } from "@/server/oauth/client-auth";
 import { isValidCodeVerifier, OAUTH_ERRORS, createOAuthError } from "@/server/oauth/utils";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
@@ -41,42 +40,17 @@ async function handleToken(request: NextRequest): Promise<Response> {
   const rateLimitResponse = await checkRouteRateLimit(request, "oauth", { json: true });
   if (rateLimitResponse) return rateLimitResponse;
 
-  // Parse form data or JSON body
-  let body: Record<string, string>;
-
-  const contentType = request.headers.get("content-type") ?? "";
-  if (contentType.includes("application/x-www-form-urlencoded")) {
-    const formData = await request.formData();
-    body = Object.fromEntries(Array.from(formData.entries()).map(([k, v]) => [k, String(v)]));
-  } else if (contentType.includes("application/json")) {
-    body = await request.json();
-  } else {
-    logger.warn("OAuth token request: unsupported content type", { contentType });
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Unsupported content type"),
-      { status: 400 }
-    );
-  }
+  const body = await parseOAuthBody(request);
+  if (body instanceof Response) return body;
 
   const grantType = body.grant_type;
 
-  // Client credentials may arrive via the form body (client_secret_post,
-  // public clients) or an HTTP Basic header (client_secret_basic).
-  const extracted = extractClientCredentials(request.headers.get("authorization"), body);
-  if (!extracted.success) {
-    logger.warn("OAuth token request: client credential extraction failed", {
-      error: extracted.error.error_description,
-    });
-    return NextResponse.json(extracted.error, { status: extracted.status });
-  }
-  const credentials = extracted.credentials;
-
   // Log what the client sent (no secrets) so token-exchange failures are
   // debuggable — grant type + which required params are present.
+  // authenticateClient logs the client id, from the body or a Basic header.
   logger.info("OAuth token request", {
     grantType,
-    clientId: credentials.clientId,
-    hasClientSecret: !!credentials.clientSecret,
+    hasClientSecret: !!body.client_secret,
     hasCode: !!body.code,
     hasCodeVerifier: !!body.code_verifier,
     hasRedirectUri: !!body.redirect_uri,
@@ -84,9 +58,9 @@ async function handleToken(request: NextRequest): Promise<Response> {
   });
 
   if (grantType === "authorization_code") {
-    return handleAuthorizationCodeGrant(body, credentials);
+    return handleAuthorizationCodeGrant(request, body);
   } else if (grantType === "refresh_token") {
-    return handleRefreshTokenGrant(body, credentials);
+    return handleRefreshTokenGrant(request, body);
   } else {
     return NextResponse.json(
       createOAuthError(OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE, "Unsupported grant_type"),
@@ -95,82 +69,52 @@ async function handleToken(request: NextRequest): Promise<Response> {
   }
 }
 
-/**
- * Validates client_secret for confidential clients (see client-auth.ts).
- * Returns an error response if validation fails, or null if valid.
- */
-function validateClientSecret(
-  client: ResolvedClient,
-  clientSecret: string | undefined
-): NextResponse | null {
-  const error = clientSecretError(client, clientSecret);
-  if (error) {
-    return NextResponse.json(error, { status: 401 });
-  }
-  return null;
+function tokenResponse(tokens: TokenPair): Response {
+  return NextResponse.json(
+    {
+      access_token: tokens.accessToken,
+      token_type: tokens.tokenType,
+      expires_in: tokens.expiresIn,
+      refresh_token: tokens.refreshToken,
+      scope: tokens.scope,
+    },
+    { headers: { "Cache-Control": "no-store", Pragma: "no-cache" } }
+  );
 }
 
 /**
  * Handle authorization_code grant type
  */
-async function handleAuthorizationCodeGrant(
-  body: Record<string, string>,
-  credentials: ClientCredentials
-) {
+async function handleAuthorizationCodeGrant(request: NextRequest, body: Record<string, string>) {
   const { code, redirect_uri, code_verifier } = body;
-  const { clientId: client_id, clientSecret: client_secret } = credentials;
 
   // Validate required parameters
   if (!code) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing code parameter"),
-      { status: 400 }
-    );
+    return invalidRequest("Missing code parameter");
   }
 
   if (!redirect_uri) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing redirect_uri parameter"),
-      { status: 400 }
-    );
-  }
-
-  if (!client_id) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing client_id parameter"),
-      { status: 400 }
-    );
+    return invalidRequest("Missing redirect_uri parameter");
   }
 
   if (!code_verifier) {
-    return NextResponse.json(
-      createOAuthError(
-        OAUTH_ERRORS.INVALID_REQUEST,
-        "Missing code_verifier parameter (PKCE is required)"
-      ),
-      { status: 400 }
-    );
+    return invalidRequest("Missing code_verifier parameter (PKCE is required)");
   }
 
   // Validate code_verifier format
   if (!isValidCodeVerifier(code_verifier)) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Invalid code_verifier format"),
-      { status: 400 }
-    );
+    return invalidRequest("Invalid code_verifier format");
   }
 
-  // Resolve and authenticate client
-  const client = await resolveClient(client_id);
-  if (!client) {
-    return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Unknown client_id"), {
-      status: 401,
-    });
-  }
-  const secretError = validateClientSecret(client, client_secret);
-  if (secretError) return secretError;
+  const client = await authenticateClient(request, body);
+  if (client instanceof Response) return client;
 
-  const exchange = await exchangeAuthorizationCode(code, client_id, redirect_uri, code_verifier);
+  const exchange = await exchangeAuthorizationCode(
+    code,
+    client.clientId,
+    redirect_uri,
+    code_verifier
+  );
 
   if (!exchange) {
     return NextResponse.json(
@@ -186,66 +130,30 @@ async function handleAuthorizationCodeGrant(
 
   logger.info("OAuth token issued", {
     grantType: "authorization_code",
-    clientId: client_id,
+    clientId: client.clientId,
     userId: exchange.userId,
     scope: tokens.scope,
     resource: exchange.resource,
   });
 
-  return NextResponse.json(
-    {
-      access_token: tokens.accessToken,
-      token_type: tokens.tokenType,
-      expires_in: tokens.expiresIn,
-      refresh_token: tokens.refreshToken,
-      scope: tokens.scope,
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-        Pragma: "no-cache",
-      },
-    }
-  );
+  return tokenResponse(tokens);
 }
 
 /**
  * Handle refresh_token grant type
  */
-async function handleRefreshTokenGrant(
-  body: Record<string, string>,
-  credentials: ClientCredentials
-) {
+async function handleRefreshTokenGrant(request: NextRequest, body: Record<string, string>) {
   const { refresh_token } = body;
-  const { clientId: client_id, clientSecret: client_secret } = credentials;
 
   // Validate required parameters
   if (!refresh_token) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing refresh_token parameter"),
-      { status: 400 }
-    );
+    return invalidRequest("Missing refresh_token parameter");
   }
 
-  if (!client_id) {
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_REQUEST, "Missing client_id parameter"),
-      { status: 400 }
-    );
-  }
+  const client = await authenticateClient(request, body);
+  if (client instanceof Response) return client;
 
-  // Resolve and authenticate client
-  const client = await resolveClient(client_id);
-  if (!client) {
-    return NextResponse.json(createOAuthError(OAUTH_ERRORS.INVALID_CLIENT, "Unknown client_id"), {
-      status: 401,
-    });
-  }
-  const secretError = validateClientSecret(client, client_secret);
-  if (secretError) return secretError;
-
-  const tokens = await rotateRefreshToken(refresh_token, client_id);
+  const tokens = await rotateRefreshToken(refresh_token, client.clientId);
 
   if (!tokens) {
     return NextResponse.json(
@@ -254,20 +162,5 @@ async function handleRefreshTokenGrant(
     );
   }
 
-  return NextResponse.json(
-    {
-      access_token: tokens.accessToken,
-      token_type: tokens.tokenType,
-      expires_in: tokens.expiresIn,
-      refresh_token: tokens.refreshToken,
-      scope: tokens.scope,
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-        Pragma: "no-cache",
-      },
-    }
-  );
+  return tokenResponse(tokens);
 }

@@ -3,7 +3,8 @@ import * as entryReadsService from "@/server/services/entry-reads";
 import { getAppErrorCode } from "@/server/errors";
 import { formatEntryFull } from "./format";
 import type { ResolvedWallabagEntry } from "./id";
-import { errorResponse, jsonResponse } from "./parse";
+import { jsonResponse } from "@/server/http/json-response";
+import { errorResponse } from "./parse";
 import { listEntryTags } from "./tags";
 
 /** The single-entry response most entry routes return. */

@@ -5,3 +5,6 @@
  * client's tokens — see SECURITY.md §8.
  */
 export const WALLABAG_CLIENT_ID = "wallabag";
+
+/** The Wallabag server version we report (`/api/info`, `/api/version.json`). */
+export const WALLABAG_VERSION = "2.6.0";
