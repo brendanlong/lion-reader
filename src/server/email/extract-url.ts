@@ -169,51 +169,48 @@ export function extractUnsubscribeUrl(html: string): string | null {
   let bestMatch: string | null = null;
   let hasPathMatch = false;
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        if (name.toLowerCase() === "a" && attribs.href) {
-          insideAnchor = true;
-          currentHref = attribs.href;
-          currentText = "";
-        }
-      },
-      ontext(text) {
-        if (insideAnchor) {
-          currentText += text;
-        }
-      },
-      onclosetag(name) {
-        if (name.toLowerCase() === "a" && insideAnchor) {
-          if (currentHref && /unsubscribe/i.test(currentText)) {
-            try {
-              const parsed = new URL(currentHref);
-              if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-                if (!TRACKING_DOMAINS.has(parsed.hostname)) {
-                  if (isUnsubscribeUrl(currentHref)) {
-                    // Path-based match - highest priority, take first one
-                    if (!hasPathMatch) {
-                      bestMatch = currentHref;
-                      hasPathMatch = true;
-                    }
-                  } else if (!bestMatch) {
-                    // Text-only match - fallback, take first one
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      if (name.toLowerCase() === "a" && attribs.href) {
+        insideAnchor = true;
+        currentHref = attribs.href;
+        currentText = "";
+      }
+    },
+    ontext(text) {
+      if (insideAnchor) {
+        currentText += text;
+      }
+    },
+    onclosetag(name) {
+      if (name.toLowerCase() === "a" && insideAnchor) {
+        if (currentHref && /unsubscribe/i.test(currentText)) {
+          try {
+            const parsed = new URL(currentHref);
+            if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+              if (!TRACKING_DOMAINS.has(parsed.hostname)) {
+                if (isUnsubscribeUrl(currentHref)) {
+                  // Path-based match - highest priority, take first one
+                  if (!hasPathMatch) {
                     bestMatch = currentHref;
+                    hasPathMatch = true;
                   }
+                } else if (!bestMatch) {
+                  // Text-only match - fallback, take first one
+                  bestMatch = currentHref;
                 }
               }
-            } catch {
-              // Invalid URL, skip
             }
+          } catch {
+            // Invalid URL, skip
           }
-          insideAnchor = false;
-          currentHref = null;
-          currentText = "";
         }
-      },
+        insideAnchor = false;
+        currentHref = null;
+        currentText = "";
+      }
     },
-    { decodeEntities: true }
-  );
+  });
 
   parser.write(html);
   parser.end();
@@ -254,68 +251,65 @@ export function extractEmailUrl(html: string): string | null {
   let currentText = "";
   let inHeadingAnchor = false;
 
-  const parser = createSaxParser(
-    {
-      onopentagname(name) {
-        const tag = name.toLowerCase();
-        if (tag === "h1" || tag === "h2" || tag === "h3") {
-          headingDepth++;
-        }
-      },
-      onopentag(name, attribs) {
-        const tag = name.toLowerCase();
-        if (tag === "a" && attribs.href) {
-          insideAnchor = true;
-          currentHref = attribs.href;
-          currentText = "";
-          inHeadingAnchor = headingDepth > 0;
-        }
-      },
-      ontext(text) {
-        if (insideAnchor) {
-          currentText += text;
-        }
-      },
-      onclosetag(name) {
-        const tag = name.toLowerCase();
+  const parser = createSaxParser({
+    onopentagname(name) {
+      const tag = name.toLowerCase();
+      if (tag === "h1" || tag === "h2" || tag === "h3") {
+        headingDepth++;
+      }
+    },
+    onopentag(name, attribs) {
+      const tag = name.toLowerCase();
+      if (tag === "a" && attribs.href) {
+        insideAnchor = true;
+        currentHref = attribs.href;
+        currentText = "";
+        inHeadingAnchor = headingDepth > 0;
+      }
+    },
+    ontext(text) {
+      if (insideAnchor) {
+        currentText += text;
+      }
+    },
+    onclosetag(name) {
+      const tag = name.toLowerCase();
 
-        if (tag === "a" && insideAnchor) {
-          if (currentHref) {
-            const resolved = resolveEmailLink(currentHref);
+      if (tag === "a" && insideAnchor) {
+        if (currentHref) {
+          const resolved = resolveEmailLink(currentHref);
 
-            if (resolved) {
-              // Strategy 1: "View online" text match
-              if (!viewOnlineCandidate && VIEW_ONLINE_PATTERN.test(currentText)) {
-                try {
-                  const parsed = new URL(resolved);
-                  if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-                    viewOnlineCandidate = cleanTrackingParams(resolved);
-                  }
-                } catch {
-                  // Invalid URL, skip
+          if (resolved) {
+            // Strategy 1: "View online" text match
+            if (!viewOnlineCandidate && VIEW_ONLINE_PATTERN.test(currentText)) {
+              try {
+                const parsed = new URL(resolved);
+                if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+                  viewOnlineCandidate = cleanTrackingParams(resolved);
                 }
-              }
-
-              // Strategy 2: Heading link fallback
-              if (!headingCandidate && inHeadingAnchor && isContentUrl(resolved)) {
-                headingCandidate = cleanTrackingParams(resolved);
+              } catch {
+                // Invalid URL, skip
               }
             }
+
+            // Strategy 2: Heading link fallback
+            if (!headingCandidate && inHeadingAnchor && isContentUrl(resolved)) {
+              headingCandidate = cleanTrackingParams(resolved);
+            }
           }
-
-          insideAnchor = false;
-          currentHref = null;
-          currentText = "";
-          inHeadingAnchor = false;
         }
 
-        if (tag === "h1" || tag === "h2" || tag === "h3") {
-          headingDepth--;
-        }
-      },
+        insideAnchor = false;
+        currentHref = null;
+        currentText = "";
+        inHeadingAnchor = false;
+      }
+
+      if (tag === "h1" || tag === "h2" || tag === "h3") {
+        headingDepth--;
+      }
     },
-    { decodeEntities: true }
-  );
+  });
 
   parser.write(html);
   parser.end();

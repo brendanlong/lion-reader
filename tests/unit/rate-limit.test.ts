@@ -4,8 +4,6 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  calculateTokensToAdd,
-  refillBucket,
   consumeToken,
   createBucket,
   getRateLimitHeaders,
@@ -28,64 +26,31 @@ function createBucketState(overrides: Partial<BucketState> = {}): BucketState {
   };
 }
 
-describe("calculateTokensToAdd", () => {
-  it("calculates correct tokens for 1 second", () => {
-    expect(calculateTokensToAdd(1000, 10)).toBe(10);
-  });
-
-  it("returns 0 for 0 elapsed time", () => {
-    expect(calculateTokensToAdd(0, 10)).toBe(0);
-  });
-
-  it("handles fractional tokens", () => {
-    expect(calculateTokensToAdd(100, 10)).toBe(1);
-    expect(calculateTokensToAdd(50, 10)).toBe(0.5);
-  });
-});
-
-describe("refillBucket", () => {
+describe("consumeToken refill", () => {
   const config: RateLimitConfig = { capacity: 100, refillRate: 10 };
+  const startMs = 1000000;
+  const tokensAfterOneRequest = (bucket: BucketState, nowMs: number): number =>
+    consumeToken(bucket, config, nowMs).newState.tokens;
 
-  it("does not refill when no time has passed", () => {
-    const nowMs = 1000000;
-    const bucket = createBucketState({ tokens: 50, lastRefillMs: nowMs });
-
-    const result = refillBucket(bucket, config, nowMs);
-
-    expect(result.tokens).toBe(50);
-    expect(result.lastRefillMs).toBe(nowMs);
+  it("refills nothing when no time has passed", () => {
+    const bucket = createBucketState({ tokens: 50, lastRefillMs: startMs });
+    expect(tokensAfterOneRequest(bucket, startMs)).toBe(49);
   });
 
-  it("refills tokens based on elapsed time", () => {
-    const startMs = 1000000;
-    const nowMs = startMs + 1000; // 1 second later
+  it("refills by elapsed time, fractional tokens included", () => {
     const bucket = createBucketState({ tokens: 50, lastRefillMs: startMs });
-
-    const result = refillBucket(bucket, config, nowMs);
-
-    expect(result.tokens).toBe(60); // 50 + 10
-    expect(result.lastRefillMs).toBe(nowMs);
+    expect(tokensAfterOneRequest(bucket, startMs + 1000)).toBe(59); // 50 + 10 - 1
+    expect(tokensAfterOneRequest(bucket, startMs + 50)).toBe(49.5); // 50 + 0.5 - 1
   });
 
-  it("caps tokens at capacity", () => {
-    const startMs = 1000000;
-    const nowMs = startMs + 10000; // 10 seconds later
+  it("caps the refill at capacity", () => {
     const bucket = createBucketState({ tokens: 50, lastRefillMs: startMs });
-
-    const result = refillBucket(bucket, config, nowMs);
-
-    expect(result.tokens).toBe(100); // Capped at capacity
+    expect(tokensAfterOneRequest(bucket, startMs + 10000)).toBe(99);
   });
 
-  it("does not refill when time goes backwards", () => {
-    const startMs = 1000000;
-    const nowMs = startMs - 1000; // 1 second in the past
+  it("refills nothing when time goes backwards", () => {
     const bucket = createBucketState({ tokens: 50, lastRefillMs: startMs });
-
-    const result = refillBucket(bucket, config, nowMs);
-
-    expect(result.tokens).toBe(50);
-    expect(result.lastRefillMs).toBe(startMs);
+    expect(tokensAfterOneRequest(bucket, startMs - 1000)).toBe(49);
   });
 });
 
@@ -227,7 +192,7 @@ describe("getRateLimitHeaders", () => {
 
 describe("getRateLimitKey", () => {
   it("generates default key for user", () => {
-    expect(getRateLimitKey("user:abc123")).toBe("rate_limit:default:user:abc123");
+    expect(getRateLimitKey("user:abc123", "default")).toBe("rate_limit:default:user:abc123");
   });
 
   it("generates expensive key for user", () => {

@@ -5,6 +5,8 @@
  * some errors).
  */
 
+import { parseRetryAfter } from "@/server/http/retry-after";
+
 /**
  * How a provider call failed, as far as the caller should care:
  * - `busy`: rate limited, overloaded, or unreachable — worth trying again shortly.
@@ -87,15 +89,6 @@ export class ProviderRejectedError extends Error {
   }
 }
 
-/** `Retry-After`, in seconds: a number of them, or a date. */
-export function retryAfterSeconds(header: string | null, now = Date.now()): number | null {
-  if (!header) return null;
-  const seconds = Number(header);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds);
-  const date = Date.parse(header);
-  return Number.isNaN(date) ? null : Math.max(0, (date - now) / 1000);
-}
-
 /**
  * The error for `provider`'s failed `response`, with its message if it gave
  * one: busy, rejected or neither, by {@link classifyProviderStatus}.
@@ -125,7 +118,7 @@ export async function providerError(
   const message = `${provider} request failed with status ${status}${detail ? `: ${detail}` : ""}`;
   switch (classifyProviderStatus(status, { keyed })) {
     case "busy":
-      return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
+      return new ProviderBusyError(message, parseRetryAfter(response.headers.get("retry-after")));
     case "rejected":
       return new ProviderRejectedError(message, provider, detail, status);
     case "failed":

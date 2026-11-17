@@ -130,51 +130,48 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   const feeds: DiscoveredFeed[] = [];
   const seenUrls = new Set<string>();
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        // Check for link tags (htmlparser2 lowercases tag and attribute names)
-        if (name === "link") {
-          // Check if this is a rel="alternate" link
-          if (!isAlternateRel(attribs.rel)) {
-            return;
-          }
-
-          // Check if the type is a feed type
-          const feedType = getFeedTypeFromMime(attribs.type);
-          if (feedType === null) {
-            return;
-          }
-
-          // Extract and resolve the href
-          const resolvedUrl = resolveUrl(attribs.href, baseUrl);
-          if (!resolvedUrl) {
-            return;
-          }
-
-          // Skip duplicates
-          if (seenUrls.has(resolvedUrl)) {
-            return;
-          }
-          seenUrls.add(resolvedUrl);
-
-          feeds.push({
-            url: resolvedUrl,
-            type: feedType,
-            // Extract title if present
-            title: attribs.title || undefined,
-          });
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      // Check for link tags (htmlparser2 lowercases tag and attribute names)
+      if (name === "link") {
+        // Check if this is a rel="alternate" link
+        if (!isAlternateRel(attribs.rel)) {
+          return;
         }
-      },
-      onclosetag(name) {
-        // Exit early after </head> - no feed links in body
-        if (name === "head") {
-          parser.pause();
+
+        // Check if the type is a feed type
+        const feedType = getFeedTypeFromMime(attribs.type);
+        if (feedType === null) {
+          return;
         }
-      },
+
+        // Extract and resolve the href
+        const resolvedUrl = resolveUrl(attribs.href, baseUrl);
+        if (!resolvedUrl) {
+          return;
+        }
+
+        // Skip duplicates
+        if (seenUrls.has(resolvedUrl)) {
+          return;
+        }
+        seenUrls.add(resolvedUrl);
+
+        feeds.push({
+          url: resolvedUrl,
+          type: feedType,
+          // Extract title if present
+          title: attribs.title || undefined,
+        });
+      }
     },
-    { decodeEntities: true }
-  );
+    onclosetag(name) {
+      // Exit early after </head> - no feed links in body
+      if (name === "head") {
+        parser.pause();
+      }
+    },
+  });
 
   parser.write(html);
   parser.end();

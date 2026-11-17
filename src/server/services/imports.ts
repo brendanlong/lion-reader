@@ -23,7 +23,7 @@ import {
   type OpmlImportFeedResult,
 } from "@/server/db/schema";
 import { parseOpmlAsync } from "@/server/feed/opml";
-import { createJob } from "@/server/jobs/queue";
+import { createJobs } from "@/server/jobs/queue";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { createSubscription } from "@/server/services/subscribe";
 import { setSubscriptionTags } from "@/server/services/subscription-updates";
@@ -129,11 +129,7 @@ export async function importOpml(
   });
 
   // Step 4: Queue the background job that subscribes to each feed.
-  await createJob({
-    type: "process_opml_import",
-    payload: { importId },
-    nextRunAt: now, // run immediately
-  });
+  await createJobs("process_opml_import", [{ importId }]);
 
   logger.info("OPML import queued", {
     importId,

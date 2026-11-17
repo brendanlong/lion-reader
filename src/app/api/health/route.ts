@@ -72,7 +72,11 @@ async function checkRedis(): Promise<ComponentHealth> {
 
   try {
     // Dynamic import to avoid initialization issues during health checks
-    const { redis } = await import("@/server/redis");
+    const { getRedisClient } = await import("@/server/redis");
+    const redis = getRedisClient();
+    if (!redis) {
+      throw new Error("Redis is not configured (REDIS_URL not set)");
+    }
 
     // Run PING command to test connectivity
     const result = await redis.ping();

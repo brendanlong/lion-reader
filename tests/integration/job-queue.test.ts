@@ -10,7 +10,6 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import {
-  createJob,
   claimJob,
   finishJob,
   getJobPayload,
@@ -26,7 +25,7 @@ import {
 } from "../../src/server/jobs/queue";
 import { runJobHandler } from "../../src/server/jobs/worker";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import { createTestFeed, createTestJob, createTestSubscription, createTestUser } from "./helpers";
 
 // A valid UUID that doesn't exist in the database
 const NON_EXISTENT_JOB_ID = "00000000-0000-7000-8000-000000000000";
@@ -67,29 +66,9 @@ describe("Job Queue", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  describe("createJob", () => {
-    it("creates a job with default values", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      expect(job.id).toBeDefined();
-      expect(job.type).toBe("fetch_feed");
-      expect(job.consecutiveFailures).toBe(0);
-      expect(job.nextRunAt).toBeInstanceOf(Date);
-      expect(job.runningSince).toBeNull();
-      expect(job.lastRunAt).toBeNull();
-      expect(job.lastError).toBeNull();
-
-      const payload = getJobPayload(job, "fetch_feed");
-      expect(payload.feedId).toBe("test-feed-id");
-    });
-  });
-
   describe("claimJob", () => {
     it("claims a pending job", async () => {
-      const created = await createJob({
+      const created = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -109,7 +88,7 @@ describe("Job Queue", () => {
     it("does not claim jobs scheduled for the future", async () => {
       const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
         nextRunAt: futureDate,
@@ -124,13 +103,13 @@ describe("Job Queue", () => {
       const earlier = new Date(now.getTime() - 60 * 1000); // 1 minute ago
 
       // Create jobs in reverse order
-      const job2 = await createJob({
+      const job2 = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
         nextRunAt: now,
       });
 
-      const job1 = await createJob({
+      const job1 = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
         nextRunAt: earlier,
@@ -151,9 +130,9 @@ describe("Job Queue", () => {
     });
 
     it("claims only one-time jobs", async () => {
-      await createJob({ type: "renew_websub", payload: {} });
-      await createJob({ type: "fetch_feed", payload: { feedId: "test-feed-id" } });
-      const oneTime = await createJob({
+      await createTestJob({ type: "renew_websub", payload: {} });
+      await createTestJob({ type: "fetch_feed", payload: { feedId: "test-feed-id" } });
+      const oneTime = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -163,7 +142,7 @@ describe("Job Queue", () => {
     });
 
     it("does not claim already running jobs", async () => {
-      const created = await createJob({
+      const created = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -178,7 +157,7 @@ describe("Job Queue", () => {
     });
 
     it("reclaims stale jobs", async () => {
-      const job = await createJob({
+      const job = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -202,7 +181,7 @@ describe("Job Queue", () => {
   describe("concurrent job claiming", () => {
     it("only one worker gets a job when claiming concurrently", async () => {
       // Create a single job
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -222,15 +201,15 @@ describe("Job Queue", () => {
 
     it("multiple jobs can be claimed by multiple workers", async () => {
       // Create 3 jobs
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -267,7 +246,7 @@ describe("Job Queue", () => {
     });
 
     it("seeds one row per singleton type, even when workers seed concurrently", async () => {
-      await createJob({ type: "renew_websub", payload: {}, nextRunAt: new Date(0) });
+      await createTestJob({ type: "renew_websub", payload: {}, nextRunAt: new Date(0) });
       await Promise.all(Array.from({ length: 5 }, () => seedSingletonJobs()));
 
       const rows = await listJobs({ limit: 100 });
@@ -277,7 +256,7 @@ describe("Job Queue", () => {
     });
 
     it("returns null when an existing job is not yet due", async () => {
-      await createJob({
+      await createTestJob({
         type: "renew_websub",
         payload: {},
         nextRunAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour out
@@ -290,7 +269,7 @@ describe("Job Queue", () => {
 
   describe("finishJob", () => {
     it("finishes a job successfully", async () => {
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -311,7 +290,7 @@ describe("Job Queue", () => {
     });
 
     it("finishes a job with failure", async () => {
-      await createJob({
+      await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -333,7 +312,7 @@ describe("Job Queue", () => {
     });
 
     it("increments consecutiveFailures on repeated failures", async () => {
-      const job = await createJob({
+      const job = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -359,7 +338,7 @@ describe("Job Queue", () => {
     });
 
     it("resets consecutiveFailures on success", async () => {
-      const job = await createJob({
+      const job = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -390,7 +369,7 @@ describe("Job Queue", () => {
     });
 
     it("deletes a one-time job once its handler returns, even on failure", async () => {
-      const job = await createJob({
+      const job = await createTestJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
       });
@@ -440,7 +419,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       const scheduled = new Date(Date.now() + 3 * 60 * 60 * 1000);
 
-      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: scheduled });
+      await createTestJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: scheduled });
 
       // Re-ensuring should not disturb an already-scheduled next_run_at.
       const job = await ensureFeedJob(db, feedId);
@@ -449,7 +428,7 @@ describe("Job Queue", () => {
 
     it("scheduleFeedJobBy moves a job's run up but never later", async () => {
       const feedId = generateUuidv7();
-      await createJob({
+      await createTestJob({
         type: "fetch_feed",
         payload: { feedId },
         nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -481,7 +460,7 @@ describe("Job Queue", () => {
     it("scheduleFeedRefreshNow pulls an already-scheduled job forward and sets the token", async () => {
       const feedId = generateUuidv7();
       const future = new Date(Date.now() + 3 * 60 * 60 * 1000);
-      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: future });
+      await createTestJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: future });
 
       const job = await scheduleFeedRefreshNow(db, feedId);
 
@@ -547,7 +526,7 @@ describe("Job Queue", () => {
       // A plain poll (no token at claim) finishes while a subscribe arms the job.
       // The finish must honor the pending request: keep it and run now.
       const feedId = await createSubscribedFeed();
-      await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: new Date() });
+      await createTestJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: new Date() });
       const claimed = await claimFeedJob();
       expect(getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt).toBeUndefined();
 
@@ -571,7 +550,7 @@ describe("Job Queue", () => {
       const feedId = await createTestFeed();
 
       // Create a job due to run
-      await createJob({
+      await createTestJob({
         type: "fetch_feed",
         payload: { feedId },
         nextRunAt: new Date(Date.now() - 1000), // 1 second ago
@@ -593,7 +572,7 @@ describe("Job Queue", () => {
       await createTestSubscription(userId, feedId);
 
       // Create a job due to run
-      await createJob({
+      await createTestJob({
         type: "fetch_feed",
         payload: { feedId },
         nextRunAt: new Date(Date.now() - 1000), // 1 second ago
@@ -616,7 +595,7 @@ describe("Job Queue", () => {
       await createTestSubscription(userId, feedId, { unsubscribedAt: new Date() });
 
       // Create a job due to run
-      await createJob({
+      await createTestJob({
         type: "fetch_feed",
         payload: { feedId },
         nextRunAt: new Date(Date.now() - 1000), // 1 second ago
@@ -638,7 +617,7 @@ describe("Job Queue", () => {
       await createTestSubscription(userId, feedId);
 
       // Create a job scheduled for the future
-      await createJob({
+      await createTestJob({
         type: "fetch_feed",
         payload: { feedId },
         nextRunAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour from now

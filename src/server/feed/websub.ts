@@ -9,7 +9,8 @@
 
 import { randomBytes, createHmac, timingSafeEqual } from "crypto";
 import { eq, and, lt, exists, isNull, sql, type SQL } from "drizzle-orm";
-import { fetchWithSsrfProtection } from "../http/ssrf";
+import { isIP } from "node:net";
+import { fetchWithSsrfProtection, isPrivateAddress } from "../http/ssrf";
 import { readResponseBufferWithSizeLimit } from "../http/fetch";
 import { db } from "../db";
 import {
@@ -86,59 +87,16 @@ export const RENEWAL_STALL_GRACE_MS = 6 * 60 * 60 * 1000;
 const RENEWAL_STALL_ERROR = "Renewal not verified by hub within grace period";
 
 /**
- * Private/local hostnames and IP ranges that can't receive WebSub callbacks.
- */
-const PRIVATE_HOSTNAMES = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
-
-/**
- * Private IP address prefixes (RFC 1918 and RFC 4193).
- */
-const PRIVATE_IP_PREFIXES = [
-  "10.",
-  "172.16.",
-  "172.17.",
-  "172.18.",
-  "172.19.",
-  "172.20.",
-  "172.21.",
-  "172.22.",
-  "172.23.",
-  "172.24.",
-  "172.25.",
-  "172.26.",
-  "172.27.",
-  "172.28.",
-  "172.29.",
-  "172.30.",
-  "172.31.",
-  "192.168.",
-];
-
-/**
- * Checks if a hostname is private (local or internal network).
- *
- * @param hostname - The hostname to check
- * @returns true if the hostname is private
+ * Whether a hostname is local or internal, so a hub can't reach callbacks on it.
  */
 function isPrivateHostname(hostname: string): boolean {
-  // Check exact matches for localhost variants
-  if (PRIVATE_HOSTNAMES.includes(hostname.toLowerCase())) {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".local")) {
     return true;
   }
-
-  // Check for private IP prefixes
-  for (const prefix of PRIVATE_IP_PREFIXES) {
-    if (hostname.startsWith(prefix)) {
-      return true;
-    }
-  }
-
-  // Check for .local domain suffix (mDNS)
-  if (hostname.toLowerCase().endsWith(".local")) {
-    return true;
-  }
-
-  return false;
+  // URL.hostname keeps the brackets around an IPv6 literal.
+  const address = host.replace(/^\[(.*)\]$/, "$1");
+  return isIP(address) !== 0 && isPrivateAddress(address);
 }
 
 /**

@@ -43,18 +43,18 @@ describe("parseJson", () => {
       expect(result.selfUrl).toBe("https://example.com/feed.json");
       expect(result.iconUrl).toBe("https://example.com/favicon.ico");
 
-      expect(result.entries).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
 
-      expect(result.entries[0].guid).toBe("item-1");
-      expect(result.entries[0].link).toBe("https://example.com/item-1");
-      expect(result.entries[0].title).toBe("First Item");
-      expect(result.entries[0].summary).toBe("This is the summary");
-      expect(result.entries[0].content).toBe("<p>This is the full content</p>");
-      expect(result.entries[0].author).toBe("John Doe");
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.items[0].guid).toBe("item-1");
+      expect(result.items[0].link).toBe("https://example.com/item-1");
+      expect(result.items[0].title).toBe("First Item");
+      expect(result.items[0].summary).toBe("This is the summary");
+      expect(result.items[0].content).toBe("<p>This is the full content</p>");
+      expect(result.items[0].author).toBe("John Doe");
+      expect(result.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
 
-      expect(result.entries[1].title).toBe("Second Item");
-      expect(result.entries[1].content).toBe("Plain text content");
+      expect(result.items[1].title).toBe("Second Item");
+      expect(result.items[1].content).toBe("Plain text content");
     });
   });
 
@@ -74,7 +74,7 @@ describe("parseJson", () => {
       ],
     });
 
-    expect(parseJson(json).entries[0].author).toBe("Ada Lovelace and Alan Turing");
+    expect(parseJson(json).items[0].author).toBe("Ada Lovelace and Alan Turing");
   });
 
   describe("JSON Feed 1.0 compatibility", () => {
@@ -93,7 +93,7 @@ describe("parseJson", () => {
 
       const result = parseJson(json);
 
-      expect(result.entries[0].author).toBe("Jane Doe");
+      expect(result.items[0].author).toBe("Jane Doe");
     });
   });
 
@@ -114,7 +114,7 @@ describe("parseJson", () => {
 
       const result = parseJson(json);
 
-      expect(result.entries[0].content).toBe("<p>HTML content</p>");
+      expect(result.items[0].content).toBe("<p>HTML content</p>");
     });
   });
 
@@ -135,7 +135,7 @@ describe("parseJson", () => {
 
       const result = parseJson(json);
 
-      expect(result.entries[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
+      expect(result.items[0].pubDate).toEqual(new Date("2024-01-01T12:00:00Z"));
     });
   });
 

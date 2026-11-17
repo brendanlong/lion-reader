@@ -168,34 +168,31 @@ function extractLinkedInJsonLd(html: string): JsonLdEntity[] {
   let inJsonLd = false;
   let scriptText = "";
 
-  const parser = createSaxParser(
-    {
-      onopentag(name, attribs) {
-        const tag = name.toLowerCase();
-        if (tag === "script" && attribs.type?.toLowerCase() === "application/ld+json") {
-          inJsonLd = true;
-          scriptText = "";
-        }
-      },
-      ontext(text) {
-        if (inJsonLd) {
-          scriptText += text;
-        }
-      },
-      onclosetag(name) {
-        if (name.toLowerCase() !== "script" || !inJsonLd) {
-          return;
-        }
-        inJsonLd = false;
-        try {
-          jsonLd.push(...flattenJsonLd(JSON.parse(scriptText)));
-        } catch {
-          // Malformed JSON-LD is not worth failing the save over.
-        }
-      },
+  const parser = createSaxParser({
+    onopentag(name, attribs) {
+      const tag = name.toLowerCase();
+      if (tag === "script" && attribs.type?.toLowerCase() === "application/ld+json") {
+        inJsonLd = true;
+        scriptText = "";
+      }
     },
-    { decodeEntities: true }
-  );
+    ontext(text) {
+      if (inJsonLd) {
+        scriptText += text;
+      }
+    },
+    onclosetag(name) {
+      if (name.toLowerCase() !== "script" || !inJsonLd) {
+        return;
+      }
+      inJsonLd = false;
+      try {
+        jsonLd.push(...flattenJsonLd(JSON.parse(scriptText)));
+      } catch {
+        // Malformed JSON-LD is not worth failing the save over.
+      }
+    },
+  });
   parser.write(html);
   parser.end();
 

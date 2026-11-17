@@ -10,7 +10,7 @@ import { getFeedPlugin } from "@/server/plugins";
 import {
   LESSWRONG_FRONTPAGE_FEED_URL,
   LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
-} from "@/server/feed/lesswrong";
+} from "@/server/plugins/lesswrong-api";
 
 const feed = lessWrongPlugin.capabilities.feed!;
 

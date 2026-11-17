@@ -22,6 +22,7 @@ import type { MarkdownLimits, RenderedMarkdown } from "@lion-reader/markdown";
 import { parse as parseYaml } from "yaml";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { startMarkdownRenderTimer } from "@/server/metrics/metrics";
+import { NATIVE_INLINE_MAX_CHARS } from "@/server/native-inline";
 import { errors } from "@/server/errors";
 
 /**
@@ -154,15 +155,6 @@ function parseFrontmatterLenient(yaml: string): Record<string, string> | null {
 }
 
 /**
- * Documents at or below this size render synchronously on the calling thread:
- * the native renderer handles them in well under a millisecond, so the fixed
- * cost of scheduling a libuv-thread-pool task (and copying the string across
- * the N-API boundary twice) isn't worth paying. ~10 KB, same rationale and
- * value as the sanitizer's and the extractor's inline thresholds.
- */
-const RENDER_INLINE_MAX_CHARS = 10 * 1024;
-
-/**
  * The Markdown size budgets: 1 MB of source and 5 MB of rendered HTML. The
  * source budget is deliberately well below the saved-article page limit,
  * because Markdown grows on the way to HTML (see {@link unwrapRendered}).
@@ -218,7 +210,7 @@ function renderInline(markdown: string): string {
  */
 export async function markdownToHtmlAsync(markdown: string): Promise<string> {
   // Small documents go through the inline path, which records its own timing.
-  if (markdown.length <= RENDER_INLINE_MAX_CHARS) {
+  if (markdown.length <= NATIVE_INLINE_MAX_CHARS) {
     return renderInline(markdown);
   }
 

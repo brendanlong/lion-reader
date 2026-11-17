@@ -1,5 +1,4 @@
-//! OPML parser, wrapped by `src/server/feed/streaming/opml-parser.ts`.
-//! Structural validation errors
+//! OPML parser. Structural validation errors
 //! (missing opml/body elements) are reported via flags on [`OpmlResult`] so
 //! the error type and messages stay in TypeScript.
 
@@ -27,8 +26,8 @@ impl SaxHandler for OpmlHandler {
         if tag == "outline" && self.in_body {
             self.outline_depth += 1;
 
-            // Attribute names are case-sensitive
-            // (`lowerCaseAttributeNames: false`), so check exactly these
+            // The old parser kept attribute names case-sensitive
+            // (`lowerCaseAttributeNames: false`) and checked exactly these
             // spellings; empty values are falsy and fall through.
             let xml_url = attrs
                 .get_nonempty("xmlurl")

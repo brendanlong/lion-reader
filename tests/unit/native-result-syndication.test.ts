@@ -1,10 +1,10 @@
 /**
- * Unit tests for the syndication-hint handling in `toFeedParseResult`.
+ * Unit tests for the syndication-hint handling in `toParsedFeed`.
  */
 
 import { describe, it, expect } from "vitest";
 import type { RawParsedFeed } from "@lion-reader/feed-parser";
-import { toFeedParseResult } from "../../src/server/feed/streaming/native-result";
+import { toParsedFeed } from "../../src/server/feed/streaming/native-result";
 import { parseRss } from "../../src/server/feed/streaming/rss-parser";
 
 const parseDate = (value: string): Date | undefined => {
@@ -16,24 +16,21 @@ function rawFeed(overrides: Partial<RawParsedFeed> = {}): RawParsedFeed {
   return { entries: [], ...overrides };
 }
 
-describe("toFeedParseResult syndication hints", () => {
+describe("toParsedFeed syndication hints", () => {
   it("keeps a recognized update period", () => {
-    const result = toFeedParseResult(
-      rawFeed({ updatePeriod: "daily", updateFrequency: 2 }),
-      parseDate
-    );
+    const result = toParsedFeed(rawFeed({ updatePeriod: "daily", updateFrequency: 2 }), parseDate);
 
     expect(result.syndication).toEqual({ updatePeriod: "daily", updateFrequency: 2 });
   });
 
   it("drops an unrecognized update period rather than trusting the native string", () => {
-    const result = toFeedParseResult(rawFeed({ updatePeriod: "fortnightly" }), parseDate);
+    const result = toParsedFeed(rawFeed({ updatePeriod: "fortnightly" }), parseDate);
 
     expect(result.syndication).toBeUndefined();
   });
 
   it("keeps the frequency when only the period is unrecognized", () => {
-    const result = toFeedParseResult(
+    const result = toParsedFeed(
       rawFeed({ updatePeriod: "fortnightly", updateFrequency: 3 }),
       parseDate
     );
@@ -42,19 +39,19 @@ describe("toFeedParseResult syndication hints", () => {
   });
 
   it("is case-sensitive, matching the lowercased values the native parser emits", () => {
-    const result = toFeedParseResult(rawFeed({ updatePeriod: "Daily" }), parseDate);
+    const result = toParsedFeed(rawFeed({ updatePeriod: "Daily" }), parseDate);
 
     expect(result.syndication).toBeUndefined();
   });
 
   it("keeps a frequency the feed gave without any period", () => {
-    const result = toFeedParseResult(rawFeed({ updateFrequency: 4 }), parseDate);
+    const result = toParsedFeed(rawFeed({ updateFrequency: 4 }), parseDate);
 
     expect(result.syndication).toEqual({ updateFrequency: 4 });
   });
 
   it("omits syndication entirely when the feed has no hints", () => {
-    const result = toFeedParseResult(rawFeed(), parseDate);
+    const result = toParsedFeed(rawFeed(), parseDate);
 
     expect(result.syndication).toBeUndefined();
   });

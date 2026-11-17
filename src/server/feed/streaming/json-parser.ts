@@ -5,8 +5,7 @@
 
 import { usageLimitsConfig } from "../../config/env";
 import { formatAuthors } from "../authors";
-import type { ParsedEntry } from "../types";
-import type { FeedParseResult } from "./types";
+import type { ParsedEntry, ParsedFeed } from "../types";
 
 interface JsonFeedAuthor {
   name?: string;
@@ -86,7 +85,7 @@ function extractHubUrl(hubs: JsonFeedHub[] | undefined): string | undefined {
  * @param content - The JSON Feed content as a string
  * @returns Parsed feed metadata and entries
  */
-export function parseJson(content: string): FeedParseResult {
+export function parseJson(content: string): ParsedFeed {
   const parsed = JSON.parse(content) as Record<string, unknown>;
 
   // Validate
@@ -102,7 +101,6 @@ export function parseJson(content: string): FeedParseResult {
   }
 
   const items = parsed.items as JsonFeedItem[];
-  const entries = items.slice(0, usageLimitsConfig.maxFeedEntries).map(parseJsonFeedItem);
 
   return {
     title: typeof parsed.title === "string" ? parsed.title.trim() || undefined : undefined,
@@ -117,6 +115,6 @@ export function parseJson(content: string): FeedParseResult {
           : undefined,
     hubUrl: extractHubUrl(parsed.hubs as JsonFeedHub[] | undefined),
     selfUrl: typeof parsed.feed_url === "string" ? parsed.feed_url : undefined,
-    entries,
+    items: items.slice(0, usageLimitsConfig.maxFeedEntries).map(parseJsonFeedItem),
   };
 }

@@ -14,8 +14,8 @@
  * - Horizontal rules
  * - Lists (ordered and unordered with proper nesting)
  *
- * Phase 1: Public documents only (requires service account credentials)
- * Phase 2: Private documents with user OAuth tokens (future)
+ * Public documents are fetched with service account credentials, private ones
+ * with the saving user's OAuth token.
  *
  * Note: The Google Docs API requires OAuth2 tokens - API keys are not supported.
  * For server-side access to public documents, we use a service account.
@@ -1190,7 +1190,7 @@ async function convertDocsApiToHtml(
  * For uploaded .docx files, falls back to the Drive API with mammoth conversion.
  *
  * For private documents, use fetchPrivateGoogleDoc with a user's OAuth
- * access token (Phase 2).
+ * access token.
  *
  * @param docId - The Google Docs document ID
  * @param tabId - Tab ID to fetch (from URL ?tab=t.{tabId})
@@ -1221,8 +1221,8 @@ async function fetchPublicGoogleDoc(
 /**
  * Fetches a private Google Doc using a user's OAuth access token.
  *
- * Used for Phase 2 of Google Docs integration to access documents that
- * the user has permission to read but aren't publicly shared.
+ * For documents the user has permission to read but that aren't publicly
+ * shared.
  *
  * For uploaded .docx files, falls back to the Drive API with mammoth conversion.
  *
@@ -1231,14 +1231,14 @@ async function fetchPublicGoogleDoc(
  *
  * @param docId - The Google Docs document ID
  * @param accessToken - User's OAuth access token
- * @param tabId - Optional tab ID to fetch (from URL ?tab=t.{tabId})
+ * @param tabId - Tab ID to fetch (from URL ?tab=t.{tabId})
  * @returns Document content including HTML, or null if fetch fails
  * @throws Error if token is invalid or user doesn't have permission
  */
 export async function fetchPrivateGoogleDoc(
   docId: string,
   accessToken: string,
-  tabId: string | null = null
+  tabId: string | null
 ): Promise<GoogleDocsContent | null> {
   return fetchGoogleDocWithToken(docId, accessToken, tabId, true, true);
 }
@@ -1401,10 +1401,7 @@ async function fetchGoogleDocWithToken(
  * Fetches Google Docs content from a URL.
  *
  * This is a convenience function that extracts the document ID from the URL
- * and fetches the content using the public API.
- *
- * Phase 1: Only supports public documents
- * Phase 2: Will support private documents with user OAuth tokens
+ * and fetches the content using the public API (public documents only).
  *
  * @param url - The Google Docs document URL
  * @param options.images - Fetch and inline the images: only content with an

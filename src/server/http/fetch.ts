@@ -274,7 +274,7 @@ export interface FetchUrlResult {
 /**
  * Accept header for feed requests (RSS, Atom, XML).
  */
-const FEED_ACCEPT_HEADER =
+export const FEED_ACCEPT_HEADER =
   "application/rss+xml, application/atom+xml, application/xml, text/xml, */*";
 
 /**

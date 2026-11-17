@@ -257,15 +257,6 @@ export function calculateExceptionRetryDelayMs(consecutiveFailures: number): num
 }
 
 /**
- * Options for creating a new job.
- */
-export interface CreateJobOptions<T extends JobType> {
-  type: T;
-  payload: JobPayloads[T];
-  nextRunAt?: Date;
-}
-
-/**
  * Options for finishing a job.
  */
 export interface FinishJobOptions {
@@ -291,40 +282,6 @@ export interface FinishJobOptions {
    * Omit for non-fetch_feed jobs.
    */
   consumeForceReprocess?: { claimedAt: string | null };
-}
-
-/**
- * Creates a new job in the queue.
- * This should only be called when creating a new scheduled task
- * (e.g., when a feed is first subscribed to).
- *
- * @param options Job creation options
- * @param executor Where to insert it: a transaction makes the job commit with
- *   the change it follows up
- * @returns The created job
- */
-export async function createJob<T extends JobType>(
-  options: CreateJobOptions<T>,
-  executor: DbOrTx = db
-): Promise<Job> {
-  const { type, payload, nextRunAt = new Date() } = options;
-
-  const id = generateUuidv7();
-  const now = new Date();
-
-  const [job] = await executor
-    .insert(jobs)
-    .values({
-      id,
-      type,
-      payload,
-      nextRunAt,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-
-  return job;
 }
 
 /**
