@@ -86,19 +86,17 @@ describe("br handling", () => {
 
 describe("inline elements that rewrite their own words", () => {
   // Each one used to copy the whole paragraph built so far, so a paragraph of
-  // them was quadratic: 80,000 superscripts took 25 s, and 4× as many took 16×.
+  // them was quadratic: 80,000 superscripts took 25 s, and the quickest of
+  // these still took 11 s. Linear, each takes about half a second, and GC
+  // pauses have stretched one call to 2.5 s, so the bound has plenty of slack.
   it.each([
     ["superscripts", "word<sup>1</sup> "],
     ["links whose text is their URL", '<a href="https://e.com/x">https://e.com/x</a> '],
     ["inline code", "w <code>x</code> "],
   ])("narrates a paragraph of %s in linear time", (_, piece) => {
-    const time = (count: number) => {
-      const start = performance.now();
-      htmlToNarrationInput(`<p>${piece.repeat(count)}</p>`);
-      return performance.now() - start;
-    };
-    time(5_000);
-    // Linear is 4x; copying the paragraph each time made it 16x.
-    expect(time(40_000)).toBeLessThan(6 * time(10_000));
+    const html = `<p>${piece.repeat(80_000)}</p>`;
+    const start = performance.now();
+    htmlToNarrationInput(html);
+    expect(performance.now() - start).toBeLessThan(5000);
   });
 });
