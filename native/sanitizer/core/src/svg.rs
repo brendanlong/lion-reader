@@ -675,13 +675,13 @@ mod tests {
 
     #[test]
     fn source_target_and_rel_never_survive() {
-        let out = roundtrip(
-            r##"<svg><a href="#x" target="_blank" rel="opener"><text>in</text></a><a href="https://x.com" target="_self" rel="opener"><text>out</text></a></svg>"##,
+        // `/\x` resolves off-site but isn't recognized as external.
+        assert_eq!(
+            roundtrip(
+                r##"<svg><a href="/\x" target="_blank" rel="opener"><text>in</text></a><a href="https://x.com" target="_self" rel="opener"><text>out</text></a></svg>"##
+            ),
+            r##"<svg><a href="/\x"><text>in</text></a><a href="https://x.com" target="_blank" rel="noopener noreferrer"><text>out</text></a></svg>"##
         );
-        assert!(!out.contains("opener\""), "{out}");
-        assert!(!out.contains("_self"), "{out}");
-        assert_eq!(out.matches("target=").count(), 1, "{out}");
-        assert!(out.contains(r#"rel="noopener noreferrer""#), "{out}");
     }
 
     #[test]

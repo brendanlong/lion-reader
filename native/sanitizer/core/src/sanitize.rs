@@ -20,9 +20,10 @@
 //!   rewriter's output — see `drop_disallowed_end_tags`, which is the only place
 //!   here that deletes bytes lol_html already tokenized.
 //! - Transforms: links lose any source `target`/`rel`, and external ones get
-//!   `target="_blank" rel="noopener noreferrer"`; images get `loading="lazy"`; iframes survive only as
-//!   normalized allow-listed embeds with a forced sandbox; `input` survives
-//!   only as an inert, attribute-stripped task-list checkbox.
+//!   `target="_blank" rel="noopener noreferrer"`; images get
+//!   `loading="lazy"`; iframes survive only as normalized allow-listed embeds
+//!   with a forced sandbox; `input` survives only as an inert,
+//!   attribute-stripped task-list checkbox.
 //!
 //! Unlike sanitize-html, lol_html does not re-serialize untouched markup:
 //! kept text and attribute values pass through byte-identical, and the
@@ -1081,12 +1082,12 @@ mod tests {
         // Links our external-link check doesn't recognize still resolve
         // off-site in a browser, so a kept `rel="opener"` would let the
         // page reach `window.opener`.
-        for href in ["https:evil.example", "/\\evil.example", "/local", "#frag"] {
+        for href in ["https:evil.example", "/\\evil.example"] {
             assert_eq!(
                 sanitize(&format!(
                     r#"<a href="{href}" target="_blank" rel="opener">x</a>"#
                 )),
-                format!(r#"<a href="{href}">x</a>"#).replace("#frag", "#uc-frag"),
+                format!(r#"<a href="{href}">x</a>"#),
                 "{href}"
             );
         }
@@ -1760,7 +1761,16 @@ mod tests {
                             !matches!(s, "http" | "https" | "mailto" | "tel")
                                 && !crate::urls::is_data_image(value)
                         });
-                    if attr.to_ascii_lowercase().starts_with("on") || attr == "class" || bad_url {
+                    let source_link_attr = matches!(attr, "target" | "rel")
+                        && !matches!(
+                            (attr, value),
+                            ("target", "_blank") | ("rel", "noopener noreferrer")
+                        );
+                    if attr.to_ascii_lowercase().starts_with("on")
+                        || attr == "class"
+                        || bad_url
+                        || source_link_attr
+                    {
                         return Some(format!("<svg:{tag} {attr}={value:?}>"));
                     }
                 }
@@ -1774,6 +1784,19 @@ mod tests {
             for (attr, value) in el.attrs() {
                 // lol_html can't remove an attribute whose name starts with `=`
                 // (#1637). No such name means anything to a browser.
+                // Checked apart from `attr_allowed`, so re-allowing a source
+                // value there can't also relax this check.
+                if matches!(attr, "target" | "rel") {
+                    let forced = tag == "a"
+                        && matches!(
+                            (attr, value),
+                            ("target", "_blank") | ("rel", "noopener noreferrer")
+                        );
+                    if !forced {
+                        return Some(format!("<{tag} {attr}={value:?}>"));
+                    }
+                    continue;
+                }
                 let allowed = attr.starts_with('=')
                     || attr_allowed(tag, attr)
                     || (tag == "iframe"
@@ -1787,12 +1810,7 @@ mod tests {
                                 | "width"
                                 | "height"
                         ))
-                    || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"))
-                    || (tag == "a"
-                        && matches!(
-                            (attr, value),
-                            ("target", "_blank") | ("rel", "noopener noreferrer")
-                        ));
+                    || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"));
                 if !allowed {
                     return Some(format!("<{tag} {attr}>"));
                 }
@@ -1902,6 +1920,9 @@ mod tests {
         // SVG is the one place markup is added after the pass, so it must land
         // only where the pass read text (see `svg.rs`).
         const PIECES: &[&str] = &[
+            r#"<a href="https:x" target=_blank rel=opener>"#,
+            r#"<a href="https://e.com" target=_top rel=opener>"#,
+            r#"<svg><a href="/\x" target="_blank" rel="opener"><text>t</text></a></svg>"#,
             "<",
             ">",
             "\"",
