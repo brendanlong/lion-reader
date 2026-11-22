@@ -42,7 +42,7 @@ use crate::scanner::{
     find_byte, find_bytes, is_tag_ws, scan_to_tag_end, skip_raw_text, tag_name_end,
     RAW_TEXT_ELEMENTS,
 };
-use crate::urls::{decode_attr, is_image_url_allowed, split_srcset};
+use crate::urls::{decode_attr, is_external_link, is_image_url_allowed, split_srcset};
 
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
 const ALLOWED_TAGS: &[&str] = &[
@@ -610,13 +610,6 @@ fn collapse_duplicates(
     Ok(())
 }
 
-fn is_external_link(decoded_href: &str) -> bool {
-    let normalized = decoded_href.trim().to_ascii_lowercase();
-    normalized.starts_with("http://")
-        || normalized.starts_with("https://")
-        || normalized.starts_with("//")
-}
-
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tag = el.tag_name();
     if !tag_allowed(&tag) {
@@ -1079,22 +1072,23 @@ mod tests {
 
     #[test]
     fn source_target_and_rel_never_survive() {
-        // Links our external-link check doesn't recognize still resolve
-        // off-site in a browser, so a kept `rel="opener"` would let the
-        // page reach `window.opener`.
-        for href in ["https:evil.example", "/\\evil.example"] {
+        // A kept `rel="opener"` would let a page our external-link check
+        // missed reach `window.opener`; any link it misses must stay in the tab.
+        assert_eq!(
+            sanitize(r#"<a href="/local" target="_blank" rel="opener">x</a>"#),
+            r#"<a href="/local">x</a>"#
+        );
+        // Off-site links get only ours, however the source spelled the URL
+        // (`https:host` and `/\host` resolve off-site too).
+        for href in ["https://e.com", "https:evil.example", "/\\evil.example"] {
             assert_eq!(
                 sanitize(&format!(
-                    r#"<a href="{href}" target="_blank" rel="opener">x</a>"#
+                    r#"<a href="{href}" target="_self" rel="opener">x</a>"#
                 )),
-                format!(r#"<a href="{href}">x</a>"#),
+                format!(r#"<a href="{href}" target="_blank" rel="noopener noreferrer">x</a>"#),
                 "{href}"
             );
         }
-        assert_eq!(
-            sanitize(r#"<a href="https://e.com" target="_self" rel="opener">x</a>"#),
-            r#"<a href="https://e.com" target="_blank" rel="noopener noreferrer">x</a>"#
-        );
     }
 
     // Namespacing tests use escaped strings rather than `r#"…"#`: the literals
@@ -1733,6 +1727,19 @@ mod tests {
     /// attributes (iframe embeds, task-list checkboxes) are allowed by
     /// construction, not by `attr_allowed`. `svg` admits reinserted inline SVG,
     /// which the pass alone never outputs.
+    /// A `target`/`rel` the sanitizer didn't force: they may only appear on an
+    /// `<a>`, together, as exactly our pair. Checked apart from the allow-lists,
+    /// so re-allowing a source value there can't also relax this check.
+    fn unforced_link_attr(tag: &str, el: &scraper::node::Element) -> Option<String> {
+        let target = el.attr("target");
+        let rel = el.attr("rel");
+        if target.is_none() && rel.is_none() {
+            return None;
+        }
+        let forced = tag == "a" && target == Some("_blank") && rel == Some("noopener noreferrer");
+        (!forced).then(|| format!("{tag} target={target:?} rel={rel:?}"))
+    }
+
     fn disallowed_markup(html: &str, svg: bool) -> Option<String> {
         use html5ever::ns;
         for node in scraper::Html::parse_fragment(html).tree.nodes() {
@@ -1754,6 +1761,9 @@ mod tests {
                 if !svg || !crate::svg::ALLOWED_SVG_TAGS.contains(&lower.as_str()) {
                     return Some(format!("<svg:{tag}>"));
                 }
+                if let Some(bad) = unforced_link_attr(tag, el) {
+                    return Some(format!("<svg:{bad}>"));
+                }
                 for (attr, value) in el.attrs() {
                     let scheme = crate::urls::url_scheme(value);
                     let bad_url = matches!(attr, "href" | "xlink:href")
@@ -1761,16 +1771,7 @@ mod tests {
                             !matches!(s, "http" | "https" | "mailto" | "tel")
                                 && !crate::urls::is_data_image(value)
                         });
-                    let source_link_attr = matches!(attr, "target" | "rel")
-                        && !matches!(
-                            (attr, value),
-                            ("target", "_blank") | ("rel", "noopener noreferrer")
-                        );
-                    if attr.to_ascii_lowercase().starts_with("on")
-                        || attr == "class"
-                        || bad_url
-                        || source_link_attr
-                    {
+                    if attr.to_ascii_lowercase().starts_with("on") || attr == "class" || bad_url {
                         return Some(format!("<svg:{tag} {attr}={value:?}>"));
                     }
                 }
@@ -1781,22 +1782,15 @@ mod tests {
             if !tag_allowed(tag) && !matches!(tag, "html" | "body") {
                 return Some(format!("<{tag}>"));
             }
+            if let Some(bad) = unforced_link_attr(tag, el) {
+                return Some(format!("<{bad}>"));
+            }
             for (attr, value) in el.attrs() {
-                // lol_html can't remove an attribute whose name starts with `=`
-                // (#1637). No such name means anything to a browser.
-                // Checked apart from `attr_allowed`, so re-allowing a source
-                // value there can't also relax this check.
                 if matches!(attr, "target" | "rel") {
-                    let forced = tag == "a"
-                        && matches!(
-                            (attr, value),
-                            ("target", "_blank") | ("rel", "noopener noreferrer")
-                        );
-                    if !forced {
-                        return Some(format!("<{tag} {attr}={value:?}>"));
-                    }
                     continue;
                 }
+                // lol_html can't remove an attribute whose name starts with `=`
+                // (#1637). No such name means anything to a browser.
                 let allowed = attr.starts_with('=')
                     || attr_allowed(tag, attr)
                     || (tag == "iframe"
@@ -1920,7 +1914,8 @@ mod tests {
         // SVG is the one place markup is added after the pass, so it must land
         // only where the pass read text (see `svg.rs`).
         const PIECES: &[&str] = &[
-            r#"<a href="https:x" target=_blank rel=opener>"#,
+            r#"<a href="/x" target=_blank>"#,
+            r#"<a href="/x" target=_blank rel=opener>"#,
             r#"<a href="https://e.com" target=_top rel=opener>"#,
             r#"<svg><a href="/\x" target="_blank" rel="opener"><text>t</text></a></svg>"#,
             "<",
