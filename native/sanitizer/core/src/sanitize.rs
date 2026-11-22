@@ -19,8 +19,8 @@
 //! - The tag allow-list applies to end tags too, in a second byte pass over the
 //!   rewriter's output — see `drop_disallowed_end_tags`, which is the only place
 //!   here that deletes bytes lol_html already tokenized.
-//! - Transforms: external links get `target="_blank" rel="noopener
-//!   noreferrer"`; images get `loading="lazy"`; iframes survive only as
+//! - Transforms: links lose any source `target`/`rel`, and external ones get
+//!   `target="_blank" rel="noopener noreferrer"`; images get `loading="lazy"`; iframes survive only as
 //!   normalized allow-listed embeds with a forced sandbox; `input` survives
 //!   only as an inert, attribute-stripped task-list checkbox.
 //!
@@ -328,7 +328,10 @@ fn attr_allowed(tag: &str, name: &str) -> bool {
         return true;
     }
     match tag {
-        "a" => matches!(name, "href" | "name" | "target" | "rel"),
+        // `target`/`rel` are never kept from the source: external links get
+        // ours (see `handle_element`) and nothing else opens a new context, so
+        // no source value can hand a page `window.opener`.
+        "a" => matches!(name, "href" | "name"),
         "img" => matches!(
             name,
             "src" | "srcset" | "sizes" | "alt" | "width" | "height" | "loading" | "decoding"
@@ -1073,6 +1076,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn source_target_and_rel_never_survive() {
+        // Links our external-link check doesn't recognize still resolve
+        // off-site in a browser, so a kept `rel="opener"` would let the
+        // page reach `window.opener`.
+        for href in ["https:evil.example", "/\\evil.example", "/local", "#frag"] {
+            assert_eq!(
+                sanitize(&format!(
+                    r#"<a href="{href}" target="_blank" rel="opener">x</a>"#
+                )),
+                format!(r#"<a href="{href}">x</a>"#).replace("#frag", "#uc-frag"),
+                "{href}"
+            );
+        }
+        assert_eq!(
+            sanitize(r#"<a href="https://e.com" target="_self" rel="opener">x</a>"#),
+            r#"<a href="https://e.com" target="_blank" rel="noopener noreferrer">x</a>"#
+        );
+    }
+
     // Namespacing tests use escaped strings rather than `r#"…"#`: the literals
     // contain `"#`, which closes a single-hash raw string early.
 
@@ -1764,7 +1787,12 @@ mod tests {
                                 | "width"
                                 | "height"
                         ))
-                    || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"));
+                    || (tag == "input" && matches!(attr, "type" | "checked" | "disabled"))
+                    || (tag == "a"
+                        && matches!(
+                            (attr, value),
+                            ("target", "_blank") | ("rel", "noopener noreferrer")
+                        ));
                 if !allowed {
                     return Some(format!("<{tag} {attr}>"));
                 }

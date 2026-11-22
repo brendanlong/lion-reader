@@ -289,10 +289,6 @@ const ALLOWED_SVG_ATTRS: &[&str] = &[
     "xml:space",
     "xml:lang",
     "xmlns:xlink",
-    // Link attributes on SVG <a> (SVG2); rel/target are forced to safe
-    // values for external links.
-    "target",
-    "rel",
 ];
 
 const HREF_HTTP_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
@@ -391,11 +387,8 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
             })
             .map(|(_, v)| v.clone())
             .unwrap_or_default();
+        // Source `target`/`rel` never pass the allow-list, as on HTML links.
         if is_external_link(&href) {
-            kept.retain(|(k, _)| {
-                let l = k.to_ascii_lowercase();
-                l != "target" && l != "rel"
-            });
             kept.push(("target".to_string(), "_blank".to_string()));
             kept.push(("rel".to_string(), "noopener noreferrer".to_string()));
         }
@@ -678,6 +671,17 @@ mod tests {
         assert!(!out.to_lowercase().contains("foreignobject"), "{out}");
         assert!(!out.contains("img"), "{out}");
         assert!(out.contains("<rect width=\"5\"/>"), "{out}");
+    }
+
+    #[test]
+    fn source_target_and_rel_never_survive() {
+        let out = roundtrip(
+            r##"<svg><a href="#x" target="_blank" rel="opener"><text>in</text></a><a href="https://x.com" target="_self" rel="opener"><text>out</text></a></svg>"##,
+        );
+        assert!(!out.contains("opener\""), "{out}");
+        assert!(!out.contains("_self"), "{out}");
+        assert_eq!(out.matches("target=").count(), 1, "{out}");
+        assert!(out.contains(r#"rel="noopener noreferrer""#), "{out}");
     }
 
     #[test]
