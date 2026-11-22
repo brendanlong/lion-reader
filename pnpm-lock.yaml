@@ -71,14 +71,14 @@ importers:
         specifier: ^5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
       '@trpc/client':
-        specifier: ^11.28.2
-        version: 11.28.2(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3)
+        specifier: ^11.28.3
+        version: 11.28.3(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/react-query':
-        specifier: ^11.28.2
-        version: 11.28.2(@tanstack/react-query@5.107.1(@types/react@19.3.0)(react@19.3.1))(@trpc/client@11.28.2(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(react@19.3.1)(typescript@6.0.3)
+        specifier: ^11.28.3
+        version: 11.28.3(@tanstack/react-query@5.107.1(@types/react@19.3.0)(react@19.3.1))(@trpc/client@11.28.3(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(react@19.3.1)(typescript@6.0.3)
       '@trpc/server':
-        specifier: ^11.28.2
-        version: 11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+        specifier: ^11.28.3
+        version: 11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
       argon2:
         specifier: ^0.45.2
         version: 0.45.2
@@ -168,7 +168,7 @@ importers:
         version: 1.0.8
       trpc-to-openapi:
         specifier: ^3.5.0
-        version: 3.5.0(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(zod-openapi@5.4.5(zod@4.6.7))(zod@4.6.7)
+        version: 3.5.0(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(zod-openapi@5.4.5(zod@4.6.7))(zod@4.6.7)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -237,8 +237,8 @@ importers:
         specifier: ^6.45.1
         version: 6.45.1
       lint-staged:
-        specifier: ^17.6.0
-        version: 17.6.0
+        specifier: ^17.6.1
+        version: 17.6.1
       node:
         specifier: runtime:^26
         version: runtime:26.12.1
@@ -2356,23 +2356,23 @@ packages:
   '@textlint/ast-node-types@15.8.0':
     resolution: {integrity: sha512-5CiH9COYmovWmExQgs7763DzX6Gy9zjkjJ7JxCC95wyTcjwQn/8poNF6fv3qzRlmx8CRRde8DHr9FcgAAiPzgw==}
 
-  '@trpc/client@11.28.2':
-    resolution: {integrity: sha512-fmMAXYybpjy8L812i9fI3JbMDZE8OtE4Y9i5ch5pQLvJwT08Ioo35wdH0Z3CoweWlfnyQp1eCv0V7s2xjjPo2g==}
+  '@trpc/client@11.28.3':
+    resolution: {integrity: sha512-NnMXBOCVzPMELdQH/X26MhI4u9g83nxWy3apc7UX1beevUk6rEYqfOboqCb/rVoVPu3CBVaPb8PB7AG51oEKvQ==}
     peerDependencies:
-      '@trpc/server': 11.28.2
+      '@trpc/server': 11.28.3
       typescript: '>=5.7.2'
 
-  '@trpc/react-query@11.28.2':
-    resolution: {integrity: sha512-o00BzWlr105378VUA5b2AKyTEHM/a8t585ViKf/vpCgNdDr+rz22bN/sGBAEY0nxHffJ2UkKfkQIiHOfx3xHlg==}
+  '@trpc/react-query@11.28.3':
+    resolution: {integrity: sha512-mRzESszF19o5quvxW1mM+24jb1l0lyq4ZhzzhZKNqS95KZ78DBOeSkRGD5793Q2WyWwoNRtZDpn1FB5DS/cryA==}
     peerDependencies:
       '@tanstack/react-query': ^5.80.3
-      '@trpc/client': 11.28.2
-      '@trpc/server': 11.28.2
+      '@trpc/client': 11.28.3
+      '@trpc/server': 11.28.3
       react: '>=18.2.0'
       typescript: '>=5.7.2'
 
-  '@trpc/server@11.28.2':
-    resolution: {integrity: sha512-7A55XS4c3xtxHFZQdLREckOYNuEY5sQXuEoZBniIZ5pNFcC5cLqm0rGg/a+2nqPfJOaTnznHf1g6MqKmw3O2zA==}
+  '@trpc/server@11.28.3':
+    resolution: {integrity: sha512-os9o1enNvbcSSyn9agxsYPkIE8kWK7IJbkD5/ySCCApsdM58cFZ5IF410G9Q0k3RwKfsM2Q/GbGp1rbgCWLp5Q==}
     peerDependencies:
       '@types/aws-lambda': '*'
       '@types/express': '*'
@@ -4353,8 +4353,8 @@ packages:
       canvas:
         optional: true
 
-  lint-staged@17.6.0:
-    resolution: {integrity: sha512-nOhBfYkZEwkFtNzD5pK9s9LkcWoxJ+whLzEnhqi9nl7zTB5n7tg8+9iYgMGx2Wm3VlLu8cbNj0RACzY+nWi5iQ==}
+  lint-staged@17.6.1:
+    resolution: {integrity: sha512-3MXgVN7BERDR/6CXZs2fDHGc+r0+hlvGAa9wqMlVbIS6RVRuaPOnb5SnN6wMXulwfEy9DXVkMVUN/8cUlpPDnw==}
     engines: {node: '>=22.22.1'}
     hasBin: true
 
@@ -5308,9 +5308,9 @@ packages:
     resolution: {integrity: sha512-eLoXW/DHyl62zxY4SCaIgnRhuMr6ri4juEYARS8E6sCEqzKpOiE521Ucofdx+KnDZl5xmvGYaaKCk5FEOxJCoQ==}
     engines: {node: '>= 0.4'}
 
-  string-argv@0.3.2:
-    resolution: {integrity: sha512-aqD2Q0144Z+/RqG52NeHEkZauTAUWJO8c6yTftGJKO3Tja5tUgIfmIl6kExvhtxSDP7fXB6DvzkfMpCd/F3G+Q==}
-    engines: {node: '>=0.6.19'}
+  string-argv@0.4.0:
+    resolution: {integrity: sha512-UOtaksJ3SK3KLHba2i9I27fvuZNfBlImDP5wKsCOxCDMRDNxlipCe8rmnUAaDpqlQ93upnA0SzF2pjWhttozSA==}
+    engines: {node: '>=16.20.0'}
 
   string-width@7.2.0:
     resolution: {integrity: sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ==}
@@ -7878,20 +7878,20 @@ snapshots:
 
   '@textlint/ast-node-types@15.8.0': {}
 
-  '@trpc/client@11.28.2(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3)':
+  '@trpc/client@11.28.3(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3)':
     dependencies:
-      '@trpc/server': 11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+      '@trpc/server': 11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
       typescript: 6.0.3
 
-  '@trpc/react-query@11.28.2(@tanstack/react-query@5.107.1(@types/react@19.3.0)(react@19.3.1))(@trpc/client@11.28.2(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(react@19.3.1)(typescript@6.0.3)':
+  '@trpc/react-query@11.28.3(@tanstack/react-query@5.107.1(@types/react@19.3.0)(react@19.3.1))(@trpc/client@11.28.3(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(react@19.3.1)(typescript@6.0.3)':
     dependencies:
       '@tanstack/react-query': 5.107.1(@types/react@19.3.0)(react@19.3.1)
-      '@trpc/client': 11.28.2(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3)
-      '@trpc/server': 11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+      '@trpc/client': 11.28.3(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(typescript@6.0.3)
+      '@trpc/server': 11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
       react: 19.3.1
       typescript: 6.0.3
 
-  '@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)':
+  '@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)':
     dependencies:
       typescript: 6.0.3
     optionalDependencies:
@@ -10024,10 +10024,10 @@ snapshots:
       htmlparser2: 10.1.0
       uhyphen: 0.2.0
 
-  lint-staged@17.6.0:
+  lint-staged@17.6.1:
     dependencies:
       picomatch: 4.0.7
-      string-argv: 0.3.2
+      string-argv: 0.4.0
       tinyexec: 1.3.1
     optionalDependencies:
       yaml: 2.9.1
@@ -10953,7 +10953,7 @@ snapshots:
       es-errors: 1.3.0
       internal-slot: 1.1.0
 
-  string-argv@0.3.2: {}
+  string-argv@0.4.0: {}
 
   string-width@7.2.0:
     dependencies:
@@ -11143,9 +11143,9 @@ snapshots:
 
   tree-kill@1.2.2: {}
 
-  trpc-to-openapi@3.5.0(@trpc/server@11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(zod-openapi@5.4.5(zod@4.6.7))(zod@4.6.7):
+  trpc-to-openapi@3.5.0(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(zod-openapi@5.4.5(zod@4.6.7))(zod@4.6.7):
     dependencies:
-      '@trpc/server': 11.28.2(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+      '@trpc/server': 11.28.3(@types/ws@8.18.2)(next@16.4.6(@babel/core@7.29.7(supports-color@10.2.2))(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
       co-body: 6.2.0
       h3: 1.15.11
       openapi3-ts: 4.6.2
