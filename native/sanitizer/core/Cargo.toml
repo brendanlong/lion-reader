@@ -9,7 +9,7 @@ publish = false
 lol_html = "3"
 # Spec-compliant HTML parsing for the small MathJax-container and <svg>
 # substrings (foreign-content camelCase adjustment matches browsers).
-scraper = { version = "0.24", default-features = false }
+scraper = { version = "0.29", default-features = false }
 # Pinned to the html5ever version scraper resolves to (QualName access only).
 html5ever = "0.35"
 # HTML entity decoding for attribute-value scheme checks (values must be
