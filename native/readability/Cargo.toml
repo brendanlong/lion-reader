@@ -13,7 +13,10 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-dom_smoothie = "0.18"
+# Fork until niklak/dom_smoothie#254 and #256 are released (#2345): upstream drops
+# section headings whose class contains "header" (Substack's
+# `header-anchor-post`). The fork also extends #254 to h1/h4-h6.
+dom_smoothie = { git = "https://github.com/brendanlong/dom_smoothie", rev = "1f6aeed61a4f1fc2c6262ac9b88d209a0db701e5" }
 napi = { version = "2", default-features = false, features = ["napi8"] }
 napi-derive = "2"
 
