@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatEntryAsItem, formatUnreadCounts } from "../../src/server/google-reader/format";
+import {
+  formatEntryAsItem,
+  formatSubscription,
+  formatUnreadCounts,
+} from "../../src/server/google-reader/format";
 import { stateStreamId } from "../../src/server/google-reader/streams";
 import type { EntryFull } from "../../src/server/services/entry-reads";
 
@@ -140,5 +144,41 @@ describe("formatEntryAsItem content", () => {
       formatEntryAsItem(makeFullEntry(overrides), { itemId: BigInt(42), originStreamId: BigInt(7) })
         .summary.content
     ).toBe(expected);
+  });
+});
+
+// Feeds choose these URLs, and clients render them as links outside our CSP.
+describe("links are only http(s)", () => {
+  const ids = { itemId: BigInt(42), originStreamId: BigInt(7) };
+
+  it("drops a javascript: entry link and keeps an https one", () => {
+    const bad = formatEntryAsItem(makeFullEntry({ url: "javascript:alert(1)" }), ids);
+    expect(bad.canonical).toEqual([]);
+    expect(bad.alternate).toEqual([]);
+    expect(bad.origin.htmlUrl).toBe("");
+
+    const good = formatEntryAsItem(makeFullEntry(), ids);
+    expect(good.canonical).toEqual([{ href: "https://example.com/article" }]);
+    expect(good.origin.htmlUrl).toBe("https://example.com/article");
+  });
+
+  it("falls back from a javascript: site URL to the feed URL", () => {
+    const sub = {
+      id: "01912345-0000-7000-8000-000000000003",
+      greaderStreamId: BigInt(7),
+      type: "web" as const,
+      url: "https://example.com/feed.xml",
+      title: "Feed",
+      originalTitle: "Feed",
+      description: null,
+      siteUrl: "javascript:alert(1)",
+      subscribedAt: new Date(0),
+      unreadCount: 0,
+      unreadCountAsOf: "1970-01-01T00:00:00.000000Z",
+      tags: [],
+      fetchFullContent: false,
+    };
+    const formatted = formatSubscription(sub);
+    expect(formatted.htmlUrl).toBe("https://example.com/feed.xml");
   });
 });
