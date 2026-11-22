@@ -6,7 +6,7 @@ license = "MIT"
 publish = false
 
 [dependencies]
-lol_html = "2"
+lol_html = "3"
 # Spec-compliant HTML parsing for the small MathJax-container and <svg>
 # substrings (foreign-content camelCase adjustment matches browsers).
 scraper = { version = "0.24", default-features = false }

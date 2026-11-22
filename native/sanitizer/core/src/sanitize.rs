@@ -971,36 +971,29 @@ pub fn sanitize_html_pass_observing_text(
     let mut output = Vec::with_capacity(html.len());
     let ending = std::cell::Cell::new(false);
     let needs_text_handler = text_needs_handling(html);
-    let mut document_content_handlers = vec![
-        doc_comments!(|c| {
+    let mut settings = Settings::new()
+        .append_element_content_handler(element!("*", handle_element))
+        .append_document_content_handler(doc_comments!(|c| {
             c.remove();
             Ok(())
-        }),
-        doctype!(|d| {
+        }))
+        .append_document_content_handler(doctype!(|d| {
             d.remove();
             Ok(())
-        }),
-    ];
+        }));
     if needs_text_handler || observe_text.is_some() {
-        document_content_handlers.push(doc_text!(move |text| {
+        settings = settings.append_document_content_handler(doc_text!(move |text| {
             if let (TextType::Data, Some(observe)) = (text.text_type(), observe_text.as_mut()) {
                 observe(text.as_str());
             }
             handle_text(text)
         }));
     }
-    let mut rewriter = HtmlRewriter::new(
-        Settings {
-            element_content_handlers: vec![element!("*", handle_element)],
-            document_content_handlers,
-            ..Settings::new()
-        },
-        |chunk: &[u8]| {
-            if !ending.get() {
-                output.extend_from_slice(chunk);
-            }
-        },
-    );
+    let mut rewriter = HtmlRewriter::new(settings, |chunk: &[u8]| {
+        if !ending.get() {
+            output.extend_from_slice(chunk);
+        }
+    });
     rewriter.write(html.as_bytes()).map_err(|e| e.to_string())?;
     // What lol_html only lets go of at the end is a token the input ended
     // partway through: a tag (or a lone `<`). It passes that through raw, never

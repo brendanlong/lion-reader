@@ -95,57 +95,53 @@ pub fn rewrite_urls(
         image_names: HashSet::new(),
     });
 
-    let settings = RewriteStrSettings {
-        element_content_handlers: vec![
-            element!("base[href]", |el| {
-                let mut state = state.borrow_mut();
-                if state.base_href_set {
+    let settings = RewriteStrSettings::new()
+        .append_element_content_handler(element!("base[href]", |el| {
+            let mut state = state.borrow_mut();
+            if state.base_href_set {
+                return Ok(());
+            }
+            state.base_href_set = true;
+            let href = el.get_attribute("href").unwrap_or_default();
+            let href = href.trim_matches(is_js_whitespace);
+            if href.is_empty() || href.starts_with('#') {
+                return Ok(());
+            }
+            let resolved = Url::options().base_url(page_url.as_ref()).parse(href).ok();
+            if let Some(resolved) =
+                resolved.filter(|u| !matches!(u.scheme(), "data" | "javascript"))
+            {
+                let base = ResolveBase::plain(resolved);
+                state.document = base.clone();
+                state.media = base;
+            }
+            Ok(())
+        }))
+        .append_element_content_handler(element!("[src]", |el| {
+            if let Some(prefix) = image_url_prefix.filter(|_| el.tag_name() == "img") {
+                let src = el.get_attribute("src").unwrap_or_default();
+                if let Some(stored_src) = extract_image(&src, prefix, &mut state.borrow_mut()) {
+                    el.set_attribute("src", &stored_src)?;
                     return Ok(());
                 }
-                state.base_href_set = true;
-                let href = el.get_attribute("href").unwrap_or_default();
-                let href = href.trim_matches(is_js_whitespace);
-                if href.is_empty() || href.starts_with('#') {
-                    return Ok(());
-                }
-                let resolved = Url::options().base_url(page_url.as_ref()).parse(href).ok();
-                if let Some(resolved) =
-                    resolved.filter(|u| !matches!(u.scheme(), "data" | "javascript"))
-                {
-                    let base = ResolveBase::plain(resolved);
-                    state.document = base.clone();
-                    state.media = base;
-                }
-                Ok(())
-            }),
-            element!("[src]", |el| {
-                if let Some(prefix) = image_url_prefix.filter(|_| el.tag_name() == "img") {
-                    let src = el.get_attribute("src").unwrap_or_default();
-                    if let Some(stored_src) = extract_image(&src, prefix, &mut state.borrow_mut()) {
-                        el.set_attribute("src", &stored_src)?;
-                        return Ok(());
-                    }
-                }
-                rewrite(el, "src", |v| resolve_url(v, &state.borrow().media))
-            }),
-            element!("[href]", |el| {
-                // The <base> tag's own href stays as written.
-                if el.tag_name() == "base" {
-                    return Ok(());
-                }
-                rewrite(el, "href", |v| resolve_url(v, &state.borrow().document))
-            }),
-            element!("[poster]", |el| {
-                rewrite(el, "poster", |v| resolve_url(v, &state.borrow().media))
-            }),
-            element!("[srcset]", |el| {
-                rewrite(el, "srcset", |v| {
-                    Some(Cow::Owned(absolutize_srcset(v, &state.borrow().media)))
-                })
-            }),
-        ],
-        ..RewriteStrSettings::new()
-    };
+            }
+            rewrite(el, "src", |v| resolve_url(v, &state.borrow().media))
+        }))
+        .append_element_content_handler(element!("[href]", |el| {
+            // The <base> tag's own href stays as written.
+            if el.tag_name() == "base" {
+                return Ok(());
+            }
+            rewrite(el, "href", |v| resolve_url(v, &state.borrow().document))
+        }))
+        .append_element_content_handler(element!("[poster]", |el| {
+            rewrite(el, "poster", |v| resolve_url(v, &state.borrow().media))
+        }))
+        .append_element_content_handler(element!("[srcset]", |el| {
+            rewrite(el, "srcset", |v| {
+                Some(Cow::Owned(absolutize_srcset(v, &state.borrow().media)))
+            })
+        }));
     let html = rewrite_str(html, settings).map_err(|e| e.to_string())?;
     Ok(Rewritten {
         html,
