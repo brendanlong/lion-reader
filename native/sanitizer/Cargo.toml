@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lion-reader-sanitizer-core = { path = "core" }
-napi = { version = "2", default-features = false, features = ["napi8"] }
+napi = { version = "3", default-features = false, features = ["napi8"] }
 napi-derive = "2"
 
 [build-dependencies]
