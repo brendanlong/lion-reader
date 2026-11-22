@@ -9,7 +9,7 @@ import { int64ToLongFormId, feedStreamId, type GreaderEntryIds } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
 import type { GreaderSubscription } from "./subscriptions";
 import { escapeHtml } from "@/server/http/html";
-import { linkableUrl } from "@/server/http/linkable-url";
+import { httpUrlAsStored, linkableUrl } from "@/server/http/linkable-url";
 import type { EntryFull } from "@/server/services/entry-reads";
 
 // ============================================================================
@@ -129,7 +129,7 @@ export function formatSubscription(sub: GreaderSubscription): GoogleReaderSubscr
     })),
     sortid: sub.greaderStreamId.toString(16).padStart(16, "0"),
     firstitemmsec: sub.subscribedAt.getTime().toString(),
-    url: linkableUrl(sub.url) ?? "",
+    url: httpUrlAsStored(sub.url) ?? "",
     htmlUrl: linkableUrl(sub.siteUrl) ?? linkableUrl(sub.url) ?? "",
     iconUrl: "",
   };

@@ -157,6 +157,9 @@ describe("links are only http(s)", () => {
     expect(bad.alternate).toEqual([]);
     expect(bad.origin.htmlUrl).toBe("");
 
+    const fallback = formatEntryAsItem(makeFullEntry({ feedUrl: "javascript:alert(1)" }), ids);
+    expect(fallback.origin.htmlUrl).toBe("https://example.com/article");
+
     const good = formatEntryAsItem(makeFullEntry(), ids);
     expect(good.canonical).toEqual([{ href: "https://example.com/article" }]);
     expect(good.origin.htmlUrl).toBe("https://example.com/article");
@@ -180,5 +183,7 @@ describe("links are only http(s)", () => {
     };
     const formatted = formatSubscription(sub);
     expect(formatted.htmlUrl).toBe("https://example.com/feed.xml");
+    // Stored before createSubscription checked schemes (OPML import).
+    expect(formatSubscription({ ...sub, url: "javascript:alert(1)" }).url).toBe("");
   });
 });

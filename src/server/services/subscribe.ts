@@ -31,6 +31,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
+import { httpUrlAsStored } from "@/server/http/linkable-url";
 import { resolveFeedAtUrl } from "@/server/services/feed-resolution";
 import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
@@ -144,6 +145,11 @@ export async function createSubscription(
   options: CreateSubscriptionOptions = {}
 ): Promise<CreateSubscriptionResult> {
   const { skipInitialPopulate = false } = options;
+  // OPML imports reach here unvalidated, and a feed row is shared by every
+  // subscriber, so no non-http(s) URL may become one.
+  if (httpUrlAsStored(feed.url) === null) {
+    throw errors.validation("Feed URL must use http or https");
+  }
   // 1. Upsert feed — insert if new, otherwise use existing
   const newFeedId = generateUuidv7();
   const now = new Date();

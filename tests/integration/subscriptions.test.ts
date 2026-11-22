@@ -930,6 +930,26 @@ describe("subscriptions.export", () => {
     );
   });
 
+  it("leaves out feed and site URLs that aren't http(s)", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    // Rows like these could be stored before subscribing checked schemes.
+    const badFeed = await createTestFeed({ url: `javascript:alert("${userId}")`, title: "Bad" });
+    const badSite = await createTestFeed({
+      url: `https://example.com/export-${userId}/site.xml`,
+      title: "Bad site",
+      siteUrl: "javascript:alert(2)",
+    });
+    await createTestSubscription(userId, badFeed);
+    await createTestSubscription(userId, badSite);
+
+    const result = await caller.subscriptions.export();
+
+    expect(result.feedCount).toBe(1);
+    expect(result.opml).not.toContain("javascript:");
+    expect(result.opml).toContain(`xmlUrl="https://example.com/export-${userId}/site.xml"`);
+  });
+
   it("returns an empty OPML document for a user with no subscriptions", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
