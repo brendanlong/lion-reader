@@ -11,6 +11,7 @@
  * src/server/wallabag/tags.ts), and the user id is `users.greader_user_id`.
  */
 
+import { escapeHtml } from "@/server/http/html";
 import type { EntryFull } from "@/server/services/entry-reads";
 import type { EntryListItem } from "@/server/services/entries";
 import type { SavedArticle } from "@/server/services/saved";
@@ -141,7 +142,10 @@ export function formatEntryFull(
     url: entry.url,
     title: entry.title,
     content:
-      entry.fullContent ?? entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? null,
+      entry.fullContent ??
+      entry.contentCleaned ??
+      entry.contentOriginal ??
+      textAsHtml(entry.summary),
     read: entry.read,
     starred: entry.starred,
     author: entry.author,
@@ -166,7 +170,7 @@ export function formatEntryListItem(
     wallabagId,
     url: entry.url,
     title: entry.title,
-    content: entry.summary ?? null,
+    content: textAsHtml(entry.summary),
     read: entry.read,
     starred: entry.starred,
     author: entry.author,
@@ -191,7 +195,7 @@ export function formatSavedArticle(
     wallabagId,
     url: article.url,
     title: article.title,
-    content: article.contentCleaned ?? article.excerpt ?? null,
+    content: article.contentCleaned ?? textAsHtml(article.excerpt),
     read: article.read,
     starred: article.starred,
     author: article.author,
@@ -271,4 +275,9 @@ export function createPaginatedResponse(
   }
 
   return response;
+}
+
+/** `content` is HTML; summaries and excerpts are plain text with entities decoded. */
+function textAsHtml(text: string | null): string | null {
+  return text === null ? null : escapeHtml(text);
 }

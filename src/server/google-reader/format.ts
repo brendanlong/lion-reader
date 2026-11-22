@@ -8,6 +8,7 @@
 import { int64ToLongFormId, feedStreamId, type GreaderEntryIds } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
 import type { GreaderSubscription } from "./subscriptions";
+import { escapeHtml } from "@/server/http/html";
 import type { EntryFull } from "@/server/services/entry-reads";
 
 // ============================================================================
@@ -54,8 +55,12 @@ export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): Googl
     categories.push(stateStreamId("starred"));
   }
 
+  // `summary` is plain text with entities decoded, so it must be escaped to be HTML.
   const content =
-    entry.fullContent ?? entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? "";
+    entry.fullContent ??
+    entry.contentCleaned ??
+    entry.contentOriginal ??
+    (entry.summary === null ? "" : escapeHtml(entry.summary));
 
   return {
     id: int64ToLongFormId(ids.itemId),

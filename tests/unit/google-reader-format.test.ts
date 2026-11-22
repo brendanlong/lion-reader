@@ -129,7 +129,12 @@ describe("formatEntryAsItem content", () => {
     ["the fetched full article", { fullContent: "<p>full</p>" }, "<p>full</p>"],
     ["the cleaned feed content", {}, "<p>cleaned teaser</p>"],
     ["the original feed content", { contentCleaned: null }, "<p>original teaser</p>"],
-    ["the summary", { contentCleaned: null, contentOriginal: null }, "summary"],
+    // The summary is plain text, so text that looks like markup must stay text.
+    [
+      "the summary, escaped",
+      { contentCleaned: null, contentOriginal: null, summary: "<img src=x onerror=alert(1)> & co" },
+      "&lt;img src=x onerror=alert(1)&gt; &amp; co",
+    ],
   ])("serves %s when it is the best available", (_label, overrides, expected) => {
     expect(
       formatEntryAsItem(makeFullEntry(overrides), { itemId: BigInt(42), originStreamId: BigInt(7) })
