@@ -60,9 +60,23 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    # One lockfile, so one grouped PR per week for the same reason as npm
-    # (#1501); majors and security updates stay separate.
     groups:
+      # The sanitizer uses its own html5ever dependency to name the types of
+      # scraper's parse tree, so it only compiles when both resolve to the
+      # same html5ever: bumped separately, each PR fails CI (#2349, #2350). No update-types filter, because their 0.x
+      # bumps are breaking and would otherwise skip every group.
+      html5ever:
+        applies-to: version-updates
+        patterns:
+          - "html5ever"
+          - "scraper"
+      html5ever-security:
+        applies-to: security-updates
+        patterns:
+          - "html5ever"
+          - "scraper"
+      # One lockfile, so one grouped PR per week for the same reason as npm
+      # (#1501); majors and security updates stay separate.
       cargo-minor-and-patch:
         applies-to: version-updates
         update-types:
@@ -70,6 +84,10 @@ updates:
           - "patch"
         patterns:
           - "*"
+        # A dependency joins every group it matches (see npm above).
+        exclude-patterns:
+          - "html5ever"
+          - "scraper"
   # No cooldown: the only image is the official Node one, whose releases are
   # Node's own, and Dependabot has no advisories for images, so a cooldown would
   # hold back Node security releases (the Dockerfile pins exact versions). Daily
