@@ -12,9 +12,6 @@ lol_html = "3"
 scraper = { version = "0.29", default-features = false }
 # Pinned to the html5ever version scraper resolves to (QualName access only).
 html5ever = "0.40.1"
-# HTML entity decoding for attribute-value scheme checks (values must be
-# checked as a browser would interpret them, i.e. entity-decoded).
-html-escape = "0.2"
 url = "2"
 regex = "1"
 getrandom = "0.4"

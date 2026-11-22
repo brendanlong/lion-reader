@@ -7,10 +7,57 @@
 //! The check is allow-list shaped, so anything ambiguous fails closed.
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 
-/// Entity-decode an attribute value once (the single decode a browser does).
+use html5ever::tendril::StrTendril;
+use html5ever::tokenizer::{
+    BufferQueue, Tag, TagToken, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts,
+};
+
+/// Decode a raw attribute value exactly as a browser does, by running it
+/// through html5ever's spec tokenizer. A general-purpose entity decoder isn't
+/// enough: any reference it leaves undecoded that a browser decodes lets a
+/// scheme past the check. html-escape kept `&#106avascript:` (no `;`) and,
+/// from 0.2.15, `&#1;javascript:` (a C0 control the URL parser strips).
 pub fn decode_attr(value: &str) -> Cow<'_, str> {
-    html_escape::decode_html_entities(value)
+    // Only character references and NUL (→ U+FFFD) change a value.
+    if !value.contains(['&', '\0']) {
+        return Cow::Borrowed(value);
+    }
+    // A raw value never holds its own closing quote, and an unquoted one is
+    // decoded the same way, so re-quote it with `"`. A literal `"` becomes
+    // `&quot;`: both end a reference match the same way (neither is `=` nor
+    // alphanumeric), so the decoded value is unchanged.
+    let mut input = String::with_capacity(value.len() + 8);
+    input.push_str("<a v=\"");
+    input.push_str(&value.replace('"', "&quot;"));
+    input.push_str("\">");
+
+    let tokenizer = Tokenizer::new(AttrSink::default(), TokenizerOpts::default());
+    let queue = BufferQueue::default();
+    queue.push_back(StrTendril::from(input));
+    let _ = tokenizer.feed(&queue);
+    tokenizer.end();
+    let decoded = tokenizer.sink.value.take();
+    Cow::Owned(decoded.unwrap_or_default())
+}
+
+#[derive(Default)]
+struct AttrSink {
+    value: RefCell<Option<String>>,
+}
+
+impl TokenSink for AttrSink {
+    type Handle = ();
+
+    fn process_token(&self, token: Token, _line_number: u64) -> TokenSinkResult<()> {
+        if let TagToken(Tag { attrs, .. }) = token {
+            if let Some(attr) = attrs.into_iter().next() {
+                self.value.replace(Some(attr.value.to_string()));
+            }
+        }
+        TokenSinkResult::Continue
+    }
 }
 
 /// The URL scheme of a (decoded) value, lowercased — or None when it has
@@ -193,6 +240,29 @@ mod tests {
             url_scheme(&decode_attr("java&#115;cript:alert(1)")).as_deref(),
             Some("javascript")
         );
+    }
+
+    #[test]
+    fn decodes_attribute_values_as_a_browser_does() {
+        for (raw, decoded) in [
+            ("a&amp;b", "a&b"),
+            ("&#1;&#x1F;&#9;", "\u{1}\u{1f}\t"),
+            // Invalid code points become U+FFFD; a sign is not a number.
+            ("&#0;&#xD800;&#x110000;", "\u{FFFD}\u{FFFD}\u{FFFD}"),
+            ("&#+106;", "&#+106;"),
+            // Windows-1252 remapping of C1 references.
+            ("&#128;", "€"),
+            // Legacy named references decode without `;`, except where an
+            // attribute continues them with `=` or an alphanumeric.
+            ("?a=1&copy;&lt&ltx&lt=", "?a=1©<&ltx&lt="),
+            ("&bogus;", "&bogus;"),
+            // Quotes of either kind pass through.
+            (r#"a"&quot"b'"#, r#"a"""b'"#),
+            ("nul\0", "nul\u{FFFD}"),
+            ("plain", "plain"),
+        ] {
+            assert_eq!(decode_attr(raw), decoded, "{raw}");
+        }
     }
 
     #[test]

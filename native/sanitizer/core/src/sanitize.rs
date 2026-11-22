@@ -1032,10 +1032,27 @@ mod tests {
 
     #[test]
     fn entity_encoded_scheme_is_caught() {
-        assert_eq!(
-            sanitize(r#"<a href="java&#115;cript:alert(1)">x</a>"#),
-            "<a>x</a>"
-        );
+        // A browser decodes `&#1;` to U+0001 and the URL parser strips leading
+        // C0 controls, so these are all `javascript:` URLs.
+        for url in [
+            "java&#115;cript:alert(1)",
+            "&#1;javascript:alert(1)",
+            "&#x1;javascript:alert(1)",
+            "&#31;javascript:alert(1)",
+            "&#X1F;javascript:alert(1)",
+            "&#00000001;javascript:alert(1)",
+            "&#1javascript:alert(1)",
+        ] {
+            assert_eq!(sanitize(&format!(r#"<a href="{url}">x</a>"#)), "<a>x</a>");
+            assert_eq!(
+                sanitize(&format!(r#"<img src='{url}'>"#)),
+                r#"<img loading="lazy">"#
+            );
+            assert_eq!(
+                sanitize(&format!(r#"<img srcset="a.png 1x, {url} 2x">"#)),
+                r#"<img loading="lazy">"#
+            );
+        }
     }
 
     #[test]
