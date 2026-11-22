@@ -267,7 +267,7 @@ jobs:
             echo "exists=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: oasdiff/oasdiff-action/breaking@17214aea5113d728707fdd7d84bc811f4850fe3a # v0.1.22
+      - uses: oasdiff/oasdiff-action/breaking@0b95859a27abaed7445bb05c18a39f1a6610a9a4 # v0.1.24
         if: steps.base.outputs.exists == 'true'
         with:
           base: "origin/${{ github.base_ref }}:docs/api/openapi.json"
@@ -399,7 +399,7 @@ jobs:
           node-version-file: "package.json"
           cache: "pnpm"
 
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
