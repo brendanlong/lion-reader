@@ -29,3 +29,10 @@ opt-level = 3
 [profile.release-pdf]
 inherits = "release"
 lto = "thin"
+
+# Optimized dependencies in `cargo test`/debug builds: our own code stays
+# unoptimized (fast to rebuild, debuggable), while unoptimized lol_html, sha2
+# etc. made timing tests like absolutize's `extraction_stays_linear` too slow
+# on CI to tell linear from quadratic. Costs ~20s on a cold build.
+[profile.dev.package."*"]
+opt-level = 3
