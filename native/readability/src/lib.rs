@@ -75,8 +75,8 @@ fn exceeds_max_depth(reader: &Readability) -> bool {
 }
 
 fn run_extract(html: &str, options: Option<&ExtractOptions>) -> Result<Option<ExtractedArticle>> {
-    // A panic inside the extractor (dom_smoothie has a couple of
-    // partial_cmp().unwrap() sites on f32 scores) would otherwise unwind
+    // A panic inside the extractor (dom_smoothie has a
+    // partial_cmp().unwrap() on f32 scores) would otherwise unwind
     // across the N-API boundary and abort the whole Node process; treat it
     // as an ordinary extraction failure instead.
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
