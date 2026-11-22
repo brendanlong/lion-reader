@@ -235,10 +235,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - **Every link field these APIs and the OPML/library exports emit is http(s)
   only** (`src/server/http/linkable-url.ts`): entry, site and image URLs are
   stored as the feed or page gave them, so a `<link>javascript:…</link>` would
-  otherwise reach clients that render it outside our CSP. Links go out as
-  `linkableUrl`'s normalized `href`; feed URLs, which clients match by exact
-  string, go out as stored through `httpUrlAsStored`, and `createSubscription`
-  refuses any other scheme.
+  otherwise reach clients that render it outside our CSP. They go out as
+  `linkableUrl`'s normalized `href`, and `createSubscription` stores feed URLs
+  only in that form.
 - **The secretless Wallabag token endpoint is pinned to the `wallabag` client_id**
   (`WALLABAG_CLIENT_ID`): it shares token tables with the OAuth server, so honoring a
   caller-supplied client_id would let it rotate or mint another client's tokens.

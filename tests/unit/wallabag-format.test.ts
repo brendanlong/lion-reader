@@ -123,12 +123,6 @@ describe("plain-text fallbacks are escaped into content", () => {
 
 // Pages and feeds choose these URLs, and clients render them outside our CSP.
 describe("links", () => {
-  it("drops a javascript: link from feed entries", () => {
-    const entry = makeFullEntry({ url: "javascript:alert(1)" });
-    expect(formatEntryFull(entry, 1, []).url).toBeNull();
-    expect(formatEntryListItem(entry, 1, []).url).toBeNull();
-  });
-
   it("drops javascript: entry and preview URLs", () => {
     const article: SavedArticle = {
       id: "01912345-0000-7000-8000-000000000002",

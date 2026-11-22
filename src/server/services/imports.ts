@@ -25,6 +25,7 @@ import {
 import { parseOpmlAsync } from "@/server/feed/opml";
 import { createJobs } from "@/server/jobs/queue";
 import { publishUserEvent } from "@/server/redis/pubsub";
+import { linkableUrl } from "@/server/http/linkable-url";
 import { createSubscription } from "@/server/services/subscribe";
 import { setSubscriptionTags } from "@/server/services/subscription-updates";
 import { fitTagName } from "@/server/services/tags";
@@ -430,7 +431,11 @@ export async function processOpmlImport(
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
-    const existingUrls = new Set(existingSubscriptions.map((s) => s.feedUrl));
+    // Compared normalized, as `createSubscription` stores them; rows from
+    // before it normalized may not be.
+    const existingUrls = new Set(
+      existingSubscriptions.map((s) => linkableUrl(s.feedUrl) ?? s.feedUrl)
+    );
 
     const tagNameToInfo = await ensureImportTags(db, userId, importRecord.feedsData);
 
@@ -459,9 +464,10 @@ export async function processOpmlImport(
 
     for (const opmlFeed of importRecord.feedsData) {
       const feedUrl = opmlFeed.xmlUrl;
+      const normalizedUrl = linkableUrl(feedUrl) ?? feedUrl;
       const feedTitle = opmlFeed.title ?? null;
 
-      if (existingUrls.has(feedUrl)) {
+      if (existingUrls.has(normalizedUrl)) {
         results.push({
           url: feedUrl,
           title: feedTitle,
@@ -495,7 +501,7 @@ export async function processOpmlImport(
         await applyImportTags(db, userId, subscriptionId, opmlFeed.category ?? [], tagNameToInfo);
 
         // Prevents a duplicate URL later in the same import from re-subscribing.
-        existingUrls.add(feedUrl);
+        existingUrls.add(normalizedUrl);
 
         results.push({
           url: feedUrl,

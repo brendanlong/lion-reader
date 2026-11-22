@@ -7,7 +7,7 @@
  * renames, tags and unsubscribing are in `subscription-updates.ts`.
  */
 
-import { httpUrlAsStored, linkableUrl } from "@/server/http/linkable-url";
+import { linkableUrl } from "@/server/http/linkable-url";
 import { z } from "zod";
 import { eq, and, gt, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
@@ -445,7 +445,7 @@ export async function exportSubscriptionsOpml(
 ): Promise<{ opml: string; feedCount: number }> {
   const opmlSubscriptions: OpmlSubscription[] = (await listAllSubscriptions(db, userId)).flatMap(
     (row) => {
-      const xmlUrl = httpUrlAsStored(row.url);
+      const xmlUrl = linkableUrl(row.url);
       return xmlUrl === null
         ? []
         : [

@@ -31,7 +31,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
-import { httpUrlAsStored } from "@/server/http/linkable-url";
+import { linkableUrl } from "@/server/http/linkable-url";
 import { resolveFeedAtUrl } from "@/server/services/feed-resolution";
 import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
@@ -146,8 +146,10 @@ export async function createSubscription(
 ): Promise<CreateSubscriptionResult> {
   const { skipInitialPopulate = false } = options;
   // OPML imports reach here unvalidated, and a feed row is shared by every
-  // subscriber, so no non-http(s) URL may become one.
-  if (httpUrlAsStored(feed.url) === null) {
+  // subscriber, so only a normalized http(s) URL may become one (fetched
+  // feeds already store the response's normalized URL).
+  const url = linkableUrl(feed.url);
+  if (url === null) {
     throw errors.validation("Feed URL must use http or https");
   }
   // 1. Upsert feed — insert if new, otherwise use existing
@@ -157,7 +159,7 @@ export async function createSubscription(
     .insert(feeds)
     .values({
       id: newFeedId,
-      url: feed.url,
+      url,
       title: feed.title ?? null,
       description: feed.description ?? null,
       siteUrl: feed.siteUrl ?? null,
@@ -170,10 +172,10 @@ export async function createSubscription(
   const [feedRecord] = await db
     .select({ id: feeds.id })
     .from(feeds)
-    .where(eq(feeds.url, feed.url))
+    .where(eq(feeds.url, url))
     .limit(1);
   if (!feedRecord) {
-    throw new Error(`Feed disappeared after upsert: ${feed.url}`);
+    throw new Error(`Feed disappeared after upsert: ${url}`);
   }
 
   const feedId = feedRecord.id;
@@ -184,7 +186,7 @@ export async function createSubscription(
   // A plugin may opt a source into full-content-by-default (e.g. Bluesky, whose
   // RSS drops embedded content). Applied only to a fresh subscribe below; a
   // resubscribe keeps the user's stored preference.
-  const defaultFullContent = feedDefaultsToFullContent(feed.url);
+  const defaultFullContent = feedDefaultsToFullContent(url);
 
   // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
   //       transaction, so a crash can't leave a half-created subscription;

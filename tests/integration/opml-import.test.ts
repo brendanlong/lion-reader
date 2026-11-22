@@ -462,6 +462,25 @@ describe("OPML Import", () => {
       expect(await db.select().from(feeds).where(eq(feeds.url, "javascript:alert(1)"))).toEqual([]);
     });
 
+    it("stores feed URLs normalized and matches older raw ones", async () => {
+      const userId = await createTestUser();
+      const legacy = "HTTPS://Legacy.example.com/Feed";
+      await createTestSubscription(userId, await createTestFeed({ url: legacy }));
+      const importId = await seedImport(userId, [
+        { xmlUrl: "https://legacy.example.com/Feed", title: "Legacy" },
+        { xmlUrl: "\u0001 HTTPS://New.example.com/feed\t", title: "New" },
+      ]);
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: false,
+        counts: { imported: 1, skipped: 1, failed: 0, total: 2 },
+      });
+      expect(await subscribedUrls(userId)).toEqual([legacy, "https://new.example.com/feed"]);
+    });
+
     it("does nothing for an import a previous run already finished", async () => {
       const userId = await createTestUser();
       const importId = await seedImport(userId, [{ xmlUrl: "https://a.example.com/feed.xml" }], {
