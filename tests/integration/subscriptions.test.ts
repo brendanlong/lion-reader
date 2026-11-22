@@ -499,6 +499,48 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
+  // Feeds are found by exact URL, and older OPML imports stored URLs as written,
+  // so a URL in a non-normalized form must keep matching its row.
+  describe("Feed URLs stored as written", () => {
+    async function rawFeed(): Promise<{ feedId: string; url: string }> {
+      const url = `https://Blog.Example.com/${generateUuidv7()}/Feed`;
+      const fetchTime = new Date("2024-01-01T10:00:00Z");
+      const feedId = await createTestFeed({ url, lastFetchedAt: fetchTime });
+      return { feedId, url };
+    }
+
+    async function feedIdsOfSubscriptions(userId: string): Promise<(string | null)[]> {
+      const rows = await db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId));
+      return rows.map((r) => r.feedId);
+    }
+
+    it("joins another user to the same feed row", async () => {
+      const { feedId, url } = await rawFeed();
+      await createTestSubscription(await createTestUser(), feedId);
+      const userId = await createTestUser();
+
+      await createCaller(await createAuthContext(userId)).subscriptions.create({ url });
+
+      expect(await feedIdsOfSubscriptions(userId)).toEqual([feedId]);
+    });
+
+    it("reactivates the same subscription after unsubscribing", async () => {
+      const { feedId, url } = await rawFeed();
+      const userId = await createTestUser();
+      const caller = createCaller(await createAuthContext(userId));
+      const first = await caller.subscriptions.create({ url });
+      await caller.subscriptions.delete({ id: first.id });
+
+      const again = await caller.subscriptions.create({ url });
+
+      expect(again.id).toBe(first.id);
+      expect(await feedIdsOfSubscriptions(userId)).toEqual([feedId]);
+    });
+  });
+
   describe("Reactivation preserves settings", () => {
     it("preserves custom title and fetchFullContent after resubscribe", async () => {
       const userId = await createTestUser();
