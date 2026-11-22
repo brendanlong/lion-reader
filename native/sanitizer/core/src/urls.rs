@@ -20,18 +20,28 @@ use html5ever::tokenizer::{
 /// scheme past the check. html-escape kept `&#106avascript:` (no `;`) and,
 /// from 0.2.15, `&#1;javascript:` (a C0 control the URL parser strips).
 pub fn decode_attr(value: &str) -> Cow<'_, str> {
-    // Only character references and NUL (→ U+FFFD) change a value.
-    if !value.contains(['&', '\0']) {
+    // Only character references, NUL (→ U+FFFD) and CR (→ LF) change a value.
+    if !value.contains(['&', '\0', '\r']) {
         return Cow::Borrowed(value);
     }
-    // A raw value never holds its own closing quote, and an unquoted one is
-    // decoded the same way, so re-quote it with `"`. A literal `"` becomes
-    // `&quot;`: both end a reference match the same way (neither is `=` nor
-    // alphanumeric), so the decoded value is unchanged.
-    let mut input = String::with_capacity(value.len() + 8);
-    input.push_str("<a v=\"");
-    input.push_str(&value.replace('"', "&quot;"));
-    input.push_str("\">");
+    // Re-quote the raw value with a quote it doesn't contain; a source value
+    // never contains its own closing quote, and an unquoted one decodes the
+    // same way as a quoted one. Only a value from an unquoted source can hold
+    // both: then `"` becomes `&#34;`, which ends a reference match the same
+    // way (neither is `=` nor alphanumeric), so the decoded value is unchanged.
+    let (quote, body) = if !value.contains('"') {
+        ('"', Cow::Borrowed(value))
+    } else if !value.contains('\'') {
+        ('\'', Cow::Borrowed(value))
+    } else {
+        ('"', Cow::Owned(value.replace('"', "&#34;")))
+    };
+    let mut input = String::with_capacity(body.len() + 8);
+    input.push_str("<a v=");
+    input.push(quote);
+    input.push_str(&body);
+    input.push(quote);
+    input.push('>');
 
     let tokenizer = Tokenizer::new(AttrSink::default(), TokenizerOpts::default());
     let queue = BufferQueue::default();
@@ -256,9 +266,11 @@ mod tests {
             // attribute continues them with `=` or an alphanumeric.
             ("?a=1&copy;&lt&ltx&lt=", "?a=1©<&ltx&lt="),
             ("&bogus;", "&bogus;"),
-            // Quotes of either kind pass through.
+            // Quotes of either kind pass through, and end a reference.
             (r#"a"&quot"b'"#, r#"a"""b'"#),
-            ("nul\0", "nul\u{FFFD}"),
+            (r#"&#106"&amp""#, r#"j"&""#),
+            (r#"&#106"&amp'"#, r#"j"&'"#),
+            ("nul\0\r\n", "nul\u{FFFD}\n"),
             ("plain", "plain"),
         ] {
             assert_eq!(decode_attr(raw), decoded, "{raw}");
