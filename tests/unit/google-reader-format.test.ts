@@ -162,7 +162,7 @@ describe("links are only http(s)", () => {
     expect(good.origin.htmlUrl).toBe("https://example.com/article");
   });
 
-  it("drops a javascript: site URL", () => {
+  it("falls back from a javascript: site URL to the feed URL", () => {
     const sub = {
       id: "01912345-0000-7000-8000-000000000003",
       greaderStreamId: BigInt(7),
@@ -179,7 +179,6 @@ describe("links are only http(s)", () => {
       fetchFullContent: false,
     };
     const formatted = formatSubscription(sub);
-    expect(formatted.url).toBe("https://example.com/feed.xml");
-    expect(formatted.htmlUrl).toBe("");
+    expect(formatted.htmlUrl).toBe("https://example.com/feed.xml");
   });
 });

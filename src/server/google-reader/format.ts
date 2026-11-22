@@ -84,7 +84,7 @@ export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): Googl
       // the "Saved Articles" subscription (issue #730).
       streamId: entryFeedStreamId(ids) ?? "",
       title: entry.feedTitle ?? "",
-      htmlUrl: linkableUrl(entry.feedUrl ?? entry.url) ?? "",
+      htmlUrl: linkableUrl(entry.feedUrl) ?? linkableUrl(entry.url) ?? "",
     },
     categories,
   };
@@ -130,7 +130,7 @@ export function formatSubscription(sub: GreaderSubscription): GoogleReaderSubscr
     sortid: sub.greaderStreamId.toString(16).padStart(16, "0"),
     firstitemmsec: sub.subscribedAt.getTime().toString(),
     url: linkableUrl(sub.url) ?? "",
-    htmlUrl: linkableUrl(sub.siteUrl ?? sub.url) ?? "",
+    htmlUrl: linkableUrl(sub.siteUrl) ?? linkableUrl(sub.url) ?? "",
     iconUrl: "",
   };
 }
