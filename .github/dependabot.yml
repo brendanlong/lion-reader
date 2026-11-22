@@ -54,6 +54,22 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+  - package-ecosystem: "cargo"
+    directory: "/native"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    # One lockfile, so one grouped PR per week for the same reason as npm
+    # (#1501); majors and security updates stay separate.
+    groups:
+      cargo-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+        patterns:
+          - "*"
   # No cooldown: the only image is the official Node one, whose releases are
   # Node's own, and Dependabot has no advisories for images, so a cooldown would
   # hold back Node security releases (the Dockerfile pins exact versions). Daily
