@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lion-reader-markdown-core = { path = "core" }
-napi = { version = "2", default-features = false, features = ["napi8"] }
-napi-derive = "2"
+napi = { version = "3.16.2", default-features = false, features = ["napi8"] }
+napi-derive = "3.7.1"
 
 [build-dependencies]
 napi-build = "2"
