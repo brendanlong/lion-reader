@@ -6,7 +6,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatEntryFull, formatSavedArticle, formatTag } from "../../src/server/wallabag/format";
+import {
+  formatEntryFull,
+  formatEntryListItem,
+  formatSavedArticle,
+  formatTag,
+} from "../../src/server/wallabag/format";
 import type { EntryFull } from "../../src/server/services/entry-reads";
 import type { SavedArticle } from "../../src/server/services/saved";
 
@@ -92,5 +97,38 @@ describe("formatEntryFull", () => {
     const withoutTags = readingTime(`${text}c`);
     expect(performance.now() - started).toBeLessThan(200);
     expect(readingTime(`${text}<i>c</i>`)).toBe(withoutTags);
+  });
+});
+
+// `content` is HTML, but summaries and excerpts are plain text with entities
+// decoded: a feed's `&lt;img onerror&gt;` must reach clients as text.
+describe("plain-text fallbacks are escaped into content", () => {
+  const text = "<img src=x onerror=alert(1)> & co";
+  const escaped = "&lt;img src=x onerror=alert(1)&gt; &amp; co";
+
+  it("in list items", () => {
+    expect(formatEntryListItem(makeFullEntry({ summary: text }), 1, []).content).toBe(escaped);
+  });
+
+  it("in full entries with no content", () => {
+    const entry = makeFullEntry({ summary: text, contentCleaned: null, contentOriginal: null });
+    expect(formatEntryFull(entry, 1, []).content).toBe(escaped);
+  });
+
+  it("in saved articles with no content", () => {
+    const article: SavedArticle = {
+      id: "01912345-0000-7000-8000-000000000002",
+      url: "https://example.com/saved",
+      title: "Saved",
+      siteName: null,
+      author: null,
+      imageUrl: null,
+      contentCleaned: null,
+      excerpt: text,
+      read: false,
+      starred: false,
+      savedAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    expect(formatSavedArticle(article, 1, []).content).toBe(escaped);
   });
 });
