@@ -1276,7 +1276,7 @@ dependencies = [
  "data-url",
  "getrandom 0.3.4",
  "html-escape",
- "html5ever 0.35.0",
+ "html5ever 0.40.1",
  "lol_html",
  "memchr",
  "regex",
