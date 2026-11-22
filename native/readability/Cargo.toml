@@ -17,8 +17,8 @@ crate-type = ["cdylib"]
 # section headings whose class contains "header" (Substack's
 # `header-anchor-post`). The fork also extends #254 to h1/h4-h6.
 dom_smoothie = { git = "https://github.com/brendanlong/dom_smoothie", rev = "cbc0e0e3b1078c63e58067f73cc1a13358938389" }
-napi = { version = "2", default-features = false, features = ["napi8"] }
-napi-derive = "2"
+napi = { version = "3.16.2", default-features = false, features = ["napi8"] }
+napi-derive = "3.7.1"
 
 [build-dependencies]
 napi-build = "2"
