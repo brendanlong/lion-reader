@@ -216,28 +216,28 @@ describe("cleanContent", () => {
       expect(result!.content).not.toContain("display: none");
     });
 
-    // Substack marks every section heading `header-anchor-post`, which
-    // Readability's "header" unlikely-candidate pattern used to strip.
-    it.each(["h1", "h2", "h3", "h4", "h5", "h6"])(
-      "keeps a %s section heading whose class contains 'header'",
-      (tag) => {
-        const paragraph =
-          "<p>The committee reviewed the proposal over three sessions, weighing the costs against the expected benefits for residents.</p>";
-        const html = `
-          <article>
-            <h1>Post Title</h1>
-            ${paragraph}${paragraph}
-            <${tag} class="header-anchor-post">Section Heading</${tag}>
-            ${paragraph}${paragraph}
-          </article>
-        `;
+    // Substack marks every section heading `header-anchor-post`, whose
+    // "header" upstream dom_smoothie (<= 0.20) treats as page chrome (#2345).
+    it("keeps section headings of any level whose class contains 'header'", () => {
+      const paragraph =
+        "<p>The committee reviewed the proposal over three sessions, weighing the costs against the expected benefits for residents.</p>";
+      const html = `
+        <article>
+          <h1>Post Title</h1>
+          ${paragraph}${paragraph}
+          <h1 class="header-anchor-post">Top Section</h1>
+          ${paragraph}${paragraph}
+          <h4 class="header-anchor-post">Deep Section</h4>
+          ${paragraph}${paragraph}
+        </article>
+      `;
 
-        const result = cleanContent(html);
+      const result = cleanContent(html);
 
-        expect(result).not.toBeNull();
-        expect(result!.content).toMatch(/<h[1-6][^>]*>Section Heading<\/h[1-6]>/);
-      }
-    );
+      expect(result).not.toBeNull();
+      expect(result!.content).toMatch(/<h[1-6][^>]*>Top Section<\/h[1-6]>/);
+      expect(result!.content).toMatch(/<h[1-6][^>]*>Deep Section<\/h[1-6]>/);
+    });
   });
 
   describe("metadata extraction", () => {
