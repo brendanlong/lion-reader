@@ -1220,7 +1220,6 @@ dependencies = [
  "base64",
  "data-url",
  "getrandom",
- "html-escape",
  "html5ever",
  "lol_html",
  "memchr",
