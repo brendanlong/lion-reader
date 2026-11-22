@@ -13,6 +13,7 @@
  * Streamed one page of entries at a time so a large library never sits in memory.
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import type { db as dbType } from "@/server/db";
 import { ZipWriter } from "@/server/file/zip-writer";
 import { escapeHtml } from "@/server/http/html";
@@ -50,17 +51,6 @@ function entryKind(entry: ExportableEntry): ExportedKind {
       return "newsletter";
     case "web":
       return "feed";
-  }
-}
-
-/** Only http(s) links are written as hrefs: the pages open from disk, where a `javascript:` URL would run. */
-function linkableUrl(url: string | null): string | null {
-  if (url === null) return null;
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "http:" || protocol === "https:" ? url : null;
-  } catch {
-    return null;
   }
 }
 

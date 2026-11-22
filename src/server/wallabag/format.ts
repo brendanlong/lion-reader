@@ -12,6 +12,7 @@
  */
 
 import { escapeHtml } from "@/server/http/html";
+import { linkableUrl } from "@/server/http/linkable-url";
 import type { EntryFull } from "@/server/services/entry-reads";
 import type { EntryListItem } from "@/server/services/entries";
 import type { SavedArticle } from "@/server/services/saved";
@@ -105,9 +106,10 @@ interface WallabagEntryInput {
  * helpers below can't drift.
  */
 function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
+  const url = linkableUrl(input.url);
   return {
     id: input.wallabagId,
-    url: input.url,
+    url,
     title: input.title,
     content: input.content,
     is_archived: input.read ? 1 : 0,
@@ -118,9 +120,9 @@ function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
     updated_at: formatDate(input.updatedAt)!,
     published_at: formatDate(input.publishedAt),
     published_by: input.author ? [input.author] : null,
-    domain_name: extractDomain(input.url),
+    domain_name: extractDomain(url),
     reading_time: estimateReadingTime(input.content),
-    preview_picture: input.previewPicture,
+    preview_picture: linkableUrl(input.previewPicture),
     mimetype: "text/html",
     language: null,
     uid: input.id,

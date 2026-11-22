@@ -9,6 +9,7 @@ import { int64ToLongFormId, feedStreamId, type GreaderEntryIds } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
 import type { GreaderSubscription } from "./subscriptions";
 import { escapeHtml } from "@/server/http/html";
+import { linkableUrl } from "@/server/http/linkable-url";
 import type { EntryFull } from "@/server/services/entry-reads";
 
 // ============================================================================
@@ -62,6 +63,8 @@ export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): Googl
     entry.contentOriginal ??
     (entry.summary === null ? "" : escapeHtml(entry.summary));
 
+  const url = linkableUrl(entry.url);
+
   return {
     id: int64ToLongFormId(ids.itemId),
     crawlTimeMsec: crawlTimeMs,
@@ -69,8 +72,8 @@ export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): Googl
     published: publishedTs,
     updated: updatedTs,
     title: entry.title ?? "",
-    canonical: entry.url ? [{ href: entry.url }] : [],
-    alternate: entry.url ? [{ href: entry.url, type: "text/html" }] : [],
+    canonical: url ? [{ href: url }] : [],
+    alternate: url ? [{ href: url, type: "text/html" }] : [],
     summary: {
       direction: "ltr",
       content,
@@ -81,7 +84,7 @@ export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): Googl
       // the "Saved Articles" subscription (issue #730).
       streamId: entryFeedStreamId(ids) ?? "",
       title: entry.feedTitle ?? "",
-      htmlUrl: entry.feedUrl ?? entry.url ?? "",
+      htmlUrl: linkableUrl(entry.feedUrl ?? entry.url) ?? "",
     },
     categories,
   };
@@ -126,8 +129,8 @@ export function formatSubscription(sub: GreaderSubscription): GoogleReaderSubscr
     })),
     sortid: sub.greaderStreamId.toString(16).padStart(16, "0"),
     firstitemmsec: sub.subscribedAt.getTime().toString(),
-    url: sub.url ?? "",
-    htmlUrl: sub.siteUrl ?? sub.url ?? "",
+    url: linkableUrl(sub.url) ?? "",
+    htmlUrl: linkableUrl(sub.siteUrl ?? sub.url) ?? "",
     iconUrl: "",
   };
 }

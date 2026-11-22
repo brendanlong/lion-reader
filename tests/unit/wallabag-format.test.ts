@@ -120,3 +120,32 @@ describe("plain-text fallbacks are escaped into content", () => {
     expect(formatSavedArticle(article, 1, []).content).toBe(escaped);
   });
 });
+
+// Pages and feeds choose these URLs, and clients render them outside our CSP.
+it("drops javascript: entry and preview URLs", () => {
+  const article: SavedArticle = {
+    id: "01912345-0000-7000-8000-000000000002",
+    url: "javascript:alert(1)",
+    title: "Saved",
+    siteName: null,
+    author: null,
+    imageUrl: "javascript:alert(2)",
+    contentCleaned: "<p>Body</p>",
+    excerpt: null,
+    read: false,
+    starred: false,
+    savedAt: new Date("2026-01-01T00:00:00Z"),
+  };
+  const formatted = formatSavedArticle(article, 1, []);
+  expect(formatted.url).toBeNull();
+  expect(formatted.preview_picture).toBeNull();
+  expect(formatted.domain_name).toBeNull();
+
+  const ok = formatSavedArticle(
+    { ...article, url: "https://example.com/a", imageUrl: "https://example.com/a.png" },
+    1,
+    []
+  );
+  expect(ok.url).toBe("https://example.com/a");
+  expect(ok.preview_picture).toBe("https://example.com/a.png");
+});
