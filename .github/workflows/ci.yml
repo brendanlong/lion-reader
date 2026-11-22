@@ -267,7 +267,7 @@ jobs:
             echo "exists=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: oasdiff/oasdiff-action/breaking@0b95859a27abaed7445bb05c18a39f1a6610a9a4 # v0.1.24
+      - uses: oasdiff/oasdiff-action/breaking@0546e2ebdc9d3589d594cfcef445c61ca02cabf1 # v0.2.0
         if: steps.base.outputs.exists == 'true'
         with:
           base: "origin/${{ github.base_ref }}:docs/api/openapi.json"
