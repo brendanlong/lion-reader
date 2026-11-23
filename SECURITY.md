@@ -232,10 +232,13 @@ fetches user-influenced URLs and must never be usable to reach internal services
   Reader handler authenticates itself, so `compat-route-auth.test.ts` sends every
   one a request without credentials; a handler that is public by design is listed
   there.
-- **Every link field these APIs and the OPML/library exports emit goes through
-  `linkableUrl`** (`src/server/http/linkable-url.ts`): entry, site and image
-  URLs are stored as the feed or page gave them, so a `<link>javascript:…</link>`
-  would otherwise reach clients that render it outside our CSP.
+- **Every link field these APIs and the OPML/library exports emit is http(s)
+  only** (`src/server/http/linkable-url.ts`): entry, site and image URLs are
+  stored as the feed or page gave them, so a `<link>javascript:…</link>` would
+  otherwise reach clients that render it outside our CSP. They go out as
+  `linkableUrl`'s normalized `href`. `createSubscription` stores a feed URL as
+  given (feeds are found by exact string), so it refuses any that isn't
+  http(s) or holds a character a parser would strip or encode.
 - **The secretless Wallabag token endpoint is pinned to the `wallabag` client_id**
   (`WALLABAG_CLIENT_ID`): it shares token tables with the OAuth server, so honoring a
   caller-supplied client_id would let it rotate or mint another client's tokens.

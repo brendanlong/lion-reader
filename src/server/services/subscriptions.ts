@@ -444,17 +444,19 @@ export async function exportSubscriptionsOpml(
   userId: string
 ): Promise<{ opml: string; feedCount: number }> {
   const opmlSubscriptions: OpmlSubscription[] = (await listAllSubscriptions(db, userId)).flatMap(
-    (row) =>
-      row.url === null
+    (row) => {
+      const xmlUrl = linkableUrl(row.url);
+      return xmlUrl === null
         ? []
         : [
             {
-              title: row.title || row.url,
-              xmlUrl: row.url,
+              title: row.title || xmlUrl,
+              xmlUrl,
               htmlUrl: linkableUrl(row.siteUrl) ?? undefined,
               tags: row.tags.length > 0 ? row.tags.map((tag) => tag.name) : undefined,
             },
-          ]
+          ];
+    }
   );
 
   return {

@@ -31,6 +31,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
+import { linkableUrl } from "@/server/http/linkable-url";
 import { resolveFeedAtUrl } from "@/server/services/feed-resolution";
 import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
@@ -137,6 +138,12 @@ export interface CreateSubscriptionOptions {
  *
  * Idempotent: if the user already has an active subscription, returns it.
  */
+/**
+ * Characters a URL parser strips or percent-encodes that also mean something
+ * to a client splicing a URL into HTML. No real feed URL contains them.
+ */
+const UNSAFE_FEED_URL_CHARS = /[\u0000-\u0020\u007f"<>`]/;
+
 export async function createSubscription(
   db: typeof dbType,
   userId: string,
@@ -144,6 +151,13 @@ export async function createSubscription(
   options: CreateSubscriptionOptions = {}
 ): Promise<CreateSubscriptionResult> {
   const { skipInitialPopulate = false } = options;
+  // OPML imports reach here unvalidated, and a feed row is shared by every
+  // subscriber. The URL is stored as given, since feeds are found by exact
+  // string, so it must already be one no client could parse differently.
+  const { url } = feed;
+  if (linkableUrl(url) === null || UNSAFE_FEED_URL_CHARS.test(url)) {
+    throw errors.validation("Feed URL must be a valid http or https URL");
+  }
   // 1. Upsert feed — insert if new, otherwise use existing
   const newFeedId = generateUuidv7();
   const now = new Date();
@@ -151,7 +165,7 @@ export async function createSubscription(
     .insert(feeds)
     .values({
       id: newFeedId,
-      url: feed.url,
+      url,
       title: feed.title ?? null,
       description: feed.description ?? null,
       siteUrl: feed.siteUrl ?? null,
@@ -164,10 +178,10 @@ export async function createSubscription(
   const [feedRecord] = await db
     .select({ id: feeds.id })
     .from(feeds)
-    .where(eq(feeds.url, feed.url))
+    .where(eq(feeds.url, url))
     .limit(1);
   if (!feedRecord) {
-    throw new Error(`Feed disappeared after upsert: ${feed.url}`);
+    throw new Error(`Feed disappeared after upsert: ${url}`);
   }
 
   const feedId = feedRecord.id;
@@ -178,7 +192,7 @@ export async function createSubscription(
   // A plugin may opt a source into full-content-by-default (e.g. Bluesky, whose
   // RSS drops embedded content). Applied only to a fresh subscribe below; a
   // resubscribe keeps the user's stored preference.
-  const defaultFullContent = feedDefaultsToFullContent(feed.url);
+  const defaultFullContent = feedDefaultsToFullContent(url);
 
   // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
   //       transaction, so a crash can't leave a half-created subscription;

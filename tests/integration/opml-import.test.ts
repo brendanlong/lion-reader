@@ -444,6 +444,40 @@ describe("OPML Import", () => {
       expect(await subscribedUrls(userId)).toEqual([url, "https://new.example.com/feed.xml"]);
     });
 
+    it("fails a feed whose URL isn't a clean http(s) URL instead of creating a feed row", async () => {
+      const userId = await createTestUser();
+      const importId = await seedImport(userId, [
+        { xmlUrl: "javascript:alert(1)", title: "Bad" },
+        // Parsers read these differently, and a client may splice the quote
+        // into HTML.
+        { xmlUrl: "\u0001 https://c.example.com/feed\t", title: "Controls" },
+        { xmlUrl: 'https://q.example.com/"><script>', title: "Quote" },
+        { xmlUrl: "https://ok.example.com/feed.xml", title: "Ok" },
+      ]);
+
+      const result = await processOpmlImport(db, importId);
+
+      expect(result).toEqual({
+        status: "completed",
+        recovered: false,
+        counts: { imported: 1, skipped: 0, failed: 3, total: 4 },
+      });
+      expect(await subscribedUrls(userId)).toEqual(["https://ok.example.com/feed.xml"]);
+      expect(await db.select().from(feeds).where(eq(feeds.url, "javascript:alert(1)"))).toEqual([]);
+    });
+
+    it("subscribes to a feed row stored in a non-normalized form, not a new one", async () => {
+      const url = "HTTPS://Legacy.example.com/Feed";
+      const feedId = await createTestFeed({ url });
+      await createTestSubscription(await createTestUser(), feedId);
+      const userId = await createTestUser();
+
+      await processOpmlImport(db, await seedImport(userId, [{ xmlUrl: url, title: "Legacy" }]));
+
+      expect(await subscribedUrls(userId)).toEqual([url]);
+      expect(await db.select().from(feeds).where(eq(feeds.url, url))).toHaveLength(1);
+    });
+
     it("does nothing for an import a previous run already finished", async () => {
       const userId = await createTestUser();
       const importId = await seedImport(userId, [{ xmlUrl: "https://a.example.com/feed.xml" }], {
