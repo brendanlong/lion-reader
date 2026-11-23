@@ -1,8 +1,9 @@
 /**
- * Integration tests for migrations 0189–0191: stored links are only ever
- * http(s). Migrations already ran against the test database, so each cleanup
- * is exercised by replaying its UPDATE over seeded bad rows with the
- * constraints dropped (`withoutLinkConstraints`).
+ * Integration tests for migrations 0189–0193: stored links are only ever
+ * http(s). Migrations already ran against the test database, so they're
+ * replayed in order (each cleanup, then its constraint) over seeded bad rows
+ * with the constraints dropped (`withoutLinkConstraints`), which the replay
+ * adds back.
  */
 
 import { readFileSync } from "fs";
@@ -25,15 +26,19 @@ function migrationStatements(file: string): string[] {
     .filter((statement) => statement.length > 0);
 }
 
-const entriesCleanup = migrationStatements("0190_entries_links_http_cleanup.sql");
-// 0191 adds the constraint, then cleans up: replay only the cleanup.
-const feedsCleanup = migrationStatements("0191_feeds_site_url_http.sql").slice(1);
+const migrations = [
+  "0189_entries_links_http_cleanup.sql",
+  "0190_entries_links_http.sql",
+  "0191_entries_links_http_validate.sql",
+  "0192_feeds_site_url_http_cleanup.sql",
+  "0193_feeds_site_url_http.sql",
+].flatMap(migrationStatements);
 
 const BAD = "javascript:alert(1)";
 // Kept as stored: only a value the constraints reject is cleared.
 const GOOD = "HTTPS://Example.com/ü?q=1";
 
-describe("migrations 0189–0191: http(s)-only stored links", () => {
+describe("migrations 0189–0193: http(s)-only stored links", () => {
   afterAll(async () => {
     await db.delete(feeds);
     await db.delete(users);
@@ -82,9 +87,16 @@ describe("migrations 0189–0191: http(s)-only stored links", () => {
       await tx.update(feeds).set({ siteUrl: BAD }).where(eq(feeds.id, feedId));
       await tx.update(feeds).set({ siteUrl: GOOD }).where(eq(feeds.id, goodFeedId));
 
-      for (const statement of [...entriesCleanup, ...feedsCleanup]) {
+      // Applied in release order: with the bad rows still there, a constraint
+      // added before its cleanup would fail every later update of them.
+      for (const statement of migrations) {
         await tx.execute(sql.raw(statement));
       }
+      const constraints = await tx.execute<{ conname: string; convalidated: boolean }>(
+        sql`SELECT conname, convalidated FROM pg_constraint WHERE conname LIKE '%\_http'`
+      );
+      expect(constraints.rows.every((row) => row.convalidated)).toBe(true);
+      expect(constraints.rows).toHaveLength(5);
 
       const rows = await tx
         .select({

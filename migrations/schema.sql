@@ -691,12 +691,16 @@ CREATE TABLE public.entries (
     owner_subscription_id uuid,
     owner_user_id uuid,
     pushed_at timestamp with time zone,
+    CONSTRAINT entries_image_url_http CHECK ((image_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)),
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) OR (last_seen_at IS NULL))),
+    CONSTRAINT entries_list_unsubscribe_https_http CHECK ((list_unsubscribe_https ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)),
     CONSTRAINT entries_owner_matches_type CHECK ((((type = 'web'::public.feed_type) = (owner_feed_id IS NOT NULL)) AND ((type = 'email'::public.feed_type) = (owner_subscription_id IS NOT NULL)) AND ((type = 'saved'::public.feed_type) = (owner_user_id IS NOT NULL)))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
     CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)),
-    CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
+    CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL)))),
+    CONSTRAINT entries_unsubscribe_url_http CHECK ((unsubscribe_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)),
+    CONSTRAINT entries_url_http CHECK ((url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text))
 );
 ALTER TABLE ONLY public.entries ALTER COLUMN content_original SET COMPRESSION lz4;
 ALTER TABLE ONLY public.entries ALTER COLUMN summary SET COMPRESSION lz4;
@@ -766,7 +770,8 @@ CREATE TABLE public.feeds (
     ttl_minutes integer,
     syndication_update_period text,
     syndication_update_frequency integer,
-    stale_at timestamp with time zone
+    stale_at timestamp with time zone,
+    CONSTRAINT feeds_site_url_http CHECK ((site_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text))
 );
 
 CREATE TABLE public.ingest_addresses (
@@ -1143,20 +1148,8 @@ ALTER TABLE ONLY public.email_tokens
 ALTER TABLE ONLY public.email_tokens
     ADD CONSTRAINT email_tokens_token_hash_key UNIQUE (token_hash);
 
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_image_url_http CHECK ((image_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_list_unsubscribe_https_http CHECK ((list_unsubscribe_https ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
-
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_unsubscribe_url_http CHECK ((unsubscribe_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_url_http CHECK ((url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
@@ -1169,9 +1162,6 @@ ALTER TABLE ONLY public.entry_tombstones
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
-
-ALTER TABLE public.feeds
-    ADD CONSTRAINT feeds_site_url_http CHECK ((site_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_url_unique UNIQUE (url);

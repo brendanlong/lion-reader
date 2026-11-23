@@ -712,7 +712,7 @@ class RolledBack extends Error {}
 
 /**
  * Runs `body` in a transaction with the http(s)-only link constraints
- * (migrations 0189, 0191) dropped, then rolls it all back: the only way to
+ * (migrations 0190, 0193) dropped, then rolls it all back: the only way to
  * seed a stored link written before them, to test what still guards against
  * one. Pass `tx` to everything inside; the dropped constraints lock the
  * tables against other connections.
