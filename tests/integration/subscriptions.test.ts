@@ -499,14 +499,17 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
-  // Feeds are found by exact URL, and older OPML imports stored URLs as written,
-  // so a URL in a non-normalized form must keep matching its row.
-  describe("Feed URLs stored as written", () => {
-    async function rawFeed(): Promise<{ feedId: string; url: string }> {
-      const url = `https://Blog.Example.com/${generateUuidv7()}/Feed`;
+  // Feeds are found by exact URL, stored in one normalized form, so any
+  // spelling of a stored feed's URL must reach its row, not create another.
+  describe("Feed URLs stored normalized", () => {
+    async function storedFeed(): Promise<{ feedId: string; spelling: string }> {
+      const path = `${generateUuidv7()}/Feed`;
       const fetchTime = new Date("2024-01-01T10:00:00Z");
-      const feedId = await createTestFeed({ url, lastFetchedAt: fetchTime });
-      return { feedId, url };
+      const feedId = await createTestFeed({
+        url: `https://blog.example.com/${path}`,
+        lastFetchedAt: fetchTime,
+      });
+      return { feedId, spelling: `https://Blog.Example.com:443/${path}#latest` };
     }
 
     async function feedIdsOfSubscriptions(userId: string): Promise<(string | null)[]> {
@@ -517,24 +520,24 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       return rows.map((r) => r.feedId);
     }
 
-    it("joins another user to the same feed row", async () => {
-      const { feedId, url } = await rawFeed();
+    it("joins another user to the same feed row from any spelling", async () => {
+      const { feedId, spelling } = await storedFeed();
       await createTestSubscription(await createTestUser(), feedId);
       const userId = await createTestUser();
 
-      await createCaller(await createAuthContext(userId)).subscriptions.create({ url });
+      await createCaller(await createAuthContext(userId)).subscriptions.create({ url: spelling });
 
       expect(await feedIdsOfSubscriptions(userId)).toEqual([feedId]);
     });
 
     it("reactivates the same subscription after unsubscribing", async () => {
-      const { feedId, url } = await rawFeed();
+      const { feedId, spelling } = await storedFeed();
       const userId = await createTestUser();
       const caller = createCaller(await createAuthContext(userId));
-      const first = await caller.subscriptions.create({ url });
+      const first = await caller.subscriptions.create({ url: spelling });
       await caller.subscriptions.delete({ id: first.id });
 
-      const again = await caller.subscriptions.create({ url });
+      const again = await caller.subscriptions.create({ url: spelling });
 
       expect(again.id).toBe(first.id);
       expect(await feedIdsOfSubscriptions(userId)).toEqual([feedId]);

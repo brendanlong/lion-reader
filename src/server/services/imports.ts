@@ -12,6 +12,7 @@
  *   handler.
  */
 
+import { normalizeFeedUrl } from "@/server/http/linkable-url";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
@@ -430,6 +431,7 @@ export async function processOpmlImport(
       .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
 
+    // Stored URLs are normalized (`createSubscription`), so compare in that form.
     const existingUrls = new Set(existingSubscriptions.map((s) => s.feedUrl));
 
     const tagNameToInfo = await ensureImportTags(db, userId, importRecord.feedsData);
@@ -459,9 +461,10 @@ export async function processOpmlImport(
 
     for (const opmlFeed of importRecord.feedsData) {
       const feedUrl = opmlFeed.xmlUrl;
+      const normalizedUrl = normalizeFeedUrl(feedUrl) ?? feedUrl;
       const feedTitle = opmlFeed.title ?? null;
 
-      if (existingUrls.has(feedUrl)) {
+      if (existingUrls.has(normalizedUrl)) {
         results.push({
           url: feedUrl,
           title: feedTitle,
@@ -495,7 +498,7 @@ export async function processOpmlImport(
         await applyImportTags(db, userId, subscriptionId, opmlFeed.category ?? [], tagNameToInfo);
 
         // Prevents a duplicate URL later in the same import from re-subscribing.
-        existingUrls.add(feedUrl);
+        existingUrls.add(normalizedUrl);
 
         results.push({
           url: feedUrl,
