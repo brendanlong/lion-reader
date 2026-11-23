@@ -9,6 +9,8 @@ describe("linkableUrl", () => {
     "\tjava\nscript:alert(1)",
     "\u0000javascript:alert(1)",
     "data:text/html,x",
+    // The parser keeps a `"` in the host.
+    'http://a"b.example/',
     "/relative",
     "//host/x",
     "",

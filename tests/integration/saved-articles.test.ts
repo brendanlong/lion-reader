@@ -946,6 +946,18 @@ describe("Saved Articles API", () => {
       }
     });
 
+    it("stores no preview image whose URL isn't http(s)", async () => {
+      const userId = await createTestUser();
+      const caller = createCaller(await createAuthContext(userId));
+
+      const result = await caller.saved.save({
+        url: "https://example.com/script-image",
+        html: `<html><head><title>T</title><meta property="og:image" content="javascript:alert(1)" /></head><body><article><p>Body text for the article.</p></article></body></html>`,
+      });
+
+      expect(result.article.imageUrl).toBeNull();
+    });
+
     it("uses provided HTML instead of fetching the URL", async () => {
       const userId = await createTestUser();
       const caller = createCaller(await createAuthContext(userId));
@@ -1337,6 +1349,22 @@ describe("Saved Articles API", () => {
       expect(healed.outcome).toBe("updated");
       expect(healed.title).toBe("Short But Real");
       expect(await isPlaceholderFlag(healed.id)).toBe(false);
+    });
+
+    it("stores no link for a URL that isn't http(s)", async () => {
+      const userId = await createTestUser();
+
+      const placeholder = await savePlaceholderArticle(db, userId, {
+        url: "javascript:alert(1)",
+        reason: "Unsupported URL.",
+      });
+
+      expect(placeholder.url).toBeNull();
+      const [row] = await db
+        .select({ url: entries.url })
+        .from(entries)
+        .where(eq(entries.id, placeholder.id));
+      expect(row.url).toBeNull();
     });
 
     it("returns a real saved article instantly on re-save (no refetch, not a placeholder)", async () => {

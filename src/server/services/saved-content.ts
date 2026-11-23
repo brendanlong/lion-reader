@@ -4,6 +4,7 @@
  * database access: storage is `saved.ts`.
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import { createSaxParser } from "@/server/html/sax";
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
@@ -271,7 +272,7 @@ export async function buildArticleFields(
     contentOriginal,
     contentCleaned,
     summary,
-    imageUrl: metadata.imageUrl,
+    imageUrl: linkableUrl(metadata.imageUrl),
     contentHash,
     newTextContent,
   };

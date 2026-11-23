@@ -5,6 +5,7 @@
  * This module provides the core logic for handling emails from any provider.
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "../db";
@@ -357,7 +358,7 @@ export async function processInboundEmail(
   // Many newsletters (Substack, Ghost, Buttondown, etc.) include a link to the
   // web version of the post in the email's title heading. This gives email entries
   // a "Read on {domain}" link in the UI and enables full content fetching.
-  const url = html ? extractEmailUrl(html) : null;
+  const url = linkableUrl(html ? extractEmailUrl(html) : null);
 
   // Extract unsubscribe URL from email HTML.
   // Many newsletters include an "unsubscribe" link in their footer. We extract this
@@ -387,9 +388,9 @@ export async function processInboundEmail(
     spamScore: email.spamScore ?? null,
     isSpam: email.isSpam ?? false,
     listUnsubscribeMailto,
-    listUnsubscribeHttps,
+    listUnsubscribeHttps: linkableUrl(listUnsubscribeHttps),
     listUnsubscribePost,
-    unsubscribeUrl,
+    unsubscribeUrl: linkableUrl(unsubscribeUrl),
   };
 
   // Store only the raw columns; the read path sanitizes per read (issue #1282).

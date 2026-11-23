@@ -1,39 +1,19 @@
+import { linkableUrl } from "@/server/http/linkable-url";
+
 /**
  * Unified feed parsing output interfaces.
  * These are used as the common output format for all feed parsers (RSS, Atom, JSON Feed).
  */
 
 /**
- * Checks if a string is a valid HTTP(S) URL.
- */
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Derives the URL for an entry.
- * Uses the explicit link if available, otherwise falls back to
- * the GUID if it's a valid HTTP(S) URL.
+ * The URL stored for an entry: its link, or else its GUID when that's a URL,
+ * as an http(s) `href` (`linkableUrl`); stored links are only ever http(s).
  *
  * @param entry - The parsed entry from the feed
  * @returns The entry URL, or undefined if none can be derived
  */
 export function deriveEntryUrl(entry: ParsedEntry): string | undefined {
-  if (entry.link && entry.link.trim()) {
-    return entry.link.trim();
-  }
-
-  // Fall back to GUID if it looks like a URL
-  if (entry.guid && entry.guid.trim() && isHttpUrl(entry.guid.trim())) {
-    return entry.guid.trim();
-  }
-
-  return undefined;
+  return linkableUrl(entry.link ?? null) ?? linkableUrl(entry.guid ?? null) ?? undefined;
 }
 
 /**

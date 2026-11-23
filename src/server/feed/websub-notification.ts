@@ -3,6 +3,7 @@
  * when a feed updates).
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { databaseNow } from "../db/temporal";
@@ -175,7 +176,7 @@ export async function ingestWebsubNotification(
         updatedAt: now,
         title: parsedFeed.title || feed.title,
         description: parsedFeed.description || feed.description,
-        siteUrl: parsedFeed.siteUrl || feed.siteUrl,
+        siteUrl: linkableUrl(parsedFeed.siteUrl ?? null) ?? feed.siteUrl,
       })
       .where(eq(feeds.id, feedId));
 

@@ -1,5 +1,6 @@
 /**
- * Unit tests for deriveEntryUrl - GUID-as-URL fallback logic.
+ * Unit tests for deriveEntryUrl: the GUID-as-URL fallback, and storing only
+ * http(s) links.
  */
 
 import { describe, it, expect } from "vitest";
@@ -83,5 +84,18 @@ describe("deriveEntryUrl", () => {
         guid: "https://example.com/post",
       })
     ).toBe("https://example.com/post");
+  });
+
+  // A non-http(s) link (a script URL, or a relative one nothing resolves) is no
+  // link, so the GUID URL stands in for it.
+  it.each(["javascript:alert(1)", "/relative/post"])("skips the %j link for the GUID", (link) => {
+    expect(deriveEntryUrl({ link, guid: "https://example.com/post" })).toBe(
+      "https://example.com/post"
+    );
+    expect(deriveEntryUrl({ link, guid: "post-1" })).toBeUndefined();
+  });
+
+  it("stores the normalized href", () => {
+    expect(deriveEntryUrl({ link: "HTTPS://Example.com/a b" })).toBe("https://example.com/a%20b");
   });
 });
