@@ -715,6 +715,54 @@ describe("handleFetchFeed", () => {
         expect(after.consecutiveFailures).toBe(0);
       }
     );
+
+    // Targets tracked before they were normalized: one that is this feed's own
+    // URL but for a fragment would merge the feed into itself, unsubscribing
+    // everyone; one that isn't http(s) can't be moved to.
+    it.each([`/feed.xml#tracked-before-normalizing`, "javascript:alert(1)"])(
+      "drops a tracked target that isn't a move and handles the 404 as an error (%j)",
+      async (target) => {
+        const feed = await createLoopbackFeed({
+          redirectUrl: target.startsWith("/") ? `${baseUrl}${target}` : target,
+          redirectFirstSeenAt: new Date(),
+        });
+        const userId = await createTestUser({ emailPrefix: "ff-selfredirect" });
+        const subscriptionId = await createTestSubscription(userId, feed.id);
+        nextResponse = { status: 404, body: "gone" };
+
+        const result = await handleFetchFeed({ feedId: feed.id });
+
+        expect(result.success).toBe(false);
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(feed.url);
+        expect(after.redirectUrl).toBeNull();
+        const [subscription] = await db
+          .select({ feedId: subscriptions.feedId, unsubscribedAt: subscriptions.unsubscribedAt })
+          .from(subscriptions)
+          .where(eq(subscriptions.id, subscriptionId));
+        expect(subscription).toEqual({ feedId: feed.id, unsubscribedAt: null });
+      }
+    );
+
+    it("merges into the feed at a tracked target's normalized URL", async () => {
+      const target = await createTestFeed({ url: movedTo() });
+      const feed = await createLoopbackFeed({
+        redirectUrl: `${movedTo()}#tracked-before-normalizing`,
+        redirectFirstSeenAt: new Date(),
+      });
+      const userId = await createTestUser({ emailPrefix: "ff-mergeredirect" });
+      await createTestSubscription(userId, feed.id);
+      nextResponse = { status: 404, body: "gone" };
+
+      const result = await handleFetchFeed({ feedId: feed.id });
+
+      expect(result.metadata).toMatchObject({ redirectApplied: true, mergedIntoFeedId: target });
+      const active = await db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId));
+      expect(active.filter((s) => s.feedId === target)).toHaveLength(1);
+    });
   });
 
   describe("failures", () => {

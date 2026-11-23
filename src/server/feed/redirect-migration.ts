@@ -100,7 +100,8 @@ export async function handlePermanentRedirect(
 
   // New redirect, or the destination changed from the one we were tracking:
   // (re)start tracking it
-  const tracking = feed.redirectUrl && feed.redirectUrl !== redirectUrl ? "reset" : "started";
+  const tracking =
+    feed.redirectUrl && normalizeFeedUrl(feed.redirectUrl) !== redirectUrl ? "reset" : "started";
   logger.info(
     tracking === "reset"
       ? "Redirect URL changed, resetting tracking"
@@ -139,17 +140,29 @@ export async function applyRedirectMigration(
   now: Date
 ): Promise<RedirectOutcome> {
   // In the form feeds.url is stored and found in: a target tracked before
-  // targets were normalized may hold a fragment.
+  // targets were normalized may hold a fragment, or not be http(s).
   const redirectUrl = normalizeFeedUrl(trackedRedirectUrl);
-  if (redirectUrl === null) {
-    throw new Error(`Redirect target isn't an http(s) URL: feed ${feed.id}`);
-  }
   // Check if a feed already exists at the redirect URL
-  const [existingFeedAtRedirectUrl] = await db
-    .select()
-    .from(feeds)
-    .where(eq(feeds.url, redirectUrl))
-    .limit(1);
+  const [existingFeedAtRedirectUrl] =
+    redirectUrl === null
+      ? []
+      : await db.select().from(feeds).where(eq(feeds.url, redirectUrl)).limit(1);
+
+  // A target that isn't a feed URL, or is this feed's own once normalized
+  // (`#fragment` only), is no move: merging a feed into itself would
+  // unsubscribe everyone. Stop tracking it.
+  if (redirectUrl === null || existingFeedAtRedirectUrl?.id === feed.id) {
+    await db
+      .update(feeds)
+      .set({ redirectUrl: null, redirectFirstSeenAt: null, updatedAt: now })
+      .where(eq(feeds.id, feed.id));
+    logger.info("Dropped a tracked redirect that isn't a move", {
+      feedId: feed.id,
+      feedUrl: feed.url,
+      redirectUrl: trackedRedirectUrl,
+    });
+    return { applied: false, metadata: { redirectTracking: "dropped" } };
+  }
 
   if (existingFeedAtRedirectUrl) {
     // Feed exists at redirect URL - migrate subscriptions

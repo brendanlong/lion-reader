@@ -587,15 +587,18 @@ async function processFetchResult(
         });
 
         const redirectResult = await applyRedirectMigration(feed, feed.redirectUrl, now);
-        return {
-          success: true,
-          nextRunAt: redirectResult.nextRunAt ?? now,
-          metadata: {
-            ...redirectResult.metadata,
-            originalUrlBroken: true,
-            originalError: result.message,
-          },
-        };
+        // Not applied (the target was no move): handle the 404 like any other.
+        if (redirectResult.applied) {
+          return {
+            success: true,
+            nextRunAt: redirectResult.nextRunAt ?? now,
+            metadata: {
+              ...redirectResult.metadata,
+              originalUrlBroken: true,
+              originalError: result.message,
+            },
+          };
+        }
       }
 
       // All other client errors - exponential backoff. This deliberately
