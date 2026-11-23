@@ -168,7 +168,7 @@ export async function createSubscription(
       url,
       title: feed.title ?? null,
       description: feed.description ?? null,
-      siteUrl: feed.siteUrl ?? null,
+      siteUrl: linkableUrl(feed.siteUrl ?? null),
       nextFetchAt: now,
       createdAt: now,
       updatedAt: now,

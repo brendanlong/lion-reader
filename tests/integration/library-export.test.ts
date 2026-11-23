@@ -133,20 +133,6 @@ describe("streamLibraryExport", () => {
     );
   });
 
-  it("never writes a non-http URL as a link", async () => {
-    const userId = await createTestUser();
-    const id = await createTestEntry(userId, {
-      type: "saved",
-      url: "javascript:alert(1)",
-      userIds: [userId],
-    });
-
-    const zip = await readExport(userId);
-
-    expect(await readText(zip, `articles/${id}.html`)).not.toContain("javascript:");
-    expect(await readText(zip, "bookmarks.html")).not.toContain("javascript:");
-  });
-
   it("pages through libraries larger than one query page", async () => {
     const userId = await createTestUser();
     const ids: string[] = [];

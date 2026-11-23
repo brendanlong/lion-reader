@@ -5,6 +5,7 @@
  * This module provides the core logic for handling emails from any provider.
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { db as dbType } from "../db";
@@ -387,9 +388,9 @@ export async function processInboundEmail(
     spamScore: email.spamScore ?? null,
     isSpam: email.isSpam ?? false,
     listUnsubscribeMailto,
-    listUnsubscribeHttps,
+    listUnsubscribeHttps: linkableUrl(listUnsubscribeHttps),
     listUnsubscribePost,
-    unsubscribeUrl,
+    unsubscribeUrl: linkableUrl(unsubscribeUrl),
   };
 
   // Store only the raw columns; the read path sanitizes per read (issue #1282).

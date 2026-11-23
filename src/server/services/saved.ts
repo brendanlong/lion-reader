@@ -6,6 +6,7 @@
  * and deriving its stored fields is in `saved-content.ts`.
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import { consumePlanQuota } from "@/server/services/plans";
 import { z } from "zod";
 import { eq, and, inArray, isNull, ne, notExists, sql, type SQL } from "drizzle-orm";
@@ -229,7 +230,7 @@ async function insertSavedEntry(
     ownerUserId: userId,
     type: "saved" as const,
     guid: params.guid,
-    url: params.url,
+    url: linkableUrl(params.url),
     title: params.title,
     author: params.author,
     contentOriginal: params.contentOriginal,
@@ -313,7 +314,7 @@ async function insertSavedEntry(
   return {
     article: {
       id: entryId,
-      url: params.url,
+      url: values.url,
       title: params.title,
       siteName: params.siteName,
       author: params.author,

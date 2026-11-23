@@ -8,6 +8,7 @@
  * docs/diagrams/feed-fetcher.d2 for the pipeline.
  */
 
+import { linkableUrl } from "@/server/http/linkable-url";
 import { createHash } from "crypto";
 import { eq, and, isNull, count, sql } from "drizzle-orm";
 import { db } from "../../db";
@@ -330,7 +331,7 @@ async function processSuccessfulFetch(
     .set({
       title: resolvedFeedTitle,
       description: feedMetadata.description || feed.description,
-      siteUrl: feedMetadata.siteUrl || feed.siteUrl,
+      siteUrl: linkableUrl(feedMetadata.siteUrl ?? null) ?? feed.siteUrl,
       etag: cacheHeaders.etag ?? feed.etag,
       lastModifiedHeader: cacheHeaders.lastModified ?? feed.lastModifiedHeader,
       bodyHash,
