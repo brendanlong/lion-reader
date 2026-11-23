@@ -1143,20 +1143,8 @@ ALTER TABLE ONLY public.email_tokens
 ALTER TABLE ONLY public.email_tokens
     ADD CONSTRAINT email_tokens_token_hash_key UNIQUE (token_hash);
 
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_image_url_http CHECK ((image_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_list_unsubscribe_https_http CHECK ((list_unsubscribe_https ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
-
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_unsubscribe_url_http CHECK ((unsubscribe_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_url_http CHECK ((url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
@@ -1169,9 +1157,6 @@ ALTER TABLE ONLY public.entry_tombstones
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_pkey PRIMARY KEY (id);
-
-ALTER TABLE public.feeds
-    ADD CONSTRAINT feeds_site_url_http CHECK ((site_url ~* '^https?://[^\x01-\x20\x7f"<>]*$'::text)) NOT VALID;
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT feeds_url_unique UNIQUE (url);

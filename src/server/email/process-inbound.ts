@@ -358,7 +358,7 @@ export async function processInboundEmail(
   // Many newsletters (Substack, Ghost, Buttondown, etc.) include a link to the
   // web version of the post in the email's title heading. This gives email entries
   // a "Read on {domain}" link in the UI and enables full content fetching.
-  const url = html ? extractEmailUrl(html) : null;
+  const url = linkableUrl(html ? extractEmailUrl(html) : null);
 
   // Extract unsubscribe URL from email HTML.
   // Many newsletters include an "unsubscribe" link in their footer. We extract this
