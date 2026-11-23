@@ -19,10 +19,11 @@
 //! - The tag allow-list applies to end tags too, in a second byte pass over the
 //!   rewriter's output — see `drop_disallowed_end_tags`, which is the only place
 //!   here that deletes bytes lol_html already tokenized.
-//! - Transforms: external links get `target="_blank" rel="noopener
-//!   noreferrer"`; images get `loading="lazy"`; iframes survive only as
-//!   normalized allow-listed embeds with a forced sandbox; `input` survives
-//!   only as an inert, attribute-stripped task-list checkbox.
+//! - Transforms: links lose any source `target`/`rel`, and external ones get
+//!   `target="_blank" rel="noopener noreferrer"`; images get
+//!   `loading="lazy"`; iframes survive only as normalized allow-listed embeds
+//!   with a forced sandbox; `input` survives only as an inert,
+//!   attribute-stripped task-list checkbox.
 //!
 //! Unlike sanitize-html, lol_html does not re-serialize untouched markup:
 //! kept text and attribute values pass through byte-identical, and the
@@ -41,7 +42,7 @@ use crate::scanner::{
     find_byte, find_bytes, is_tag_ws, scan_to_tag_end, skip_raw_text, tag_name_end,
     RAW_TEXT_ELEMENTS,
 };
-use crate::urls::{decode_attr, is_image_url_allowed, split_srcset};
+use crate::urls::{decode_attr, is_external_link, is_image_url_allowed, split_srcset};
 
 /// Tags allowed in entry content (sanitize.ts ALLOWED_TAGS + MATHML_TAGS).
 const ALLOWED_TAGS: &[&str] = &[
@@ -328,7 +329,10 @@ fn attr_allowed(tag: &str, name: &str) -> bool {
         return true;
     }
     match tag {
-        "a" => matches!(name, "href" | "name" | "target" | "rel"),
+        // `target`/`rel` are never kept from the source: external links get
+        // ours (see `handle_element`) and nothing else opens a new context, so
+        // no source value can hand a page `window.opener`.
+        "a" => matches!(name, "href" | "name"),
         "img" => matches!(
             name,
             "src" | "srcset" | "sizes" | "alt" | "width" | "height" | "loading" | "decoding"
@@ -604,13 +608,6 @@ fn collapse_duplicates(
         el.set_attribute(name, &value)?;
     }
     Ok(())
-}
-
-fn is_external_link(decoded_href: &str) -> bool {
-    let normalized = decoded_href.trim().to_ascii_lowercase();
-    normalized.starts_with("http://")
-        || normalized.starts_with("https://")
-        || normalized.starts_with("//")
 }
 
 fn handle_element(el: &mut Element) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1071,6 +1068,27 @@ mod tests {
             sanitize(r#"<a href="https://example.com">x</a><a href="/local">y</a>"#),
             r#"<a href="https://example.com" target="_blank" rel="noopener noreferrer">x</a><a href="/local">y</a>"#
         );
+    }
+
+    #[test]
+    fn source_target_and_rel_never_survive() {
+        // A kept `rel="opener"` would let a page our external-link check
+        // missed reach `window.opener`; any link it misses must stay in the tab.
+        assert_eq!(
+            sanitize(r#"<a href="/local" target="_blank" rel="opener">x</a>"#),
+            r#"<a href="/local">x</a>"#
+        );
+        // Off-site links get only ours, however the source spelled the URL
+        // (`https:host` and `/\host` resolve off-site too).
+        for href in ["https://e.com", "https:evil.example", "/\\evil.example"] {
+            assert_eq!(
+                sanitize(&format!(
+                    r#"<a href="{href}" target="_self" rel="opener">x</a>"#
+                )),
+                format!(r#"<a href="{href}" target="_blank" rel="noopener noreferrer">x</a>"#),
+                "{href}"
+            );
+        }
     }
 
     // Namespacing tests use escaped strings rather than `r#"…"#`: the literals
@@ -1709,6 +1727,19 @@ mod tests {
     /// attributes (iframe embeds, task-list checkboxes) are allowed by
     /// construction, not by `attr_allowed`. `svg` admits reinserted inline SVG,
     /// which the pass alone never outputs.
+    /// A `target`/`rel` the sanitizer didn't force: they may only appear on an
+    /// `<a>`, together, as exactly our pair. Checked apart from the allow-lists,
+    /// so re-allowing a source value there can't also relax this check.
+    fn unforced_link_attr(tag: &str, el: &scraper::node::Element) -> Option<String> {
+        let target = el.attr("target");
+        let rel = el.attr("rel");
+        if target.is_none() && rel.is_none() {
+            return None;
+        }
+        let forced = tag == "a" && target == Some("_blank") && rel == Some("noopener noreferrer");
+        (!forced).then(|| format!("{tag} target={target:?} rel={rel:?}"))
+    }
+
     fn disallowed_markup(html: &str, svg: bool) -> Option<String> {
         use html5ever::ns;
         for node in scraper::Html::parse_fragment(html).tree.nodes() {
@@ -1730,6 +1761,9 @@ mod tests {
                 if !svg || !crate::svg::ALLOWED_SVG_TAGS.contains(&lower.as_str()) {
                     return Some(format!("<svg:{tag}>"));
                 }
+                if let Some(bad) = unforced_link_attr(tag, el) {
+                    return Some(format!("<svg:{bad}>"));
+                }
                 for (attr, value) in el.attrs() {
                     let scheme = crate::urls::url_scheme(value);
                     let bad_url = matches!(attr, "href" | "xlink:href")
@@ -1748,7 +1782,13 @@ mod tests {
             if !tag_allowed(tag) && !matches!(tag, "html" | "body") {
                 return Some(format!("<{tag}>"));
             }
+            if let Some(bad) = unforced_link_attr(tag, el) {
+                return Some(format!("<{bad}>"));
+            }
             for (attr, value) in el.attrs() {
+                if matches!(attr, "target" | "rel") {
+                    continue;
+                }
                 // lol_html can't remove an attribute whose name starts with `=`
                 // (#1637). No such name means anything to a browser.
                 let allowed = attr.starts_with('=')
@@ -1874,6 +1914,10 @@ mod tests {
         // SVG is the one place markup is added after the pass, so it must land
         // only where the pass read text (see `svg.rs`).
         const PIECES: &[&str] = &[
+            r#"<a href="/x" target=_blank>"#,
+            r#"<a href="/x" target=_blank rel=opener>"#,
+            r#"<a href="https://e.com" target=_top rel=opener>"#,
+            r#"<svg><a href="/\x" target="_blank" rel="opener"><text>t</text></a></svg>"#,
             "<",
             ">",
             "\"",

@@ -98,6 +98,26 @@ pub fn url_scheme(decoded: &str) -> Option<String> {
     None
 }
 
+/// Whether a decoded `<a>` href leaves the page, so it gets our forced
+/// `target="_blank" rel="noopener noreferrer"`: an http(s) scheme, or none but
+/// a host (`//host`, and `/\host` or `\\host`, since browsers read `\` as `/`
+/// in http(s) URLs).
+pub fn is_external_link(decoded: &str) -> bool {
+    match url_scheme(decoded) {
+        Some(scheme) => scheme == "http" || scheme == "https",
+        None => {
+            let mut chars = decoded
+                .chars()
+                .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+                .skip_while(|c| matches!(c, '\u{0000}'..='\u{0020}'));
+            matches!(
+                (chars.next(), chars.next()),
+                (Some('/' | '\\'), Some('/' | '\\'))
+            )
+        }
+    }
+}
+
 /// Whether a decoded URL value is allowed: no scheme (relative /
 /// protocol-relative), or one of `schemes`.
 pub fn is_url_allowed(decoded: &str, schemes: &[&str]) -> bool {
@@ -274,6 +294,25 @@ mod tests {
             ("plain", "plain"),
         ] {
             assert_eq!(decode_attr(raw), decoded, "{raw}");
+        }
+    }
+
+    #[test]
+    fn external_links_are_the_ones_that_leave_the_page() {
+        for href in [
+            "https://e.com",
+            "HTTP://e.com",
+            "https:e.com",
+            "h\tttps://e.com",
+            "//e.com",
+            "/\\e.com",
+            "\\\\e.com",
+            " \t//e.com",
+        ] {
+            assert!(is_external_link(href), "{href:?}");
+        }
+        for href in ["/local", "#frag", "mailto:a@b", "a/b", "/./x", ""] {
+            assert!(!is_external_link(href), "{href:?}");
         }
     }
 

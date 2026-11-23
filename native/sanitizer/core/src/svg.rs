@@ -25,7 +25,7 @@ use crate::idrefs::{prefix_fragment_href, prefix_func_iris, prefix_id, SVG_FUNC_
 use crate::limits::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
-use crate::urls::{is_data_image, url_scheme};
+use crate::urls::{is_data_image, is_external_link, url_scheme};
 
 /// DOMPurify's `svg` + `svgFilters` minus the exclusions in the module doc and
 /// `font`: SVG fonts render nowhere, and `<font>` is the one name here that
@@ -289,10 +289,6 @@ const ALLOWED_SVG_ATTRS: &[&str] = &[
     "xml:space",
     "xml:lang",
     "xmlns:xlink",
-    // Link attributes on SVG <a> (SVG2); rel/target are forced to safe
-    // values for external links.
-    "target",
-    "rel",
 ];
 
 const HREF_HTTP_SCHEMES: &[&str] = &["http", "https", "mailto", "tel"];
@@ -329,14 +325,6 @@ fn is_href_allowed(tag: &str, value: &str) -> bool {
     // Every other element references a template within the document; only a
     // same-document `#fragment` ref is allowed.
     value.trim().starts_with('#')
-}
-
-/// Whether an `<a>` href points off-site (needs anti-tabnabbing rel).
-fn is_external_link(value: &str) -> bool {
-    match url_scheme(value) {
-        Some(s) => s == "http" || s == "https",
-        None => value.trim().starts_with("//"),
-    }
 }
 
 /// Emit one sanitized SVG element (or nothing, when disallowed — the whole
@@ -391,11 +379,8 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
             })
             .map(|(_, v)| v.clone())
             .unwrap_or_default();
+        // Source `target`/`rel` never pass the allow-list, as on HTML links.
         if is_external_link(&href) {
-            kept.retain(|(k, _)| {
-                let l = k.to_ascii_lowercase();
-                l != "target" && l != "rel"
-            });
             kept.push(("target".to_string(), "_blank".to_string()));
             kept.push(("rel".to_string(), "noopener noreferrer".to_string()));
         }
@@ -678,6 +663,16 @@ mod tests {
         assert!(!out.to_lowercase().contains("foreignobject"), "{out}");
         assert!(!out.contains("img"), "{out}");
         assert!(out.contains("<rect width=\"5\"/>"), "{out}");
+    }
+
+    #[test]
+    fn source_target_and_rel_never_survive() {
+        assert_eq!(
+            roundtrip(
+                r##"<svg><a href="#x" target="_blank" rel="opener"><text>in</text></a><a href="/\x" target="_self" rel="opener"><text>out</text></a></svg>"##
+            ),
+            r##"<svg><a href="#uc-x"><text>in</text></a><a href="/\x" target="_blank" rel="noopener noreferrer"><text>out</text></a></svg>"##
+        );
     }
 
     #[test]
