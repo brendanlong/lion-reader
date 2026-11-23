@@ -593,21 +593,26 @@ describe("handleFetchFeed", () => {
       expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before);
     });
 
-    it("keeps waiting while the same redirect is younger than the wait period", async () => {
-      const firstSeen = new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS + 60 * 1000);
-      const feed = await createLoopbackFeed({
-        redirectUrl: `${baseUrl}/moved.xml`,
-        redirectFirstSeenAt: firstSeen,
-      });
-      redirectFeedUrl();
+    // A target tracked before targets were normalized may hold a fragment; it
+    // is the same redirect.
+    it.each(["", "#tracked-before-normalizing"])(
+      "keeps waiting while the same redirect is younger than the wait period (%j)",
+      async (fragment) => {
+        const firstSeen = new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS + 60 * 1000);
+        const feed = await createLoopbackFeed({
+          redirectUrl: `${baseUrl}/moved.xml${fragment}`,
+          redirectFirstSeenAt: firstSeen,
+        });
+        redirectFeedUrl();
 
-      await handleFetchFeed({ feedId: feed.id });
+        await handleFetchFeed({ feedId: feed.id });
 
-      const after = await readFeed(feed.id);
-      expect(after.url).toBe(feed.url);
-      expect(after.redirectUrl).toBe(movedTo());
-      expect(after.redirectFirstSeenAt!.getTime()).toBe(firstSeen.getTime());
-    });
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(feed.url);
+        expect(after.redirectUrl).toBe(`${movedTo()}${fragment}`);
+        expect(after.redirectFirstSeenAt!.getTime()).toBe(firstSeen.getTime());
+      }
+    );
 
     it.each([
       { name: "a changed body", destination: (): FeedResponse => ({ body: rss([]) }) },
@@ -691,22 +696,25 @@ describe("handleFetchFeed", () => {
       expect(after.redirectFirstSeenAt).toBeNull();
     });
 
-    it("applies a tracked redirect immediately once the original URL 404s", async () => {
-      const feed = await createLoopbackFeed({
-        redirectUrl: `${baseUrl}/moved.xml`,
-        redirectFirstSeenAt: new Date(),
-      });
-      nextResponse = { status: 404, body: "gone" };
+    it.each(["", "#tracked-before-normalizing"])(
+      "applies a tracked redirect immediately once the original URL 404s (%j)",
+      async (fragment) => {
+        const feed = await createLoopbackFeed({
+          redirectUrl: `${baseUrl}/moved.xml${fragment}`,
+          redirectFirstSeenAt: new Date(),
+        });
+        nextResponse = { status: 404, body: "gone" };
 
-      const result = await handleFetchFeed({ feedId: feed.id });
+        const result = await handleFetchFeed({ feedId: feed.id });
 
-      expect(result.success).toBe(true);
-      expect(result.metadata).toMatchObject({ redirectApplied: true, originalUrlBroken: true });
-      const after = await readFeed(feed.id);
-      expect(after.url).toBe(movedTo());
-      expect(after.redirectUrl).toBeNull();
-      expect(after.consecutiveFailures).toBe(0);
-    });
+        expect(result.success).toBe(true);
+        expect(result.metadata).toMatchObject({ redirectApplied: true, originalUrlBroken: true });
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(movedTo());
+        expect(after.redirectUrl).toBeNull();
+        expect(after.consecutiveFailures).toBe(0);
+      }
+    );
   });
 
   describe("failures", () => {

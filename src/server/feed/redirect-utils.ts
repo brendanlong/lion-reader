@@ -74,7 +74,7 @@ export function isHttpToHttpsUpgrade(originalUrl: string, redirectUrl: string): 
       return false;
     }
 
-    // Everything else must match (host, port, pathname, search, hash)
+    // Everything else must match (host, port, pathname, search)
     return (
       original.host === redirect.host &&
       original.pathname === redirect.pathname &&

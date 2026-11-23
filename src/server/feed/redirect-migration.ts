@@ -4,6 +4,7 @@
  * changes, or its subscriptions merge into the feed already at the target.
  */
 
+import { normalizeFeedUrl } from "@/server/http/linkable-url";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { feeds, type Feed } from "../db/schema";
@@ -63,8 +64,9 @@ export async function handlePermanentRedirect(
     return applyRedirectMigration(feed, redirectUrl, now);
   }
 
-  // Check if we're already tracking this redirect
-  if (feed.redirectUrl === redirectUrl && feed.redirectFirstSeenAt) {
+  // Check if we're already tracking this redirect (one tracked before targets
+  // were normalized may hold a fragment)
+  if (normalizeFeedUrl(feed.redirectUrl) === redirectUrl && feed.redirectFirstSeenAt) {
     const timeSinceFirstSeen = now.getTime() - feed.redirectFirstSeenAt.getTime();
 
     if (timeSinceFirstSeen >= REDIRECT_WAIT_PERIOD_MS) {
@@ -133,9 +135,15 @@ export async function handlePermanentRedirect(
  */
 export async function applyRedirectMigration(
   feed: Feed,
-  redirectUrl: string,
+  trackedRedirectUrl: string,
   now: Date
 ): Promise<RedirectOutcome> {
+  // In the form feeds.url is stored and found in: a target tracked before
+  // targets were normalized may hold a fragment.
+  const redirectUrl = normalizeFeedUrl(trackedRedirectUrl);
+  if (redirectUrl === null) {
+    throw new Error(`Redirect target isn't an http(s) URL: feed ${feed.id}`);
+  }
   // Check if a feed already exists at the redirect URL
   const [existingFeedAtRedirectUrl] = await db
     .select()

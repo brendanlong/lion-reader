@@ -316,6 +316,10 @@ export async function subscribeToUrl(
   userId: string,
   feedUrl: string
 ): Promise<CreateSubscriptionResult> {
+  const normalizedUrl = normalizeFeedUrl(feedUrl);
+  if (normalizedUrl === null) {
+    throw errors.validation("Feed URL must be a valid http or https URL");
+  }
   const [existing] = await db
     .select({
       id: feeds.id,
@@ -323,7 +327,7 @@ export async function subscribeToUrl(
       staleAt: feeds.staleAt,
     })
     .from(feeds)
-    .where(eq(feeds.url, normalizeFeedUrl(feedUrl) ?? feedUrl))
+    .where(eq(feeds.url, normalizedUrl))
     .limit(1);
 
   // A feed we've never fetched successfully (brand new, or a raw URL from an
@@ -332,7 +336,7 @@ export async function subscribeToUrl(
   // background fetch job, so it needs no forced refresh. An unreachable or
   // unparseable URL fails the subscribe.
   if (!existing || existing.lastFetchedAt === null) {
-    const { url, parsedFeed } = await resolveFeedAtUrl(feedUrl);
+    const { url, parsedFeed } = await resolveFeedAtUrl(normalizedUrl);
     return createSubscription(db, userId, {
       url,
       title: getFeedHooks(url).resolveFeedTitle(parsedFeed),
@@ -350,7 +354,7 @@ export async function subscribeToUrl(
   const result = await createSubscription(
     db,
     userId,
-    { url: feedUrl },
+    { url: normalizedUrl },
     {
       skipInitialPopulate: stale,
     }
