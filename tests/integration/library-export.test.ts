@@ -3,6 +3,7 @@
  */
 
 import JSZip from "jszip";
+import { eq } from "drizzle-orm";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
@@ -16,11 +17,12 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  withoutLinkConstraints,
 } from "./helpers";
 
-async function readExport(userId: string): Promise<JSZip> {
+async function readExport(userId: string, database: typeof db = db): Promise<JSZip> {
   const chunks: Uint8Array[] = [];
-  for await (const chunk of streamLibraryExport(db, userId)) chunks.push(chunk);
+  for await (const chunk of streamLibraryExport(database, userId)) chunks.push(chunk);
   return JSZip.loadAsync(Buffer.concat(chunks));
 }
 
@@ -135,16 +137,17 @@ describe("streamLibraryExport", () => {
 
   it("never writes a non-http URL as a link", async () => {
     const userId = await createTestUser();
-    const id = await createTestEntry(userId, {
-      type: "saved",
-      url: "javascript:alert(1)",
-      userIds: [userId],
+    const id = await createTestEntry(userId, { type: "saved", userIds: [userId] });
+
+    // Stored links are http(s) by constraint; this is the export's own guard.
+    await withoutLinkConstraints(async (tx) => {
+      await tx.update(entries).set({ url: "javascript:alert(1)" }).where(eq(entries.id, id));
+
+      const zip = await readExport(userId, tx);
+
+      expect(await readText(zip, `articles/${id}.html`)).not.toContain("javascript:");
+      expect(await readText(zip, "bookmarks.html")).not.toContain("javascript:");
     });
-
-    const zip = await readExport(userId);
-
-    expect(await readText(zip, `articles/${id}.html`)).not.toContain("javascript:");
-    expect(await readText(zip, "bookmarks.html")).not.toContain("javascript:");
   });
 
   it("pages through libraries larger than one query page", async () => {

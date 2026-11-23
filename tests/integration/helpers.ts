@@ -703,3 +703,37 @@ export async function createTestJob<T extends JobType>(options: {
     .returning();
   return job;
 }
+
+// ============================================================================
+// Link constraints
+// ============================================================================
+
+class RolledBack extends Error {}
+
+/**
+ * Runs `body` in a transaction with the http(s)-only link constraints
+ * (migrations 0189, 0191) dropped, then rolls it all back: the only way to
+ * seed a stored link written before them, to test what still guards against
+ * one. Pass `tx` to everything inside; the dropped constraints lock the
+ * tables against other connections.
+ */
+export async function withoutLinkConstraints(
+  body: (tx: typeof db) => Promise<void>
+): Promise<void> {
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql.raw(`ALTER TABLE entries
+          DROP CONSTRAINT entries_url_http,
+          DROP CONSTRAINT entries_image_url_http,
+          DROP CONSTRAINT entries_unsubscribe_url_http,
+          DROP CONSTRAINT entries_list_unsubscribe_https_http`)
+      );
+      await tx.execute(sql.raw("ALTER TABLE feeds DROP CONSTRAINT feeds_site_url_http"));
+      await body(tx as unknown as typeof db);
+      throw new RolledBack();
+    });
+  } catch (error) {
+    if (!(error instanceof RolledBack)) throw error;
+  }
+}
