@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { linkableUrl } from "../../src/server/http/linkable-url";
+import { linkableUrl, normalizeFeedUrl } from "../../src/server/http/linkable-url";
 
 describe("linkableUrl", () => {
   it.each([
@@ -31,5 +31,12 @@ describe("linkableUrl", () => {
     ['https://ok.example/"><script>', "https://ok.example/%22%3E%3Cscript%3E"],
   ])("normalizes %j", (url, expected) => {
     expect(linkableUrl(url)).toBe(expected);
+  });
+});
+
+describe("normalizeFeedUrl", () => {
+  it("is linkableUrl's href without the fragment, which no server sees", () => {
+    expect(normalizeFeedUrl("HTTPS://Example.com:443/Feed#x")).toBe("https://example.com/Feed");
+    expect(normalizeFeedUrl("javascript:alert(1)")).toBeNull();
   });
 });

@@ -444,14 +444,10 @@ describe("OPML Import", () => {
       expect(await subscribedUrls(userId)).toEqual([url, "https://new.example.com/feed.xml"]);
     });
 
-    it("fails a feed whose URL isn't a clean http(s) URL instead of creating a feed row", async () => {
+    it("fails a feed whose URL isn't http(s) instead of creating a feed row", async () => {
       const userId = await createTestUser();
       const importId = await seedImport(userId, [
         { xmlUrl: "javascript:alert(1)", title: "Bad" },
-        // Parsers read these differently, and a client may splice the quote
-        // into HTML.
-        { xmlUrl: "\u0001 https://c.example.com/feed\t", title: "Controls" },
-        { xmlUrl: 'https://q.example.com/"><script>', title: "Quote" },
         { xmlUrl: "https://ok.example.com/feed.xml", title: "Ok" },
       ]);
 
@@ -460,22 +456,36 @@ describe("OPML Import", () => {
       expect(result).toEqual({
         status: "completed",
         recovered: false,
-        counts: { imported: 1, skipped: 0, failed: 3, total: 4 },
+        counts: { imported: 1, skipped: 0, failed: 1, total: 2 },
       });
       expect(await subscribedUrls(userId)).toEqual(["https://ok.example.com/feed.xml"]);
       expect(await db.select().from(feeds).where(eq(feeds.url, "javascript:alert(1)"))).toEqual([]);
     });
 
-    it("subscribes to a feed row stored in a non-normalized form, not a new one", async () => {
-      const url = "HTTPS://Legacy.example.com/Feed";
-      const feedId = await createTestFeed({ url });
-      await createTestSubscription(await createTestUser(), feedId);
+    it("stores feed URLs normalized and matches stored feeds in that form", async () => {
+      const subscribed = "https://subscribed.example.com/Feed";
       const userId = await createTestUser();
+      await createTestSubscription(userId, await createTestFeed({ url: subscribed }));
+      const importId = await seedImport(userId, [
+        // Already subscribed, spelled differently.
+        { xmlUrl: "HTTPS://Subscribed.example.com:443/Feed#x", title: "Subscribed" },
+        // Parsers read these differently; a client may splice the quote into HTML.
+        { xmlUrl: "\u0001 https://c.example.com/feed\t", title: "Controls" },
+        { xmlUrl: 'https://q.example.com/"><script>', title: "Quote" },
+      ]);
 
-      await processOpmlImport(db, await seedImport(userId, [{ xmlUrl: url, title: "Legacy" }]));
+      const result = await processOpmlImport(db, importId);
 
-      expect(await subscribedUrls(userId)).toEqual([url]);
-      expect(await db.select().from(feeds).where(eq(feeds.url, url))).toHaveLength(1);
+      expect(result).toEqual({
+        status: "completed",
+        recovered: false,
+        counts: { imported: 2, skipped: 1, failed: 0, total: 3 },
+      });
+      expect(await subscribedUrls(userId)).toEqual([
+        subscribed,
+        "https://c.example.com/feed",
+        "https://q.example.com/%22%3E%3Cscript%3E",
+      ]);
     });
 
     it("does nothing for an import a previous run already finished", async () => {

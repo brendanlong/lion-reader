@@ -236,9 +236,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
   (`src/server/http/linkable-url.ts`): each write of an entry link, image or
   unsubscribe URL, or a feed's site URL, stores `linkableUrl`'s normalized
   `href` or nothing, so a feed's `<link>javascript:…</link>` reaches no client
-  that renders it outside our CSP. `createSubscription` stores a feed URL as
-  given (feeds are found by exact string), so it refuses any that isn't
-  http(s) or holds a character a parser would strip or encode. These APIs and
+  that renders it outside our CSP. Feed URLs are stored, and looked up, as
+  `normalizeFeedUrl` (that href without its fragment); `createSubscription`
+  refuses any that isn't http(s). These APIs and
   the OPML/library exports still pass every link through `linkableUrl` on the
   way out, which also covers values stored before these checks.
 - **The secretless Wallabag token endpoint is pinned to the `wallabag` client_id**

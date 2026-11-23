@@ -31,7 +31,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
-import { linkableUrl } from "@/server/http/linkable-url";
+import { linkableUrl, normalizeFeedUrl } from "@/server/http/linkable-url";
 import { resolveFeedAtUrl } from "@/server/services/feed-resolution";
 import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
@@ -138,12 +138,6 @@ export interface CreateSubscriptionOptions {
  *
  * Idempotent: if the user already has an active subscription, returns it.
  */
-/**
- * Characters a URL parser strips or percent-encodes that also mean something
- * to a client splicing a URL into HTML. No real feed URL contains them.
- */
-const UNSAFE_FEED_URL_CHARS = /[\u0000-\u0020\u007f"<>`]/;
-
 export async function createSubscription(
   db: typeof dbType,
   userId: string,
@@ -152,10 +146,9 @@ export async function createSubscription(
 ): Promise<CreateSubscriptionResult> {
   const { skipInitialPopulate = false } = options;
   // OPML imports reach here unvalidated, and a feed row is shared by every
-  // subscriber. The URL is stored as given, since feeds are found by exact
-  // string, so it must already be one no client could parse differently.
-  const { url } = feed;
-  if (linkableUrl(url) === null || UNSAFE_FEED_URL_CHARS.test(url)) {
+  // subscriber, so only a normalized http(s) URL may become one.
+  const url = normalizeFeedUrl(feed.url);
+  if (url === null) {
     throw errors.validation("Feed URL must be a valid http or https URL");
   }
   // 1. Upsert feed — insert if new, otherwise use existing
@@ -323,6 +316,10 @@ export async function subscribeToUrl(
   userId: string,
   feedUrl: string
 ): Promise<CreateSubscriptionResult> {
+  const normalizedUrl = normalizeFeedUrl(feedUrl);
+  if (normalizedUrl === null) {
+    throw errors.validation("Feed URL must be a valid http or https URL");
+  }
   const [existing] = await db
     .select({
       id: feeds.id,
@@ -330,7 +327,7 @@ export async function subscribeToUrl(
       staleAt: feeds.staleAt,
     })
     .from(feeds)
-    .where(eq(feeds.url, feedUrl))
+    .where(eq(feeds.url, normalizedUrl))
     .limit(1);
 
   // A feed we've never fetched successfully (brand new, or a raw URL from an
@@ -339,7 +336,7 @@ export async function subscribeToUrl(
   // background fetch job, so it needs no forced refresh. An unreachable or
   // unparseable URL fails the subscribe.
   if (!existing || existing.lastFetchedAt === null) {
-    const { url, parsedFeed } = await resolveFeedAtUrl(feedUrl);
+    const { url, parsedFeed } = await resolveFeedAtUrl(normalizedUrl);
     return createSubscription(db, userId, {
       url,
       title: getFeedHooks(url).resolveFeedTitle(parsedFeed),
@@ -357,7 +354,7 @@ export async function subscribeToUrl(
   const result = await createSubscription(
     db,
     userId,
-    { url: feedUrl },
+    { url: normalizedUrl },
     {
       skipInitialPopulate: stale,
     }

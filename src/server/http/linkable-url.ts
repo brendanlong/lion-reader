@@ -20,3 +20,16 @@ export function linkableUrl(url: string | null): string | null {
 }
 
 const UNSAFE_IN_HREF = /[\u0000- \u007f"<>]/;
+
+/**
+ * A feed's URL as stored: `linkableUrl`'s href without the fragment, which no
+ * server sees. Feeds are found by exact string, so every write and lookup of
+ * `feeds.url` uses this form.
+ */
+export function normalizeFeedUrl(url: string | null): string | null {
+  const href = linkableUrl(url);
+  if (href === null) return null;
+  const parsed = new URL(href);
+  parsed.hash = "";
+  return parsed.href;
+}

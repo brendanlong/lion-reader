@@ -12,6 +12,19 @@ describe("findPermanentRedirectUrl", () => {
     expect(result).toBeNull();
   });
 
+  // Feeds store URLs normalized (`normalizeFeedUrl`), so the target must be in
+  // that form to find an existing feed's row, and a respelling isn't a move.
+  it("returns the target normalized, and nothing for a respelling", () => {
+    const moved: RedirectInfo[] = [{ url: "HTTPS://New.example.com/feed#top", type: "permanent" }];
+    expect(findPermanentRedirectUrl(moved, "https://example.com/feed.xml")).toBe(
+      "https://new.example.com/feed"
+    );
+    const respelled: RedirectInfo[] = [
+      { url: "https://Example.com/feed.xml#x", type: "permanent" },
+    ];
+    expect(findPermanentRedirectUrl(respelled, "https://example.com/feed.xml")).toBeNull();
+  });
+
   it("returns the permanent redirect URL when present", () => {
     const redirects: RedirectInfo[] = [{ url: "https://newsite.com/feed.xml", type: "permanent" }];
     const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");

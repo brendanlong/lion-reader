@@ -593,21 +593,26 @@ describe("handleFetchFeed", () => {
       expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before);
     });
 
-    it("keeps waiting while the same redirect is younger than the wait period", async () => {
-      const firstSeen = new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS + 60 * 1000);
-      const feed = await createLoopbackFeed({
-        redirectUrl: `${baseUrl}/moved.xml`,
-        redirectFirstSeenAt: firstSeen,
-      });
-      redirectFeedUrl();
+    // A target tracked before targets were normalized may hold a fragment; it
+    // is the same redirect.
+    it.each(["", "#tracked-before-normalizing"])(
+      "keeps waiting while the same redirect is younger than the wait period (%j)",
+      async (fragment) => {
+        const firstSeen = new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS + 60 * 1000);
+        const feed = await createLoopbackFeed({
+          redirectUrl: `${baseUrl}/moved.xml${fragment}`,
+          redirectFirstSeenAt: firstSeen,
+        });
+        redirectFeedUrl();
 
-      await handleFetchFeed({ feedId: feed.id });
+        await handleFetchFeed({ feedId: feed.id });
 
-      const after = await readFeed(feed.id);
-      expect(after.url).toBe(feed.url);
-      expect(after.redirectUrl).toBe(movedTo());
-      expect(after.redirectFirstSeenAt!.getTime()).toBe(firstSeen.getTime());
-    });
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(feed.url);
+        expect(after.redirectUrl).toBe(`${movedTo()}${fragment}`);
+        expect(after.redirectFirstSeenAt!.getTime()).toBe(firstSeen.getTime());
+      }
+    );
 
     it.each([
       { name: "a changed body", destination: (): FeedResponse => ({ body: rss([]) }) },
@@ -691,21 +696,72 @@ describe("handleFetchFeed", () => {
       expect(after.redirectFirstSeenAt).toBeNull();
     });
 
-    it("applies a tracked redirect immediately once the original URL 404s", async () => {
+    it.each(["", "#tracked-before-normalizing"])(
+      "applies a tracked redirect immediately once the original URL 404s (%j)",
+      async (fragment) => {
+        const feed = await createLoopbackFeed({
+          redirectUrl: `${baseUrl}/moved.xml${fragment}`,
+          redirectFirstSeenAt: new Date(),
+        });
+        nextResponse = { status: 404, body: "gone" };
+
+        const result = await handleFetchFeed({ feedId: feed.id });
+
+        expect(result.success).toBe(true);
+        expect(result.metadata).toMatchObject({ redirectApplied: true, originalUrlBroken: true });
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(movedTo());
+        expect(after.redirectUrl).toBeNull();
+        expect(after.consecutiveFailures).toBe(0);
+      }
+    );
+
+    // Targets tracked before they were normalized: one that is this feed's own
+    // URL but for a fragment would merge the feed into itself, unsubscribing
+    // everyone; one that isn't http(s) can't be moved to.
+    it.each([`/feed.xml#tracked-before-normalizing`, "javascript:alert(1)"])(
+      "drops a tracked target that isn't a move and handles the 404 as an error (%j)",
+      async (target) => {
+        const feed = await createLoopbackFeed({
+          redirectUrl: target.startsWith("/") ? `${baseUrl}${target}` : target,
+          redirectFirstSeenAt: new Date(),
+        });
+        const userId = await createTestUser({ emailPrefix: "ff-selfredirect" });
+        const subscriptionId = await createTestSubscription(userId, feed.id);
+        nextResponse = { status: 404, body: "gone" };
+
+        const result = await handleFetchFeed({ feedId: feed.id });
+
+        expect(result.success).toBe(false);
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(feed.url);
+        expect(after.redirectUrl).toBeNull();
+        const [subscription] = await db
+          .select({ feedId: subscriptions.feedId, unsubscribedAt: subscriptions.unsubscribedAt })
+          .from(subscriptions)
+          .where(eq(subscriptions.id, subscriptionId));
+        expect(subscription).toEqual({ feedId: feed.id, unsubscribedAt: null });
+      }
+    );
+
+    it("merges into the feed at a tracked target's normalized URL", async () => {
+      const target = await createTestFeed({ url: movedTo() });
       const feed = await createLoopbackFeed({
-        redirectUrl: `${baseUrl}/moved.xml`,
+        redirectUrl: `${movedTo()}#tracked-before-normalizing`,
         redirectFirstSeenAt: new Date(),
       });
+      const userId = await createTestUser({ emailPrefix: "ff-mergeredirect" });
+      await createTestSubscription(userId, feed.id);
       nextResponse = { status: 404, body: "gone" };
 
       const result = await handleFetchFeed({ feedId: feed.id });
 
-      expect(result.success).toBe(true);
-      expect(result.metadata).toMatchObject({ redirectApplied: true, originalUrlBroken: true });
-      const after = await readFeed(feed.id);
-      expect(after.url).toBe(movedTo());
-      expect(after.redirectUrl).toBeNull();
-      expect(after.consecutiveFailures).toBe(0);
+      expect(result.metadata).toMatchObject({ redirectApplied: true, mergedIntoFeedId: target });
+      const active = await db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId));
+      expect(active.filter((s) => s.feedId === target)).toHaveLength(1);
     });
   });
 
