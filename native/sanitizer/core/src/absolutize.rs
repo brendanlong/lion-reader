@@ -759,8 +759,12 @@ mod tests {
 
     #[test]
     fn extraction_stays_linear() {
-        // Distinct images, so the name set grows with the input.
-        let image_count = 20_000;
+        // Distinct images, so the name set grows with the input. The budget
+        // sits between the linear pass (0.6s locally, ~2.5s at worst on CI's
+        // ~3-4x slower runners) and the regression it guards, deduplicating by
+        // scanning the extracted images instead of the name set (9.5s locally).
+        // That gap needs native/Cargo.toml's optimized dependencies.
+        let image_count = 40_000;
         let html: String = (0..image_count)
             .map(|i: u32| {
                 let mut data = png(0);
@@ -770,7 +774,7 @@ mod tests {
             .collect();
         let started = Instant::now();
         assert_eq!(extract(&html, None).images.len(), image_count as usize);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
